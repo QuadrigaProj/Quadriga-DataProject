@@ -19,7 +19,7 @@
 
 | 이름 | GitHub | 담당 |
 |---|---|---|
-| 장영훈 | [@yhjang0315-source](https://github.com/yhjang0315-source) | 총괄 / 저장소 관리 |
+| 장예현 | [@yhjang0315-source](https://github.com/yhjang0315-source) | 총괄 / 저장소 관리 |
 | 유민진 | [@Jjin39](https://github.com/Jjin39) | (담당 영역) |
 | 정다은 | [@daje0102](https://github.com/daje0102) | (담당 영역) |
 | 염윤서 | [@yunseoo00](https://github.com/yunseoo00) | (담당 영역) |
@@ -36,7 +36,7 @@ Quadriga-DataProject/
 │   ├── processed/    # 최종 분석용 데이터 (Git 추적 안 함)
 │   └── sample/       # 공유용 소용량 샘플 (Git 추적 O)
 ├── notebooks/        # 탐색적 분석(EDA) 노트북
-│   └── 01_eda_영훈.ipynb
+│   └── 01_eda_예현.ipynb
 ├── src/              # 재사용 가능한 코드 모듈
 │   ├── preprocess.py
 │   ├── features.py

@@ -17,3 +17,6 @@ ipykernel
 # 유틸
 python-dotenv
 tqdm
+
+# 협업 (노트북 출력 자동 제거 — 설치 후 `nbstripout --install` 한 번 실행)
+nbstripout

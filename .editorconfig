@@ -1,0 +1,21 @@
+# 에디터 설정 통일 — VS Code, PyCharm, Jupyter 등에서 자동 적용됩니다.
+# AI 도구마다 들여쓰기가 달라지는 걸 막아줍니다.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{md,yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+# 마크다운은 줄 끝 공백 두 개가 줄바꿈 의미라 지우지 않음
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

@@ -1,0 +1,19 @@
+# 데이터 처리
+pandas
+numpy
+
+# 시각화
+matplotlib
+seaborn
+
+# 분석 / 모델링
+scikit-learn
+scipy
+
+# 노트북
+jupyter
+ipykernel
+
+# 유틸
+python-dotenv
+tqdm

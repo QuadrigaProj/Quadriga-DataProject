@@ -91,3 +91,16 @@ git push -u origin feat/데이터-전처리
 
 - 이슈: [Issues](https://github.com/QuadrigaProj/Quadriga-DataProject/issues)
 - 보드: [Projects](https://github.com/QuadrigaProj/Quadriga-DataProject/projects)
+
+
+## 🤖 AI 도구 (ChatGPT · Claude · Copilot)
+
+팀원마다 다른 AI를 쓰기 때문에, 결과물이 따로 놀지 않도록 공통 규칙을 정해뒀습니다.
+**AI에게 작업을 시키기 전에 [AGENTS.md](./AGENTS.md) 를 먼저 읽히세요.** 복붙용 프롬프트도 거기 있습니다.
+
+클론한 직후 이것만은 꼭 실행하세요 — 노트북 충돌을 막아줍니다.
+
+```bash
+pip install nbstripout
+nbstripout --install
+```

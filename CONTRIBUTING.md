@@ -152,3 +152,22 @@ git push
 ```bash
 git reset --soft HEAD~1   # 직전 커밋만 취소 (작업 내용은 유지)
 ```
+
+
+---
+
+## 7. AI 도구를 쓸 때
+
+팀원마다 쓰는 AI가 다릅니다(ChatGPT·Codex, Claude, Copilot 등). 도구가 달라도 결과물이 따로 놀지 않도록
+**[AGENTS.md](./AGENTS.md)** 에 공통 규칙을 정리해뒀습니다. AI에게 작업을 시키기 전에 그 파일을 먼저 읽히세요.
+복붙용 프롬프트도 거기 있습니다.
+
+가장 중요한 것 두 가지:
+
+1. **AI가 짠 코드도 본인이 이해한 뒤에 올립니다.** 설명 못 하는 코드는 PR에 넣지 않기.
+2. **노트북 출력 제거 설정을 꼭 하세요.** 클론 직후 한 번만 하면 됩니다.
+
+   ```bash
+   pip install nbstripout
+   nbstripout --install
+   ```

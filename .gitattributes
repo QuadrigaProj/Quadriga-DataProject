@@ -1,0 +1,31 @@
+# 줄바꿈 통일 — Windows/Mac 섞여 있어도 저장소 안에서는 LF로 저장됩니다.
+# 이게 없으면 "파일 전체가 바뀐 것처럼" 보이는 가짜 diff가 생깁니다.
+* text=auto
+
+# 텍스트로 다룰 파일
+*.py     text
+*.md     text
+*.txt    text
+*.csv    text
+*.json   text
+*.yml    text
+*.yaml   text
+*.ipynb  text
+
+# 바이너리 — diff/merge 시도하지 않음
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.pdf    binary
+*.xlsx   binary
+*.xls    binary
+*.parquet binary
+*.feather binary
+*.pkl    binary
+*.joblib binary
+*.h5     binary
+*.pt     binary
+
+# GitHub 언어 통계에서 노트북 제외 (프로젝트가 Jupyter Notebook 100%로 잡히는 것 방지)
+*.ipynb  linguist-detectable=false

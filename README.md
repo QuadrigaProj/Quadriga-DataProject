@@ -1,6 +1,6 @@
 # Quadriga-DataProject
 
-> 한 줄 소개를 여기에 적어주세요. (예: 〇〇 데이터를 분석해 △△를 예측하는 프로젝트)
+> 한 줄 소개를 여기에 적어주세요. (주제 확정 후 작성)
 
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/QuadrigaProj/Quadriga-DataProject/pulls)
 
@@ -10,19 +10,21 @@
 
 | 항목 | 내용 |
 |---|---|
-| 주제 | (작성 필요) |
-| 목표 | (작성 필요) |
+| 주제 | 🔜 미정 — 논의 중 ([#2](https://github.com/QuadrigaProj/Quadriga-DataProject/issues)) |
+| 목표 | 주제 확정 후 작성 |
 | 기간 | 2026.09 ~ 2026.  . |
-| 데이터 출처 | (작성 필요) |
+| 데이터 출처 | 주제 확정 후 작성 |
 
 ## 👥 팀원
 
 | 이름 | GitHub | 담당 |
 |---|---|---|
-| 장영훈 | [@yhjang0315-source](https://github.com/yhjang0315-source) | 총괄 / (담당 영역) |
-|  |  |  |
-|  |  |  |
-|  |  |  |
+| 장영훈 | [@yhjang0315-source](https://github.com/yhjang0315-source) | 총괄 / 저장소 관리 |
+| (이름) | [@Jjin39](https://github.com/Jjin39) | (담당 영역) |
+| (이름) | [@daje0102](https://github.com/daje0102) | (담당 영역) |
+| (이름) | [@yunseoo00](https://github.com/yunseoo00) | (담당 영역) |
+
+> 각자 자기 줄의 이름과 담당 영역을 채워주세요. 직접 수정하기 어려우면 이슈로 남겨주셔도 됩니다.
 
 ## 🗂 폴더 구조
 

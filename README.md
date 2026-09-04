@@ -1,6 +1,6 @@
 # Quadriga-DataProject
 
-> 한 줄 소개를 여기에 적어주세요. (예: 〇〇 데이터를 분석해 △△를 예측하는 프로젝트)
+> 한 줄 소개를 여기에 적어주세요. (주제 확정 후 작성)
 
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/QuadrigaProj/Quadriga-DataProject/pulls)
 
@@ -10,19 +10,21 @@
 
 | 항목 | 내용 |
 |---|---|
-| 주제 | (작성 필요) |
-| 목표 | (작성 필요) |
+| 주제 | 🔜 미정 — 논의 중 |
+| 목표 | 주제 확정 후 작성 |
 | 기간 | 2026.09 ~ 2026.  . |
-| 데이터 출처 | (작성 필요) |
+| 데이터 출처 | 주제 확정 후 작성 |
 
 ## 👥 팀원
 
 | 이름 | GitHub | 담당 |
 |---|---|---|
-| 장영훈 | [@yhjang0315-source](https://github.com/yhjang0315-source) | 총괄 / (담당 영역) |
-|  |  |  |
-|  |  |  |
-|  |  |  |
+| 장예현 | [@yhjang0315-source](https://github.com/yhjang0315-source) | 총괄 / 저장소 관리 |
+| 유민진 | [@Jjin39](https://github.com/Jjin39) | (담당 영역) |
+| 정다은 | [@daje0102](https://github.com/daje0102) | (담당 영역) |
+| 염윤서 | [@yunseoo00](https://github.com/yunseoo00) | (담당 영역) |
+
+> 담당 영역은 주제가 정해진 뒤 나눠서 채웁니다.
 
 ## 🗂 폴더 구조
 
@@ -34,7 +36,7 @@ Quadriga-DataProject/
 │   ├── processed/    # 최종 분석용 데이터 (Git 추적 안 함)
 │   └── sample/       # 공유용 소용량 샘플 (Git 추적 O)
 ├── notebooks/        # 탐색적 분석(EDA) 노트북
-│   └── 01_eda_영훈.ipynb
+│   └── 01_eda_예현.ipynb
 ├── src/              # 재사용 가능한 코드 모듈
 │   ├── preprocess.py
 │   ├── features.py

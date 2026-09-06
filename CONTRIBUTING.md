@@ -52,7 +52,7 @@ docs/readme-팀원추가
 feat: 사용자 이탈률 파생변수 추가
 fix: 날짜 파싱 오류 수정 (2월 29일 처리)
 docs: README에 환경 세팅 방법 추가
-refactor: 전처리 함수 src/preprocess.py로 분리
+refactor: 전처리 함수 backend/preprocess.py로 분리
 chore: requirements.txt 업데이트
 data: 샘플 데이터 100행 추가
 ```

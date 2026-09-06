@@ -1250,11 +1250,19 @@ async function loadHome(){
 
 async function loadRoutine(){
   try {
-    state.routine = await API.routine({
-      age_gbn: state.ageGbn, sex: state.sex,
-      purpose: PURPOSE_LABEL[state.purpose],
-      weak_factor: state.result?.약점?.약점,
+    const result = await API.videoRoutine({
+      factor: state.result?.약점?.약점,
+      exclude_parts: excludedParts().join(","),
+      main_count: 2,
     });
+
+    state.routine = (result.steps || []).map(step => ({
+      단계: step.단계,
+      운동명: step.영상명,
+      체력요인: step.체력요인,
+      재생주소: step.재생주소,
+      초: step.초,
+    }));
   } catch (e) {
     state.routine = [
       { 단계:'준비운동', 운동명:'전신 루틴 스트레칭', 체력요인:'유연성' },
@@ -1324,22 +1332,26 @@ function excludedParts(){
 }
 
 async function toggleChip(id){
-  $(id).classList.toggle('off');
+  $(id).classList.toggle("off");
+
   const exclude = excludedParts();
-  const toast = $('toast');
+  const toast = $("toast");
+
   try {
-    const res = await API.videos({
-      factor: state.result?.약점?.약점,
-      exclude_parts: exclude.join(','),
-    });
+    await loadRoutine();
+
+    currentStep = 0;
+    renderStep();
+
     toast.textContent = exclude.length
-      ? `${exclude.join('·')} 부담 동작을 뺐어요 (남은 동영상 ${res.개수}개)`
-      : '부위 제한을 해제했어요';
+      ? `${exclude.join("·")} 부위에 부담이 가는 영상을 제외했어요.`
+      : "부위 제한을 해제했어요.";
   } catch (e) {
-    toast.textContent = exclude.length ? `${exclude.join('·')} 부담 동작을 빼고 안내할게요` : '부위 제한을 해제했어요';
+    toast.textContent = "루틴을 다시 불러오지 못했어요.";
   }
-  toast.classList.add('show');
-  setTimeout(()=>toast.classList.remove('show'), 1800);
+
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 1800);
 }
 
 let heavyOn = false;

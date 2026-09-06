@@ -86,8 +86,19 @@ def convert_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float
     return float(np.interp(value, x[order], y[order]))
 
 
-def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None) -> dict:
-    """필수 3항목 → 체력나이. 없는 항목은 평균에서 제외한다."""
+# 한 항목이 체력나이를 기준점에서 이만큼(세)보다 더 끌어당기지 못한다.
+# "20세인데 유연성 하나 낮아서 체력나이 50세" 같은 결과를 막는다(기획안 개정 4절).
+STABILIZE_LIMIT = 15.0
+# 환산나이가 기준점보다 이만큼(세) 이상 나쁘면 '집중 개선 영역'으로 따로 표시한다.
+FOCUS_GAP = 10.0
+
+
+def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
+                age=None) -> dict:
+    """필수 3항목 → 체력나이. 없는 항목은 평균에서 제외한다.
+
+    age(만 나이)를 주면 그 값을 기준점으로 안정화한다. 없으면 항목 중앙값이 기준점.
+    """
     parts: dict[str, float] = {}
 
     if flexibility is not None:
@@ -115,14 +126,33 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None) -
             parts["체성분"] = float(np.interp(abs(bmi - ideal), dev[order], ages[order]))
 
     if not parts:
-        return {"체력나이": None, "신뢰구간": None, "항목별": {}}
+        return {"체력나이": None, "신뢰구간": None, "항목별": {}, "집중개선영역": []}
 
-    vals = list(parts.values())
+    raw = list(parts.values())
+
+    # --- 안정화 ---
+    # 기준점: 실제 나이가 있으면 실제 나이, 없으면 항목들의 중앙값.
+    anchor = float(age) if age is not None else float(np.median(raw))
+    # 항목별 영향도를 먼저 안정화한다(단순 최종 clamp보다 앞선다).
+    clamped = [float(np.clip(v, anchor - STABILIZE_LIMIT, anchor + STABILIZE_LIMIT))
+               for v in raw]
+    body_age = float(np.mean(clamped))
+    if age is not None:                          # 최종 표시값도 실제 나이 ±15세 안으로
+        body_age = float(np.clip(body_age, age - STABILIZE_LIMIT, age + STABILIZE_LIMIT))
+
+    # 집중 개선 영역: 환산나이가 기준점보다 FOCUS_GAP 이상 나쁜 항목.
+    # 성장기는 나이가 많을수록 좋으므로 방향이 반대다.
+    focus = [
+        k for k, v in parts.items()
+        if (anchor - v if age_gbn == GROWTH else v - anchor) >= FOCUS_GAP
+    ]
+
     return {
-        "체력나이": round(float(np.mean(vals)), 1),
+        "체력나이": round(body_age, 1),
         # 항목 간 편차가 클수록 추정이 불안정하다 → 화면에 ± 로 함께 표시한다
-        "신뢰구간": round(float(np.std(vals)) / max(len(vals) ** 0.5, 1), 1),
+        "신뢰구간": round(float(np.std(raw)) / max(len(raw) ** 0.5, 1), 1),
         "항목별": {k: round(v, 1) for k, v in parts.items()},
+        "집중개선영역": focus,
     }
 
 

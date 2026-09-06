@@ -138,6 +138,7 @@ class MeasureOut(BaseModel):
     항목별: dict[str, float]
     약점: dict | None
     또래비교: dict = {}
+    집중개선영역: list[str] = []
     해석: str = ""
 
 
@@ -162,6 +163,7 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
     result = fa.fitness_age(
         _dist, body.age_gbn, body.sex,
         flexibility=body.flexibility, strength=body.strength, bmi=bmi,
+        age=body.age,
     )
     if result["체력나이"] is None:
         raise HTTPException(422, "해당 연령군·성별의 분포가 부족해 산출할 수 없습니다.")

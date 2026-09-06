@@ -263,14 +263,17 @@
 
   .calc-table{ margin-top:12px; border-radius:12px; background:#fff; overflow:hidden; }
   .calc-row{ display:flex; justify-content:space-between; padding:10px 14px; font-size:13px; border-bottom:1px solid var(--line); }
-  .calc-row:last-child{ border-bottom:none; background:var(--pine); color:#fff; font-weight:700; }
+  .calc-row:last-child{ border-bottom:none; }
   .calc-row span:last-child{ font-variant-numeric:tabular-nums; }
 
-  .goal-card{ margin-top:18px; border:1px solid var(--line); border-radius:18px; padding:18px; }
-  .goal-slider-row{ display:flex; align-items:center; gap:14px; margin-top:14px; }
-  .goal-slider-row input[type=range]{ flex:1; accent-color:var(--pine); }
-  .goal-num{ font-size:20px; font-weight:700; color:var(--pine-deep); width:56px; text-align:right; }
-  .goal-note{ font-size:13px; color:var(--muted); margin-top:12px; line-height:1.5; }
+  .focus-area{
+    margin-top:12px; background:var(--amber-tint); color:var(--clay);
+    border-radius:12px; padding:11px 13px; font-size:12.5px; line-height:1.5; text-align:left;
+  }
+  .focus-area b{ color:var(--clay); }
+  .program-card{ margin-top:18px; border:1px solid var(--line); border-radius:18px; padding:18px; }
+  .program-note{ font-size:13px; color:var(--muted); margin-top:8px; line-height:1.6; }
+  .program-note b{ color:var(--ink); }
 
   /* ===================== SCREEN 6 : 분기 점검 ===================== */
   .compare-wrap{ display:flex; align-items:center; justify-content:center; gap:18px; margin-top:20px; }
@@ -543,6 +546,7 @@
           <div class="ci-label" id="ciHigh" style="left:65%;">80</div>
         </div>
         <div class="ci-caption" id="ciCaption"></div>
+        <div class="focus-area" id="focusArea" style="display:none;"></div>
       </div>
 
       <div id="peerBlock" class="peer-block" style="display:none;">
@@ -675,19 +679,18 @@
       <div class="ci-caption" id="axisNote"></div>
 
       <div class="weak-card">
-        <div class="weak-kicker">약점 우선순위</div>
+        <div class="weak-kicker">집중 개선 영역</div>
         <div class="weak-text" id="weakText">먼저 첫 점검을 마쳐주세요.</div>
         <div class="weak-arrow" id="weakArrow"></div>
         <div class="calc-table" id="calcTable"></div>
       </div>
 
-      <div class="goal-card" id="goalCard">
-        <div class="prescribe-label">목표 설정</div>
-        <div class="goal-slider-row">
-          <input type="range" min="20" max="90" value="74" id="goalSlider" oninput="updateGoal(this.value)" />
-          <div class="goal-num"><span id="goalNum">74</span>세</div>
+      <div class="program-card">
+        <div class="prescribe-label">지금부터</div>
+        <div class="program-note">
+          목표 나이를 미리 정하지 않아요. <b>3개월간 맞춤 운동</b>을 하고,
+          3개월 뒤 다시 측정해 <b>실제로 얼마나 바뀌었는지</b>를 확인합니다.
         </div>
-        <div class="goal-note" id="goalNote">근력을 또래 평균 수준까지 올리면 체력나이가 74세로 계산돼요. 근력 중심 루틴으로 전환할게요.</div>
       </div>
     </div>
 
@@ -1166,6 +1169,17 @@ function renderResult(){
   $('ciCaption').textContent = (r.해석 ? r.해석 + ' ' : '') +
     (ci >= 5 ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있으니 한 숫자보다 폭으로 봐주세요.' : '');
 
+  // 집중 개선 영역 — 한 항목이 또래보다 크게 처져도 체력나이엔 조금만 반영하고, 여기서 따로 짚어준다
+  const focus = r.집중개선영역 || [];
+  const fa = $('focusArea');
+  if (focus.length) {
+    fa.innerHTML = `<b>집중 개선 영역: ${focus.join(' · ')}</b><br/>` +
+      `이 항목이 또래보다 많이 부족해요. 체력나이엔 과하게 반영하지 않고, 3개월 프로그램에서 우선 채웁니다.`;
+    fa.style.display = 'block';
+  } else {
+    fa.style.display = 'none';
+  }
+
   renderPeerComparison(r);
 
   const diff = age - state.age;
@@ -1330,23 +1344,43 @@ async function loadRoutine(){
 let currentStep = 0;
 function resetRoutine(){ currentStep = 0; renderStep(); }
 
+/* 몸이 무거운 날: 본운동 3개 → 앞 2개만 (준비·정리는 그대로).
+   세트·시간 축소는 renderStep 에서 처리한다. */
+function activeRoutine(){
+  if (!heavyOn) return state.routine;
+  let main = 0;
+  return state.routine.filter(s => {
+    if (s.단계 !== '본운동') return true;
+    return ++main <= 2;
+  });
+}
+
 function renderStep(){
-  if (!state.routine.length) return;
-  const step = state.routine[currentStep];
+  const list = activeRoutine();
+  if (!list.length) return;
+  if (currentStep > list.length - 1) currentStep = list.length - 1;
+  const step = list[currentStep];
   const it = state.intensity || { 세트: 2, 반복: 10 };
-  $('playerTag').textContent = (currentStep+1)+' / '+state.routine.length;
+  $('playerTag').textContent = (currentStep+1)+' / '+list.length;
   $('playerName').textContent = step.운동명;
-  $('playerSet').textContent = step.단계 === '본운동'
-    ? `${it.세트}세트 중 1세트 · ${heavyOn ? Math.round(it.반복*0.7) : it.반복}회`
-    : `${step.단계} · ${step.체력요인}`;
+  if (step.단계 === '본운동') {
+    const 세트 = heavyOn ? 1 : it.세트;
+    const 반복 = step.초
+      ? `${heavyOn ? Math.round(step.초/2) : step.초}초`
+      : `${heavyOn ? Math.round(it.반복*0.7) : it.반복}회`;
+    $('playerSet').textContent = `${세트}세트 · ${반복}`;
+  } else {
+    $('playerSet').textContent = `${step.단계} · ${step.체력요인}`;
+  }
 
   const dots = $('stepsDots');
-  dots.innerHTML = state.routine.map((_,i)=>`<div class="d${i<=currentStep?' on':''}"></div>`).join('');
-  $('stepBtn').textContent = (currentStep === state.routine.length-1) ? '루틴 완료' : '다음 동작';
+  dots.innerHTML = list.map((_,i)=>`<div class="d${i<=currentStep?' on':''}"></div>`).join('');
+  $('stepBtn').textContent = (currentStep === list.length-1) ? '루틴 완료' : '다음 동작';
 }
 
 function nextStep(){
-  if(currentStep < state.routine.length-1){ currentStep++; renderStep(); }
+  const list = activeRoutine();
+  if(currentStep < list.length-1){ currentStep++; renderStep(); }
   else { goTo('s3'); }
 }
 
@@ -1389,7 +1423,7 @@ function updateCondHint(){
   const parts = excludedParts();
   const lines = [];
   if (parts.length) lines.push(`${parts.join('·')}에 부담되는 동작을 루틴에서 빼요.`);
-  if (heavyOn)      lines.push('반복 횟수를 30% 줄여서 가볍게 안내해요.');
+  if (heavyOn)      lines.push('본운동을 2개로 줄이고, 세트는 1세트·시간은 절반으로 안내해요.');
   $('condHint').textContent = lines.length
     ? lines.join(' ')
     : '아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.';
@@ -1419,7 +1453,7 @@ function toggleHeavy(){
   $('heavyBtn').classList.toggle('on', heavyOn);
   $('heavyBtn').textContent = heavyOn ? '가볍게 진행 중' : '몸이 무거운 날';
   updateCondHint();
-  showToast(heavyOn ? '반복 횟수를 30% 줄여서 안내할게요' : '원래 강도로 되돌렸어요');
+  showToast(heavyOn ? '오늘은 가볍게 — 본운동 2개 · 1세트 · 시간 절반' : '원래 강도로 되돌렸어요');
   renderStep();
 }
 
@@ -1449,53 +1483,34 @@ function renderProfile(){
   $('axisNote').textContent =
     '공개 데이터로 잴 수 있는 항목만 표시합니다. 평형성·민첩성은 자가 측정이 어려워 아직 넣지 않았어요.';
 
+  // 집중 개선 영역 — 서버가 극단적으로 부족하다고 표시한 항목이 있으면 그것,
+  // 없으면 약점(개선 효과가 가장 큰 항목)을 안내한다. 목표 나이는 약속하지 않는다.
+  const focus = r.집중개선영역 || [];
   const w = r.약점;
-  if (!w) { $('weakText').textContent = '측정 항목이 하나뿐이라 약점을 비교할 수 없어요.'; return; }
 
-  // 성장기는 개선효과(세)가 거의 안 벌어져서 또래 백분위로 약점을 고른다
-  if (w.기준 === '또래 백분위') {
-    $('weakText').innerHTML = `또래와 견줘 가장 처지는 건<br/>${w.약점}이에요.`;
-    $('weakArrow').textContent = `${w.약점} 또래 상위 ${Math.round(100 - w.백분위)}%`;
-    $('calcTable').innerHTML = Object.entries(w.전체)
-      .sort((a,b)=>a[1]-b[1])
-      .map(([k,pct])=>`<div class="calc-row"><span>${k}</span><span>또래 상위 ${Math.round(100-pct)}%</span></div>`)
-      .join('');
-    $('goalCard').style.display = 'none';
-    return;
+  if (focus.length) {
+    $('weakText').innerHTML = `또래보다 특히 처지는 건<br/><b>${focus.join(' · ')}</b>이에요.`;
+    $('weakArrow').textContent = '3개월 프로그램이 이 항목부터 집중해서 채웁니다.';
+  } else if (w) {
+    $('weakText').innerHTML = `지금 가장 먼저 채우면 좋은 건<br/><b>${w.약점}</b>이에요.`;
+    $('weakArrow').textContent = w.기준 === '또래 백분위'
+      ? `${w.약점} 또래 상위 ${Math.round(100 - w.백분위)}%`
+      : '3개월 프로그램이 이 항목 중심으로 구성됩니다.';
+  } else {
+    $('weakText').textContent = '측정 항목이 하나뿐이라 비교가 어려워요.';
+    $('weakArrow').textContent = '';
   }
-  $('goalCard').style.display = 'block';
 
-  $('weakText').innerHTML = `지금 체력나이를 가장 많이 낮추는 건<br/>${w.약점}이에요.`;
-  const after = (r.체력나이 - w.개선효과).toFixed(1);
-  $('weakArrow').textContent = `${w.약점}을 본인의 가장 좋은 항목 수준까지 올리면 → ${r.체력나이}세 → ${after}세`;
-  $('calcTable').innerHTML = Object.entries(w.전체)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([k,g])=>`<div class="calc-row"><span>${k}만 개선</span><span>${
-        g > 0 ? `${(r.체력나이-g).toFixed(1)}세 (−${g.toFixed(1)})` : '변화 없음'
-      }</span></div>`)
+  // 항목별 현재 수준(또래 대비)을 표로 — "무엇을 얼마나 개선하면 몇 세" 는 더 이상 약속하지 않는다
+  $('calcTable').innerHTML = Object.entries(r.항목별)
+    .map(([k, v]) => {
+      const pr = peers[k];
+      const 우 = pr && typeof pr.백분위 === 'number'
+        ? `또래 ${posLabel(pr.백분위)}`
+        : (pr ? `또래 대비 ${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}` : `${v}세 수준`);
+      return `<div class="calc-row"><span>${k}${focus.includes(k) ? ' ★' : ''}</span><span>${우}</span></div>`;
+    })
     .join('');
-
-  // 최대 개선효과가 0이면 하한과 상한이 뒤집힌다 → 항상 min < max 가 되게 잡는다
-  const slider = $('goalSlider');
-  const 최대개선 = Math.max(0, ...Object.values(w.전체));
-  const hi = Math.round(r.체력나이);
-  const lo = Math.max(5, Math.min(hi - 1, Math.round(r.체력나이 - 최대개선) - 2));
-  slider.min = lo; slider.max = hi;
-  slider.value = Math.max(lo, Math.min(hi, Math.round(r.체력나이 - 최대개선)));
-  updateGoal(slider.value);
-}
-
-function updateGoal(v){
-  $('goalNum').textContent = v;
-  const r = state.result;
-  const note = $('goalNote');
-  if (!r || !r.약점) { note.textContent = ''; return; }
-  const need = (r.체력나이 - v).toFixed(1);
-  const w = r.약점;
-  note.textContent = need <= 0
-    ? '지금 수준을 유지하는 목표예요.'
-    : `${w.약점}을 본인의 가장 좋은 항목 수준까지 올리면 체력나이가 ${v}세로 계산돼요. ` +
-      `${w.약점} 중심 루틴으로 전환할게요. (필요한 감소량 ${need}세)`;
 }
 
 /* ---- 화면 6 : 재점검 ---- */

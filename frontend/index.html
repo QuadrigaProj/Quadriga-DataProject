@@ -637,6 +637,47 @@
     border:none; background:none; color:var(--clay); font-size:13px;
     text-decoration:underline; cursor:pointer; font-family:inherit;
   }
+  /* ===================== 측정 동작 썸네일 · 시트(모달) (C5/C6) ===================== */
+  /* 썸네일: .measure-head 맨 오른쪽. 배지(34px)와 같은 톤, 화면을 많이 차지하지 않게 40px */
+  .move-thumb{
+    margin-left:auto; flex-shrink:0; width:40px; height:40px; padding:4px;
+    border:1px solid var(--line); border-radius:10px; background:var(--pine-tint);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:transform .12s ease;
+  }
+  .move-thumb:active{ transform:scale(0.94); }
+  .move-thumb img{ width:30px; height:30px; display:block; }
+
+  /* 시트: .device(position:relative; overflow:hidden) 기준 absolute — fixed 는 쓰지 않는다.
+     z-index 는 .acct-panel(40) 위: backdrop 50, sheet 60. 9·11·12번 작업이 재사용한다. */
+  .sheet-backdrop{ position:absolute; inset:0; background:rgba(32,38,31,0.45); z-index:50; }
+  .sheet{
+    position:absolute; left:0; right:0; bottom:0; z-index:60;
+    background:var(--paper); border-top:1px solid var(--line);
+    border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+    padding:18px 22px 26px; max-height:88%; overflow-y:auto;
+    box-shadow:0 -8px 24px rgba(0,0,0,0.12);
+  }
+  .sheet-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  .sheet-title{ font-size:17px; font-weight:700; line-height:1.35; }
+  .sheet-close{
+    border:none; background:var(--pine-tint); color:var(--pine-deep); border-radius:10px;
+    padding:8px 14px; font-weight:700; font-size:14px; cursor:pointer; font-family:inherit; flex-shrink:0;
+  }
+  .sheet-body{ font-size:14px; line-height:1.5; }
+
+  /* 동작 GIF 와, 파일이 없을 때 그 자리에 보이는 placeholder */
+  .move-gif{
+    display:block; width:100%; max-width:280px; aspect-ratio:1/1; margin:0 auto;
+    border-radius:var(--radius); background:var(--pine-tint); object-fit:contain;
+  }
+  .move-gif-fallback{
+    display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center;
+    padding:22px 16px; border-radius:var(--radius); background:var(--pine-tint);
+    color:var(--muted); font-size:13px; line-height:1.5;
+  }
+  .move-gif-fallback img{ width:72px; height:72px; }
+  .move-gif-fallback code{ font-size:12px; color:var(--pine-deep); word-break:break-all; }
 </style>
 </head>
 <body>
@@ -777,6 +818,7 @@
           <div>
             <div class="measure-name">다리를 펴고 앉아 손끝이 닿는 거리</div>
           </div>
+          <button type="button" class="move-thumb" data-move="sit-reach" onclick="openMoveSheet('sit-reach')" aria-label="다리를 펴고 앉아 손끝이 닿는 거리 동작 보기"><img src="/img/moves/sit-reach.svg" alt="" /></button>
         </div>
         <div class="field-row">
           <input class="field-input" id="flexInput" type="number" placeholder="예: 12" />
@@ -792,6 +834,7 @@
             <div class="measure-name" id="strengthName">윗몸일으키기</div>
             <div class="measure-desc" id="strengthDesc">30초 동안 몇 번 반복했는지 세어주세요</div>
           </div>
+          <button type="button" class="move-thumb" id="strengthThumb" data-move="situp" onclick="openMoveSheet('situp')" aria-label="윗몸일으키기 동작 보기"><img src="/img/moves/situp.svg" alt="" /></button>
         </div>
         <div class="timer-box" id="timerBox" data-timer="situp" data-seconds="30">
           <div class="timer-time">00:30</div>
@@ -831,21 +874,24 @@
         <div class="measure-card">
           <div class="measure-head"><div class="measure-badge">5</div>
             <div><div class="measure-name">30초 제자리 점프</div>
-              <div class="measure-desc">두 발 모아 제자리에서 최대한 빠르게</div></div></div>
+              <div class="measure-desc">두 발 모아 제자리에서 최대한 빠르게</div></div>
+            <button type="button" class="move-thumb" data-move="jump" onclick="openMoveSheet('jump')" aria-label="30초 제자리 점프 동작 보기"><img src="/img/moves/jump.svg" alt="" /></button></div>
           <div class="timer-box" data-timer="jump" data-seconds="30"><div class="timer-time">00:30</div><button type="button" class="timer-btn" onclick="toggleTimer('jump')">시작</button></div>
           <div class="field-row"><input class="field-input" id="jumpInput" type="number" placeholder="예: 45" /><div class="field-unit">회</div></div>
         </div>
         <div class="measure-card">
           <div class="measure-head"><div class="measure-badge">6</div>
             <div><div class="measure-name">30초 무릎 푸시업</div>
-              <div class="measure-desc">무릎을 대고 팔굽혀펴기</div></div></div>
+              <div class="measure-desc">무릎을 대고 팔굽혀펴기</div></div>
+            <button type="button" class="move-thumb" data-move="knee-pushup" onclick="openMoveSheet('knee-pushup')" aria-label="30초 무릎 푸시업 동작 보기"><img src="/img/moves/knee-pushup.svg" alt="" /></button></div>
           <div class="timer-box" data-timer="kneePushup" data-seconds="30"><div class="timer-time">00:30</div><button type="button" class="timer-btn" onclick="toggleTimer('kneePushup')">시작</button></div>
           <div class="field-row"><input class="field-input" id="kneePushupInput" type="number" placeholder="예: 12" /><div class="field-unit">회</div></div>
         </div>
         <div class="measure-card">
           <div class="measure-head"><div class="measure-badge">7</div>
             <div><div class="measure-name">2분 제자리 높은 무릎 뛰기</div>
-              <div class="measure-desc">한쪽 무릎이 올라올 때마다 1회</div></div></div>
+              <div class="measure-desc">한쪽 무릎이 올라올 때마다 1회</div></div>
+            <button type="button" class="move-thumb" data-move="high-knee" onclick="openMoveSheet('high-knee')" aria-label="2분 제자리 높은 무릎 뛰기 동작 보기"><img src="/img/moves/high-knee.svg" alt="" /></button></div>
           <div class="timer-box" data-timer="highKnee" data-seconds="120"><div class="timer-time">02:00</div><button type="button" class="timer-btn" onclick="toggleTimer('highKnee')">시작</button></div>
           <div class="field-row"><input class="field-input" id="highKneeInput" type="number" placeholder="예: 90" /><div class="field-unit">회</div></div>
         </div>
@@ -1206,6 +1252,17 @@
       <button class="btn btn-primary" onclick="goTo('s3')">확인</button>
     </div>
   </section>
+
+  <!-- 시트(모달): 화면 위에 잠깐 띄우는 공용 컴포넌트. 지금은 측정 동작 GIF 안내(C6)에 쓰고
+       달력·스타일 테스트·루틴 픽토그램(9·11·12번)도 openSheet(title, html) 로 재사용한다. -->
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+    <div class="sheet-head">
+      <div class="sheet-title" id="sheetTitle"></div>
+      <button type="button" class="sheet-close" id="sheetClose" onclick="closeSheet()">닫기</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
 
 </div>
 
@@ -2071,6 +2128,9 @@ function onAgeChange(){
   $('strengthDesc').textContent = item.desc;
   $('countUnit').textContent = item.unit;
   $('strengthInput').placeholder = '예: ' + item.init;
+  // 썸네일(C5)은 윗몸일으키기용만 있다 — 어르신(의자에 앉았다 일어서기)·성장기(제자리 멀리뛰기)로 바뀌면 숨긴다
+  const strengthThumb = $('strengthThumb');
+  if (strengthThumb) strengthThumb.hidden = item.name !== '윗몸일으키기';
   $('timerBox').style.display = item.timer ? 'flex' : 'none';
   if (!item.timer) resetTimer('situp');   // 타이머 없는 항목(성장기 제자리 멀리뛰기)으로 바뀌면 돌던 타이머를 멈추고 되돌린다
 }
@@ -2810,6 +2870,58 @@ async function renderRecheck(){
   } else {
     card.style.display = 'none';
   }
+}
+
+/* ---- 측정 동작 썸네일 · GIF 시트 (C5/C6) ----
+   썸네일 = frontend/img/moves/<slug>.svg (직접 그린 64x64 stroke 픽토그램, 커밋됨)
+   동작 GIF = frontend/img/moves/<slug>.gif (아직 파일 없음 — 경로만 잡아 둔다)
+   GIF 파일이 없으면 <img onerror> 가 placeholder 로 바꿔 보여주고,
+   파일을 그 경로에 넣으면 코드 수정 없이 바로 보인다.
+   12번(F5)은 여기에 MOVE_CATEGORY_MEDIA 를 덧붙여 같은 시트를 쓴다. */
+const MOVE_MEDIA = {
+  'sit-reach':   { svg: '/img/moves/sit-reach.svg',   gif: '/img/moves/sit-reach.gif',   이름: '다리를 펴고 앉아 손끝이 닿는 거리' },
+  'situp':       { svg: '/img/moves/situp.svg',       gif: '/img/moves/situp.gif',       이름: '윗몸일으키기' },
+  'jump':        { svg: '/img/moves/jump.svg',        gif: '/img/moves/jump.gif',        이름: '30초 제자리 점프' },
+  'knee-pushup': { svg: '/img/moves/knee-pushup.svg', gif: '/img/moves/knee-pushup.gif', 이름: '30초 무릎 푸시업' },
+  'high-knee':   { svg: '/img/moves/high-knee.svg',   gif: '/img/moves/high-knee.gif',   이름: '2분 제자리 높은 무릎 뛰기' },
+};
+
+/* 시트(모달) 공용 — 제목과 본문 HTML 을 받아 .device 안에 띄운다. 닫기: 닫기 버튼 · 딤 배경 · Esc */
+let sheetOpener = null;   // 닫을 때 포커스를 돌려줄 요소(썸네일 버튼)
+function openSheet(title, html){
+  sheetOpener = document.activeElement;
+  $('sheetTitle').textContent = title;
+  $('sheetBody').innerHTML = html;
+  $('sheetBackdrop').hidden = false;
+  const sheet = $('sheet');
+  sheet.hidden = false;
+  sheet.scrollTop = 0;
+  $('sheetClose').focus();
+}
+function closeSheet(){
+  const sheet = $('sheet');
+  if (!sheet || sheet.hidden) return;
+  sheet.hidden = true;
+  $('sheetBackdrop').hidden = true;
+  $('sheetBody').innerHTML = '';          // GIF 반복 재생을 멈춘다
+  if (sheetOpener && sheetOpener.focus) sheetOpener.focus();
+  sheetOpener = null;
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+
+/* 썸네일 클릭 → 동작 GIF 시트. 닫으면 같은 화면에서 바로 측정으로 돌아간다 */
+function openMoveSheet(slug){
+  const m = MOVE_MEDIA[slug];
+  if (!m) return;
+  openSheet(m.이름, `
+    <img class="move-gif" src="${m.gif}" alt="${m.이름} 동작"
+         onerror="this.hidden = true; this.nextElementSibling.hidden = false;" />
+    <div class="move-gif-fallback" hidden>
+      <img src="${m.svg}" alt="" />
+      <div>동작 GIF 준비 중 — <code>frontend${m.gif}</code> 에 파일을 넣으면 바로 보여요</div>
+    </div>
+    <button type="button" class="btn btn-primary" style="margin-top:16px;" onclick="closeSheet()">닫고 측정하기</button>
+  `);
 }
 
 /* ---- 시작 ---- */

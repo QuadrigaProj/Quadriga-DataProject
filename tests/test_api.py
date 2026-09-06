@@ -456,3 +456,39 @@ def test_구글은_secret이_없으면_켜지지_않는다(monkeypatch):
     r = c.get("/auth/google/start", follow_redirects=False)
     assert r.status_code == 503
     assert "_CLIENT_SECRET" in r.json()["detail"]
+
+
+def test_카카오_기본_scope는_닉네임만(monkeypatch):
+    """이메일은 카카오 검수를 받아야 요청할 수 있다.
+    안 받은 상태로 요청하면 KOE205 로 로그인 자체가 막힌다."""
+    from backend import auth
+    monkeypatch.delenv("KAKAO_SCOPE", raising=False)
+    assert auth.scope_for("kakao") == "profile_nickname"
+    assert "account_email" not in auth.scope_for("kakao")
+
+
+def test_scope는_환경변수로_바꿀_수_있다(monkeypatch):
+    """검수를 통과하면 코드 수정 없이 이메일을 다시 넣을 수 있어야 한다."""
+    from backend import auth
+    monkeypatch.setenv("KAKAO_SCOPE", "profile_nickname account_email")
+    assert auth.scope_for("kakao") == "profile_nickname account_email"
+
+
+def test_start가_설정된_scope를_보낸다(monkeypatch):
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "test-id")
+    monkeypatch.delenv("KAKAO_SCOPE", raising=False)
+    c = _fresh()
+    r = c.get("/auth/kakao/start", follow_redirects=False)
+    loc = r.headers["location"]
+    assert "scope=profile_nickname" in loc
+    assert "account_email" not in loc
+
+
+def test_이메일이_없어도_계정이_만들어진다():
+    """카카오가 이메일을 안 주는 게 정상 경로다. 회원번호만으로 식별한다."""
+    from backend import auth
+    p = auth.normalize_profile("kakao", {"id": 4242,
+                                         "kakao_account": {"profile": {"nickname": "예현"}}})
+    assert p == {"uid": "4242", "email": None, "name": "예현"}
+    uid = auth.upsert_user("kakao", p["uid"], email=p["email"], name=p["name"])
+    assert uid > 0

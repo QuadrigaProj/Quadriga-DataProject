@@ -571,8 +571,9 @@ def auth_start(provider: str, request: Request) -> RedirectResponse:
         "redirect_uri": public_url(request, f"/auth/{provider}/callback"),
         "state": auth.new_state(provider),
     }
-    if conf["scope"]:
-        params["scope"] = conf["scope"]
+    scope = auth.scope_for(provider)
+    if scope:
+        params["scope"] = scope
     return RedirectResponse(conf["authorize"] + "?" + urlencode(params))
 
 

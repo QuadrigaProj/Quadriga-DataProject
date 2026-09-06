@@ -111,10 +111,6 @@
     border:none; background:var(--pine); color:#fff; padding:10px 18px; border-radius:10px;
     font-weight:700; font-size:14px; cursor:pointer; font-family:inherit;
   }
-  .count-row{ display:flex; align-items:center; gap:12px; margin-top:10px; }
-  .stepper{ display:flex; align-items:center; border:1.5px solid var(--line); border-radius:12px; overflow:hidden; }
-  .stepper button{ width:44px; height:46px; border:none; background:#fff; font-size:19px; cursor:pointer; color:var(--pine-deep); }
-  .stepper span{ width:52px; text-align:center; font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; }
 
   .result-block{
     margin-top:22px; text-align:center; padding:26px 10px 6px; border-top:1px dashed var(--line);
@@ -126,6 +122,21 @@
   .ci-band{ position:absolute; top:14px; height:4px; background:var(--amber); border-radius:2px; }
   .ci-dot{ position:absolute; top:9px; width:14px; height:14px; border-radius:50%; background:var(--pine-deep); border:3px solid var(--paper); }
   .ci-label{ position:absolute; top:22px; font-size:11px; color:var(--muted); transform:translateX(-50%); }
+
+  /* 또래와 비교 */
+  .peer-block{ margin-top:20px; padding:18px 16px; border-radius:16px; background:var(--pine-tint); }
+  .peer-rank{ font-size:20px; font-weight:800; color:var(--pine-deep); line-height:1.3; }
+  .peer-rank .big{ font-size:27px; }
+  .peer-sub{ font-size:13px; color:var(--muted); margin-top:5px; line-height:1.5; }
+  .peer-row{ margin-top:14px; }
+  .peer-row-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13.5px; }
+  .peer-row-name{ font-weight:700; }
+  .peer-row-pct{ color:var(--pine-deep); font-weight:700; }
+  .peer-bar{ position:relative; height:7px; border-radius:4px; background:var(--line); margin-top:6px; overflow:hidden; }
+  .peer-bar > i{ position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--pine); }
+  .peer-bar > b{ position:absolute; top:-3px; width:2px; height:13px; background:var(--muted); }
+  .peer-row-detail{ font-size:11.5px; color:var(--muted); margin-top:5px; }
+  .peer-foot{ font-size:11.5px; color:var(--muted); margin-top:14px; line-height:1.5; }
 
   /* ===================== SCREEN 2 : 목적 선택 ===================== */
   .purpose-grid{ display:flex; flex-direction:column; gap:10px; margin-top:18px; }
@@ -221,15 +232,18 @@
   .player-name{ font-size:20px; font-weight:800; }
   .player-set{ font-size:14.5px; color:var(--muted); margin-top:4px; }
 
-  .chip-row{ display:flex; gap:8px; padding:16px 22px 0; flex-wrap:wrap; }
-  .chip{ border:1.5px solid var(--line); border-radius:20px; padding:8px 14px; font-size:13.5px; background:#fff; cursor:pointer; font-family:inherit; color:var(--ink); }
-  .chip.off{ background:var(--clay); color:#fff; border-color:var(--clay); text-decoration:line-through; }
-
-  .heavy-btn{
-    margin:14px 22px 0; border:1.5px solid var(--amber); color:var(--amber); background:var(--amber-tint);
-    border-radius:14px; padding:13px; font-size:14.5px; font-weight:700; text-align:center; cursor:pointer; font-family:inherit;
+  /* 오늘의 컨디션 — 부담 부위 + 몸 무거운 날을 한 줄에서 함께 고른다 */
+  .cond-row{ display:flex; gap:8px; padding:16px 22px 0; flex-wrap:wrap; }
+  .cond-btn{
+    border:1.5px solid var(--line); border-radius:20px; padding:8px 13px; font-size:13.5px;
+    background:#fff; cursor:pointer; font-family:inherit; color:var(--ink); white-space:nowrap;
   }
-  .heavy-btn.active{ background:var(--amber); color:#fff; }
+  .cond-btn.off{ background:var(--clay); color:#fff; border-color:var(--clay); text-decoration:line-through; }
+  .cond-btn.heavy.on{ background:var(--amber); color:#fff; border-color:var(--amber); }
+  .cond-hint{
+    margin:10px 22px 0; font-size:12.5px; color:var(--muted); line-height:1.5;
+    background:var(--bg); border-radius:10px; padding:10px 12px;
+  }
 
   .toast{
     position:absolute; bottom:150px; left:22px; right:22px; background:var(--ink); color:#fff;
@@ -467,7 +481,7 @@
         </div>
         <div class="field-row">
           <input class="field-input" id="ageInput" type="number" min="13" max="100"
-                 placeholder="예: 34" value="34" oninput="onAgeChange()" />
+                 placeholder="예: 34" oninput="onAgeChange()" />
           <div class="field-unit">세</div>
         </div>
         <div class="seg" id="sexSeg">
@@ -482,8 +496,7 @@
         <div class="measure-head">
           <div class="measure-badge">2</div>
           <div>
-            <div class="measure-name">앉아 윗몸 앞으로 굽히기</div>
-            <div class="measure-desc">다리를 펴고 앉아 손끝이 닿는 거리</div>
+            <div class="measure-name">다리를 펴고 앉아 손끝이 닿는 거리</div>
           </div>
         </div>
         <div class="field-row">
@@ -497,7 +510,7 @@
         <div class="measure-head">
           <div class="measure-badge">3</div>
           <div>
-            <div class="measure-name" id="strengthName">교차 윗몸일으키기</div>
+            <div class="measure-name" id="strengthName">윗몸일으키기</div>
             <div class="measure-desc" id="strengthDesc">30초 동안 몇 번 반복했는지 세어주세요</div>
           </div>
         </div>
@@ -505,12 +518,8 @@
           <div class="timer-time" id="timerDisplay">00:30</div>
           <button class="timer-btn" id="timerBtn" onclick="toggleTimer()">시작</button>
         </div>
-        <div class="count-row">
-          <div class="stepper">
-            <button onclick="changeCount(-1)">−</button>
-            <span id="countVal">25</span>
-            <button onclick="changeCount(1)">+</button>
-          </div>
+        <div class="field-row">
+          <input class="field-input" id="strengthInput" type="number" placeholder="예: 25" />
           <div class="field-unit" id="countUnit">회</div>
         </div>
       </div>
@@ -525,11 +534,11 @@
           </div>
         </div>
         <div class="field-row">
-          <input class="field-input" id="heightInput" type="number" placeholder="키" value="164" />
+          <input class="field-input" id="heightInput" type="number" placeholder="예: 164" />
           <div class="field-unit">cm</div>
         </div>
         <div class="field-row">
-          <input class="field-input" id="weightInput" type="number" placeholder="몸무게" value="61" />
+          <input class="field-input" id="weightInput" type="number" placeholder="예: 61" />
           <div class="field-unit">kg</div>
         </div>
       </div>
@@ -547,6 +556,14 @@
           <div class="ci-label" id="ciHigh" style="left:65%;">80</div>
         </div>
         <div class="ci-caption" id="ciCaption"></div>
+      </div>
+
+      <div id="peerBlock" class="peer-block" style="display:none;">
+        <div class="eyebrow">또래와 비교</div>
+        <div class="peer-rank" id="peerRank">—</div>
+        <div class="peer-sub" id="peerRankSub"></div>
+        <div id="peerRows"></div>
+        <div class="peer-foot" id="peerFoot"></div>
       </div>
     </div>
     <div class="footer-area">
@@ -653,12 +670,13 @@
         <div class="player-name" id="playerName">의자에 앉았다 일어서기</div>
         <div class="player-set" id="playerSet">2세트 중 1세트 · 10회</div>
       </div>
-      <div class="chip-row">
-        <div class="chip" id="chipKnee" data-part="무릎" onclick="toggleChip('chipKnee')">무릎</div>
-        <div class="chip" id="chipBack" data-part="허리" onclick="toggleChip('chipBack')">허리</div>
-        <div class="chip" id="chipShoulder" data-part="어깨" onclick="toggleChip('chipShoulder')">어깨</div>
+      <div class="cond-row" id="condRow">
+        <button type="button" class="cond-btn" id="chipKnee" data-part="무릎" onclick="toggleChip('chipKnee')">무릎</button>
+        <button type="button" class="cond-btn" id="chipBack" data-part="허리" onclick="toggleChip('chipBack')">허리</button>
+        <button type="button" class="cond-btn" id="chipShoulder" data-part="어깨" onclick="toggleChip('chipShoulder')">어깨</button>
+        <button type="button" class="cond-btn heavy" id="heavyBtn" onclick="toggleHeavy()">몸이 무거운 날</button>
       </div>
-      <div class="heavy-btn" id="heavyBtn" onclick="toggleHeavy()">오늘 몸이 무거운 날이에요</div>
+      <div class="cond-hint" id="condHint">아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.</div>
       <div class="steps-dots" id="stepsDots">
         <div class="d on"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div>
       </div>
@@ -758,8 +776,8 @@
 const state = {
   user: null,          // 표시 이름
   account: false,      // true = 서버 계정(기기 간 이어보기), false = 이 기기에만 저장
-  age: 34, sex: 'M', ageGbn: '성인',
-  flexibility: null, strength: 18, height: 164, weight: 61,
+  age: null, sex: 'M', ageGbn: '성인',
+  flexibility: null, strength: null, height: null, weight: null,
   purpose: null,
   sportCategory: null,   // purpose === 'sport' 일 때 고른 세부 종목
   result: null,        // /fitness-age 응답
@@ -783,7 +801,7 @@ const SPORT_CATEGORIES = [
 const STRENGTH_ITEM = {
   '어르신': { name: '의자에 앉았다 일어서기', desc: '30초 동안 몇 번 반복했는지 세어주세요',
              unit: '회', step: 1,  init: 18,  timer: true  },
-  '성인':   { name: '교차 윗몸일으키기',      desc: '30초 동안 몇 번 반복했는지 세어주세요',
+  '성인':   { name: '윗몸일으키기',           desc: '30초 동안 몇 번 반복했는지 세어주세요',
              unit: '회', step: 1,  init: 25,  timer: true  },
   '성장기': { name: '제자리 멀리뛰기',        desc: '두 발로 서서 뛴 거리를 줄자로 재주세요',
              unit: 'cm', step: 5,  init: 190, timer: false },
@@ -918,14 +936,14 @@ async function saveProfile(){
 function applyProfile(saved){
   if (saved) Object.assign(state, saved);
   state.sportCategory = saved?.sportCategory ?? null;
-  $('ageInput').value = state.age;
-  $('flexInput').value = state.flexibility ?? '';
-  $('heightInput').value = state.height ?? '';
-  $('weightInput').value = state.weight ?? '';
+  // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
+  $('ageInput').value    = saved?.age ?? '';
+  $('flexInput').value   = saved?.flexibility ?? '';
+  $('strengthInput').value = saved?.strength ?? '';
+  $('heightInput').value = saved?.height ?? '';
+  $('weightInput').value = saved?.weight ?? '';
   onAgeChange();
   selectSex(state.sex);
-  count = state.strength ?? STRENGTH_ITEM[state.ageGbn].init;
-  $('countVal').textContent = count;
   $('greetName').textContent = `${state.user} 님`;
 
   if (state.result) {
@@ -1057,14 +1075,13 @@ function onAgeChange(){
   }
   notice.style.display = 'none';
 
-  const changed = gbn !== state.ageGbn;
   state.ageGbn = gbn;
   const item = STRENGTH_ITEM[gbn];
   $('strengthName').textContent = item.name;
   $('strengthDesc').textContent = item.desc;
   $('countUnit').textContent = item.unit;
+  $('strengthInput').placeholder = '예: ' + item.init;
   $('timerBox').style.display = item.timer ? 'flex' : 'none';
-  if (changed) { count = item.init; $('countVal').textContent = count; }
 }
 
 function selectSex(sex){
@@ -1073,13 +1090,20 @@ function selectSex(sex){
 }
 
 function syncInputs(){
-  state.age = parseInt($('ageInput').value, 10) || state.age;
-  state.ageGbn = ageGroup(state.age);
+  const a = parseInt($('ageInput').value, 10);
+  state.age = Number.isFinite(a) ? a : null;
+  state.ageGbn = ageGroup(state.age) || '성인';
   const f = parseFloat($('flexInput').value);
   state.flexibility = Number.isFinite(f) ? f : null;
-  state.strength = count;
+  const s = parseFloat($('strengthInput').value);
+  state.strength = Number.isFinite(s) ? s : null;
   state.height = parseFloat($('heightInput').value) || null;
   state.weight = parseFloat($('weightInput').value) || null;
+}
+
+/* 현재 연령군에서 측정하는 근력 항목 이름 */
+function strengthLabel(){
+  return STRENGTH_ITEM[state.ageGbn]?.name ?? '윗몸일으키기';
 }
 
 function measurement(){
@@ -1120,12 +1144,24 @@ function offlineAge(){
 
 async function calcAge(){
   syncInputs();
-  if (!state.ageGbn) { onAgeChange(); return; }
-  if (state.flexibility === null) {
-    alert('앉아 윗몸 앞으로 굽히기 값을 입력해주세요.\n숫자를 입력해야 다음으로 넘어갈 수 있어요.');
-    $('flexInput').focus();
+
+  // 안 채운 칸을 모아서 정확히 어디를 비웠는지 알려준다.
+  const missing = [];
+  if (state.age === null)         missing.push('나이');
+  if (state.flexibility === null) missing.push('다리를 펴고 앉아 손끝이 닿는 거리');
+  if (state.strength === null)    missing.push(strengthLabel());
+  if (state.height === null)      missing.push('키');
+  if (state.weight === null)      missing.push('몸무게');
+  if (missing.length) {
+    alert('아래 칸을 먼저 채워주세요:\n\n· ' + missing.join('\n· '));
+    const focusMap = { '나이':'ageInput', '키':'heightInput', '몸무게':'weightInput' };
+    const el = missing[0] === '다리를 펴고 앉아 손끝이 닿는 거리' ? $('flexInput')
+             : (focusMap[missing[0]] ? $(focusMap[missing[0]]) : $('strengthInput'));
+    el && el.focus();
     return;
   }
+
+  if (!ageGroup(state.age)) { onAgeChange(); return; }   // 만 11세 미만 등 미지원
 
   const btn = $('calcBtn');
   btn.disabled = true; btn.textContent = '계산 중…';
@@ -1164,13 +1200,10 @@ function renderResult(){
 
   $('ciNote').textContent = (isGrowth() ? '발달 수준 · 항목 간 편차 ±' : '참고용 추정치 · 항목 간 편차 ±') + `${ci}세`;
 
-  const peers = Object.entries(r.또래비교 || {});
-  const 백분위문구 = peers.length
-    ? peers.map(([k,v])=>`${k} 또래 상위 ${Math.round(100-v.백분위)}% (또래 중앙값 ${v.또래중앙값}${v.항목==='제자리멀리뛰기'?'cm':''})`).join(' · ')
-    : '';
   $('ciCaption').textContent = (r.해석 ? r.해석 + ' ' : '') +
-    (ci >= 5 ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있으니 한 숫자보다 폭으로 봐주세요. ' : '') +
-    백분위문구;
+    (ci >= 5 ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있으니 한 숫자보다 폭으로 봐주세요.' : '');
+
+  renderPeerComparison(r);
 
   const diff = age - state.age;
   $('resultBlock').style.display = 'block';
@@ -1180,6 +1213,77 @@ function renderResult(){
   $('greetSub').textContent = isGrowth()
     ? (diff >= 0 ? `또래보다 ${diff}세 앞서 있어요` : `또래보다 ${Math.abs(diff)}세 뒤처져 있어요`)
     : (diff <= 0 ? `또래보다 ${Math.abs(diff)}세 젊어요` : `또래보다 ${diff}세 높아요`);
+}
+
+/* ---------------------------------------------------------------------------
+   또래와 비교 — "나는 몇 등인가" 를 항목별·종합으로 보여준다.
+
+   백분위(p)는 100에 가까울수록 좋다. 표본 n 명 안에서 내 등수는
+   대략 (100 - p)/100 * n 番째. BMI(체성분)는 U자형이라 등수를 매기지 않고
+   또래 중앙값과의 차이만 보여준다.
+--------------------------------------------------------------------------- */
+function fmtInt(n){ return Math.round(n).toLocaleString('ko-KR'); }
+
+/* 백분위(100에 가까울수록 좋다)를 "상위 N%" / "하위 N%" 로 옮긴다.
+   상위 절반 안이면 상위, 아니면 하위로 표기해 오해를 줄인다. */
+function posLabel(pct){
+  const top = Math.round(100 - pct);
+  return top <= 50 ? `상위 ${Math.max(1, top)}%` : `하위 ${Math.max(1, Math.round(pct))}%`;
+}
+
+function renderPeerComparison(r){
+  const block = $('peerBlock');
+  const entries = Object.entries(r.또래비교 || {});
+  const ranked = entries.filter(([, v]) => typeof v.백분위 === 'number');
+
+  if (!ranked.length) {                         // 오프라인 예시값 등 — 비교 데이터 없음
+    block.style.display = 'none';
+    return;
+  }
+  block.style.display = 'block';
+
+  // 종합 등수: 측정한 항목들의 백분위 평균
+  const avgPct = ranked.reduce((a, [, v]) => a + v.백분위, 0) / ranked.length;
+  const nRef = Math.max(...ranked.map(([, v]) => v.표본수));
+  const myRank = Math.max(1, Math.round((100 - avgPct) / 100 * nRef));
+
+  const best  = ranked.reduce((a, b) => b[1].백분위 > a[1].백분위 ? b : a);
+  const worst = ranked.reduce((a, b) => b[1].백분위 < a[1].백분위 ? b : a);
+
+  $('peerRank').innerHTML =
+    `또래 ${fmtInt(nRef)}명 중<br/><span class="big">약 ${fmtInt(myRank)}등</span> (${posLabel(avgPct)})`;
+  $('peerRankSub').textContent = ranked.length > 1
+    ? `가장 앞선 항목은 ${best[0]}, 가장 처지는 항목은 ${worst[0]}이에요.`
+    : `${best[0]} 기준이에요.`;
+
+  const unitOf = (v) => (v.항목 || '').includes('멀리뛰기') ? 'cm'
+                      : (v.항목 || '').includes('BMI') ? '' : '';
+  const rows = entries.map(([name, v]) => {
+    if (typeof v.백분위 !== 'number') {          // 체성분(BMI)
+      const gap = v.또래대비 ?? (v.내기록 - v.또래중앙값);
+      const dir = gap > 0 ? '높아요' : gap < 0 ? '낮아요' : '같아요';
+      return `<div class="peer-row">
+        <div class="peer-row-head"><span class="peer-row-name">${name}</span>
+          <span class="peer-row-pct">또래보다 ${Math.abs(gap).toFixed(1)} ${dir}</span></div>
+        <div class="peer-row-detail">내 BMI ${v.내기록} · 또래 중앙값 ${v.또래중앙값} (${v.비교구간})</div>
+      </div>`;
+    }
+    const pct = v.백분위;
+    const rank = Math.max(1, Math.round((100 - pct) / 100 * v.표본수));
+    const u = unitOf(v);
+    return `<div class="peer-row">
+      <div class="peer-row-head"><span class="peer-row-name">${name}</span>
+        <span class="peer-row-pct">${posLabel(pct)}</span></div>
+      <div class="peer-bar"><i style="width:${Math.max(3, Math.min(100, pct))}%"></i><b style="left:50%"></b></div>
+      <div class="peer-row-detail">${fmtInt(v.표본수)}명 중 약 ${fmtInt(rank)}등 · 내 기록 ${v.내기록}${u} · 또래 중앙값 ${v.또래중앙값}${u}</div>
+    </div>`;
+  }).join('');
+  $('peerRows').innerHTML = rows;
+
+  const 구간 = ranked[0][1].비교구간;
+  const 성별 = state.sex === 'F' ? '여성' : '남성';
+  $('peerFoot').textContent =
+    `국민체력100 공개 데이터 기준 · 같은 ${성별}, 비교 연령구간 ${구간} · 막대 가운데 선은 또래 중앙값이에요.`;
 }
 
 /* ---- 화면 2 : 목적 ---- */
@@ -1310,50 +1414,55 @@ function toggleTimer(){
   },1000);
 }
 
-let count = 25;
-function changeCount(d){
-  const step = STRENGTH_ITEM[state.ageGbn]?.step ?? 1;
-  count = Math.max(0, count + d * step);
-  $('countVal').textContent = count;
+/* ---- 화면 4 : 부담 부위 · 컨디션 ----
+   무릎·허리·어깨·"몸이 무거운 날" 을 한 줄에서 함께 켠다.
+   버튼마다 어떤 효과가 있는지 아래 안내줄(condHint)에 바로 보여준다. */
+function excludedParts(){
+  return [...document.querySelectorAll('#condRow .cond-btn[data-part].off')].map(c=>c.dataset.part);
 }
 
-/* ---- 화면 4 : 부담 부위 · 컨디션 ---- */
-/* 칩을 끄면 그 부위에 부담이 가는 동영상을 루틴에서 뺀다 (/videos?exclude_parts=) */
-function excludedParts(){
-  return [...document.querySelectorAll('.chip-row .chip.off')].map(c=>c.dataset.part);
+function showToast(msg){
+  const toast = $('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'), 1800);
+}
+
+/* 지금 켜져 있는 버튼들의 효과를 한 줄로 정리해서 보여준다. */
+function updateCondHint(){
+  const parts = excludedParts();
+  const lines = [];
+  if (parts.length) lines.push(`${parts.join('·')}에 부담되는 동작을 루틴에서 빼요.`);
+  if (heavyOn)      lines.push('반복 횟수를 30% 줄여서 가볍게 안내해요.');
+  $('condHint').textContent = lines.length
+    ? lines.join(' ')
+    : '아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.';
 }
 
 async function toggleChip(id){
   $(id).classList.toggle('off');
   const exclude = excludedParts();
-  const toast = $('toast');
+  updateCondHint();
   try {
     const res = await API.videos({
       factor: state.result?.약점?.약점,
       exclude_parts: exclude.join(','),
     });
-    toast.textContent = exclude.length
+    showToast(exclude.length
       ? `${exclude.join('·')} 부담 동작을 뺐어요 (남은 동영상 ${res.개수}개)`
-      : '부위 제한을 해제했어요';
+      : '부위 제한을 해제했어요');
   } catch (e) {
-    toast.textContent = exclude.length ? `${exclude.join('·')} 부담 동작을 빼고 안내할게요` : '부위 제한을 해제했어요';
+    showToast(exclude.length ? `${exclude.join('·')} 부담 동작을 빼고 안내할게요` : '부위 제한을 해제했어요');
   }
-  toast.classList.add('show');
-  setTimeout(()=>toast.classList.remove('show'), 1800);
 }
 
 let heavyOn = false;
 function toggleHeavy(){
   heavyOn = !heavyOn;
-  const btn = $('heavyBtn');
-  btn.classList.toggle('active', heavyOn);
-  btn.textContent = heavyOn ? '오늘은 가볍게 진행할게요' : '오늘 몸이 무거운 날이에요';
-  const toast = $('toast');
-  if(heavyOn){
-    toast.textContent = '반복 횟수를 30% 줄여서 안내할게요';
-    toast.classList.add('show');
-    setTimeout(()=>toast.classList.remove('show'), 1800);
-  }
+  $('heavyBtn').classList.toggle('on', heavyOn);
+  $('heavyBtn').textContent = heavyOn ? '가볍게 진행 중' : '몸이 무거운 날';
+  updateCondHint();
+  showToast(heavyOn ? '반복 횟수를 30% 줄여서 안내할게요' : '원래 강도로 되돌렸어요');
   renderStep();
 }
 

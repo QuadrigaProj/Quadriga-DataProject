@@ -242,6 +242,46 @@ def test_recheck_는_측정편차와_함께_알려준다():
     assert "편차" in b["메시지"]
 
 
+# ---------- 체력나이 안정화 (기획안 개정 4절) ----------
+
+@needs_data
+def test_한_항목이_극단이어도_체력나이가_튀지_않는다():
+    """20세 사용자가 유연성 하나만 아주 낮아도 체력나이가 40~50대로 튀면 안 된다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 20,
+        "flexibility": -25, "strength": 30, "height_cm": 175, "weight_kg": 68,
+    }).json()
+    assert b["체력나이"] <= 20 + 15          # 실제 나이 ±15세 안
+    assert b["체력나이"] >= 20 - 15
+    # 극단적으로 부족한 항목은 그대로 삼키지 않고 집중 개선 영역으로 표시한다
+    assert "유연성" in b["집중개선영역"]
+
+
+@needs_data
+def test_또래_평균_수준이면_집중개선영역이_비어있다():
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 40,
+        "flexibility": 12, "strength": 45, "height_cm": 175, "weight_kg": 72,
+    }).json()
+    assert b["집중개선영역"] == []
+
+
+@needs_data
+def test_안정화_극단값_스윕():
+    """나이·측정값을 넓게 훑어도 체력나이가 실제 나이 ±15세를 벗어나지 않는다."""
+    for age in (19, 25, 45, 64):
+        for flex in (-30, 0, 40):
+            for st in (0, 25, 60):
+                for bmi in (15, 22, 38):
+                    r = client.post("/fitness-age", json={
+                        "age_gbn": "성인", "sex": "M", "age": age,
+                        "flexibility": flex, "strength": st, "bmi": bmi})
+                    if r.status_code != 200:
+                        continue
+                    ba = r.json()["체력나이"]
+                    assert age - 15 <= ba <= age + 15, (age, flex, st, bmi, ba)
+
+
 # ---------- 영상 루틴 (backend/routine_player.py 연결) ----------
 
 def test_video_routine_준비_본_정리_순서():

@@ -674,6 +674,23 @@ def auth_me(quadriga_session: str | None = Cookie(None)) -> dict:
             "수단": user["provider"] if user else None}
 
 
+class RenameIn(BaseModel):
+    이름: str
+
+
+@app.patch("/auth/me")
+def auth_rename(body: RenameIn, quadriga_session: str | None = Cookie(None)) -> dict:
+    """별명만 바꾼다. 다른 기기에서도 같은 별명으로 보이게 서버에 저장한다."""
+    user = _require_user(quadriga_session)
+    name = body.이름.strip()
+    if not name:
+        raise HTTPException(400, "별명을 입력해주세요.")
+    if len(name) > 20:
+        raise HTTPException(400, "별명은 20자까지예요.")
+    auth.rename_user(user["id"], name)
+    return {"이름": name}
+
+
 @app.delete("/auth/me")
 def auth_delete_me(response: Response,
                    quadriga_session: str | None = Cookie(None)) -> dict:

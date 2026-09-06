@@ -595,3 +595,40 @@ def test_계정_삭제로_기록까지_사라진다():
     c2 = _fresh()
     c2.post("/auth/signup", json={"email": "gone@example.com", "password": "pw12345678"})
     assert c2.get("/me/measurements").json()["기록"] == []
+
+
+# ---------- 별명 바꾸기 (프로필 편집) ----------
+
+def test_별명을_바꿀_수_있다():
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "rn@example.com", "password": "pw12345678",
+                                 "display_name": "예현"})
+    assert c.get("/auth/me").json()["이름"] == "예현"
+    r = c.patch("/auth/me", json={"이름": "윤서"})
+    assert r.status_code == 200 and r.json()["이름"] == "윤서"
+    # 다시 로그인해도 바뀐 이름이어야 한다 (서버에 남는다)
+    c2 = _fresh()
+    c2.post("/auth/login", json={"email": "rn@example.com", "password": "pw12345678"})
+    assert c2.get("/auth/me").json()["이름"] == "윤서"
+
+
+def test_빈_별명은_거부한다():
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "rn2@example.com", "password": "pw12345678"})
+    assert c.patch("/auth/me", json={"이름": "   "}).status_code == 400
+    assert c.patch("/auth/me", json={"이름": "가" * 21}).status_code == 400
+
+
+def test_로그인_없이는_별명을_못_바꾼다():
+    c = _fresh()
+    assert c.patch("/auth/me", json={"이름": "남"}).status_code == 401
+
+
+def test_별명을_바꿔도_기록은_그대로다():
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "rn3@example.com", "password": "pw12345678"})
+    c.post("/me/measurements", json={"age": 41, "targetAge": 36, "체력나이": 36})
+    c.patch("/auth/me", json={"이름": "새이름"})
+    기록 = c.get("/me/measurements").json()
+    assert 기록["이름"] == "새이름"
+    assert 기록["기록"][0]["targetAge"] == 36

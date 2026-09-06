@@ -13,8 +13,9 @@
 ## 1. 프로젝트 개요
 
 - 데이터 분석 단체 프로젝트 (4인)
-- Python 3.11 기준, pandas / numpy / scikit-learn / matplotlib / seaborn
-- 분석은 `notebooks/` 에서, 재사용 코드는 `src/` 에 함수로
+- Python 3.11 기준. 서버는 FastAPI, 계산은 pandas / numpy.
+  분석·시각화는 scikit-learn / matplotlib / seaborn (`requirements-dev.txt`)
+- 분석은 `notebooks/` 에서, 재사용 코드는 `backend/` 에 함수로
 
 ## 2. 절대 하지 말 것
 
@@ -168,7 +169,8 @@ AI가 규칙을 잊어도 아래는 그대로 작동합니다. 이쪽이 더 믿
 ```
 [Quadriga-DataProject 규칙]
 4인 데이터 분석 팀 프로젝트.
-Python 3.11 / pandas, numpy, scikit-learn, matplotlib, seaborn
+Python 3.11 / 서버는 FastAPI, 계산은 pandas, numpy
+분석은 scikit-learn, matplotlib, seaborn
 
 코드 스타일:
 - 들여쓰기 공백 4칸, snake_case, 문자열은 큰따옴표

@@ -5,8 +5,9 @@
 
 ## 프로젝트
 
-4인 데이터 분석 팀 프로젝트입니다. Python 3.11, pandas / numpy / scikit-learn / matplotlib / seaborn 을 씁니다.
-분석은 `notebooks/` 에서 하고, 재사용하는 코드는 `src/` 에 함수로 뺍니다.
+4인 데이터 분석 팀 프로젝트입니다. Python 3.11, 서버는 FastAPI, 계산은 pandas / numpy 를 씁니다.
+분석·시각화에는 scikit-learn / matplotlib / seaborn 을 씁니다(`requirements-dev.txt`).
+분석은 `notebooks/` 에서 하고, 재사용하는 코드는 `backend/` 에 함수로 뺍니다.
 
 ## 코드 스타일
 

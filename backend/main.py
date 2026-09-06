@@ -414,11 +414,12 @@ def get_program_routine(
 
     # 고른 운동 종목 → 그 종목이 많이 쓰는 체력요인 상위 2개만 본다.
     # 너무 많이 넣으면 원래 커리큘럼이 흐려진다.
+    # 안 고른 사람에게는 종목 데이터를 아예 읽지 않는다. 종목은 곁가지라
+    # sports.json 이 없다고 해서 루틴 자체가 안 나오면 안 된다.
     picked = [i.strip() for i in (sports or "").split(",") if i.strip()]
-    weights = sp.factor_weights(picked)
-    prefer = list(weights)[:2]
 
     try:
+        prefer = list(sp.factor_weights(picked))[:2] if picked else []
         routine = rt.build_program_routine(
             age_gbn, purpose, day=day, exclude_parts=parts, heavy=heavy,
             prefer_factors=prefer)
@@ -441,16 +442,22 @@ def get_program_routine(
 @app.get("/sports")
 def get_sports() -> dict:
     """배우고 싶은 운동 종목 목록. 화면이 그대로 그린다."""
-    return sp.catalog()
+    try:
+        return sp.catalog()
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
 
 
 @app.get("/sports/summary")
 def get_sports_summary(ids: str = Query("", description="쉼표로 구분한 종목 id")) -> dict:
     """선택한 종목이 어떤 체력요인을 요구하는지, 어디를 조심해야 하는지."""
     picked = [i.strip() for i in ids.split(",") if i.strip()]
-    return {"선택": sp.resolve(picked),
-            "체력요인": sp.factor_weights(picked),
-            "조심할부위": sp.care_parts(picked)}
+    try:
+        return {"선택": sp.resolve(picked),
+                "체력요인": sp.factor_weights(picked),
+                "조심할부위": sp.care_parts(picked)}
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
 
 
 @app.get("/program/purposes")

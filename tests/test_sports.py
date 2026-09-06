@@ -129,3 +129,37 @@ def test_조심할_부위를_같이_알려준다():
     r = _routine(sports="running,marathon")
     assert "무릎" in r["조심할부위"]
     assert r["고른종목"] == ["러닝", "마라톤"]
+
+
+# --- 종목 데이터가 없을 때 ---
+# 종목은 곁가지 기능이다. sports.json 이 없다고 해서 루틴이 안 나오면 안 된다.
+
+@pytest.fixture
+def 종목데이터_없음(monkeypatch):
+    """sports.json 이 없는 상황을 만든다. 캐시도 비워야 실제로 읽으러 간다."""
+    def 없다(name):
+        raise FileNotFoundError(f"{name} 을(를) 찾을 수 없습니다.")
+
+    monkeypatch.setattr(sp, "find_data", 없다)
+    monkeypatch.setattr(sp, "_data", None)
+    yield
+    sp._data = None
+
+
+def test_종목을_안_골랐으면_데이터가_없어도_루틴이_나온다(종목데이터_없음):
+    """고르지 않은 사람에게까지 종목 데이터를 강요하지 않는다."""
+    r = c.get("/program/routine", params={"age_gbn": "성인", "purpose": "다이어트"})
+    assert r.status_code == 200
+    assert r.json()["steps"]
+
+
+def test_종목을_골랐는데_데이터가_없으면_404로_알려준다(종목데이터_없음):
+    """500 으로 터지지 말고, 어디에 파일을 두라는 안내가 그대로 나가야 한다."""
+    r = c.get("/program/routine",
+              params={"age_gbn": "성인", "purpose": "다이어트", "sports": "running"})
+    assert r.status_code == 404
+
+
+def test_종목_목록도_데이터가_없으면_404다(종목데이터_없음):
+    assert c.get("/sports").status_code == 404
+    assert c.get("/sports/summary", params={"ids": "running"}).status_code == 404

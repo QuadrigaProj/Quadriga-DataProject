@@ -146,6 +146,11 @@
   .peer-bar > b{ position:absolute; top:-3px; width:2px; height:13px; background:var(--muted); }
   .peer-row-detail{ font-size:11.5px; color:var(--muted); margin-top:5px; }
   .peer-foot{ font-size:11.5px; color:var(--muted); margin-top:14px; line-height:1.5; }
+  /* 가장 좋은 항목 ▲ · 가장 부족한 항목 ▼ (B3) */
+  .peer-badge{ font-size:11px; margin-left:3px; vertical-align:1px; }
+  .peer-badge.up{ color:var(--pine); }
+  .peer-badge.down{ color:var(--clay); }
+  #peerRows .peer-row:first-child{ margin-top:0; }
 
   /* ===================== SCREEN 2 : 목적 선택 ===================== */
   .purpose-grid{ display:flex; flex-direction:column; gap:10px; margin-top:18px; }
@@ -781,7 +786,6 @@
   <section class="screen" id="s1">
     <div class="dots"><div class="dot done"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="content">
-      <div class="eyebrow">첫 점검</div>
       <h1 class="title" id="s1Title">집에서 잴 수 있는 것만<br/>측정할게요</h1>
       <p class="sub" id="s1Sub">정확한 값이 아니어도 괜찮아요. 3개월마다 다시 잴 수 있어요.</p>
 
@@ -920,25 +924,13 @@
       <div id="resultBlock" class="result-block" style="display:none;">
         <div class="eyebrow">당신의 체력나이</div>
         <div class="result-age"><span class="num" id="ageResult">78</span>세</div>
-        <div class="result-ci" id="ciNote">참고용 추정치</div>
-        <div class="ci-scale">
-          <div class="ci-track"></div>
-          <div class="ci-band" id="ciBand" style="left:35%; width:30%;"></div>
-          <div class="ci-dot" style="left:calc(50% - 7px);"></div>
-          <div class="ci-label" id="ciLow" style="left:35%;">76</div>
-          <div class="ci-label" id="ciMid" style="left:50%;">78</div>
-          <div class="ci-label" id="ciHigh" style="left:65%;">80</div>
-        </div>
-        <div class="ci-caption" id="ciCaption"></div>
+        <div class="peer-rank" id="peerRank" style="display:none; margin-top:12px;">—</div>
         <div class="focus-area" id="focusArea" style="display:none;"></div>
       </div>
 
       <div id="peerBlock" class="peer-block" style="display:none;">
-        <div class="eyebrow">또래와 비교</div>
-        <div class="peer-rank" id="peerRank">—</div>
-        <div class="peer-sub" id="peerRankSub"></div>
         <div id="peerRows"></div>
-        <div class="peer-foot" id="peerFoot"></div>
+        <div class="peer-foot" id="peerFoot">국민체력100 데이터 기준 (동일 성별·연령)</div>
       </div>
 
       <div id="homeGradeBlock" class="peer-block" style="display:none;">
@@ -957,7 +949,6 @@
   <section class="screen" id="s2">
     <div class="dots"><div class="dot done"></div><div class="dot done"></div><div class="dot"></div></div>
     <div class="content">
-      <div class="eyebrow">목적 선택</div>
       <h1 class="title">지금 가장 필요한 걸<br/>하나만 골라주세요</h1>
       <p class="sub">나중에 언제든 바꿀 수 있어요. 체력나이 계산 방식은 바뀌지 않아요.</p>
 
@@ -1067,7 +1058,6 @@
   <!-- ============ SCREEN 5 : 프로필 ============ -->
   <section class="screen" id="s5">
     <div class="content">
-      <div class="eyebrow">스포츠 프로필</div>
       <div class="profile-hero">
         <div>
           <div class="profile-age"><span class="num" id="profileAge">—</span>세</div>
@@ -1076,7 +1066,6 @@
       </div>
 
       <div style="margin-top:18px;" id="axisRows"></div>
-      <div class="ci-caption" id="axisNote"></div>
 
       <div class="guest-banner" id="guestBanner" style="display:none;">
         <b>지금은 게스트로 쓰고 있어요</b>
@@ -1113,18 +1102,12 @@
       </div>
 
       <div class="weak-card">
-        <div class="weak-kicker">집중 개선 영역</div>
-        <div class="weak-text" id="weakText">먼저 첫 점검을 마쳐주세요.</div>
+        <div class="weak-text" id="weakText" style="margin-top:0;">먼저 첫 점검을 마쳐주세요.</div>
         <div class="weak-arrow" id="weakArrow"></div>
-        <div class="calc-table" id="calcTable"></div>
       </div>
 
       <div class="program-card">
-        <div class="prescribe-label">지금부터</div>
-        <div class="program-note">
-          목표 나이를 미리 정하지 않아요. <b>3개월간 맞춤 운동</b>을 하고,
-          3개월 뒤 다시 측정해 <b>실제로 얼마나 바뀌었는지</b>를 확인합니다.
-        </div>
+        <div class="program-note" style="margin-top:0;">3개월간 맞춤 운동을 진행한 뒤, 다시 측정해 달라진 체력을 확인해보세요.</div>
       </div>
 
       <div class="program-card">
@@ -1161,7 +1144,6 @@
   <!-- ============ SCREEN 8 : 운동 고르기 ============ -->
   <section class="screen" id="s8">
     <div class="content">
-      <div class="eyebrow">운동 고르기</div>
       <h1 class="title">배우고 싶거나<br/>하고 싶은 운동을 골라주세요</h1>
       <p class="sub">여러 개 골라도 돼요. 고른 종목에 맞춰 루틴을 다듬어 드립니다.</p>
 
@@ -1186,7 +1168,6 @@
   <!-- ============ SCREEN 7 : 운동 기록 ============ -->
   <section class="screen" id="s7">
     <div class="content">
-      <div class="eyebrow">기록</div>
       <h1 class="title">지금까지 이렇게<br/>움직였어요</h1>
 
       <div class="rec-stats">
@@ -1222,7 +1203,6 @@
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
   <section class="screen" id="s6">
     <div class="content">
-      <div class="eyebrow">3개월 재점검</div>
       <h1 class="title">지난 3개월, 이렇게 바뀌었어요</h1>
 
       <div class="compare-wrap">
@@ -2369,32 +2349,13 @@ function renderResult(){
   const r = state.result;
   paintGauges();
   const age = Math.round(r.체력나이);
-  const ci = r.신뢰구간 ?? 0;
-
   $('ageResult').textContent = age;
-  $('ciLow').textContent  = Math.round(r.체력나이 - ci);
-  $('ciMid').textContent  = age;
-  $('ciHigh').textContent = Math.round(r.체력나이 + ci);
 
-  // 편차가 클수록 띠도 넓게 그린다 (±1세 ≈ 6%)
-  const width = Math.min(72, Math.max(10, ci * 12));
-  const band = $('ciBand');
-  band.style.width = width + '%';
-  band.style.left = (50 - width/2) + '%';
-  $('ciLow').style.left  = (50 - width/2) + '%';
-  $('ciHigh').style.left = (50 + width/2) + '%';
-
-  $('ciNote').textContent = (isGrowth() ? '발달 수준 · 항목 간 편차 ±' : '참고용 추정치 · 항목 간 편차 ±') + `${ci}세`;
-
-  $('ciCaption').textContent = (r.해석 ? r.해석 + ' ' : '') +
-    (ci >= 5 ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있으니 한 숫자보다 폭으로 봐주세요.' : '');
-
-  // 집중 개선 영역 — 한 항목이 또래보다 크게 처져도 체력나이엔 조금만 반영하고, 여기서 따로 짚어준다
+  // 집중 개선 영역 — 프로필 카드(A3)와 같은 두 줄 형태로만 짧게 짚는다
   const focus = r.집중개선영역 || [];
   const fa = $('focusArea');
   if (focus.length) {
-    fa.innerHTML = `<b>집중 개선 영역: ${focus.join(' · ')}</b><br/>` +
-      `이 항목이 또래보다 많이 부족해요. 체력나이엔 과하게 반영하지 않고, 3개월 프로그램에서 우선 채웁니다.`;
+    fa.innerHTML = `<b>집중 개선 영역: ${focus.join(' · ')}</b><br/>3개월 프로그램이 이 항목 중심으로 구성됩니다.`;
     fa.style.display = 'block';
   } else {
     fa.style.display = 'none';
@@ -2402,14 +2363,26 @@ function renderResult(){
 
   renderPeerComparison(r);
 
-  const diff = age - state.age;
   $('resultBlock').style.display = 'block';
   $('nextBtn1').style.display = 'block';
   $('calcBtn').style.display = 'none';
   $('greetName').textContent = state.user ? `${state.user} 님` : '반가워요';
-  $('greetSub').textContent = isGrowth()
-    ? (diff >= 0 ? `또래보다 ${diff}세 앞서 있어요` : `또래보다 ${Math.abs(diff)}세 뒤처져 있어요`)
-    : (diff <= 0 ? `또래보다 ${Math.abs(diff)}세 젊어요` : `또래보다 ${diff}세 높아요`);
+  $('greetSub').textContent = peerAgeText(age - state.age);
+}
+
+/* A4: (체력나이 − 실제 나이) 를 또래 기준으로 읽어준다. 계산값은 그대로, 표현만 바꾼다.
+   또래 기준값은 백엔드가 p50 중앙값을 쓰므로(B5) 문구도 "또래 중앙값" 으로 통일한다.
+   성장기는 숫자가 높을수록 앞선 것이라 방향 표현이 반대다. diff 는 정수(반올림 체력나이 − 나이). */
+function peerAgeText(diff){
+  const n = Math.abs(diff);
+  if (isGrowth()) {
+    if (diff > 0) return `발달 수준이 또래 중앙값보다 ${n}세 앞서요.`;
+    if (diff < 0) return `발달 수준이 또래 중앙값보다 ${n}세 뒤처져요.`;
+    return '발달 수준이 또래 중앙값과 비슷해요.';
+  }
+  if (diff > 0) return `신체 나이가 또래 중앙값보다 ${n}세 높게 나왔어요.`;
+  if (diff < 0) return `신체 나이가 또래 중앙값보다 ${n}세 낮게 나왔어요.`;
+  return '신체 나이가 또래 중앙값과 비슷해요.';
 }
 
 /* ---------------------------------------------------------------------------
@@ -2430,57 +2403,47 @@ function posLabel(pct){
 
 function renderPeerComparison(r){
   const block = $('peerBlock');
+  const rankEl = $('peerRank');
   const entries = Object.entries(r.또래비교 || {});
   const ranked = entries.filter(([, v]) => typeof v.백분위 === 'number');
 
   if (!ranked.length) {                         // 오프라인 예시값 등 — 비교 데이터 없음
     block.style.display = 'none';
+    rankEl.style.display = 'none';
     return;
   }
   block.style.display = 'block';
+  rankEl.style.display = 'block';
 
-  // 종합 등수: 측정한 항목들의 백분위 평균
+  // 종합 등수: 측정한 항목들의 백분위 평균 (계산은 기존 그대로)
   const avgPct = ranked.reduce((a, [, v]) => a + v.백분위, 0) / ranked.length;
   const nRef = Math.max(...ranked.map(([, v]) => v.표본수));
   const myRank = Math.max(1, Math.round((100 - avgPct) / 100 * nRef));
-
-  const best  = ranked.reduce((a, b) => b[1].백분위 > a[1].백분위 ? b : a);
-  const worst = ranked.reduce((a, b) => b[1].백분위 < a[1].백분위 ? b : a);
-
-  $('peerRank').innerHTML =
+  rankEl.innerHTML =
     `또래 ${fmtInt(nRef)}명 중<br/><span class="big">약 ${fmtInt(myRank)}등</span> (${posLabel(avgPct)})`;
-  $('peerRankSub').textContent = ranked.length > 1
-    ? `가장 앞선 항목은 ${best[0]}, 가장 처지는 항목은 ${worst[0]}이에요.`
-    : `${best[0]} 기준이에요.`;
 
-  const unitOf = (v) => (v.항목 || '').includes('멀리뛰기') ? 'cm'
-                      : (v.항목 || '').includes('BMI') ? '' : '';
-  const rows = entries.map(([name, v]) => {
-    if (typeof v.백분위 !== 'number') {          // 체성분(BMI)
-      const gap = v.또래대비 ?? (v.내기록 - v.또래중앙값);
-      const dir = gap > 0 ? '높아요' : gap < 0 ? '낮아요' : '같아요';
+  // 가장 좋은 항목 ▲ · 가장 부족한 항목 ▼ — 항목이 둘 이상일 때만 (B3)
+  const best  = ranked.reduce((a, b) => b[1].백분위 > a[1].백분위 ? b : a)[0];
+  const worst = ranked.reduce((a, b) => b[1].백분위 < a[1].백분위 ? b : a)[0];
+  const badge = (name) => ranked.length < 2 ? ''
+    : name === best  ? ' <span class="peer-badge up">▲</span>'
+    : name === worst ? ' <span class="peer-badge down">▼</span>' : '';
+
+  const unitOf = (v) => (v.항목 || '').includes('멀리뛰기') ? 'cm' : '';
+  $('peerRows').innerHTML = entries.map(([name, v]) => {
+    if (typeof v.백분위 !== 'number') {          // 체성분(BMI) — 순위 대신 값과 또래 중앙값 (B3)
       return `<div class="peer-row">
-        <div class="peer-row-head"><span class="peer-row-name">${name}</span>
-          <span class="peer-row-pct">또래보다 ${Math.abs(gap).toFixed(1)} ${dir}</span></div>
-        <div class="peer-row-detail">내 BMI ${v.내기록} · 또래 중앙값 ${v.또래중앙값} (${v.비교구간})</div>
+        <div class="peer-row-head"><span class="peer-row-name">${name} (BMI)</span></div>
+        <div class="peer-row-detail">${v.내기록} / 또래 중앙값 ${v.또래중앙값}</div>
       </div>`;
     }
-    const pct = v.백분위;
-    const rank = Math.max(1, Math.round((100 - pct) / 100 * v.표본수));
     const u = unitOf(v);
     return `<div class="peer-row">
-      <div class="peer-row-head"><span class="peer-row-name">${name}</span>
-        <span class="peer-row-pct">${posLabel(pct)}</span></div>
-      <div class="peer-bar"><i style="width:${Math.max(3, Math.min(100, pct))}%"></i><b style="left:50%"></b></div>
-      <div class="peer-row-detail">${fmtInt(v.표본수)}명 중 약 ${fmtInt(rank)}등 · 내 기록 ${v.내기록}${u} · 또래 중앙값 ${v.또래중앙값}${u}</div>
+      <div class="peer-row-head"><span class="peer-row-name">${name}${badge(name)}</span>
+        <span class="peer-row-pct">${posLabel(v.백분위)}</span></div>
+      <div class="peer-row-detail">내 기록 ${v.내기록}${u} / 또래 중앙값 ${v.또래중앙값}${u}</div>
     </div>`;
   }).join('');
-  $('peerRows').innerHTML = rows;
-
-  const 구간 = ranked[0][1].비교구간;
-  const 성별 = state.sex === 'F' ? '여성' : '남성';
-  $('peerFoot').textContent =
-    `국민체력100 공개 데이터 기준 · 같은 ${성별}, 비교 연령구간 ${구간} · 막대 가운데 선은 또래 중앙값이에요.`;
 }
 
 /* ---- 화면 2 : 목적 ---- */
@@ -2782,14 +2745,14 @@ function renderProfile(){
   const r = state.result;
   if (!r) return;
   $('profileAge').textContent = Math.round(r.체력나이);
-  $('profileSub').textContent = `체력나이 · 만 ${state.age}세 기준 · 항목 간 편차 ±${r.신뢰구간}세`;
+  $('profileSub').textContent = `체력나이 · 만 ${state.age}세 기준`;
 
   const peers = r.또래비교 || {};
   $('axisRows').innerHTML = Object.entries(r.항목별).map(([k,v],i,arr)=>{
     const pr = peers[k];
     // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
     const 값 = (k === '체성분' && pr)
-      ? `BMI ${pr.내기록} · 또래 ${pr.또래중앙값}`
+      ? `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`
       : `${v}세 수준`;
     const 오른쪽 = (k === '체성분' && pr)
       ? `<div class="stars" style="font-size:13px;color:var(--muted)">${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}</div>`
@@ -2800,37 +2763,18 @@ function renderProfile(){
       ${오른쪽}
     </div>`;
   }).join('');
-  $('axisNote').textContent =
-    '공개 데이터로 잴 수 있는 항목만 표시합니다. 평형성·민첩성은 자가 측정이 어려워 아직 넣지 않았어요.';
 
-  // 집중 개선 영역 — 서버가 극단적으로 부족하다고 표시한 항목이 있으면 그것,
-  // 없으면 약점(개선 효과가 가장 큰 항목)을 안내한다. 목표 나이는 약속하지 않는다.
+  // 집중 개선 영역 (A3) — 서버가 극단적으로 부족하다고 표시한 항목이 있으면 그것,
+  // 없으면 약점(개선 효과가 가장 큰 항목). 항목명은 계산 결과에서 동적으로 온다.
   const focus = r.집중개선영역 || [];
-  const w = r.약점;
-
-  if (focus.length) {
-    $('weakText').innerHTML = `또래보다 특히 처지는 건<br/><b>${focus.join(' · ')}</b>이에요.`;
-    $('weakArrow').textContent = '3개월 프로그램이 이 항목부터 집중해서 채웁니다.';
-  } else if (w) {
-    $('weakText').innerHTML = `지금 가장 먼저 채우면 좋은 건<br/><b>${w.약점}</b>이에요.`;
-    $('weakArrow').textContent = w.기준 === '또래 백분위'
-      ? `${w.약점} 또래 상위 ${Math.round(100 - w.백분위)}%`
-      : '3개월 프로그램이 이 항목 중심으로 구성됩니다.';
+  const target = focus.length ? focus.join(' · ') : (r.약점 ? r.약점.약점 : '');
+  if (target) {
+    $('weakText').textContent = `집중 개선 영역: ${target}`;
+    $('weakArrow').textContent = '3개월 프로그램이 이 항목 중심으로 구성됩니다.';
   } else {
     $('weakText').textContent = '측정 항목이 하나뿐이라 비교가 어려워요.';
     $('weakArrow').textContent = '';
   }
-
-  // 항목별 현재 수준(또래 대비)을 표로 — "무엇을 얼마나 개선하면 몇 세" 는 더 이상 약속하지 않는다
-  $('calcTable').innerHTML = Object.entries(r.항목별)
-    .map(([k, v]) => {
-      const pr = peers[k];
-      const 우 = pr && typeof pr.백분위 === 'number'
-        ? `또래 ${posLabel(pr.백분위)}`
-        : (pr ? `또래 대비 ${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}` : `${v}세 수준`);
-      return `<div class="calc-row"><span>${k}${focus.includes(k) ? ' ★' : ''}</span><span>${우}</span></div>`;
-    })
-    .join('');
 }
 
 /* ---- 화면 6 : 재점검 ---- */

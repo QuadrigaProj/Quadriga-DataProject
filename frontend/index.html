@@ -314,6 +314,60 @@
     margin-top:14px; background:var(--amber-tint); color:var(--clay);
     border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.55;
   }
+  /* ---- 상단 바 : 로고(→메인) + 계정 ---- */
+  .appbar{
+    display:none; align-items:center; gap:10px;
+    padding:12px 14px 12px 16px;
+    border-bottom:1px solid var(--line); background:var(--paper);
+    position:relative; z-index:30; flex-shrink:0;
+  }
+  .appbar.on{ display:flex; }
+  .brand{
+    display:flex; align-items:center; gap:9px;
+    background:none; border:none; padding:4px 6px 4px 0; margin:0;
+    font:inherit; color:var(--ink); cursor:pointer; border-radius:10px;
+  }
+  .brand:hover{ background:var(--bg); }
+  .brand img{ width:28px; height:28px; display:block; }
+  .brand span{ font-size:15.5px; font-weight:800; letter-spacing:-0.02em; }
+  .acct-btn{
+    margin-left:auto; background:none; border:none; padding:0; cursor:pointer;
+    border-radius:50%; line-height:0;
+  }
+  .acct-avatar{
+    width:34px; height:34px; border-radius:50%;
+    background:var(--pine); color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:700; letter-spacing:0;
+  }
+  .acct-avatar.big{ width:44px; height:44px; font-size:17px; }
+  .acct-btn[aria-expanded="true"] .acct-avatar{ box-shadow:0 0 0 3px var(--pine-tint); }
+
+  .acct-panel{
+    display:none; position:absolute; top:calc(100% + 8px); right:12px;
+    width:250px; background:var(--paper);
+    border:1px solid var(--line); border-radius:16px;
+    box-shadow:0 10px 30px rgba(32,38,31,0.13);
+    padding:16px; z-index:40;
+  }
+  .acct-panel.open{ display:block; }
+  .acct-head{ display:flex; align-items:center; gap:11px; }
+  .acct-name{ font-size:15px; font-weight:700; letter-spacing:-0.01em;
+              word-break:break-all; }
+  .acct-via{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .acct-rows{ margin:14px 0 0; padding:12px 0 0; border-top:1px solid var(--line); }
+  .acct-row{ display:flex; justify-content:space-between; gap:10px;
+             font-size:13px; padding:5px 0; }
+  .acct-row dt{ color:var(--muted); flex-shrink:0; }
+  .acct-row dd{ margin:0; text-align:right; font-weight:600; }
+  .acct-empty{ font-size:12.5px; color:var(--muted); line-height:1.6; }
+  .acct-logout{
+    width:100%; margin-top:14px; padding:10px 0;
+    border:1px solid var(--line); border-radius:10px; background:var(--bg);
+    font:inherit; font-size:13.5px; color:var(--ink); cursor:pointer;
+  }
+  .acct-logout:hover{ background:var(--pine-tint); }
+
   .statusbar{
     background:var(--amber-tint); color:var(--clay); font-size:12.5px;
     padding:8px 14px; text-align:center; border-bottom:1px solid var(--line);
@@ -412,6 +466,31 @@
 <div class="device">
 
   <div class="statusbar" id="statusBar" style="display:none;"></div>
+
+  <!-- ============ 상단 바 (로그인 후 모든 화면) ============ -->
+  <header class="appbar" id="appbar">
+    <button class="brand" onclick="goHome()" title="메인 화면으로">
+      <img src="/img/logo-mark.svg" alt="" />
+      <span>체력나이</span>
+    </button>
+
+    <button class="acct-btn" id="acctBtn" aria-expanded="false" aria-haspopup="dialog"
+            title="내 계정" onclick="toggleAccount(event)">
+      <span class="acct-avatar" id="acctAvatar">·</span>
+    </button>
+
+    <div class="acct-panel" id="acctPanel" role="dialog" aria-label="내 계정">
+      <div class="acct-head">
+        <span class="acct-avatar big" id="acctAvatarBig">·</span>
+        <div>
+          <div class="acct-name" id="acctName">—</div>
+          <div class="acct-via" id="acctVia">—</div>
+        </div>
+      </div>
+      <dl class="acct-rows" id="acctRows"></dl>
+      <button class="acct-logout" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
 
   <!-- ============ SCREEN 1 : 첫 점검 ============ -->
   <!-- ============ SCREEN 0 : 로그인 ============ -->
@@ -785,6 +864,7 @@
 const state = {
   user: null,          // 표시 이름
   account: false,      // true = 서버 계정(기기 간 이어보기), false = 이 기기에만 저장
+  provider: null,      // 'google' | 'naver' | 'kakao' | 'password' | 'device'
   age: null, sex: 'M', ageGbn: '성인',
   flexibility: null, strength: null, height: null, weight: null,
   purpose: null,
@@ -817,6 +897,75 @@ function ageGroup(age) {
 }
 
 function $(id) { return document.getElementById(id); }
+
+/* ---------------------------------------------------------------------------
+   상단 바 — 로고(→메인)와 계정
+   --------------------------------------------------------------------------- */
+
+const PROVIDER_LABEL = {
+  google: '구글로 로그인', naver: '네이버로 로그인', kakao: '카카오로 로그인',
+  password: '이메일로 로그인', device: '이 기기에만 저장',
+};
+const SEX_LABEL = { M: '남성', F: '여성' };
+
+/* 로고를 누르면 돌아갈 곳. 점검 결과가 있으면 홈, 없으면 첫 점검. */
+function goHome(){
+  closeAccount();
+  if (!state.user) { goTo('s0'); return; }
+  goTo(state.result ? 's3' : 's1');
+}
+
+function toggleAccount(ev){
+  if (ev) ev.stopPropagation();
+  const panel = $('acctPanel');
+  if (panel.classList.contains('open')) { closeAccount(); return; }
+  renderAccount();
+  panel.classList.add('open');
+  $('acctBtn').setAttribute('aria-expanded', 'true');
+}
+
+function closeAccount(){
+  const panel = $('acctPanel');
+  if (!panel) return;
+  panel.classList.remove('open');
+  $('acctBtn').setAttribute('aria-expanded', 'false');
+}
+
+/* 패널 바깥을 누르면 닫는다 */
+document.addEventListener('click', (e) => {
+  const panel = $('acctPanel');
+  if (panel && panel.classList.contains('open') && !panel.contains(e.target)) closeAccount();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAccount(); });
+
+function renderAccount(){
+  const initial = (state.user || '·').trim().charAt(0) || '·';
+  $('acctAvatar').textContent = initial;
+  $('acctAvatarBig').textContent = initial;
+  $('acctName').textContent = state.user || '—';
+  $('acctVia').textContent = PROVIDER_LABEL[state.provider] || '이 기기에만 저장';
+
+  // 사용자가 직접 입력한 값만 보여준다. 아직 안 넣었으면 그 줄은 빼고 안내를 띄운다.
+  const rows = [];
+  if (state.age)     rows.push(['나이', `만 ${state.age}세`]);
+  if (state.sex)     rows.push(['성별', SEX_LABEL[state.sex] || state.sex]);
+  if (state.purpose) rows.push(['운동 단계', PURPOSE_LABEL[state.purpose] || state.purpose]);
+
+  $('acctRows').innerHTML = rows.length
+    ? rows.map(([k, v]) =>
+        `<div class="acct-row"><dt>${k}</dt><dd>${v}</dd></div>`).join('')
+    : '<div class="acct-empty">아직 입력한 정보가 없어요.<br/>첫 점검을 마치면 여기에 표시됩니다.</div>';
+}
+
+/* 로그인 화면(s0)에서는 상단 바를 감춘다 — 그 화면엔 이미 큰 로고가 있다. */
+function syncAppbar(screenId){
+  const bar = $('appbar');
+  if (!bar) return;
+  const show = screenId !== 's0' && !!state.user;
+  bar.classList.toggle('on', show);
+  if (show) $('acctAvatar').textContent = (state.user || '·').trim().charAt(0) || '·';
+  else closeAccount();
+}
 
 /* ---------------------------------------------------------------------------
    로그인 — 비밀번호를 받지 않는다.
@@ -866,7 +1015,7 @@ async function submitAuth(){
     if (authMode === 'signup') body.display_name = $('authName').value.trim() || null;
     const r = authMode === 'signup' ? await API.signup(body) : await API.signin(body);
     $('authPw').value = '';
-    await enterAsAccount(r.이름);
+    await enterAsAccount(r.이름, 'password');
   } catch (e) {
     authError(e.message);
   } finally {
@@ -875,9 +1024,10 @@ async function submitAuth(){
 }
 
 /* 서버 계정으로 들어간다. 기록은 서버에서 받아오므로 다른 기기에서도 이어진다. */
-async function enterAsAccount(name){
+async function enterAsAccount(name, provider){
   state.user = name;
   state.account = true;
+  state.provider = provider || 'password';
   let latest = null;
   try {
     const r = await API.myMeasurements();
@@ -1000,6 +1150,7 @@ function loginLocal(name){
   $('loginErr').style.display = 'none';
   state.user = id;
   state.account = false;
+  state.provider = 'device';
   applyProfile(readProfiles()[id]);
   saveProfile();
 }
@@ -1019,6 +1170,7 @@ async function doDelete(){
   cancelDelete();
   state.user = null;
   state.account = false;
+  state.provider = null;
   state.result = null;
   state.first = null;
   state.purpose = null;
@@ -1033,6 +1185,7 @@ async function logout(){
   if (state.account) { try { await API.signout(); } catch (e) {} }
   state.user = null;
   state.account = false;
+  state.provider = null;
   state.result = null;
   state.first = null;
   state.purpose = null;
@@ -1058,6 +1211,7 @@ async function resetSettings(){
 
   state.user = null;
   state.account = false;
+  state.provider = null;
   state.result = null;
   state.first = null;
   state.purpose = null;
@@ -1080,6 +1234,8 @@ function setStatus(msg) {
 function goTo(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
+  syncAppbar(id);
+  closeAccount();
   document.querySelector('.device').scrollTop = 0;
   const content = $(id).querySelector('.content');
   if(content) content.scrollTop = 0;
@@ -1633,7 +1789,7 @@ async function renderRecheck(){
   // 이미 로그인된 세션이 있으면 바로 들어간다 (다른 기기에서도 동일)
   try {
     const me = await API.me();
-    if (me.로그인) await enterAsAccount(me.이름);
+    if (me.로그인) await enterAsAccount(me.이름, me.수단);
   } catch (e) {}
 
   const h = await API.health();

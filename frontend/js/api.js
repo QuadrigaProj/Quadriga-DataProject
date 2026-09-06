@@ -48,6 +48,7 @@ const API = (() => {
     fitnessAge: (m) => post('/fitness-age', m),
     recheck: (before, after) => post('/recheck', { 이전: before, 현재: after }),
     routine: (q) => call('/routine?' + qs(q)),
+    videoRoutine: (q) => call('/video-routine?' + qs(q)),
     purposes: () => call('/purposes'),
     daily: (q) => call('/daily?' + qs(q)),
     videos: (q) => call('/videos?' + qs(q)),

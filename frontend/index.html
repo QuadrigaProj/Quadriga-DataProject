@@ -4,7 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>체력나이 — 일상 운동 루틴 처방</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ctext y=%2726%27 font-size=%2726%27%3E%F0%9F%8F%83%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="/img/logo-180.png" />
+<meta name="theme-color" content="#EDEFE6" />
 <style>
   :root{
     --bg:#EDEFE6;
@@ -325,11 +327,26 @@
 
   /* --- 로그인 --- */
   .login{ flex:1; display:flex; flex-direction:column; justify-content:center; padding:40px 26px; }
-  .login-mark{
-    width:56px; height:56px; border-radius:18px; background:var(--pine);
-    color:#fff; display:flex; align-items:center; justify-content:center;
-    font-size:26px; margin-bottom:22px;
+  .login-mark{ width:60px; height:60px; display:block; margin-bottom:20px; }
+  .policy-links{
+    margin-top:26px; text-align:center; font-size:12px; color:var(--muted);
   }
+  .policy-links a{ color:var(--muted); text-decoration:underline; }
+  .danger-row{ margin-top:14px; text-align:center; }
+  .danger-row button{
+    background:none; border:none; font:inherit; font-size:12.5px;
+    color:var(--muted); text-decoration:underline; cursor:pointer; padding:6px;
+  }
+  .danger-confirm{
+    display:none; margin-top:10px; padding:14px 16px; border-radius:12px;
+    background:var(--amber-tint); font-size:13px; line-height:1.6; text-align:left;
+  }
+  .danger-confirm .row{ display:flex; gap:8px; margin-top:10px; }
+  .danger-confirm button{
+    flex:1; padding:9px 0; border-radius:9px; border:1px solid var(--line);
+    background:var(--paper); font:inherit; font-size:13px; cursor:pointer;
+  }
+  .danger-confirm .go{ background:var(--clay); border-color:var(--clay); color:#fff; }
   .login-title{ font-size:26px; font-weight:800; line-height:1.3; letter-spacing:-0.02em; }
   .login-sub{ font-size:14.5px; color:var(--muted); line-height:1.6; margin-top:10px; }
   .login-form{ margin-top:28px; }
@@ -400,7 +417,7 @@
   <!-- ============ SCREEN 0 : 로그인 ============ -->
   <section class="screen active" id="s0">
     <div class="login">
-      <div class="login-mark">🏃</div>
+      <img class="login-mark" src="/img/logo-mark.svg" alt="체력나이" />
       <h1 class="login-title">체력나이로<br/>오늘 할 운동을 정해요</h1>
       <p class="login-sub">국민체력100 공개 데이터로 또래와 비교합니다.<br/>3분이면 첫 점검이 끝나요.</p>
 
@@ -447,6 +464,11 @@
       </div>
 
       <div class="profile-list" id="profileList" style="display:none;"></div>
+
+      <div class="policy-links">
+        <a href="/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a> ·
+        <a href="/terms" target="_blank" rel="noreferrer">이용약관</a>
+      </div>
     </div>
   </section>
 
@@ -692,6 +714,20 @@
     </div>
 
     <div class="logout-row"><button onclick="logout()">로그아웃 · 다른 계정으로 전환</button></div>
+    <div class="danger-row" id="dangerRow" style="display:none;">
+      <button onclick="askDelete()">계정 삭제</button>
+      <div class="danger-confirm" id="deleteBox">
+        계정과 지금까지의 <b>측정 기록이 모두 삭제</b>됩니다. 되돌릴 수 없어요.
+        <div class="row">
+          <button onclick="cancelDelete()">취소</button>
+          <button class="go" onclick="doDelete()">삭제할게요</button>
+        </div>
+      </div>
+    </div>
+    <div class="policy-links">
+      <a href="/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a> ·
+      <a href="/terms" target="_blank" rel="noreferrer">이용약관</a>
+    </div>
     <div class="reset-row"><button onclick="resetSettings()">설정 초기화</button></div>
 
     <div class="tabbar">
@@ -885,6 +921,13 @@ function snapshot(){
   };
 }
 
+/* 서버 계정으로 들어왔을 때만 '계정 삭제' 를 노출한다.
+   기기 전용 프로필은 지울 서버 계정이 없다. */
+function syncDangerRow(){
+  const row = $('dangerRow');
+  if (row) row.style.display = state.account ? 'block' : 'none';
+}
+
 /* 계정이면 서버에, 아니면 이 브라우저에 저장한다. */
 async function saveProfile(){
   if (!state.user) return;
@@ -961,6 +1004,30 @@ function loginLocal(name){
   saveProfile();
 }
 
+/* 계정 삭제 — 서버에 저장된 계정과 측정 기록을 전부 지운다.
+   되돌릴 수 없으므로 인라인 확인 단계를 한 번 거친다. */
+function askDelete(){ $('deleteBox').style.display = 'block'; }
+function cancelDelete(){ $('deleteBox').style.display = 'none'; }
+
+async function doDelete(){
+  try {
+    await API.deleteAccount();
+  } catch (e) {
+    alert('삭제하지 못했습니다: ' + e.message);
+    return;
+  }
+  cancelDelete();
+  state.user = null;
+  state.account = false;
+  state.result = null;
+  state.first = null;
+  state.purpose = null;
+  $('authEmail').value = '';
+  $('authPw').value = '';
+  renderProfileList();
+  goTo('s0');
+}
+
 async function logout(){
   await saveProfile();
   if (state.account) { try { await API.signout(); } catch (e) {} }
@@ -1019,7 +1086,7 @@ function goTo(id){
   if(id === 's2') renderPurpose();
   if(id === 's3') loadHome();
   if(id === 's4') resetRoutine();
-  if(id === 's5') renderProfile();
+  if(id === 's5') { renderProfile(); syncDangerRow(); cancelDelete(); }
   if(id === 's6') renderRecheck();
 }
 

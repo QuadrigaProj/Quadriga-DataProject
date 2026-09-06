@@ -1,0 +1,7 @@
+# src/build_distribution.py 의 산출물이 여기에 저장됩니다.
+#   fitness_distribution.csv  — 연령군×성별×연령구간×항목별 분포
+#   exercise_freq.csv         — 연령군×성별×단계별 처방 빈도
+#
+# 두 파일 모두 .gitignore 대상입니다. 원본에서 재생성하세요.
+#   python scripts/collect_measurements.py --sample 450
+#   python src/build_distribution.py

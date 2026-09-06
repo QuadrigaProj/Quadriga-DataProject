@@ -81,11 +81,15 @@ PROVIDERS = {
         "authorize": "https://kauth.kakao.com/oauth/authorize",
         "token": "https://kauth.kakao.com/oauth/token",
         "profile": "https://kapi.kakao.com/v2/user/me",
-        # 이메일(account_email)은 카카오 콘솔에서 동의항목을 켜도 일반 앱에서는
-        # 별도 검수를 받아야 요청할 수 있다. 안 받은 상태로 요청하면 KOE205 가 난다.
-        # 닉네임만 받아도 로그인은 성립한다 (계정 키는 카카오 회원번호다).
-        # 검수를 통과하면 KAKAO_SCOPE 에 "profile_nickname account_email" 을 넣으면 된다.
-        "scope": "profile_nickname",
+        # 카카오는 scope 를 아예 보내지 않는 것이 기본이다.
+        #   - 콘솔에서 "필수 동의" 로 켠 항목(우리는 닉네임)은 자동으로 포함된다.
+        #     그걸 scope 에 또 적으면 카카오가 거부한다 (KOE206).
+        #   - 콘솔에서 설정하지 않은 항목을 적으면 KOE205 가 난다.
+        #     (이메일 account_email 은 일반 앱에서는 별도 검수 대상이다)
+        # 즉 동의 범위는 콘솔의 [카카오 로그인] > [동의항목] 이 정하고,
+        # 코드는 관여하지 않는다. 로그인 식별자는 카카오 회원번호라 닉네임만으로 충분하다.
+        # 나중에 선택 동의 항목을 추가로 요청해야 하면 KAKAO_SCOPE 환경변수에만 넣으면 된다.
+        "scope": "",
     },
 }
 
@@ -94,9 +98,12 @@ def scope_for(provider: str) -> str:
     """콘솔 설정에 맞춰 환경변수로 덮어쓸 수 있다.
 
     동의항목을 켜지 않았거나 검수를 안 받은 항목을 요청하면 제공자가 거부한다.
-    (카카오 KOE205 등) 그럴 때 코드를 고치지 않고 환경변수로 줄인다.
+    (카카오 KOE205·KOE206 등) 그럴 때 코드를 고치지 않고 환경변수로 줄인다.
+
+    빈 값이거나 공백뿐이면 scope 파라미터 자체를 빼고 보낸다.
+    콘솔에 설정해 둔 동의항목이 그대로 적용된다.
     """
-    return os.getenv(f"{provider.upper()}_SCOPE", PROVIDERS[provider]["scope"])
+    return (os.getenv(f"{provider.upper()}_SCOPE", PROVIDERS[provider]["scope"]) or "").strip()
 
 
 def client_config(provider: str) -> tuple[str | None, str | None]:

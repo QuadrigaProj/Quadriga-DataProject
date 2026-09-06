@@ -32,12 +32,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:                                        # 저장소 루트에서 실행할 때
     from backend import auth, daily, fitness_age as fa, prescription as pr, paths
     from backend import routine_player as rp
-    from backend import routines as rt
+    from backend import routines as rt, bodycomp as bc, hometest as ht, geo
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
     import routine_player as rp             # noqa: E402
     import routines as rt                   # noqa: E402
+    import bodycomp as bc                   # noqa: E402
+    import hometest as ht                   # noqa: E402
+    import geo                              # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -433,13 +436,85 @@ def get_program_purposes(age_gbn: ProgramAge | None = None) -> list[dict]:
     return out
 
 
+# ---------- 7c. InBody · 홈 체력측정 ----------
+
+class InBodyIn(BaseModel):
+    sex: Sex
+    age: float = Field(..., ge=4, le=110)
+    height_cm: float = Field(..., gt=0)
+    weight_kg: float = Field(..., gt=0)
+    skeletal_muscle_kg: float | None = Field(None, gt=0, description="골격근량")
+    body_fat_pct: float | None = Field(None, ge=0, le=70, description="체지방률 %")
+    waist_cm: float | None = Field(None, gt=0, description="허리둘레")
+    body_water_pct: float | None = Field(None, ge=0, le=90, description="체수분 % (선택)")
+
+
+@app.post("/bodycomp")
+def post_bodycomp(body: InBodyIn) -> dict:
+    """InBody 결과 → 체성분 분석 + (근거가 있으면) 추정 체력나이."""
+    _load()
+    return bc.analyze(
+        sex=body.sex, age=body.age, height_cm=body.height_cm, weight_kg=body.weight_kg,
+        skeletal_muscle_kg=body.skeletal_muscle_kg, body_fat_pct=body.body_fat_pct,
+        waist_cm=body.waist_cm, body_water_pct=body.body_water_pct, dist=_dist,
+    )
+
+
+class HomeTestIn(BaseModel):
+    sex: Sex
+    age: float = Field(..., ge=4, le=110)
+    height_cm: float = Field(..., gt=0)
+    weight_kg: float = Field(..., gt=0)
+    waist_cm: float | None = Field(None, gt=0)
+    jump_30s: float | None = Field(None, ge=0, description="30초 제자리 점프 (회)")
+    curlup_30s: float | None = Field(None, ge=0, description="30초 컬업 (회)")
+    knee_pushup_30s: float | None = Field(None, ge=0, description="30초 무릎 푸시업 (회)")
+    high_knee_2min: float | None = Field(None, ge=0, description="2분 하이니 (회)")
+
+
+@app.post("/hometest")
+def post_hometest(body: HomeTestIn) -> dict:
+    """홈 체력측정(약 4분) → 추정 체력나이 + 항목별 홈 등급 + 가장 부족한 요인."""
+    _load()
+    if _dist is None:
+        raise HTTPException(503, "분포 데이터가 없습니다. /health 참고")
+    return ht.evaluate(
+        _dist, sex=body.sex, age=body.age, height_cm=body.height_cm,
+        weight_kg=body.weight_kg, jump_30s=body.jump_30s, curlup_30s=body.curlup_30s,
+        knee_pushup_30s=body.knee_pushup_30s, high_knee_2min=body.high_knee_2min,
+        waist_cm=body.waist_cm,
+    )
+
+
 # ---------- 8. 인증센터 ----------
+
+BOOKING_URL = "https://nfa.kspo.or.kr/reserve/main.kspo"    # 국민체력100 공식 예약
+
 
 @app.get("/centers")
 def get_centers(lat: float | None = None, lon: float | None = None,
-                limit: int = Query(5, ge=1, le=50)) -> dict:
-    """가까운 체력인증센터. 좌표를 주면 거리순으로 정렬한다."""
-    return {"출처": "sample", "items": daily.centers(lat, lon, limit)}
+                region: str | None = Query(None, description="지하철역 또는 지역명"),
+                limit: int = Query(3, ge=1, le=50)) -> dict:
+    """가까운 체력인증센터.
+
+    좌표(lat/lon) 또는 region 문자열을 주면 직선거리순으로 정렬한다.
+    길찾기 API 가 없어 **도보 시간은 계산하지 않으며**, 예약은 공식 예약 페이지로 연결한다.
+    """
+    resolved = None
+    if lat is None and lon is None and region:
+        c = geo.geocode(region)
+        if c:
+            lat, lon, resolved = c[0], c[1], region
+    items = daily.centers(lat, lon, limit)
+    for it in items:
+        it["예약"] = BOOKING_URL
+    return {
+        "출처": "sample",
+        "기준좌표": {"위도": lat, "경도": lon, "입력": resolved} if lat is not None else None,
+        "지역인식실패": bool(region) and lat is None,
+        "안내": "직선거리 기준이에요. 도보 시간은 지도 앱에서 확인하세요. 예약은 국민체력100 공식 페이지에서 진행합니다.",
+        "items": items,
+    }
 
 
 # ===========================================================================

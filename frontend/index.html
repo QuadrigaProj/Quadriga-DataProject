@@ -89,6 +89,12 @@
     background:var(--paper); border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:20px; margin-top:18px;
   }
+  .measure-card[hidden], #homeExtra[hidden], #inbodyGroup[hidden], [hidden]{ display:none !important; }
+  .center-row{ display:flex; gap:8px; margin-top:12px; }
+  .center-row input{ flex:1; border:1.5px solid var(--line); border-radius:12px; padding:12px; font-size:15px; font-family:inherit; }
+  .center-row button{ border:none; background:var(--pine); color:#fff; border-radius:12px; padding:0 16px; font-weight:700; font-family:inherit; cursor:pointer; }
+  .center-item{ border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-top:8px; font-size:13px; }
+  .center-item a{ color:var(--pine-deep); font-weight:700; }
   .measure-head{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
   .measure-badge{
     width:34px; height:34px; border-radius:10px; background:var(--pine-tint); color:var(--pine-deep);
@@ -614,9 +620,15 @@
   <section class="screen" id="s1">
     <div class="dots"><div class="dot done"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="content">
-      <div class="eyebrow">첫 점검 · 3분이면 충분해요</div>
-      <h1 class="title">집에서 잴 수 있는 3가지만<br/>측정할게요</h1>
-      <p class="sub">정확한 값이 아니어도 괜찮아요. 체력나이는 3개월마다 다시 잴 수 있어요.</p>
+      <div class="eyebrow">첫 점검</div>
+      <h1 class="title" id="s1Title">집에서 잴 수 있는 것만<br/>측정할게요</h1>
+      <p class="sub" id="s1Sub">정확한 값이 아니어도 괜찮아요. 3개월마다 다시 잴 수 있어요.</p>
+
+      <div class="seg" id="methodSeg" style="margin-top:14px;">
+        <button type="button" class="on" data-m="self" onclick="selectMethod('self')">간단 자가측정</button>
+        <button type="button" data-m="home" onclick="selectMethod('home')">홈 체력측정</button>
+        <button type="button" data-m="inbody" onclick="selectMethod('inbody')">InBody</button>
+      </div>
 
       <!-- 기본 정보 -->
       <div class="measure-card">
@@ -689,6 +701,52 @@
           <input class="field-input" id="weightInput" type="number" placeholder="예: 61" />
           <div class="field-unit">kg</div>
         </div>
+        <div class="field-row" id="waistRow" hidden>
+          <input class="field-input" id="waistInput" type="number" placeholder="허리둘레 예: 82" />
+          <div class="field-unit">cm</div>
+        </div>
+      </div>
+
+      <!-- 홈 체력측정 추가 3종 -->
+      <div id="homeExtra" hidden>
+        <div class="measure-card">
+          <div class="measure-head"><div class="measure-badge">5</div>
+            <div><div class="measure-name">30초 제자리 점프</div>
+              <div class="measure-desc">두 발 모아 제자리에서 최대한 빠르게</div></div></div>
+          <div class="field-row"><input class="field-input" id="jumpInput" type="number" placeholder="예: 45" /><div class="field-unit">회</div></div>
+        </div>
+        <div class="measure-card">
+          <div class="measure-head"><div class="measure-badge">6</div>
+            <div><div class="measure-name">30초 무릎 푸시업</div>
+              <div class="measure-desc">무릎을 대고 팔굽혀펴기</div></div></div>
+          <div class="field-row"><input class="field-input" id="kneePushupInput" type="number" placeholder="예: 12" /><div class="field-unit">회</div></div>
+        </div>
+        <div class="measure-card">
+          <div class="measure-head"><div class="measure-badge">7</div>
+            <div><div class="measure-name">2분 제자리 높은 무릎 뛰기</div>
+              <div class="measure-desc">한쪽 무릎이 올라올 때마다 1회</div></div></div>
+          <div class="field-row"><input class="field-input" id="highKneeInput" type="number" placeholder="예: 90" /><div class="field-unit">회</div></div>
+        </div>
+      </div>
+
+      <!-- InBody 추가 항목 -->
+      <div id="inbodyGroup" hidden>
+        <div class="measure-card">
+          <div class="measure-head"><div class="measure-badge">5</div>
+            <div><div class="measure-name">InBody 결과지 입력</div>
+              <div class="measure-desc">결과지에 적힌 숫자를 그대로 넣어주세요</div></div></div>
+          <div class="field-row"><input class="field-input" id="smmInput" type="number" placeholder="골격근량 예: 30" /><div class="field-unit">kg</div></div>
+          <div class="field-row"><input class="field-input" id="bfpInput" type="number" placeholder="체지방률 예: 22" /><div class="field-unit">%</div></div>
+          <div class="field-row"><input class="field-input" id="tbwInput" type="number" placeholder="체수분(선택) 예: 55" /><div class="field-unit">%</div></div>
+        </div>
+      </div>
+
+      <div id="genericResult" class="peer-block" style="display:none;">
+        <div class="eyebrow" id="grKicker">결과</div>
+        <div class="peer-rank" id="grAge">—</div>
+        <div class="peer-sub" id="grSub"></div>
+        <div id="grRows" style="margin-top:10px;"></div>
+        <div class="peer-foot" id="grFoot"></div>
       </div>
 
       <div id="resultBlock" class="result-block" style="display:none;">
@@ -888,6 +946,16 @@
           3개월 뒤 다시 측정해 <b>실제로 얼마나 바뀌었는지</b>를 확인합니다.
         </div>
       </div>
+
+      <div class="program-card">
+        <div class="prescribe-label">더 정확한 체력 측정을 원한다면?</div>
+        <div class="program-note">가까운 국민체력100 체력인증센터에서 무료로 정밀 측정을 받을 수 있어요.</div>
+        <div class="center-row">
+          <input id="centerRegion" type="text" placeholder="지하철역 또는 지역명 (예: 성신여대입구역)" />
+          <button onclick="searchCenters()">검색</button>
+        </div>
+        <div id="centerList"></div>
+      </div>
     </div>
 
     <div class="logout-row"><button onclick="logout()">로그아웃 · 다른 계정으로 전환</button></div>
@@ -968,7 +1036,10 @@ const state = {
   flexibility: null, strength: null, height: null, weight: null,
   purpose: null,
   targetAge: null,     // 사용자가 정한 목표 체력나이 (로고 초록 구간)
-  result: null,        // /fitness-age 응답
+  method: 'self',      // 측정 방식: self | home | inbody
+  result: null,        // /fitness-age 또는 /hometest 결과
+  bodycomp: null,      // /bodycomp 응답
+  home: null,          // /hometest 응답
   first: null,         // 첫 점검 결과 (재점검 비교용)
   routine: [],         // 오늘의 루틴 steps
   routineMeta: null,   // /program/routine 응답(강도·루틴번호 등)
@@ -1335,7 +1406,7 @@ function snapshot(){
     age: state.age, sex: state.sex, ageGbn: state.ageGbn,
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
-    purpose: state.purpose,
+    purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
@@ -1368,6 +1439,7 @@ function applyProfile(saved){
   if (saved) Object.assign(state, saved);
   state.programStart = saved?.programStart ?? null;
   state.routineLog = Array.isArray(saved?.routineLog) ? saved.routineLog : [];
+  selectMethod(saved?.method || 'self');
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
   $('flexInput').value   = saved?.flexibility ?? '';
@@ -1607,42 +1679,153 @@ function offlineAge(){
   };
 }
 
+/* 측정 방식 — self(간단 자가측정) / home(홈 체력측정 4종) / inbody */
+function selectMethod(m){
+  state.method = m;
+  document.querySelectorAll('#methodSeg button').forEach(b=>b.classList.toggle('on', b.dataset.m===m));
+  $('homeExtra').hidden = m !== 'home';
+  $('inbodyGroup').hidden = m !== 'inbody';
+  $('waistRow').hidden = m === 'self';
+  // 자가측정 항목(유연성·근력)은 InBody 모드에선 숨긴다
+  const hideFor = m === 'inbody';
+  [$('flexInput'), $('strengthInput')].forEach(el => {
+    const card = el.closest('.measure-card'); if (card) card.hidden = hideFor;
+  });
+  $('timerBox').hidden = hideFor;
+  const btn = $('calcBtn');
+  btn.textContent = m === 'inbody' ? '체성분 분석하기' : '체력나이 계산하기';
+  $('s1Title').innerHTML = m === 'home' ? '홈 체력측정 4종<br/>약 4분이면 끝나요'
+    : m === 'inbody' ? 'InBody 결과지를<br/>그대로 입력하세요' : '집에서 잴 수 있는 것만<br/>측정할게요';
+}
+
 async function calcAge(){
   syncInputs();
+  const m = state.method || 'self';
+  const need = [];
+  if (state.age === null) need.push('나이');
+  if (state.height === null) need.push('키');
+  if (state.weight === null) need.push('몸무게');
 
-  // 안 채운 칸을 모아서 정확히 어디를 비웠는지 알려준다.
-  const missing = [];
-  if (state.age === null)         missing.push('나이');
-  if (state.flexibility === null) missing.push('다리를 펴고 앉아 손끝이 닿는 거리');
-  if (state.strength === null)    missing.push(strengthLabel());
-  if (state.height === null)      missing.push('키');
-  if (state.weight === null)      missing.push('몸무게');
-  if (missing.length) {
-    alert('아래 칸을 먼저 채워주세요:\n\n· ' + missing.join('\n· '));
-    const focusMap = { '나이':'ageInput', '키':'heightInput', '몸무게':'weightInput' };
-    const el = missing[0] === '다리를 펴고 앉아 손끝이 닿는 거리' ? $('flexInput')
-             : (focusMap[missing[0]] ? $(focusMap[missing[0]]) : $('strengthInput'));
-    el && el.focus();
-    return;
+  if (m === 'self') {
+    if (state.flexibility === null) need.push('다리를 펴고 앉아 손끝이 닿는 거리');
+    if (state.strength === null) need.push(strengthLabel());
+  } else if (m === 'home') {
+    if (num('jumpInput') === null && num('kneePushupInput') === null
+        && num('highKneeInput') === null && state.strength === null)
+      need.push('홈 측정 항목을 최소 하나');
+  } else if (m === 'inbody') {
+    if (num('bfpInput') === null && num('smmInput') === null) need.push('체지방률 또는 골격근량');
   }
+  if (need.length) { alert('아래 칸을 먼저 채워주세요:\n\n· ' + need.join('\n· ')); return; }
 
-  if (!ageGroup(state.age)) { onAgeChange(); return; }   // 만 11세 미만 등 미지원
-
-  const btn = $('calcBtn');
+  const btn = $('calcBtn'); const label = btn.textContent;
   btn.disabled = true; btn.textContent = '계산 중…';
   try {
-    state.result = await API.fitnessAge(measurement());
-    setStatus('');
+    if (m === 'inbody') {
+      state.bodycomp = await fetchJson('/bodycomp', {
+        sex: state.sex, age: state.age, height_cm: state.height, weight_kg: state.weight,
+        skeletal_muscle_kg: num('smmInput'), body_fat_pct: num('bfpInput'),
+        waist_cm: num('waistInput'), body_water_pct: num('tbwInput'),
+      });
+      renderBodycomp();
+    } else if (m === 'home') {
+      state.home = await fetchJson('/hometest', {
+        sex: state.sex, age: state.age, height_cm: state.height, weight_kg: state.weight,
+        waist_cm: num('waistInput'),
+        jump_30s: num('jumpInput'), curlup_30s: state.strength,
+        knee_pushup_30s: num('kneePushupInput'), high_knee_2min: num('highKneeInput'),
+      });
+      renderHometest();
+    } else {
+      if (!ageGroup(state.age)) { onAgeChange(); btn.disabled=false; btn.textContent=label; return; }
+      state.result = await API.fitnessAge(measurement());
+      setStatus('');
+      if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+      saveProfile();
+      renderResult();
+    }
   } catch (e) {
-    state.result = offlineAge();
-    API.offline = true;
-    setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');
+    if (m === 'self') { state.result = offlineAge(); API.offline = true;
+      setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');
+      if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+      saveProfile(); renderResult();
+    } else { alert('계산에 실패했어요: ' + e.message); }
   }
-  btn.disabled = false; btn.textContent = '체력나이 계산하기';
+  btn.disabled = false; btn.textContent = label;
+}
 
-  if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
-  saveProfile();
-  renderResult();
+function num(id){ const v = parseFloat(($(id)||{}).value); return Number.isFinite(v) ? v : null; }
+
+async function searchCenters(){
+  const region = $('centerRegion').value.trim();
+  const box = $('centerList');
+  if (!region) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="center-item">찾는 중…</div>';
+  try {
+    const res = await fetch('/centers?region=' + encodeURIComponent(region) + '&limit=3', { credentials:'same-origin' });
+    const r = await res.json();
+    if (r.지역인식실패) { box.innerHTML = '<div class="center-item">지역을 못 찾았어요. 구 이름이나 역 이름으로 다시 입력해 주세요.</div>'; return; }
+    box.innerHTML = (r.items || []).map(c =>
+      `<div class="center-item"><b>${c.fcltyNm || c.name || '체력인증센터'}</b><br/>
+        ${c.addr || ''} · 직선거리 ${c.거리km ?? '?'}km<br/>
+        ${c.telno ? c.telno + ' · ' : ''}<a href="${c.예약}" target="_blank" rel="noreferrer">공식 예약하기 →</a></div>`
+    ).join('') + `<div class="center-item" style="color:var(--muted)">${r.안내}</div>`;
+  } catch (e) {
+    box.innerHTML = '<div class="center-item">센터 정보를 불러오지 못했어요.</div>';
+  }
+}
+async function fetchJson(path, body){
+  const res = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'},
+                                  credentials:'same-origin', body: JSON.stringify(body) });
+  const j = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(j.detail || res.status);
+  return j;
+}
+
+function showGeneric(kicker){
+  $('resultBlock').style.display = 'none';
+  $('peerBlock').style.display = 'none';
+  $('genericResult').style.display = 'block';
+  $('grKicker').textContent = kicker;
+  $('nextBtn1').style.display = 'block';
+  $('calcBtn').style.display = 'none';
+}
+
+function renderBodycomp(){
+  const b = state.bodycomp;
+  showGeneric('InBody 기반 체성분 분석');
+  const t = b.추정체력나이;
+  $('grAge').innerHTML = t ? `추정 체력나이 <span class="big">${Math.round(t.값)}세</span>` : `BMI <span class="big">${b.BMI}</span>`;
+  $('grSub').textContent = t ? (t.안내 || '') : (b.안내 || '');
+  $('grRows').innerHTML = b.체성분분석.map(x =>
+    `<div class="peer-row"><div class="peer-row-head">
+      <span class="peer-row-name">${x.항목}</span>
+      <span class="peer-row-pct">${x.값}${x.단위} · ${x.판정}</span></div>
+      <div class="peer-row-detail">${x.기준}</div></div>`).join('');
+  $('grFoot').textContent = b.안내;
+}
+
+function renderHometest(){
+  const h = state.home;
+  showGeneric('홈 체력측정 결과');
+  $('grAge').innerHTML = h.추정체력나이 != null
+    ? `추정 체력나이 <span class="big">${Math.round(h.추정체력나이)}세</span> <span style="font-size:13px;color:var(--muted)">±${h.신뢰구간}</span>`
+    : `<span class="big">홈 체력등급</span>`;
+  $('grSub').textContent = h.가장부족한요인 ? `가장 부족한 건 ${h.가장부족한요인}이에요.` : '';
+  const rows = [];
+  Object.entries(h.항목별환산나이 || {}).forEach(([k,v]) =>
+    rows.push(`<div class="peer-row"><div class="peer-row-head"><span class="peer-row-name">${k}</span><span class="peer-row-pct">${Math.round(v)}세 수준</span></div></div>`));
+  (h.홈체력등급 || []).forEach(x =>
+    rows.push(`<div class="peer-row"><div class="peer-row-head"><span class="peer-row-name">${x.항목}</span><span class="peer-row-pct">${x.등급}등급 (${x.값})</span></div></div>`));
+  $('grRows').innerHTML = rows.join('');
+  $('grFoot').textContent = h.안내;
+  // 홈 측정도 프로그램·재점검에 쓰이도록 체력나이 결과 형태로 저장
+  if (h.추정체력나이 != null) {
+    state.result = { 체력나이: h.추정체력나이, 신뢰구간: h.신뢰구간, 항목별: h.항목별환산나이,
+                     약점: null, 집중개선영역: h.집중개선영역 || [], 또래비교: {}, 해석: '홈 체력측정 추정치입니다.' };
+    if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+    saveProfile();
+  }
 }
 
 function renderResult(){

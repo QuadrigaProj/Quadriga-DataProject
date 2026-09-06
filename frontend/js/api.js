@@ -18,7 +18,7 @@ const API = (() => {
   }
 
   async function call(path, opts) {
-    const res = await fetch(path, opts);
+    const res = await fetch(path, { credentials: 'same-origin', ...(opts || {}) });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.detail || `${res.status} 오류`);
     return body;
@@ -52,5 +52,14 @@ const API = (() => {
     daily: (q) => call('/daily?' + qs(q)),
     videos: (q) => call('/videos?' + qs(q)),
     centers: (q) => call('/centers?' + qs(q)),
+
+    // --- 계정 ---
+    providers: () => call('/auth/providers'),
+    me: () => call('/auth/me'),
+    signup: (b) => post('/auth/signup', b),
+    signin: (b) => post('/auth/login', b),
+    signout: () => post('/auth/logout', {}),
+    myMeasurements: () => call('/me/measurements'),
+    pushMeasurement: (b) => post('/me/measurements', b),
   };
 })();

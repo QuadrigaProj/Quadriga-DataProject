@@ -77,3 +77,6 @@ package-lock.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 계정 DB (로컬 실행용)
+data/*.db

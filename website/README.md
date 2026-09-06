@@ -9,6 +9,12 @@
 > Python 분석 결과를 여기 연결해 주세요. 한 사람이 전체를 다 짰다고 다른 담당의
 > 몫이 없어진 게 아니라, 그 자리를 채우는 하나의 출발점입니다.
 
+> ⚠️ **이 PR을 만드는 동안 main에 `src/fitness_age.py`·`src/prescription.py`·
+> `api/main.py`(FastAPI, 엔드포인트 4개)가 먼저 merge됐습니다.** 이쪽 `website/`의
+> `server.js`가 하는 일(체력나이 산출·처방 추천)과 상당히 겹칩니다. 아래
+> "api/main.py(FastAPI)와의 관계" 절에 겹치는 지점과 남은 선택지를 정리해 뒀으니,
+> 팀에서 어느 쪽을 기준으로 갈지 정한 뒤 반영해 주세요.
+
 ## 빠른 실행
 
 ```bash
@@ -48,7 +54,7 @@ website/
 ├─ config.example.json           엔드포인트 설정 템플릿 (서비스키는 .env의 DATA_GO_KR_KEY 사용)
 ├─ data/
 │  ├─ fitness_distribution.json  실측 296만여 건 집계 (역산용, 담당 A 제공 - 아래 참고)
-│  ├─ fitness_distribution.csv   위 json의 원본 CSV (build_dist.py 산출물, 참고용 보관)
+│  ├─ fitness_distribution.csv   위 json의 원본 CSV (src/build_distribution.py 계열 산출물, 참고용 보관)
 │  ├─ exercise_freq.csv          pres_note 처방 빈도 집계 (담당 D 영역, 아직 미연동 - 아래 참고)
 │  ├─ sample-videos.json         동영상 정보 API 목업 (ftns_fctr_nm/trng_se_nm/tool_nm 등 실제 필드명 사용)
 │  ├─ sample-centers.json        센터 위치정보 API 목업
@@ -63,11 +69,15 @@ website/
 
 `server.js`의 체력나이 로직은 이제 합성 추정치가 아니라 **담당 A가 실제
 `측정결과 정보` API(296만여 건)를 수집·집계해 만든 `data/fitness_distribution.json`**
-을 사용합니다. 같이 받은 `fitness_age.py`("참조 구현")를 JS로 그대로 포팅했습니다.
+을 사용합니다. 담당 A가 준 `fitness_age.py`("참조 구현", 현재 `src/fitness_age.py`로
+main에 merge됨)를 JS로 그대로 포팅했습니다.
 
-- `collect_measurements.py` → API 전량 수집, `build_dist.py` → 성별·연령군·연령구간·
-  항목별 p5~p95 분포 집계(항목별 상하위 0.5% 윈저화 포함) → `fitness_distribution.csv`
-- `server.js`의 `convertAge()`가 `fitness_age.py`의 `convert_age()`를 그대로 옮겨,
+- `scripts/collect_measurements.py` → API 전량 수집, `src/build_distribution.py` →
+  성별·연령군·연령구간·항목별 p5~p95 분포 집계(항목별 상하위 0.5% 윈저화 포함) →
+  `fitness_distribution.csv` (팀 파이프라인 기준 출력 위치는 `data/processed/`이며
+  Git에 안 올라간다 - 이 폴더의 `data/fitness_distribution.csv`는 공유용으로 따로
+  복사해 둔 스냅샷이다)
+- `server.js`의 `convertAge()`가 `src/fitness_age.py`의 `convert_age()`를 그대로 옮겨,
   실측 p50 곡선에 선형보간(numpy.interp와 동일한 클램프 방식)으로 역산합니다.
 - 연령 구간은 원본 그대로 **성인 5세 단위 9구간(19~24 … 60~64) + 어르신 5세 단위
   (65~69 … 80세 이상 열린구간)** 입니다.
@@ -82,6 +92,9 @@ website/
    발견했던 것과 같은 종류의 문제가 실측 데이터에도 있었습니다). 그래서 BMI만
    `bmiEquivalentAge()`에서 **"내 나이대의 실제 평균 편차"와 내 편차를 비교**하는
    방식으로 계산합니다 - 편차가 또래 평균과 같으면 환산나이 = 실제나이(중립).
+   **main에 merge된 `src/fitness_age.py`는 이 곡선-대조 방식을 그대로 쓰고 있어서
+   같은 문제를 그대로 갖고 있을 가능성이 높습니다** - 담당 A가 확인해서 필요하면
+   `src/fitness_age.py`에도 반영해 주세요.
 2. **약점 우선순위의 기준점.** 기획안 5-2절 원문은 "또래 평균(실제나이)까지 올리면"
    이라고 적혀 있지만, 참조 구현 `weakest_link()`는 **"세 항목 중 이미 가진 가장
    좋은 값"**을 기준점으로 씁니다. 실제 코드 쪽을 그대로 따랐습니다 - 인구 곡선의
@@ -92,7 +105,7 @@ website/
 두 지점 모두 코드 주석에 발견 경위와 이유를 그대로 남겨 뒀습니다(`server.js` 검색:
 `BMI_AGE_SENSITIVITY`, `weakest_link`).
 
-**검증**: `scripts/fitness_age.py`를 직접 실행해 여러 성별·연령군·측정값 조합에서
+**검증**: `src/fitness_age.py`를 직접 실행해 여러 성별·연령군·측정값 조합에서
 Python 결과와 `server.js`의 JS 포팅 결과(유연성·근력 축)를 대조했고, 모두 일치합니다
 (가끔 소수점 첫째 자리가 ±0.1 나는 경우가 있는데, 로직 차이가 아니라 정확히 .5에
 걸리는 값에서 파이썬과 JS의 반올림 방식이 다르기 때문입니다 - `npInterp` 주석 참고).
@@ -107,13 +120,45 @@ Python 결과와 `server.js`의 JS 포팅 결과(유연성·근력 축)를 대�
   16.3). `convertAge()`는 참조 구현과 동일하게 "단조가 아니면 값 기준으로
   재정렬"하는 안전장치로 처리하지만, 이 구간에서는 결과가 다소 거칠 수 있습니다.
 
-## pres_note 처방 데이터 (담당 D 영역, 부분 연동)
+## pres_note 처방 데이터 - main의 src/prescription.py가 더 완성돼 있음
 
 `exercise_freq.csv`는 실제 `pres_note` 296만여 건을 파싱해 연령군·성별·운동단계
-(준비/본/정리)별 운동명 빈도로 집계한 실측 데이터입니다. 현재 `/api/prescriptions`
-엔드포인트와 `data/prescriptions.json`은 아직 이 파일을 연동하기 전 **예시 문구
-자리표시자**입니다. 담당 D(장예현)가 이 CSV를 체력요인별로 재매핑하는 로직을 이어서
-작업하면 됩니다.
+(준비/본/정리)별 운동명 빈도로 집계한 실측 데이터입니다. 이 `website/`의
+`/api/prescriptions`와 `data/prescriptions.json`은 **아직 예시 문구 자리표시자**일
+뿐이고, 실제 완성된 로직은 이 PR을 만드는 사이 담당 D가 **`src/prescription.py`로
+이미 구현해 main에 merge**했습니다 - 운동명→체력요인 키워드 분류, 약점/목적 가중치
+기반 추천, 집에서 못 하는 장비 운동 제외, 준비·본·정리 순서 조립까지 다 있습니다.
+`website/`가 이 로직을 그대로 다시 짤 필요는 없고, 아래 "api/main.py(FastAPI)와의
+관계" 절대로 `src/prescription.py`를 호출하는 `api/main.py`의 `/routine`을 붙여서
+쓰면 됩니다.
+
+## api/main.py(FastAPI)와의 관계 - 팀이 정해야 할 부분
+
+main에는 이제 `src/fitness_age.py` + `src/prescription.py`를 감싼 FastAPI 서버
+(`api/main.py`, `/fitness-age` `/routine` `/purposes` `/recheck` `/health` 5개
+엔드포인트)가 있습니다. CORS를 `localhost:3000`(이 `website/`가 쓰는 포트)과
+`localhost:5173`(Vite 기본 포트, 아마 담당 C 쪽) 모두 열어 둔 걸 보면 프런트가
+이 API를 호출하는 구조로 설계된 것 같습니다.
+
+지금 이 `website/`는 자체 Node 백엔드(`server.js`)가 같은 계산을 **JS로 다시
+구현**해서 쓰고 있어 사실상 같은 일을 두 스택으로 중복 구현한 상태입니다. 리뷰
+때 아래 중 어느 방향으로 갈지 정해 주세요 (제가 임의로 하나를 골라 밀어붙이지
+않았습니다):
+
+1. **`website/public`(프런트)만 남기고, `server.js`의 계산 로직을 걷어내 대신
+   `api/main.py`(FastAPI, :8000)를 호출하도록 바꾼다.** 백엔드를 하나로 합치는
+   방향 - 중복은 없어지지만 프런트의 fetch 대상과 응답 필드명(한글 키 등)을 API
+   스펙에 맞게 다시 손봐야 합니다.
+2. **지금처럼 두 백엔드를 당분간 별도로 유지한다.** `website/`는 자체 완결된
+   데모용 프로토타입으로, `api/main.py`는 다른 프런트(예: 담당 C가 만들 화면)가
+   붙는 정식 백엔드로 - 시연 방식이 두 개로 갈리므로 최종 제출 전에는 하나로
+   합쳐야 합니다.
+3. 그 외 팀에서 선호하는 방향.
+
+어느 쪽이든, 위에서 찾은 **BMI 축 문제는 `src/fitness_age.py`에도 있을 가능성이
+높다**는 점과, **`src/prescription.py`가 이미 완성돼 있으니 `website/`의
+`data/prescriptions.json`(예시 문구)과 임시 루틴 구성 로직은 폐기 대상**이라는
+점은 방향에 관계없이 유효합니다.
 
 ## 기획안 대비 구현 매핑
 
@@ -152,7 +197,7 @@ Python 결과와 `server.js`의 JS 포팅 결과(유연성·근력 축)를 대�
 이 웹 서버/프런트엔드는 Node.js(JavaScript)로 작성했습니다. 저장소의 `AGENTS.md`는
 `notebooks/`·`src/`의 Python 3.11 분석 코드를 대상으로 한 규칙(들여쓰기 4칸,
 snake_case, 한국어 주석 등)이라, 이 `website/` 폴더는 별도 스택으로 두었습니다.
-`fitness_age.py`(참조 구현)의 로직은 `server.js`로 그대로 포팅했으니, `notebooks/`·
+`src/fitness_age.py`(참조 구현)의 로직은 `server.js`로 그대로 포팅했으니, `notebooks/`·
 `src/`에서 이 로직을 Python으로도 계속 쓰는 데는 지장이 없습니다 - 두 구현이 같은
 `data/fitness_distribution.json`(원본은 `fitness_distribution.csv`)을 보고 있으면 됩니다.
 `website/.gitignore`에 `node_modules/`, `config.json`, `.env`를 이미 제외해 두었습니다.

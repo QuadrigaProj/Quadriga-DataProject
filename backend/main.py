@@ -33,6 +33,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import auth, daily, fitness_age as fa, prescription as pr, paths
     from backend import routine_player as rp
     from backend import routines as rt, bodycomp as bc, hometest as ht, geo
+    from backend import sports as sp
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -41,6 +42,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import bodycomp as bc                   # noqa: E402
     import hometest as ht                   # noqa: E402
     import geo                              # noqa: E402
+    import sports as sp                     # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -421,6 +423,21 @@ def get_program_routine(
                         "설명": {-1: "현재 체력을 반영해 한 단계 낮게 시작",
                                0: "기본 수행량", 1: "여유가 있어 한 단계 높게"}[offset]}
     return routine
+
+
+@app.get("/sports")
+def get_sports() -> dict:
+    """배우고 싶은 운동 종목 목록. 화면이 그대로 그린다."""
+    return sp.catalog()
+
+
+@app.get("/sports/summary")
+def get_sports_summary(ids: str = Query("", description="쉼표로 구분한 종목 id")) -> dict:
+    """선택한 종목이 어떤 체력요인을 요구하는지, 어디를 조심해야 하는지."""
+    picked = [i.strip() for i in ids.split(",") if i.strip()]
+    return {"선택": sp.resolve(picked),
+            "체력요인": sp.factor_weights(picked),
+            "조심할부위": sp.care_parts(picked)}
 
 
 @app.get("/program/purposes")

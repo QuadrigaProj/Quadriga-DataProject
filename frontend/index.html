@@ -158,19 +158,6 @@
     content:""; position:absolute; left:6px; top:2px; width:6px; height:11px; border:solid #fff;
     border-width:0 2px 2px 0; transform:rotate(45deg);
   }
-  /* 특정 운동을 위한 체력 — 세부 종목 선택 */
-  .sport-cats{
-    display:flex; flex-wrap:wrap; gap:8px; margin:-2px 2px 4px;
-    padding:12px 12px 4px; border-left:2px solid var(--pine-tint);
-  }
-  .sport-cats[hidden]{ display:none; }
-  .sport-cats .sport-cat-label{ width:100%; font-size:12.5px; color:var(--muted); margin-bottom:2px; }
-  .sport-cat{
-    border:1.5px solid var(--line); background:var(--paper); color:var(--muted);
-    border-radius:999px; padding:8px 13px; font-size:12.5px; font-family:inherit;
-    cursor:pointer;
-  }
-  .sport-cat.on{ border-color:var(--pine); background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
 
   /* ===================== SCREEN 3 : 홈 ===================== */
   .topbar{ display:flex; align-items:center; justify-content:space-between; padding:22px 22px 0; }
@@ -591,20 +578,6 @@
           <div><div class="purpose-title">기초 체력 증진</div><div class="purpose-desc">전반적인 체력의 균형 향상</div></div>
           <div class="check-mark"></div>
         </button>
-        <button class="purpose-card" data-p="sport" onclick="selectPurpose('sport')">
-          <div class="purpose-icon">⛰️</div>
-          <div><div class="purpose-title">특정 운동을 위한 체력</div><div class="purpose-desc">등산 · 마라톤 · 구기 종목 준비</div></div>
-          <div class="check-mark"></div>
-        </button>
-        <div class="sport-cats" id="sportCats" hidden>
-          <div class="sport-cat-label">어떤 운동을 준비하고 있나요?</div>
-          <button type="button" class="sport-cat" data-sc="등산 및 산악" onclick="selectSportCat('등산 및 산악')">등산 및 산악</button>
-          <button type="button" class="sport-cat" data-sc="러닝 및 마라톤" onclick="selectSportCat('러닝 및 마라톤')">러닝 및 마라톤</button>
-          <button type="button" class="sport-cat" data-sc="구기 종목" onclick="selectSportCat('구기 종목')">구기 종목</button>
-          <button type="button" class="sport-cat" data-sc="격투기 및 무술" onclick="selectSportCat('격투기 및 무술')">격투기 및 무술</button>
-          <button type="button" class="sport-cat" data-sc="수상 종목" onclick="selectSportCat('수상 종목')">수상 종목</button>
-          <button type="button" class="sport-cat" data-sc="기타" onclick="selectSportCat('기타')">기타 (없을 경우)</button>
-        </div>
         <button class="purpose-card" data-p="fall" onclick="selectPurpose('fall')">
           <div class="purpose-icon">🩹</div>
           <div><div class="purpose-title">재활 및 기능 회복</div><div class="purpose-desc">노년층 및 환자들의 신체 기능을 회복할 수 있음</div></div>
@@ -779,7 +752,6 @@ const state = {
   age: null, sex: 'M', ageGbn: '성인',
   flexibility: null, strength: null, height: null, weight: null,
   purpose: null,
-  sportCategory: null,   // purpose === 'sport' 일 때 고른 세부 종목
   result: null,        // /fitness-age 응답
   first: null,         // 첫 점검 결과 (재점검 비교용)
   routine: [],         // /routine 응답
@@ -787,15 +759,9 @@ const state = {
 };
 
 const PURPOSE_LABEL = {
-  diet: '다이어트', basic: '기초 체력 증진', sport: '특정 운동을 위한 체력 증진',
+  diet: '다이어트', basic: '기초 체력 증진',
   fall: '재활 및 기능 회복', study: '수험생 체력 증진', flex: '유연성 강화',
 };
-
-/* 특정 운동을 위한 체력 — 세부 종목 6종 */
-const SPORT_CATEGORIES = [
-  '등산 및 산악', '러닝 및 마라톤', '구기 종목',
-  '격투기 및 무술', '수상 종목', '기타',
-];
 
 /* 연령군마다 잴 수 있는 항목이 다르다 (backend/fitness_age.py 와 같은 규칙) */
 const STRENGTH_ITEM = {
@@ -913,7 +879,7 @@ function snapshot(){
     age: state.age, sex: state.sex, ageGbn: state.ageGbn,
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
-    purpose: state.purpose, sportCategory: state.sportCategory,
+    purpose: state.purpose,
     first: state.first, result: state.result,
     updated: new Date().toISOString().slice(0, 10),
   };
@@ -935,7 +901,6 @@ async function saveProfile(){
 /* 저장된 값을 화면에 되돌린다. 없으면 첫 점검부터. */
 function applyProfile(saved){
   if (saved) Object.assign(state, saved);
-  state.sportCategory = saved?.sportCategory ?? null;
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
   $('flexInput').value   = saved?.flexibility ?? '';
@@ -1004,7 +969,6 @@ async function logout(){
   state.result = null;
   state.first = null;
   state.purpose = null;
-  state.sportCategory = null;
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -1030,7 +994,6 @@ async function resetSettings(){
   state.result = null;
   state.first = null;
   state.purpose = null;
-  state.sportCategory = null;
   state.flexibility = null;
   $('flexInput').value = '';
   $('authEmail').value = '';
@@ -1289,31 +1252,16 @@ function renderPeerComparison(r){
 /* ---- 화면 2 : 목적 ---- */
 function selectPurpose(p){
   state.purpose = p;
-  if (p !== 'sport') state.sportCategory = null;
   saveProfile();
   renderPurpose();
 }
 
-/* '특정 운동을 위한 체력' 을 골랐을 때 준비 중인 종목 선택 */
-function selectSportCat(cat){
-  state.sportCategory = cat;
-  saveProfile();
-  renderPurpose();
-}
-
-/* 저장된 목적·세부 종목을 화면에 되돌리고, '다음' 버튼 활성 여부를 정한다.
-   특정 운동을 골랐다면 세부 종목까지 정해야 다음으로 넘어갈 수 있다. */
+/* 저장된 목적을 화면에 되돌리고, '다음' 버튼 활성 여부를 정한다. */
 function renderPurpose(){
   document.querySelectorAll('.purpose-card').forEach(c=>{
     c.classList.toggle('selected', c.dataset.p === state.purpose);
   });
-  const isSport = state.purpose === 'sport';
-  $('sportCats').hidden = !isSport;
-  document.querySelectorAll('.sport-cat').forEach(b=>{
-    b.classList.toggle('on', isSport && b.dataset.sc === state.sportCategory);
-  });
-  const ready = state.purpose && (!isSport || !!state.sportCategory);
-  $('nextBtn2').disabled = !ready;
+  $('nextBtn2').disabled = !state.purpose;
 }
 
 /* ---- 화면 3 : 홈 ---- */

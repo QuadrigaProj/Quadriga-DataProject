@@ -51,9 +51,9 @@ def test_frontend_served():
 
 
 def test_purposes():
-    """목적 6종은 데이터 없이도 떠야 한다 (화면 2가 먼저 로드된다)."""
+    """목적 목록은 데이터 없이도 떠야 한다 (화면 2가 먼저 로드된다)."""
     body = client.get("/purposes").json()
-    assert len(body) == 6
+    assert len(body) == 5
     assert {"목적", "우선요인"} <= set(body[0])
 
 

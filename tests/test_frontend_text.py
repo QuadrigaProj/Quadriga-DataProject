@@ -68,3 +68,50 @@ def test_유지되는_요소():
               'id="tabLogin"', 'id="tabSignup"', 'placeholder="이메일"', 'placeholder="비밀번호 (8자 이상)"',
               "닉네임을 정해서 시작할래요", "개인정보처리방침", "이용약관", "또는 이메일로"):
         assert s in html, s
+
+
+# ---------- C1·C2·A5 ----------
+
+def test_간단_자가측정은_사라졌다():
+    html = _index()
+    assert "간단 자가측정" not in html
+    assert 'data-m="self"' not in html
+    assert "selectMethod('self')" not in html
+    assert "method: 'self'" not in html
+
+
+def test_측정_방식은_홈_체력측정과_InBody_둘뿐이다():
+    html = _index()
+    assert html.count("onclick=\"selectMethod('") == 2
+    assert 'class="on" data-m="home"' in html          # 홈 체력측정이 기본 선택
+    assert 'data-m="inbody"' in html
+    assert "홈 체력측정" in html and "InBody" in html
+
+
+def test_홈_체력측정_항목_문구가_원문과_같다():
+    html = _index()
+    for s in [
+        "나이 · 성별",
+        "다리를 펴고 앉아 손끝이 닿는 거리",
+        "윗몸일으키기",
+        "키 · 몸무게",
+        "30초 제자리 점프", "두 발 모아 제자리에서 최대한 빠르게",
+        "30초 무릎 푸시업", "무릎을 대고 팔굽혀펴기",
+        "2분 제자리 높은 무릎 뛰기", "한쪽 무릎이 올라올 때마다 1회",
+    ]:
+        assert s in html, s
+    assert 'id="homeExtra">' in html                    # 홈 추가 3종이 기본으로 보인다(hidden 아님)
+
+
+def test_홈_체력등급_표시_영역이_있다():
+    html = _index()
+    assert 'id="homeGradeBlock"' in html
+    assert "async function loadHomeGrades" in html
+    assert "function renderHometest" not in html       # 옛 홈 흐름은 제거
+
+
+def test_키_몸무게_입력은_1_이상만_받는다():
+    html = _index()
+    assert 'id="heightInput" type="number" min="1"' in html
+    assert 'id="weightInput" type="number" min="1"' in html
+    assert "키와 몸무게는 0보다 큰 값으로 입력해주세요." in html   # 제출 시 JS 검증 문구

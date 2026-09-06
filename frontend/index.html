@@ -757,8 +757,11 @@ const state = {
   purpose: null,
   result: null,        // /fitness-age 응답
   first: null,         // 첫 점검 결과 (재점검 비교용)
-  routine: [],         // /routine 응답
-  intensity: null,     // /daily 의 강도
+  routine: [],         // 오늘의 루틴 steps
+  routineMeta: null,   // /program/routine 응답(강도·루틴번호 등)
+  intensity: null,     // 강도
+  programStart: null,  // 3개월 프로그램 시작일 (ISO yyyy-mm-dd)
+  routineLog: [],      // [{date, no, done}]
 };
 
 const PURPOSE_LABEL = {
@@ -780,8 +783,30 @@ function ageGroup(age) {
   if (age >= 65) return '어르신';
   if (age >= 19) return '성인';
   if (age >= 11) return '성장기';
-  return null;                      // 만 11세 미만은 데이터가 없다
+  return null;                      // 만 11세 미만은 체력나이 분포 데이터가 없다
 }
+
+/* 루틴은 5개 연령대 모두 있다 (체력나이 산출과 별개). backend/routines.py 와 같은 경계. */
+function programAgeGroup(age) {
+  if (age >= 65) return '어르신';
+  if (age >= 19) return '성인';
+  if (age >= 13) return '청소년';
+  if (age >= 7)  return '유소년';
+  if (age >= 4)  return '유아기';
+  return null;
+}
+
+const PURPOSE_TO_KO = {
+  diet: '다이어트', basic: '기초 체력 증진',
+  fall: '재활 및 기능 회복', study: '수험생 체력 증진', flex: '유연성 강화',
+};
+
+function programDay() {
+  if (!state.programStart) return 0;
+  const ms = Date.now() - new Date(state.programStart + 'T00:00:00').getTime();
+  return Math.max(0, Math.floor(ms / 86400000));
+}
+function programWeek() { return Math.min(13, Math.floor(programDay() / 7) + 1); }
 
 function $(id) { return document.getElementById(id); }
 
@@ -884,6 +909,7 @@ function snapshot(){
     height: state.height, weight: state.weight,
     purpose: state.purpose,
     first: state.first, result: state.result,
+    programStart: state.programStart, routineLog: state.routineLog,
     updated: new Date().toISOString().slice(0, 10),
   };
 }
@@ -904,6 +930,8 @@ async function saveProfile(){
 /* 저장된 값을 화면에 되돌린다. 없으면 첫 점검부터. */
 function applyProfile(saved){
   if (saved) Object.assign(state, saved);
+  state.programStart = saved?.programStart ?? null;
+  state.routineLog = Array.isArray(saved?.routineLog) ? saved.routineLog : [];
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
   $('flexInput').value   = saved?.flexibility ?? '';
@@ -972,6 +1000,8 @@ async function logout(){
   state.result = null;
   state.first = null;
   state.purpose = null;
+  state.programStart = null;
+  state.routineLog = [];
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -997,6 +1027,8 @@ async function resetSettings(){
   state.result = null;
   state.first = null;
   state.purpose = null;
+  state.programStart = null;
+  state.routineLog = [];
   state.flexibility = null;
   $('flexInput').value = '';
   $('authEmail').value = '';
@@ -1299,60 +1331,71 @@ const starStr = (n) => '★'.repeat(n) + '☆'.repeat(5-n);
 
 async function loadHome(){
   if (!state.result) return;
+  // 3개월 프로그램 시작일을 아직 안 잡았으면 오늘로 잡는다
+  if (!state.programStart) { state.programStart = new Date().toISOString().slice(0,10); saveProfile(); }
+
   const stars = starCount(state.result.항목별.근력 ?? state.result.체력나이);
   try {
-    const d = await API.daily({ strength_stars: stars, walk_minutes: 12, days_since_start: 0 });
-    state.intensity = d.강도;
+    const d = await API.daily({ strength_stars: stars, walk_minutes: 12,
+                                days_since_start: programDay() });
     $('dailyText').innerHTML = d.계단.문구 + (d.도보 ? '<br/>' + d.도보.문구 : '');
   } catch (e) { /* 서버 없으면 기본 문구 유지 */ }
 
   await loadRoutine();
-  const weak = state.result.약점?.약점 ?? '근력';
-  $('heroTitle').textContent = `${weak} 루틴 · ${Math.max(8, state.routine.length * 2)}분`;
-  $('heroMeta').textContent = state.routine.length
-    ? `${state.routine[0].운동명} 외 ${state.routine.length - 1}가지`
-    : '루틴을 불러오지 못했어요';
+  const m = state.routineMeta;
+  if (m) {
+    $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
+    $('heroMeta').textContent =
+      `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
+  } else {
+    $('heroTitle').textContent = '오늘의 루틴';
+    $('heroMeta').textContent = state.routine.length ? `${state.routine.length}가지 동작` : '루틴을 불러오지 못했어요';
+  }
+  const dd = 90 - programDay();
+  $('ddayPill').textContent = dd > 0 ? `재점검까지 D-${dd}` : '재점검할 때가 됐어요';
 }
 
 async function loadRoutine(){
+  const pg = programAgeGroup(state.age);
+  const purpose = PURPOSE_TO_KO[state.purpose] || null;
   try {
-    const result = await API.videoRoutine({
-      factor: state.result?.약점?.약점,
-      exclude_parts: excludedParts().join(","),
-      main_count: 2,
+    if (!pg || !purpose) throw new Error('연령대/목적 미정');
+    const r = await API.programRoutine({
+      age_gbn: pg, purpose,
+      day: programDay(), week: programWeek(),
+      exclude_parts: excludedParts().join(','),
+      heavy: heavyOn,
+      fitness_age: state.result?.체력나이,
+      real_age: state.age,
     });
-
-    state.routine = (result.steps || []).map(step => ({
-      단계: step.단계,
-      운동명: step.영상명,
-      체력요인: step.체력요인,
-      재생주소: step.재생주소,
-      초: step.초,
+    state.routineMeta = r;
+    state.intensity = r.강도;
+    state.routine = (r.steps || []).map(s => ({
+      단계: s.단계, 운동명: s.동작, 체력요인: (s.체력요인 || []).join('·'),
+      도구: s.도구, 유형: s.유형, 부담부위: s.부담부위,
     }));
   } catch (e) {
+    state.routineMeta = null;
     state.routine = [
-      { 단계:'준비운동', 운동명:'전신 루틴 스트레칭', 체력요인:'유연성' },
-      { 단계:'본운동',   운동명:'의자에 앉았다 일어서기', 체력요인:'근력' },
-      { 단계:'본운동',   운동명:'벽 짚고 팔굽혀펴기', 체력요인:'근력' },
-      { 단계:'본운동',   운동명:'제자리 걷기', 체력요인:'심폐지구력' },
-      { 단계:'정리운동', 운동명:'옆구리 스트레칭', 체력요인:'유연성' },
+      { 단계:'준비운동', 운동명:'전신 루틴 스트레칭', 체력요인:'유연성', 유형:'시간' },
+      { 단계:'본운동',   운동명:'의자에 앉았다 일어서기', 체력요인:'근력', 유형:'횟수' },
+      { 단계:'본운동',   운동명:'벽 짚고 팔굽혀펴기', 체력요인:'근력', 유형:'횟수' },
+      { 단계:'본운동',   운동명:'제자리 걷기', 체력요인:'심폐지구력', 유형:'시간' },
+      { 단계:'정리운동', 운동명:'옆구리 스트레칭', 체력요인:'유연성', 유형:'시간' },
     ];
   }
 }
 
-/* ---- 화면 4 : 루틴 플레이어 ---- */
+/* ---- 화면 4 : 루틴 플레이어 ----
+   몸 무거운 날·제외 부위는 서버(/program/routine)가 steps 와 강도에 이미 반영해 준다.
+   오프라인 폴백일 때만 본운동 앞 2개로 클라이언트에서 줄인다. */
 let currentStep = 0;
 function resetRoutine(){ currentStep = 0; renderStep(); }
 
-/* 몸이 무거운 날: 본운동 3개 → 앞 2개만 (준비·정리는 그대로).
-   세트·시간 축소는 renderStep 에서 처리한다. */
 function activeRoutine(){
-  if (!heavyOn) return state.routine;
+  if (state.routineMeta || !heavyOn) return state.routine;    // 서버 응답이면 그대로
   let main = 0;
-  return state.routine.filter(s => {
-    if (s.단계 !== '본운동') return true;
-    return ++main <= 2;
-  });
+  return state.routine.filter(s => s.단계 !== '본운동' || ++main <= 2);
 }
 
 function renderStep(){
@@ -1360,17 +1403,17 @@ function renderStep(){
   if (!list.length) return;
   if (currentStep > list.length - 1) currentStep = list.length - 1;
   const step = list[currentStep];
-  const it = state.intensity || { 세트: 2, 반복: 10 };
+  const it = state.intensity || { 세트: 2, 반복: 10, 시간초: 30 };
   $('playerTag').textContent = (currentStep+1)+' / '+list.length;
   $('playerName').textContent = step.운동명;
   if (step.단계 === '본운동') {
-    const 세트 = heavyOn ? 1 : it.세트;
-    const 반복 = step.초
-      ? `${heavyOn ? Math.round(step.초/2) : step.초}초`
-      : `${heavyOn ? Math.round(it.반복*0.7) : it.반복}회`;
-    $('playerSet').textContent = `${세트}세트 · ${반복}`;
+    const amount = step.유형 === '시간'
+      ? `${it.시간초 ?? 30}초`
+      : (it.반복 != null ? `${it.반복}회` : (it.라운드 != null ? `${it.라운드}라운드` : '10회'));
+    $('playerSet').textContent = `${it.세트 ?? 2}세트 · ${amount}` +
+      (step.도구 && step.도구 !== '맨몸' ? ` · ${step.도구}` : '');
   } else {
-    $('playerSet').textContent = `${step.단계} · ${step.체력요인}`;
+    $('playerSet').textContent = `${step.단계} · ${step.체력요인 || ''}`;
   }
 
   const dots = $('stepsDots');
@@ -1381,7 +1424,18 @@ function renderStep(){
 function nextStep(){
   const list = activeRoutine();
   if(currentStep < list.length-1){ currentStep++; renderStep(); }
-  else { goTo('s3'); }
+  else { logRoutineDone(); goTo('s3'); }
+}
+
+/* 오늘 루틴 완료 기록 (사용자별, 새로고침 후에도 유지) */
+function logRoutineDone(){
+  const today = new Date().toISOString().slice(0,10);
+  const no = state.routineMeta?.루틴번호 ?? null;
+  if (!state.routineLog.some(e => e.date === today)) {
+    state.routineLog.push({ date: today, no, done: true });
+    saveProfile();
+    showToast(`오늘 루틴 완료 · 이번 3개월 ${state.routineLog.length}회`);
+  }
 }
 
 /* ---- 화면 1 : 타이머 · 횟수 ---- */
@@ -1448,12 +1502,14 @@ async function toggleChip(id){
 }
 
 let heavyOn = false;
-function toggleHeavy(){
+async function toggleHeavy(){
   heavyOn = !heavyOn;
   $('heavyBtn').classList.toggle('on', heavyOn);
   $('heavyBtn').textContent = heavyOn ? '가볍게 진행 중' : '몸이 무거운 날';
   updateCondHint();
   showToast(heavyOn ? '오늘은 가볍게 — 본운동 2개 · 1세트 · 시간 절반' : '원래 강도로 되돌렸어요');
+  try { await loadRoutine(); } catch (e) {}
+  currentStep = 0;
   renderStep();
 }
 

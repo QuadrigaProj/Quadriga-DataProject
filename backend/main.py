@@ -32,10 +32,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:                                        # 저장소 루트에서 실행할 때
     from backend import auth, daily, fitness_age as fa, prescription as pr, paths
     from backend import routine_player as rp
+    from backend import routines as rt
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
     import routine_player as rp             # noqa: E402
+    import routines as rt                   # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -375,6 +377,60 @@ def get_video_routine(
             for s in result.steps
         ],
     }
+
+
+# ---------- 7b. 3개월 프로그램 루틴 (250 고정 루틴) ----------
+
+ProgramAge = Literal["유아기", "유소년", "청소년", "성인", "어르신"]
+ProgramPurpose = Literal[
+    "다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
+]
+
+
+@app.get("/program/routine")
+def get_program_routine(
+    age_gbn: ProgramAge,
+    purpose: ProgramPurpose,
+    day: int = Query(0, ge=0, description="0-based 경과일. Day1 = 0. 10일마다 순환"),
+    week: int = Query(1, ge=1, le=13, description="프로그램 주차 (강도 구간용)"),
+    exclude_parts: str | None = Query(None, description="쉼표 구분. 예: 무릎,허리"),
+    heavy: bool = Query(False, description="몸이 무거운 날"),
+    fitness_age: float | None = Query(None, description="추정 체력나이 — 시작 강도 보정용"),
+    real_age: float | None = Query(None, description="실제 만 나이"),
+) -> dict:
+    """연령대 × 목적 의 고정 루틴 10개 중 오늘 것 한 벌.
+
+    루틴을 새로 만들지 않는다. data/sample/routines_250.json 을 그대로 순환시킨다.
+    수행량은 12주 3구간 규칙 + 현재 체력 보정(offset)으로 붙인다.
+    안전·제외 부위 조건은 후보가 없어도 완화하지 않는다.
+    """
+    parts = [p.strip() for p in (exclude_parts or "").split(",") if p.strip()]
+    try:
+        routine = rt.build_program_routine(
+            age_gbn, purpose, day=day, exclude_parts=parts, heavy=heavy)
+    except (KeyError, FileNotFoundError) as e:
+        raise HTTPException(404, str(e))
+
+    offset = rt.start_offset(fitness_age, real_age)
+    intensity = rt.intensity_for(age_gbn, week, offset=offset, heavy=heavy)
+    routine["강도"] = intensity
+    routine["시작보정"] = {"offset": offset,
+                        "설명": {-1: "현재 체력을 반영해 한 단계 낮게 시작",
+                               0: "기본 수행량", 1: "여유가 있어 한 단계 높게"}[offset]}
+    return routine
+
+
+@app.get("/program/purposes")
+def get_program_purposes(age_gbn: ProgramAge | None = None) -> list[dict]:
+    """목적 5종 + (연령대를 주면) 그 연령대 재프레이밍 라벨."""
+    d = rt.load()["config"]
+    out = []
+    for p in rt.PURPOSES:
+        item = {"목적": p, "우선요인": d["purpose_factors"].get(p, [])}
+        if age_gbn:
+            item["표시명"] = d["reframe"].get(age_gbn, {}).get(p, p)
+        out.append(item)
+    return out
 
 
 # ---------- 8. 인증센터 ----------

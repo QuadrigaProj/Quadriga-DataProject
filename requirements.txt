@@ -1,6 +1,12 @@
 # 데이터 처리
 pandas
 numpy
+pyarrow            # parquet 저장
+
+# API 수집
+requests
+python-dotenv
+tqdm
 
 # 시각화
 matplotlib
@@ -14,9 +20,8 @@ scipy
 jupyter
 ipykernel
 
-# 유틸
-python-dotenv
-tqdm
+# 기준표 수집 (scripts/fetch_standards.py)
+playwright
 
 # 협업 (노트북 출력 자동 제거 — 설치 후 `nbstripout --install` 한 번 실행)
 nbstripout

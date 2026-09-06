@@ -427,6 +427,34 @@
   .edit-save{ margin-top:12px; }
   .edit-save:disabled{ opacity:0.45; cursor:default; }
 
+  /* ---- 게스트 진입 ---- */
+  .guest-box{ margin-top:20px; padding-top:18px; border-top:1px solid var(--line); }
+  .btn-guest{
+    background:var(--paper); color:var(--pine-deep);
+    border:1px solid var(--pine); font-weight:700;
+  }
+  .btn-guest:hover{ background:var(--pine-tint); }
+  .guest-note{ font-size:12px; color:var(--muted); line-height:1.6; margin-top:10px; }
+  .guest-alt{ display:inline-block; margin-top:12px; font-size:12.5px;
+              color:var(--pine-deep); text-decoration:underline; }
+
+  /* ---- 게스트 안내 배너 (프로필 화면) ---- */
+  .guest-banner{
+    margin-top:18px; padding:16px 18px; border-radius:16px;
+    background:var(--amber-tint); font-size:13px; line-height:1.65;
+  }
+  .guest-banner b{ display:block; margin-bottom:4px; font-size:14px; }
+  .guest-banner button{
+    margin-top:12px; width:100%; padding:10px 0; border-radius:10px;
+    border:none; background:var(--pine); color:#fff; font:inherit;
+    font-size:13.5px; font-weight:600; cursor:pointer;
+  }
+  .acct-upgrade{
+    width:100%; margin-top:10px; padding:9px 0; border-radius:10px;
+    border:1px solid var(--pine); background:var(--paper); color:var(--pine-deep);
+    font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+
   .statusbar{
     background:var(--amber-tint); color:var(--clay); font-size:12.5px;
     padding:8px 14px; text-align:center; border-bottom:1px solid var(--line);
@@ -550,8 +578,10 @@
         </div>
       </div>
       <dl class="acct-rows" id="acctRows"></dl>
+      <button class="acct-upgrade" id="acctUpgrade" style="display:none;"
+              onclick="upgradeFromGuest()">계정 만들고 기록 지키기</button>
       <div class="acct-more">한 번 더 누르면 프로필에서 수정할 수 있어요</div>
-      <button class="acct-logout" onclick="logout()">로그아웃</button>
+      <button class="acct-logout" id="acctLogout" onclick="logout()">로그아웃</button>
     </div>
   </header>
 
@@ -602,9 +632,16 @@
           받는 정보는 <b>로그인 수단 · 닉네임 · 체력 측정값</b>뿐입니다.
           휴대폰 번호나 주소는 묻지 않고, 소셜 계정에서도 가져오지 않아요.
         </div>
-        <div class="login-hint" style="margin-top:12px;">
-          <a href="#" onclick="localOnly();return false;" style="color:var(--pine-deep);">
-            가입 없이 이 기기에서만 써볼게요 →</a>
+        <div class="guest-box">
+          <button type="button" class="btn btn-guest" onclick="enterAsGuest()">
+            게스트로 바로 시작하기</button>
+          <div class="guest-note">
+            가입 없이 모든 기능을 써볼 수 있어요. 다만 기록이 <b>이 브라우저에만</b> 남습니다 —
+            앱을 지우거나 다른 기기에서 열면 <b>이전 기록은 보이지 않아요.</b>
+            나중에 계정을 만들면 지금까지의 기록을 그대로 옮겨드립니다.
+          </div>
+          <a href="#" class="guest-alt" onclick="localOnly();return false;">
+            닉네임을 정해서 시작할래요 →</a>
         </div>
       </div>
 
@@ -906,6 +943,14 @@
       <div style="margin-top:18px;" id="axisRows"></div>
       <div class="ci-caption" id="axisNote"></div>
 
+      <div class="guest-banner" id="guestBanner" style="display:none;">
+        <b>지금은 게스트로 쓰고 있어요</b>
+        기록이 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 기기에서 열면
+        지금까지의 기록은 보이지 않아요. 계정을 만들면 <b style="display:inline">지금 기록 그대로</b>
+        옮겨서 어디서든 이어볼 수 있습니다.
+        <button onclick="upgradeFromGuest()">계정 만들고 기록 지키기</button>
+      </div>
+
       <div class="edit-card">
         <div class="edit-head"><span>내 정보</span><span class="edit-hint" id="editHint"></span></div>
         <label class="edit-row"><span>별명</span>
@@ -1100,8 +1145,11 @@ function $(id) { return document.getElementById(id); }
 
 const PROVIDER_LABEL = {
   google: '구글로 로그인', naver: '네이버로 로그인', kakao: '카카오로 로그인',
-  password: '이메일로 로그인', device: '이 기기에만 저장',
+  password: '이메일로 로그인',
+  device: '이 기기에만 저장', guest: '게스트 · 이 기기에만 저장',
 };
+const GUEST_NAME = '게스트';
+const LOCAL_MODES = new Set(['device', 'guest']);
 const SEX_LABEL = { M: '남성', F: '여성' };
 
 /* 로고를 누르면 돌아갈 곳. 점검 결과가 있으면 홈, 없으면 첫 점검. */
@@ -1151,6 +1199,10 @@ function renderAccount(){
   if (state.age)     rows.push(['나이', `만 ${state.age}세`]);
   if (state.sex)     rows.push(['성별', SEX_LABEL[state.sex] || state.sex]);
   if (state.purpose) rows.push(['운동 단계', PURPOSE_LABEL[state.purpose] || state.purpose]);
+
+  const local = !state.account;
+  $('acctUpgrade').style.display = local ? 'block' : 'none';
+  $('acctLogout').textContent = local ? '나가기' : '로그아웃';
 
   $('acctRows').innerHTML = rows.length
     ? rows.map(([k, v]) =>
@@ -1335,6 +1387,7 @@ function setAuthMode(mode){
 function authError(msg){
   const e = $('loginErr');
   e.textContent = msg;
+  e.style.color = '';
   e.style.display = 'block';
 }
 
@@ -1365,6 +1418,9 @@ async function submitAuth(){
 }
 
 /* 서버 계정으로 들어간다. 기록은 서버에서 받아오므로 다른 기기에서도 이어진다. */
+/* 게스트로 쓰던 기록. 계정을 만들면 서버로 한 번 올린다. */
+let carryOver = null;
+
 async function enterAsAccount(name, provider){
   state.user = name;
   state.account = true;
@@ -1374,6 +1430,17 @@ async function enterAsAccount(name, provider){
     const r = await API.myMeasurements();
     latest = (r.기록 || [])[0] || null;
   } catch (e) { /* 기록이 없거나 못 받아왔으면 첫 점검부터 */ }
+
+  // 게스트로 쌓아 둔 기록이 있고 계정은 아직 비어 있으면 그대로 옮긴다.
+  if (!latest && carryOver && carryOver.result) {
+    try {
+      await API.pushMeasurement(carryOver);
+      latest = carryOver;
+      setStatus('게스트로 쌓은 기록을 계정으로 옮겼어요');
+      setTimeout(() => setStatus(''), 4000);
+    } catch (e) { /* 실패하면 그냥 새 계정으로 시작한다 */ }
+  }
+  carryOver = null;
   applyProfile(latest);
 }
 
@@ -1419,6 +1486,8 @@ function snapshot(){
 function syncDangerRow(){
   const row = $('dangerRow');
   if (row) row.style.display = state.account ? 'block' : 'none';
+  const banner = $('guestBanner');
+  if (banner) banner.style.display = state.account ? 'none' : 'block';
 }
 
 /* 계정이면 서버에, 아니면 이 브라우저에 저장한다. */
@@ -1491,6 +1560,34 @@ function removeProfile(name){
   renderProfileList();
 }
 
+/* 게스트 — 닉네임도 안 묻고 바로 들어간다.
+   같은 브라우저에서 다시 들어오면 이전 게스트 기록을 그대로 이어받는다. */
+function enterAsGuest(){
+  $('loginErr').style.display = 'none';
+  state.user = GUEST_NAME;
+  state.account = false;
+  state.provider = 'guest';
+  applyProfile(readProfiles()[GUEST_NAME]);
+  saveProfile();
+}
+
+/* 게스트/기기 프로필 → 계정으로. 지금 기록을 들고 로그인 화면으로 돌아간다. */
+function upgradeFromGuest(){
+  carryOver = snapshot();          // 로그인·가입에 성공하면 서버로 올린다
+  closeAccount();
+  goTo('s0');
+  setAuthMode('signup');
+  $('authEmail').focus();
+  authNotice('가입하면 지금까지의 기록을 그대로 옮겨드려요.');
+}
+
+function authNotice(msg){
+  const e = $('loginErr');
+  e.textContent = msg;
+  e.style.color = 'var(--pine-deep)';
+  e.style.display = 'block';
+}
+
 function loginLocal(name){
   const id = (name !== undefined ? name : $('authEmail').value).trim();
   if (!id) return authError('닉네임을 입력해주세요.');
@@ -1529,6 +1626,7 @@ async function doDelete(){
 
 async function logout(){
   await saveProfile();
+  carryOver = null;
   if (state.account) { try { await API.signout(); } catch (e) {} }
   state.user = null;
   state.account = false;

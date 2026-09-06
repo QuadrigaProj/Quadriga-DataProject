@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="체력나이">
+  <title>체력나이</title>
+  <rect width="1024" height="1024" fill="#F7F1E7"/>
+  <g fill="none" stroke-width="103.0">
+    <path d="M 775.51 465.92 A 268.0 268.0 0 0 1 661.36 734.18" stroke="#E4DACA"/>
+    <path d="M 361.25 733.92 A 268.0 268.0 0 1 1 775.51 465.92" stroke="#12B76A"/>
+  </g>
+  <circle cx="647.5" cy="321.5" r="97.5" fill="#F7F1E7"/>
+  <circle cx="647.5" cy="321.5" r="71.5" fill="#F2704B"/>
+</svg>

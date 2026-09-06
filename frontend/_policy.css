@@ -1,0 +1,35 @@
+:root{
+  --bg:#EDEFE6; --paper:#FAFAF4; --ink:#20261F; --muted:#666F62;
+  --line:#DCDCC9; --pine:#2E5B4B; --pine-deep:#1F4136; --amber-tint:#F3E2CC;
+}
+*{ box-sizing:border-box; }
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",sans-serif;
+  line-height:1.75; font-size:15px; -webkit-text-size-adjust:100%;
+}
+.wrap{ max-width:720px; margin:0 auto; padding:32px 22px 80px; }
+header.top{ display:flex; align-items:center; gap:12px; margin-bottom:26px; }
+header.top img{ width:40px; height:40px; }
+header.top a{ color:var(--pine-deep); text-decoration:none; font-weight:700; font-size:15px; }
+h1{ font-size:26px; line-height:1.35; letter-spacing:-0.02em; margin:0 0 6px; }
+.meta{ color:var(--muted); font-size:13.5px; margin-bottom:28px; }
+h2{ font-size:17px; margin:34px 0 10px; letter-spacing:-0.01em; }
+p{ margin:10px 0; }
+ul{ margin:10px 0; padding-left:20px; }
+li{ margin:6px 0; }
+table{ border-collapse:collapse; width:100%; margin:14px 0; font-size:14px; }
+th,td{ border:1px solid var(--line); padding:9px 11px; text-align:left; vertical-align:top; }
+th{ background:var(--paper); font-weight:700; white-space:nowrap; }
+.callout{
+  background:var(--amber-tint); border-radius:12px; padding:14px 16px;
+  margin:18px 0; font-size:14.5px;
+}
+.callout > b:first-child{ display:block; margin-bottom:4px; }
+footer{
+  margin-top:44px; padding-top:20px; border-top:1px solid var(--line);
+  color:var(--muted); font-size:13px;
+}
+footer a{ color:var(--pine-deep); }
+code{ background:var(--paper); border:1px solid var(--line); border-radius:5px;
+      padding:1px 5px; font-size:13px; }

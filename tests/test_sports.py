@@ -68,3 +68,64 @@ def test_아무것도_안_고르면_빈_결과():
 def test_조심할_부위를_모아준다():
     d = c.get("/sports/summary?ids=running,marathon").json()
     assert "무릎" in d["조심할부위"]
+
+
+# ---------- 루틴 추천이 고른 종목을 참고한다 ----------
+
+def _routine(**kw):
+    q = {"age_gbn": "성인", "purpose": "기초 체력 증진", "day": 0, "week": 1}
+    q.update(kw)
+    return c.get("/program/routine", params=q).json()
+
+
+def _mains(r):
+    return [s["동작"] for s in r["steps"] if s["단계"] == "본운동"]
+
+
+def test_종목을_안_고르면_원래_루틴_그대로():
+    r = _routine()
+    assert r["종목반영"] == []
+    assert "고른종목" not in r
+
+
+def test_러닝을_고르면_심폐_동작이_들어온다():
+    """근력 위주 루틴에 심폐가 하나도 없으면 하나를 넣어준다."""
+    기본 = _routine()
+    러너 = _routine(sports="running,marathon")
+    assert 러너["참고요인"][0] == "심폐지구력"
+    요인 = [f for s in 러너["steps"] if s["단계"] == "본운동" for f in s["체력요인"]]
+    assert any("심폐지구력" in f for f in 요인)
+    assert _mains(기본) != _mains(러너)
+    assert 러너["종목반영"]
+
+
+def test_동작_개수는_그대로다():
+    """루틴을 새로 만들지 않는다 — 개수가 늘거나 줄면 안 된다."""
+    기본 = _routine()
+    for ids in ("running,marathon", "yoga,pilates", "tennis,badminton"):
+        assert len(_mains(_routine(sports=ids))) == len(_mains(기본)), ids
+
+
+def test_이미_맞는_루틴은_건드리지_않는다():
+    """근력 루틴 + 헬스 선택 → 바꿀 이유가 없다."""
+    기본 = _routine()
+    헬스 = _routine(sports="gym,crossfit")
+    assert _mains(헬스) == _mains(기본)
+    assert 헬스["종목반영"] == []
+
+
+def test_제외한_부위는_종목보다_우선한다():
+    """무릎이 아프면, 종목을 반영하느라 무릎 동작을 넣으면 안 된다."""
+    r = _routine(sports="running,marathon", exclude_parts="무릎")
+    for s in r["steps"]:
+        assert "무릎" not in s["부담부위"], s["동작"]
+
+
+def test_모르는_종목은_무시된다():
+    assert _routine(sports="없는종목") ["종목반영"] == []
+
+
+def test_조심할_부위를_같이_알려준다():
+    r = _routine(sports="running,marathon")
+    assert "무릎" in r["조심할부위"]
+    assert r["고른종목"] == ["러닝", "마라톤"]

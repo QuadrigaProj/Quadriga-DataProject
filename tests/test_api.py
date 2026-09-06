@@ -458,13 +458,19 @@ def test_구글은_secret이_없으면_켜지지_않는다(monkeypatch):
     assert "_CLIENT_SECRET" in r.json()["detail"]
 
 
-def test_카카오_기본_scope는_닉네임만(monkeypatch):
-    """이메일은 카카오 검수를 받아야 요청할 수 있다.
-    안 받은 상태로 요청하면 KOE205 로 로그인 자체가 막힌다."""
+def test_카카오는_scope를_보내지_않는다(monkeypatch):
+    """필수 동의로 켠 항목은 카카오가 알아서 포함한다.
+    그걸 scope 에 또 적으면 KOE206, 안 켠 항목을 적으면 KOE205 로 로그인이 막힌다."""
     from backend import auth
     monkeypatch.delenv("KAKAO_SCOPE", raising=False)
-    assert auth.scope_for("kakao") == "profile_nickname"
-    assert "account_email" not in auth.scope_for("kakao")
+    assert auth.scope_for("kakao") == ""
+
+
+def test_공백만_있는_scope는_없는_것으로_친다(monkeypatch):
+    """환경변수 칸을 완전히 비우기 어려운 콘솔이 있다. 공백도 빈 값으로 본다."""
+    from backend import auth
+    monkeypatch.setenv("KAKAO_SCOPE", "   ")
+    assert auth.scope_for("kakao") == ""
 
 
 def test_scope는_환경변수로_바꿀_수_있다(monkeypatch):
@@ -474,14 +480,23 @@ def test_scope는_환경변수로_바꿀_수_있다(monkeypatch):
     assert auth.scope_for("kakao") == "profile_nickname account_email"
 
 
-def test_start가_설정된_scope를_보낸다(monkeypatch):
+def test_start가_카카오에는_scope를_안_붙인다(monkeypatch):
     monkeypatch.setenv("KAKAO_CLIENT_ID", "test-id")
     monkeypatch.delenv("KAKAO_SCOPE", raising=False)
     c = _fresh()
     r = c.get("/auth/kakao/start", follow_redirects=False)
     loc = r.headers["location"]
-    assert "scope=profile_nickname" in loc
-    assert "account_email" not in loc
+    assert "scope=" not in loc
+    assert "client_id=test-id" in loc
+
+
+def test_start가_설정된_scope를_보낸다(monkeypatch):
+    """검수를 통과해서 환경변수를 채우면 그때는 그대로 실린다."""
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "test-id")
+    monkeypatch.setenv("KAKAO_SCOPE", "profile_nickname account_email")
+    c = _fresh()
+    r = c.get("/auth/kakao/start", follow_redirects=False)
+    assert "scope=profile_nickname+account_email" in r.headers["location"]
 
 
 def test_이메일이_없어도_계정이_만들어진다():

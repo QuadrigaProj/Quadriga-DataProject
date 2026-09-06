@@ -40,7 +40,14 @@ try:
 except ImportError:
     from paths import ROOT
 
+# 로컬은 SQLite 파일, 배포는 Postgres.
+# Render 는 DATABASE_URL 을 자동으로 넣어준다. 없으면 SQLite 로 떨어진다.
 DB_PATH = ROOT / "data" / "app.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+
+def is_postgres() -> bool:
+    return DATABASE_URL.startswith(("postgres://", "postgresql://"))
 
 SESSION_COOKIE = "quadriga_session"
 SESSION_DAYS = 30
@@ -88,11 +95,11 @@ def enabled_providers() -> list[str]:
 # DB
 # ---------------------------------------------------------------------------
 
-SCHEMA = """
+SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  provider      TEXT NOT NULL,              -- 'password' | 'google' | 'naver' | 'kakao'
-  provider_uid  TEXT NOT NULL,              -- 제공자 내부 식별자 (비밀번호 계정은 이메일)
+  provider      TEXT NOT NULL,
+  provider_uid  TEXT NOT NULL,
   email         TEXT,
   display_name  TEXT NOT NULL,
   password_salt BLOB,
@@ -100,21 +107,18 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL,
   UNIQUE (provider, provider_uid)
 );
-
 CREATE TABLE IF NOT EXISTS sessions (
   token      TEXT PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at INTEGER NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS measurements (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   measured_at INTEGER NOT NULL,
-  payload     TEXT NOT NULL                 -- 측정값 + 산출 결과 (JSON)
+  payload     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_meas_user ON measurements(user_id, measured_at DESC);
-
 CREATE TABLE IF NOT EXISTS oauth_states (
   state      TEXT PRIMARY KEY,
   provider   TEXT NOT NULL,
@@ -122,23 +126,69 @@ CREATE TABLE IF NOT EXISTS oauth_states (
 );
 """
 
+# Postgres 는 자동증가·바이너리 타입 표기가 다르다. 나머지는 같다.
+SCHEMA_PG = (SCHEMA_SQLITE
+             .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+             .replace("BLOB", "BYTEA"))
+
+
+class Cur:
+    """sqlite3 와 psycopg 의 차이를 여기서만 흡수한다.
+
+    - 자리표시자: 코드에는 항상 ? 로 쓰고, Postgres 일 때만 %s 로 바꾼다
+    - 새로 넣은 행의 id: sqlite 는 lastrowid, Postgres 는 RETURNING id
+    """
+
+    def __init__(self, raw, pg: bool):
+        self._raw, self._pg = raw, pg
+
+    def execute(self, sql: str, params=()):
+        self._raw.execute(sql.replace("?", "%s") if self._pg else sql, params)
+        return self
+
+    def fetchone(self):
+        return self._raw.fetchone()
+
+    def fetchall(self):
+        return self._raw.fetchall()
+
+    def insert_id(self, sql: str, params=()) -> int:
+        if self._pg:
+            self.execute(sql + " RETURNING id", params)
+            return self.fetchone()["id"]
+        self.execute(sql, params)
+        return self._raw.lastrowid
+
 
 @contextmanager
 def db():
+    if is_postgres():
+        import psycopg
+        from psycopg.rows import dict_row
+        con = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        try:
+            yield Cur(con.cursor(), True)
+            con.commit()
+        finally:
+            con.close()
+        return
+
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     try:
-        yield con
+        yield Cur(con.cursor(), False)
         con.commit()
     finally:
         con.close()
 
 
 def init_db() -> None:
+    schema = SCHEMA_PG if is_postgres() else SCHEMA_SQLITE
     with db() as con:
-        con.executescript(SCHEMA)
+        for stmt in filter(str.strip, schema.split(";")):
+            con.execute(stmt)
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +200,9 @@ def hash_password(password: str, salt: bytes | None = None) -> tuple[bytes, byte
     return salt, hashlib.scrypt(password.encode(), salt=salt, **SCRYPT)
 
 
-def verify_password(password: str, salt: bytes, expected: bytes) -> bool:
+def verify_password(password: str, salt, expected) -> bool:
+    # Postgres 드라이버는 BYTEA 를 memoryview 로 줄 수 있다
+    salt, expected = bytes(salt), bytes(expected)
     _, actual = hash_password(password, salt)
     return hmac.compare_digest(actual, expected)
 
@@ -177,12 +229,11 @@ def upsert_user(provider: str, uid: str, *, email=None, name=None,
             if name:
                 con.execute("UPDATE users SET display_name=? WHERE id=?", (name, row["id"]))
             return row["id"]
-        cur = con.execute(
+        return con.insert_id(
             "INSERT INTO users (provider, provider_uid, email, display_name,"
             " password_salt, password_hash, created_at) VALUES (?,?,?,?,?,?,?)",
             (provider, uid, email, name or (email or uid).split("@")[0],
              salt, pw_hash, int(time.time())))
-        return cur.lastrowid
 
 
 def find_password_user(email: str) -> sqlite3.Row | None:

@@ -33,6 +33,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import auth, daily, fitness_age as fa, prescription as pr, paths
     from backend import routine_player as rp
     from backend import routines as rt, bodycomp as bc, hometest as ht, geo
+    from backend import sports as sp
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -41,6 +42,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import bodycomp as bc                   # noqa: E402
     import hometest as ht                   # noqa: E402
     import geo                              # noqa: E402
+    import sports as sp                     # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -400,6 +402,7 @@ def get_program_routine(
     heavy: bool = Query(False, description="몸이 무거운 날"),
     fitness_age: float | None = Query(None, description="추정 체력나이 — 시작 강도 보정용"),
     real_age: float | None = Query(None, description="실제 만 나이"),
+    sports: str | None = Query(None, description="쉼표 구분 종목 id. 예: running,tennis"),
 ) -> dict:
     """연령대 × 목적 의 고정 루틴 10개 중 오늘 것 한 벌.
 
@@ -408,19 +411,46 @@ def get_program_routine(
     안전·제외 부위 조건은 후보가 없어도 완화하지 않는다.
     """
     parts = [p.strip() for p in (exclude_parts or "").split(",") if p.strip()]
+
+    # 고른 운동 종목 → 그 종목이 많이 쓰는 체력요인 상위 2개만 본다.
+    # 너무 많이 넣으면 원래 커리큘럼이 흐려진다.
+    picked = [i.strip() for i in (sports or "").split(",") if i.strip()]
+    weights = sp.factor_weights(picked)
+    prefer = list(weights)[:2]
+
     try:
         routine = rt.build_program_routine(
-            age_gbn, purpose, day=day, exclude_parts=parts, heavy=heavy)
+            age_gbn, purpose, day=day, exclude_parts=parts, heavy=heavy,
+            prefer_factors=prefer)
     except (KeyError, FileNotFoundError) as e:
         raise HTTPException(404, str(e))
 
     offset = rt.start_offset(fitness_age, real_age)
     intensity = rt.intensity_for(age_gbn, week, offset=offset, heavy=heavy)
     routine["강도"] = intensity
+    if picked:
+        routine["고른종목"] = [s["이름"] for s in sp.resolve(picked)]
+        routine["참고요인"] = prefer
+        routine["조심할부위"] = sp.care_parts(picked)
     routine["시작보정"] = {"offset": offset,
                         "설명": {-1: "현재 체력을 반영해 한 단계 낮게 시작",
                                0: "기본 수행량", 1: "여유가 있어 한 단계 높게"}[offset]}
     return routine
+
+
+@app.get("/sports")
+def get_sports() -> dict:
+    """배우고 싶은 운동 종목 목록. 화면이 그대로 그린다."""
+    return sp.catalog()
+
+
+@app.get("/sports/summary")
+def get_sports_summary(ids: str = Query("", description="쉼표로 구분한 종목 id")) -> dict:
+    """선택한 종목이 어떤 체력요인을 요구하는지, 어디를 조심해야 하는지."""
+    picked = [i.strip() for i in ids.split(",") if i.strip()]
+    return {"선택": sp.resolve(picked),
+            "체력요인": sp.factor_weights(picked),
+            "조심할부위": sp.care_parts(picked)}
 
 
 @app.get("/program/purposes")

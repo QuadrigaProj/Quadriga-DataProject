@@ -215,6 +215,94 @@
   .tab.active .tab-label{ color:var(--pine-deep); }
   .tab.active .tab-icon{ filter:none; }
 
+  /* ===================== SCREEN 8 : 운동 고르기 ===================== */
+  .sport-group{ margin-top:22px; }
+  .sport-group-name{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+  .sport-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .sport-card{
+    display:flex; align-items:center; gap:10px; text-align:left;
+    padding:14px 12px; border-radius:14px; cursor:pointer;
+    background:var(--paper); border:1.5px solid var(--line);
+    font:inherit; color:var(--ink); min-width:0;
+  }
+  .sport-card:hover{ border-color:var(--pine-tint); }
+  .sport-card.on{ background:var(--pine-tint); border-color:var(--pine); }
+  .sport-icon{ font-size:22px; line-height:1; flex-shrink:0; }
+  .sport-name{ font-size:14px; font-weight:600; letter-spacing:-0.01em;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sport-check{
+    margin-left:auto; width:18px; height:18px; border-radius:50%;
+    border:1.5px solid var(--line); flex-shrink:0;
+  }
+  .sport-card.on .sport-check{
+    background:var(--pine); border-color:var(--pine);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-6' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size:contain;
+  }
+
+  .sport-applied{
+    margin:10px 22px 0; padding:12px 14px; border-radius:12px;
+    background:var(--pine-tint); font-size:12.5px; line-height:1.6; color:var(--ink);
+  }
+  .sport-applied b{ color:var(--pine-deep); }
+
+  .sport-actions{
+    padding:12px 22px; background:var(--paper); border-top:1px solid var(--line);
+  }
+  .sport-picked{ display:flex; flex-wrap:wrap; gap:9px; margin-top:22px; }
+  .sport-chip{
+    display:flex; align-items:center; gap:7px; padding:10px 14px;
+    border-radius:999px; background:var(--pine-tint); border:1px solid var(--pine);
+    font-size:14px; font-weight:600;
+  }
+  .sport-chip .sport-icon{ font-size:17px; }
+  .sport-why{
+    margin-top:18px; padding:16px 18px; border-radius:16px;
+    background:var(--bg); border:1px solid var(--line);
+    font-size:13px; line-height:1.7; color:var(--ink);
+  }
+  .sport-why b{ color:var(--pine-deep); }
+  .sport-why .why-head{ font-size:12.5px; color:var(--muted); margin-bottom:6px; }
+  .btn-line{
+    margin-top:20px; background:var(--paper); color:var(--pine-deep);
+    border:1px solid var(--pine); font-weight:700;
+  }
+  .btn-line:hover{ background:var(--pine-tint); }
+
+  /* ===================== SCREEN 7 : 운동 기록 ===================== */
+  .rec-stats{ display:flex; gap:10px; margin-top:20px; }
+  .rec-stat{
+    flex:1; padding:16px 10px; border-radius:16px; text-align:center;
+    background:var(--bg); border:1px solid var(--line);
+  }
+  .rec-num{ font-size:24px; font-weight:800; letter-spacing:-0.02em;
+            font-variant-numeric:tabular-nums; }
+  .rec-cap{ font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .rec-block{ margin-top:22px; }
+  .rec-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+  .rec-age-row{
+    display:flex; align-items:center; justify-content:space-around;
+    padding:18px 12px; border-radius:16px; background:var(--pine-tint);
+  }
+  .rec-age-num{ font-size:26px; font-weight:800; text-align:center;
+                font-variant-numeric:tabular-nums; }
+  .rec-arrow{ font-size:14px; font-weight:700; color:var(--pine-deep); }
+  .rec-note{ font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.6; }
+  .rec-item{
+    display:flex; align-items:center; gap:12px; padding:12px 2px;
+    border-bottom:1px solid var(--line); font-size:14px;
+  }
+  .rec-item:last-child{ border-bottom:none; }
+  .rec-date{ font-size:12.5px; color:var(--muted); width:74px; flex-shrink:0;
+             font-variant-numeric:tabular-nums; }
+  .rec-name{ flex:1; min-width:0; }
+  .rec-check{ color:var(--pine); font-weight:700; }
+  .rec-empty{
+    padding:24px 18px; border-radius:16px; background:var(--bg);
+    border:1px dashed var(--line); font-size:13px; color:var(--muted);
+    line-height:1.7; text-align:center;
+  }
+
   /* ===================== SCREEN 4 : 루틴 플레이어 ===================== */
   .player-video{
     margin:0 22px; margin-top:18px; aspect-ratio:4/3; border-radius:18px; background:linear-gradient(160deg,#2C4B3E,#1F3830);
@@ -895,10 +983,7 @@
 
     <div style="flex:1;"></div>
 
-    <div class="tabbar">
-      <button class="tab active" onclick="goTo('s3')"><div class="tab-icon">🏠</div><div class="tab-label">홈</div></button>
-      <button class="tab" onclick="goTo('s5')"><div class="tab-icon">👤</div><div class="tab-label">프로필</div></button>
-    </div>
+    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 4 : 루틴 플레이어 ============ -->
@@ -919,6 +1004,7 @@
         <button type="button" class="cond-btn heavy" id="heavyBtn" onclick="toggleHeavy()">몸이 무거운 날</button>
       </div>
       <div class="cond-hint" id="condHint">아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.</div>
+      <div class="sport-applied" id="sportApplied" style="display:none;"></div>
       <div class="steps-dots" id="stepsDots">
         <div class="d on"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div>
       </div>
@@ -1020,10 +1106,68 @@
     </div>
     <div class="reset-row"><button onclick="resetSettings()">설정 초기화</button></div>
 
-    <div class="tabbar">
-      <button class="tab" onclick="goTo('s3')"><div class="tab-icon">🏠</div><div class="tab-label">홈</div></button>
-      <button class="tab active" onclick="goTo('s5')"><div class="tab-icon">👤</div><div class="tab-label">프로필</div></button>
+    <div class="tabbar" data-tabbar></div>
+  </section>
+
+  <!-- ============ SCREEN 8 : 운동 고르기 ============ -->
+  <section class="screen" id="s8">
+    <div class="content">
+      <div class="eyebrow">운동 고르기</div>
+      <h1 class="title">배우고 싶거나<br/>하고 싶은 운동을 골라주세요</h1>
+      <p class="sub">여러 개 골라도 돼요. 고른 종목에 맞춰 루틴을 다듬어 드립니다.</p>
+
+      <div id="sportPick">
+        <div id="sportGroups"></div>
+      </div>
+
+      <div id="sportDone" style="display:none;">
+        <div class="sport-picked" id="sportPicked"></div>
+        <div class="sport-why" id="sportWhy"></div>
+        <button class="btn btn-line" onclick="editSports()">선택 변경</button>
+      </div>
     </div>
+
+    <div class="sport-actions" id="sportActions">
+      <button class="btn btn-primary" id="sportConfirm" onclick="confirmSports()">선택 완료</button>
+    </div>
+
+    <div class="tabbar" data-tabbar></div>
+  </section>
+
+  <!-- ============ SCREEN 7 : 운동 기록 ============ -->
+  <section class="screen" id="s7">
+    <div class="content">
+      <div class="eyebrow">기록</div>
+      <h1 class="title">지금까지 이렇게<br/>움직였어요</h1>
+
+      <div class="rec-stats">
+        <div class="rec-stat"><div class="rec-num" id="recDay">—</div><div class="rec-cap">프로그램</div></div>
+        <div class="rec-stat"><div class="rec-num" id="recDone">—</div><div class="rec-cap">완료한 루틴</div></div>
+        <div class="rec-stat"><div class="rec-num" id="recStreak">—</div><div class="rec-cap">연속</div></div>
+      </div>
+
+      <div class="rec-block" id="recAgeBlock" style="display:none;">
+        <div class="rec-head">체력나이 변화</div>
+        <div class="rec-age-row">
+          <div><div class="rec-age-num" id="recFirstAge">—</div><div class="rec-cap">첫 점검</div></div>
+          <div class="rec-arrow" id="recDelta">→</div>
+          <div><div class="rec-age-num" id="recNowAge">—</div><div class="rec-cap">지금</div></div>
+        </div>
+        <div class="rec-note" id="recAgeNote"></div>
+      </div>
+
+      <div class="rec-block">
+        <div class="rec-head">운동한 날</div>
+        <div id="recList"></div>
+      </div>
+
+      <div class="rec-block" id="recMeasureBlock" style="display:none;">
+        <div class="rec-head">점검 기록</div>
+        <div id="recMeasures"></div>
+      </div>
+    </div>
+
+    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
@@ -1091,6 +1235,8 @@ const state = {
   intensity: null,     // 강도
   programStart: null,  // 3개월 프로그램 시작일 (ISO yyyy-mm-dd)
   routineLog: [],      // [{date, no, done}]
+  sports: [],          // 배우고 싶은 운동 종목 id 목록
+  sportsDone: false,   // 선택을 끝냈는지 (끝냈으면 요약 화면을 먼저 보여준다)
 };
 
 const PURPOSE_LABEL = {
@@ -1477,6 +1623,7 @@ function snapshot(){
     targetAge: state.targetAge,
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
+    sports: state.sports, sportsDone: state.sportsDone,
     updated: new Date().toISOString().slice(0, 10),
   };
 }
@@ -1508,6 +1655,8 @@ function applyProfile(saved){
   if (saved) Object.assign(state, saved);
   state.programStart = saved?.programStart ?? null;
   state.routineLog = Array.isArray(saved?.routineLog) ? saved.routineLog : [];
+  state.sports = Array.isArray(saved?.sports) ? saved.sports : [];
+  state.sportsDone = !!saved?.sportsDone && state.sports.length > 0;
   selectMethod(saved?.method || 'self');
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
@@ -1636,6 +1785,8 @@ async function logout(){
   state.purpose = null;
   state.programStart = null;
   state.routineLog = [];
+  state.sports = [];
+  state.sportsDone = false;
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -1679,10 +1830,208 @@ function setStatus(msg) {
   bar.style.display = msg ? 'block' : 'none';
 }
 
+/* ---------------------------------------------------------------------------
+   하단 탭바 — 한 곳에서 그린다. 화면마다 복사해 두면 탭이 늘 때마다 어긋난다.
+   --------------------------------------------------------------------------- */
+
+const TABS = [
+  { id: 's3', icon: '🏠', label: '홈' },
+  { id: 's7', icon: '📈', label: '기록' },
+  { id: 's8', icon: '🎽', label: '운동 고르기' },
+  { id: 's5', icon: '👤', label: '프로필' },
+];
+
+function renderTabbar(activeId){
+  const html = TABS.map(t =>
+    `<button class="tab${t.id === activeId ? ' active' : ''}" onclick="goTo('${t.id}')">
+       <div class="tab-icon">${t.icon}</div><div class="tab-label">${t.label}</div>
+     </button>`).join('');
+  document.querySelectorAll('[data-tabbar]').forEach(el => { el.innerHTML = html; });
+}
+
+/* ---------------------------------------------------------------------------
+   운동 기록 — 루틴을 실제로 한 날과 체력나이 변화
+   --------------------------------------------------------------------------- */
+
+/* 오늘부터 거꾸로 세어 며칠 연속으로 했는지. 오늘 아직 안 했으면 어제부터 센다. */
+function streakDays(log){
+  const days = new Set((log || []).map(e => e.date));
+  if (!days.size) return 0;
+  const d = new Date();
+  const iso = (x) => x.toISOString().slice(0, 10);
+  if (!days.has(iso(d))) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (days.has(iso(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+const fmtDate = (s) => {
+  const [y, m, d] = String(s).split('-');
+  return m && d ? `${Number(m)}월 ${Number(d)}일` : s;
+};
+
+async function renderRecords(){
+  const log = [...(state.routineLog || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  $('recDay').textContent = state.programStart ? `D+${programDay()}` : '—';
+  $('recDone').textContent = log.length ? `${log.length}회` : '0회';
+  const st = streakDays(log);
+  $('recStreak').textContent = st ? `${st}일` : '—';
+
+  // 체력나이 변화 — 첫 점검이 있어야 비교가 성립한다
+  const first = state.first?.체력나이 ?? null;
+  const now = state.result?.체력나이 ?? null;
+  if (first !== null && now !== null) {
+    $('recAgeBlock').style.display = 'block';
+    $('recFirstAge').textContent = `${Math.round(first)}세`;
+    $('recNowAge').textContent = `${Math.round(now)}세`;
+    const d = now - first;
+    $('recDelta').textContent = Math.abs(d) < 0.5 ? '→' : (d < 0 ? '↓' : '↑');
+    $('recAgeNote').textContent = Math.abs(d) < 0.5
+      ? '첫 점검과 큰 차이가 없어요. 3개월 뒤 다시 재보면 흐름이 보입니다.'
+      : (d < 0 ? `첫 점검보다 ${Math.abs(d).toFixed(1)}세 젊어졌어요.`
+               : `첫 점검보다 ${d.toFixed(1)}세 올라갔어요. 측정 편차일 수 있으니 다시 재보세요.`);
+  } else {
+    $('recAgeBlock').style.display = 'none';
+  }
+
+  $('recList').innerHTML = log.length
+    ? log.slice(0, 30).map(e => `<div class="rec-item">
+        <div class="rec-date">${fmtDate(e.date)}</div>
+        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
+        <div class="rec-check">✓</div>
+      </div>`).join('')
+    : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
+         홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
+
+  // 계정이면 서버에 남은 점검 기록도 같이 보여준다
+  const box = $('recMeasureBlock');
+  if (!state.account) { box.style.display = 'none'; return; }
+  try {
+    const r = await API.myMeasurements();
+    const rows = (r.기록 || []).filter(m => m.result?.체력나이 != null);
+    if (!rows.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    $('recMeasures').innerHTML = rows.slice(0, 10).map(m => `<div class="rec-item">
+        <div class="rec-date">${m.updated || ''}</div>
+        <div class="rec-name">체력나이 ${Math.round(m.result.체력나이)}세</div>
+      </div>`).join('');
+  } catch (e) { box.style.display = 'none'; }
+}
+
+/* ---------------------------------------------------------------------------
+   운동 고르기 — 배우고 싶은 종목을 고른다. 루틴 추천이 이걸 참고한다.
+   --------------------------------------------------------------------------- */
+
+let sportCatalog = null;        // { 분류: [...], 종목: [...] }
+
+async function loadSportCatalog(){
+  if (sportCatalog) return sportCatalog;
+  sportCatalog = await API.sports();
+  return sportCatalog;
+}
+
+/* 고르는 중 / 다 고른 뒤 — 두 모습을 한 화면에서 바꿔 낀다. */
+async function renderSports(){
+  if (state.sportsDone && (state.sports || []).length) return renderSportsDone();
+  renderSportsPick();
+  return renderSportsGrid();
+}
+
+function renderSportsPick(){
+  $('sportPick').style.display = 'block';
+  $('sportDone').style.display = 'none';
+  $('sportActions').style.display = 'block';
+  updateConfirmLabel();
+}
+
+function updateConfirmLabel(){
+  const n = (state.sports || []).length;
+  $('sportConfirm').textContent = n ? `선택 완료 · ${n}개` : '고르지 않고 넘어가기';
+}
+
+/* 고른 종목과, 그게 루틴에 어떻게 쓰이는지. */
+async function renderSportsDone(){
+  $('sportPick').style.display = 'none';
+  $('sportDone').style.display = 'block';
+  $('sportActions').style.display = 'none';
+
+  const cat = await loadSportCatalog().catch(() => null);
+  const table = new Map((cat?.종목 || []).map(s => [s.id, s]));
+  const picked = (state.sports || []).map(id => table.get(id)).filter(Boolean);
+
+  $('sportPicked').innerHTML = picked.map(s =>
+    `<span class="sport-chip"><span class="sport-icon">${s.아이콘}</span>${s.이름}</span>`).join('');
+
+  try {
+    const sum = await API.sportsSummary(state.sports);
+    const 요인 = Object.keys(sum.체력요인 || {}).slice(0, 3);
+    const 부위 = sum.조심할부위 || [];
+    $('sportWhy').innerHTML =
+      `<div class="why-head">루틴을 짤 때 이렇게 참고해요</div>` +
+      (요인.length ? `고른 운동이 많이 쓰는 <b>${요인.join(' · ')}</b> 을(를) 먼저 챙깁니다.` : '') +
+      (부위.length ? `<br/>이 종목들이 자주 무리를 주는 <b>${부위.join(' · ')}</b> 은(는) 조심해서 넣습니다.` : '');
+  } catch (e) {
+    $('sportWhy').innerHTML = '<div class="why-head">루틴을 짤 때 참고합니다</div>';
+  }
+}
+
+async function renderSportsGrid(){
+  const box = $('sportGroups');
+  let cat;
+  try {
+    cat = await loadSportCatalog();
+  } catch (e) {
+    box.innerHTML = '<div class="rec-empty">종목 목록을 불러오지 못했어요.<br/>' +
+                    '잠시 뒤 다시 열어주세요.</div>';
+    return;
+  }
+  const picked = new Set(state.sports || []);
+  box.innerHTML = cat.분류.map(g => {
+    const items = cat.종목.filter(s => s.분류 === g);
+    if (!items.length) return '';
+    return `<div class="sport-group">
+      <div class="sport-group-name">${g}</div>
+      <div class="sport-grid">${items.map(s => `
+        <button type="button" class="sport-card${picked.has(s.id) ? ' on' : ''}"
+                data-sport="${s.id}" onclick="toggleSport('${s.id}')">
+          <span class="sport-icon">${s.아이콘}</span>
+          <span class="sport-name">${s.이름}</span>
+          <span class="sport-check"></span>
+        </button>`).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleSport(id){
+  const set = new Set(state.sports || []);
+  set.has(id) ? set.delete(id) : set.add(id);
+  state.sports = [...set];
+  const el = document.querySelector(`.sport-card[data-sport="${id}"]`);
+  if (el) el.classList.toggle('on', set.has(id));
+  updateConfirmLabel();
+  saveProfile();
+}
+
+function confirmSports(){
+  state.sportsDone = (state.sports || []).length > 0;
+  saveProfile();
+  if (state.sportsDone) renderSportsDone();
+  else showToast('고른 종목이 없어 기본 루틴으로 안내할게요');
+}
+
+function editSports(){
+  state.sportsDone = false;
+  saveProfile();
+  renderSportsPick();
+  renderSportsGrid();
+}
+
 /* ---- 화면 전환 ---- */
 function goTo(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
+  renderTabbar(id);
   syncAppbar(id);
   closeAccount();
   document.querySelector('.device').scrollTop = 0;
@@ -1692,6 +2041,8 @@ function goTo(id){
   if(id === 's3') { loadHome(); paintGauges({ animate: true }); }
   if(id === 's4') resetRoutine();
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
+  if(id === 's7') renderRecords();
+  if(id === 's8') renderSports();
   if(id === 's6') renderRecheck();
 }
 
@@ -2094,8 +2445,9 @@ async function loadHome(){
   const m = state.routineMeta;
   if (m) {
     $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
-    $('heroMeta').textContent =
-      `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
+    const 기본 = `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
+    const 종목 = (m.고른종목 || []).length ? ` · ${m.고른종목.slice(0, 2).join('·')} 반영` : '';
+    $('heroMeta').textContent = 기본 + 종목;
   } else {
     $('heroTitle').textContent = '오늘의 루틴';
     $('heroMeta').textContent = state.routine.length ? `${state.routine.length}가지 동작` : '루틴을 불러오지 못했어요';
@@ -2116,6 +2468,7 @@ async function loadRoutine(){
       heavy: heavyOn,
       fitness_age: state.result?.체력나이,
       real_age: state.age,
+      sports: (state.sports || []).join(','),
     });
     state.routineMeta = r;
     state.intensity = r.강도;
@@ -2139,7 +2492,28 @@ async function loadRoutine(){
    몸 무거운 날·제외 부위는 서버(/program/routine)가 steps 와 강도에 이미 반영해 준다.
    오프라인 폴백일 때만 본운동 앞 2개로 클라이언트에서 줄인다. */
 let currentStep = 0;
-function resetRoutine(){ currentStep = 0; renderStep(); }
+function resetRoutine(){ currentStep = 0; renderStep(); renderSportApplied(); }
+
+/* 고른 종목이 오늘 루틴에 어떻게 반영됐는지 한 줄로 알려준다. */
+function renderSportApplied(){
+  const box = $('sportApplied');
+  const m = state.routineMeta;
+  if (!box) return;
+  const 종목 = m?.고른종목 || [];
+  const 반영 = m?.종목반영 || [];
+  if (!종목.length) { box.style.display = 'none'; return; }
+
+  const 바꾼 = 반영.find(t => t.바꾼것);
+  let 말 = `<b>${종목.join(' · ')}</b> 을(를) 고르셔서 `;
+  if (바꾼) 말 += `<b>${바꾼.바꾼것.대체}</b> 를 넣었어요.`;
+  else if (반영.length) 말 += '관련된 동작을 앞으로 옮겼어요.';
+  else 말 += '오늘 루틴이 이미 잘 맞아서 그대로 갑니다.';
+
+  const 부위 = m?.조심할부위 || [];
+  if (부위.length) 말 += `<br/>이 종목들이 자주 무리를 주는 <b>${부위.join('·')}</b> 이(가) 아프면 위 버튼을 눌러주세요.`;
+  box.innerHTML = 말;
+  box.style.display = 'block';
+}
 
 function activeRoutine(){
   if (state.routineMeta || !heavyOn) return state.routine;    // 서버 응답이면 그대로
@@ -2181,7 +2555,8 @@ function logRoutineDone(){
   const today = new Date().toISOString().slice(0,10);
   const no = state.routineMeta?.루틴번호 ?? null;
   if (!state.routineLog.some(e => e.date === today)) {
-    state.routineLog.push({ date: today, no, done: true });
+    state.routineLog.push({ date: today, no, done: true,
+                           name: state.routineMeta?.루틴명 || null });
     saveProfile();
     showToast(`오늘 루틴 완료 · 이번 3개월 ${state.routineLog.length}회`);
   }

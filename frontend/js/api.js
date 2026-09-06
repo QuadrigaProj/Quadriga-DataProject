@@ -55,6 +55,8 @@ const API = (() => {
     daily: (q) => call('/daily?' + qs(q)),
     videos: (q) => call('/videos?' + qs(q)),
     centers: (q) => call('/centers?' + qs(q)),
+    sports: () => call('/sports'),
+    sportsSummary: (ids) => call('/sports/summary?' + qs({ ids: (ids || []).join(',') })),
 
     // --- 계정 ---
     providers: () => call('/auth/providers'),

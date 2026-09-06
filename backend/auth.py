@@ -59,6 +59,11 @@ MIN_PASSWORD = 8
 # 소셜 응답에서 이것만 남긴다. 나머지(전화번호·생일·성별·주소 등)는 버린다.
 KEEP_FIELDS = ("uid", "email", "name")
 
+# 카카오는 Client Secret 이 선택 기능이다. 콘솔에서 켜지 않으면 값 자체가 없다.
+# 없어도 로그인은 되므로, 없을 때는 요청에서 빼고 진행한다.
+# (구글·네이버는 필수라 없으면 버튼을 켜지 않는다)
+SECRET_OPTIONAL = {"kakao"}
+
 PROVIDERS = {
     "google": {
         "authorize": "https://accounts.google.com/o/oauth2/v2/auth",
@@ -88,7 +93,12 @@ def client_config(provider: str) -> tuple[str | None, str | None]:
 
 
 def enabled_providers() -> list[str]:
-    return [name for name in PROVIDERS if all(client_config(name))]
+    out = []
+    for name in PROVIDERS:
+        cid, secret = client_config(name)
+        if cid and (secret or name in SECRET_OPTIONAL):
+            out.append(name)
+    return out
 
 
 # ---------------------------------------------------------------------------

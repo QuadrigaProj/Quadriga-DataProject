@@ -430,3 +430,29 @@ def test_로컬_http에서는_secure를_붙이지_않는다():
     c = _fresh()
     r = c.post("/auth/signup", json={"email": "local@ex.com", "password": "abcd1234"})
     assert "secure" not in r.headers.get("set-cookie", "").lower()
+
+
+def test_카카오는_client_secret_없이도_켜진다(monkeypatch):
+    """카카오 Client Secret 은 콘솔에서 켜야만 생기는 선택 항목이다.
+    없다고 로그인 자체를 막으면 안 된다."""
+    from backend import auth
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "test-id")
+    monkeypatch.delenv("KAKAO_CLIENT_SECRET", raising=False)
+    assert "kakao" in auth.enabled_providers()
+
+    c = _fresh()
+    assert "kakao" in c.get("/auth/providers").json()["소셜"]
+    r = c.get("/auth/kakao/start", follow_redirects=False)
+    assert r.status_code in (302, 307)          # 제공자로 넘어간다
+
+
+def test_구글은_secret이_없으면_켜지지_않는다(monkeypatch):
+    from backend import auth
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-id")
+    monkeypatch.delenv("GOOGLE_CLIENT_SECRET", raising=False)
+    assert "google" not in auth.enabled_providers()
+
+    c = _fresh()
+    r = c.get("/auth/google/start", follow_redirects=False)
+    assert r.status_code == 503
+    assert "_CLIENT_SECRET" in r.json()["detail"]

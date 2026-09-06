@@ -1,0 +1,36 @@
+# PR 을 올리면 테스트가 자동으로 돕니다.
+# 화면이 붙어 있는 API 응답 모양이 바뀌면 여기서 먼저 걸립니다.
+name: 테스트
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# 같은 PR 에 연달아 push 하면 이전 실행은 취소한다. 큐가 밀리지 않게.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 파이썬 준비 (runtime.txt 와 같은 3.11)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # 서버 실행용만 설치한다. 분석·노트북용(requirements-dev.txt)은
+      # 테스트에 필요 없어서 빼둔다 — 설치가 그만큼 빨라진다.
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 테스트
+        run: pytest -q

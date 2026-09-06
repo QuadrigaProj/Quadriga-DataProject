@@ -215,6 +215,31 @@
   .tab.active .tab-label{ color:var(--pine-deep); }
   .tab.active .tab-icon{ filter:none; }
 
+  /* ===================== SCREEN 8 : 운동 고르기 ===================== */
+  .sport-group{ margin-top:22px; }
+  .sport-group-name{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+  .sport-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .sport-card{
+    display:flex; align-items:center; gap:10px; text-align:left;
+    padding:14px 12px; border-radius:14px; cursor:pointer;
+    background:var(--paper); border:1.5px solid var(--line);
+    font:inherit; color:var(--ink); min-width:0;
+  }
+  .sport-card:hover{ border-color:var(--pine-tint); }
+  .sport-card.on{ background:var(--pine-tint); border-color:var(--pine); }
+  .sport-icon{ font-size:22px; line-height:1; flex-shrink:0; }
+  .sport-name{ font-size:14px; font-weight:600; letter-spacing:-0.01em;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sport-check{
+    margin-left:auto; width:18px; height:18px; border-radius:50%;
+    border:1.5px solid var(--line); flex-shrink:0;
+  }
+  .sport-card.on .sport-check{
+    background:var(--pine); border-color:var(--pine);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-6' stroke='%23fff' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size:contain;
+  }
+
   /* ===================== SCREEN 7 : 운동 기록 ===================== */
   .rec-stats{ display:flex; gap:10px; margin-top:20px; }
   .rec-stat{
@@ -1054,6 +1079,19 @@
     <div class="tabbar" data-tabbar></div>
   </section>
 
+  <!-- ============ SCREEN 8 : 운동 고르기 ============ -->
+  <section class="screen" id="s8">
+    <div class="content">
+      <div class="eyebrow">운동 고르기</div>
+      <h1 class="title">배우고 싶거나<br/>하고 싶은 운동을 골라주세요</h1>
+      <p class="sub">여러 개 골라도 돼요. 고른 종목에 맞춰 루틴을 다듬어 드립니다.</p>
+
+      <div id="sportGroups"></div>
+    </div>
+
+    <div class="tabbar" data-tabbar></div>
+  </section>
+
   <!-- ============ SCREEN 7 : 운동 기록 ============ -->
   <section class="screen" id="s7">
     <div class="content">
@@ -1155,6 +1193,7 @@ const state = {
   intensity: null,     // 강도
   programStart: null,  // 3개월 프로그램 시작일 (ISO yyyy-mm-dd)
   routineLog: [],      // [{date, no, done}]
+  sports: [],          // 배우고 싶은 운동 종목 id 목록
 };
 
 const PURPOSE_LABEL = {
@@ -1541,6 +1580,7 @@ function snapshot(){
     targetAge: state.targetAge,
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
+    sports: state.sports,
     updated: new Date().toISOString().slice(0, 10),
   };
 }
@@ -1572,6 +1612,7 @@ function applyProfile(saved){
   if (saved) Object.assign(state, saved);
   state.programStart = saved?.programStart ?? null;
   state.routineLog = Array.isArray(saved?.routineLog) ? saved.routineLog : [];
+  state.sports = Array.isArray(saved?.sports) ? saved.sports : [];
   selectMethod(saved?.method || 'self');
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
@@ -1700,6 +1741,7 @@ async function logout(){
   state.purpose = null;
   state.programStart = null;
   state.routineLog = [];
+  state.sports = [];
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -1750,6 +1792,7 @@ function setStatus(msg) {
 const TABS = [
   { id: 's3', icon: '🏠', label: '홈' },
   { id: 's7', icon: '📈', label: '기록' },
+  { id: 's8', icon: '🎽', label: '운동 고르기' },
   { id: 's5', icon: '👤', label: '프로필' },
 ];
 
@@ -1831,6 +1874,54 @@ async function renderRecords(){
   } catch (e) { box.style.display = 'none'; }
 }
 
+/* ---------------------------------------------------------------------------
+   운동 고르기 — 배우고 싶은 종목을 고른다. 루틴 추천이 이걸 참고한다.
+   --------------------------------------------------------------------------- */
+
+let sportCatalog = null;        // { 분류: [...], 종목: [...] }
+
+async function loadSportCatalog(){
+  if (sportCatalog) return sportCatalog;
+  sportCatalog = await API.sports();
+  return sportCatalog;
+}
+
+async function renderSports(){
+  const box = $('sportGroups');
+  let cat;
+  try {
+    cat = await loadSportCatalog();
+  } catch (e) {
+    box.innerHTML = '<div class="rec-empty">종목 목록을 불러오지 못했어요.<br/>' +
+                    '잠시 뒤 다시 열어주세요.</div>';
+    return;
+  }
+  const picked = new Set(state.sports || []);
+  box.innerHTML = cat.분류.map(g => {
+    const items = cat.종목.filter(s => s.분류 === g);
+    if (!items.length) return '';
+    return `<div class="sport-group">
+      <div class="sport-group-name">${g}</div>
+      <div class="sport-grid">${items.map(s => `
+        <button type="button" class="sport-card${picked.has(s.id) ? ' on' : ''}"
+                data-sport="${s.id}" onclick="toggleSport('${s.id}')">
+          <span class="sport-icon">${s.아이콘}</span>
+          <span class="sport-name">${s.이름}</span>
+          <span class="sport-check"></span>
+        </button>`).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleSport(id){
+  const set = new Set(state.sports || []);
+  set.has(id) ? set.delete(id) : set.add(id);
+  state.sports = [...set];
+  const el = document.querySelector(`.sport-card[data-sport="${id}"]`);
+  if (el) el.classList.toggle('on', set.has(id));
+  saveProfile();
+}
+
 /* ---- 화면 전환 ---- */
 function goTo(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -1846,6 +1937,7 @@ function goTo(id){
   if(id === 's4') resetRoutine();
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
   if(id === 's7') renderRecords();
+  if(id === 's8') renderSports();
   if(id === 's6') renderRecheck();
 }
 

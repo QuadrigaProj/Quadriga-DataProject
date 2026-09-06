@@ -23,7 +23,7 @@ from typing import Literal
 import httpx
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -52,6 +52,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+PROVIDER_CONSOLE = {
+    "google": "https://console.cloud.google.com/apis/credentials",
+    "naver": "https://developers.naver.com/apps/#/register",
+    "kakao": "https://developers.kakao.com/console/app",
+}
 
 AgeGroup = Literal["성인", "어르신", "성장기"]
 Sex = Literal["M", "F"]
@@ -400,6 +406,46 @@ def _require_user(token: str | None) -> dict:
     return user
 
 
+@app.get("/auth/setup", response_class=HTMLResponse, include_in_schema=False)
+def auth_setup(request: Request) -> str:
+    """소셜 로그인 설정 도우미.
+
+    각 콘솔에 등록할 리디렉션 URI 를 지금 서버 주소 기준으로 그대로 보여준다.
+    콘솔에 넣는 값과 서버가 보내는 값이 한 글자라도 다르면 redirect_uri_mismatch 가 난다.
+    """
+    rows = []
+    for name in PROVIDER_CONSOLE:
+        uri = str(request.url_for("auth_callback", provider=name))
+        cid, sec = auth.client_config(name)
+        state = "✅ 설정됨" if (cid and sec) else "⚠️ .env 에 키 없음"
+        rows.append(f"""<tr><td><b>{name}</b></td><td>{state}</td>
+            <td><code>{uri}</code></td>
+            <td><a href="{PROVIDER_CONSOLE[name]}" target="_blank" rel="noreferrer">콘솔 열기</a></td></tr>""")
+    return f"""<!doctype html><meta charset="utf-8"><title>소셜 로그인 설정</title>
+<style>
+ body{{font-family:-apple-system,'Malgun Gothic',sans-serif;max-width:760px;margin:40px auto;
+       padding:0 20px;line-height:1.6;color:#20261F}}
+ table{{border-collapse:collapse;width:100%;margin:18px 0}}
+ td,th{{border-bottom:1px solid #DCDCC9;padding:10px 8px;text-align:left;font-size:14px}}
+ code{{background:#EDEFE6;padding:3px 6px;border-radius:5px;font-size:13px}}
+ .note{{background:#F3E2CC;padding:14px 16px;border-radius:10px;font-size:14px}}
+</style>
+<h1>소셜 로그인 설정</h1>
+<p>아래 <b>리디렉션 URI</b> 를 각 콘솔에 <b>그대로 복사</b>해서 등록하세요.
+한 글자라도 다르면 <code>redirect_uri_mismatch</code> 가 납니다.</p>
+<table><tr><th>제공자</th><th>상태</th><th>리디렉션 URI</th><th>콘솔</th></tr>
+{''.join(rows)}</table>
+<div class="note">
+ <b>이 주소들은 브라우저로 직접 열어보는 페이지가 아닙니다.</b>
+ 로그인이 끝난 뒤 제공자가 우리 서버를 부를 때 쓰는 통로예요.
+ 직접 열면 "정상적인 로그인 요청이 아니다" 라는 안내만 나옵니다. 그게 맞는 동작입니다.
+ <br><br>
+ 키를 넣은 뒤에는 서버를 다시 시작해야 반영됩니다.
+ 권한(scope)은 <b>이메일·닉네임만</b> 신청하세요.
+</div>
+<p><a href="/">← 서비스로 돌아가기</a></p>"""
+
+
 @app.get("/auth/providers")
 def auth_providers() -> dict:
     """화면이 어떤 소셜 버튼을 살릴지 결정하는 데 쓴다."""
@@ -495,6 +541,17 @@ async def auth_callback(provider: str, request: Request,
                         ) -> RedirectResponse:
     if provider not in auth.PROVIDERS:
         raise HTTPException(404, "지원하지 않는 로그인 수단입니다.")
+    if not code and not state:
+        # 주소창에 직접 친 경우다. 에러가 아니라 원래 이렇게 동작한다.
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'>"
+            "<div style=\"font-family:sans-serif;max-width:560px;margin:60px auto;line-height:1.7\">"
+            f"<h2>{provider} 로그인 통로입니다</h2>"
+            "<p>이 주소는 브라우저로 직접 여는 페이지가 아니라, 로그인이 끝난 뒤 "
+            f"{provider} 가 우리 서버를 부를 때 쓰는 통로예요. "
+            "지금 이 화면이 보이는 건 <b>서버가 정상 동작한다는 뜻</b>입니다.</p>"
+            "<p>콘솔에 등록할 주소는 <a href='/auth/setup'>/auth/setup</a> 에서 확인하세요.</p>"
+            "<p><a href='/'>← 서비스로 돌아가기</a></p></div>", status_code=200)
     if not code or not state or auth.take_state(state) != provider:
         # state 가 안 맞으면 남이 만든 요청이다. 진행하지 않는다.
         return RedirectResponse("/?login=failed")

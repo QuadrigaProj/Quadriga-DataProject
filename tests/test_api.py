@@ -382,3 +382,18 @@ def test_계정_삭제():
     assert c.request("DELETE", "/auth/me").status_code == 200
     assert c.post("/auth/login", json={"email": "bye@ex.com",
                                        "password": "abcd1234"}).status_code == 401
+
+
+def test_setup_페이지가_리디렉션_URI를_보여준다():
+    c = _fresh()
+    html = c.get("/auth/setup").text
+    for p in ("google", "naver", "kakao"):
+        assert f"/auth/{p}/callback" in html
+
+
+def test_콜백을_직접_열면_설명이_나온다():
+    """에러 페이지가 아니라 '원래 이런 주소다' 라고 알려줘야 한다."""
+    c = _fresh()
+    r = c.get("/auth/google/callback", follow_redirects=False)
+    assert r.status_code == 200
+    assert "통로" in r.text

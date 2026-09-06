@@ -222,18 +222,25 @@ uvicorn backend.main:app --reload
 
 #### 소셜 로그인 설정
 
-각 개발자 콘솔에서 앱을 만들고 `.env` 에 키를 넣으면 버튼이 켜집니다.
+서버를 켜고 **http://localhost:8000/auth/setup** 에 들어가면, 각 콘솔에 등록할
+리디렉션 URI 가 **지금 서버 주소 기준으로** 그대로 나옵니다. 복사해서 붙여넣으세요.
 
 | 제공자 | 콘솔 | 리디렉션 URI |
 |---|---|---|
-| 구글 | console.cloud.google.com → API 및 서비스 → 사용자 인증 정보 | `http://localhost:8000/auth/google/callback` |
-| 네이버 | developers.naver.com → 애플리케이션 등록 | `http://localhost:8000/auth/naver/callback` |
-| 카카오 | developers.kakao.com → 내 애플리케이션 | `http://localhost:8000/auth/kakao/callback` |
+| 구글 | console.cloud.google.com/apis/credentials | `http://localhost:8000/auth/google/callback` |
+| 네이버 | developers.naver.com/apps | `http://localhost:8000/auth/naver/callback` |
+| 카카오 | developers.kakao.com/console/app | `http://localhost:8000/auth/kakao/callback` |
+
+> **이 주소는 브라우저로 직접 여는 페이지가 아닙니다.** 로그인이 끝난 뒤 제공자가
+> 우리 서버를 부를 때 쓰는 통로입니다. 직접 열면 "여긴 통로다" 라는 안내만 나오는데,
+> 그게 정상 동작이자 서버가 살아있다는 확인입니다.
 
 ```
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 ```
+
+키를 넣은 뒤에는 **서버를 다시 시작**해야 반영됩니다.
 
 > 권한(scope)은 **이메일 · 닉네임만** 신청하세요. 휴대폰 번호나 생일 항목은
 > 신청하지 않습니다. 받아도 서버에서 버리지만, 애초에 요청하지 않는 게 맞습니다.

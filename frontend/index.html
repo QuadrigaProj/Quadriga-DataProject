@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>체력나이 — 일상 운동 루틴 처방</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Ctext y=%2726%27 font-size=%2726%27%3E%F0%9F%8F%83%3C/text%3E%3C/svg%3E" />
 <style>
   :root{
     --bg:#EDEFE6;
@@ -166,8 +167,14 @@
     background:rgba(255,255,255,0.06);
   }
   .hero-kicker{ font-size:13.5px; color:rgba(255,255,255,0.75); }
-  .hero-title{ font-size:23px; font-weight:800; margin-top:6px; letter-spacing:-0.01em; }
-  .hero-meta{ font-size:14px; color:rgba(255,255,255,0.85); margin-top:10px; }
+  .hero-title{
+    font-size:23px; font-weight:800; margin-top:6px; letter-spacing:-0.01em;
+    padding-right:56px;
+  }
+  .hero-meta{
+    font-size:14px; color:rgba(255,255,255,0.85); margin-top:10px;
+    padding-right:56px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
   .hero-arrow{
     position:absolute; right:22px; bottom:24px; width:42px; height:42px; border-radius:50%;
     background:rgba(255,255,255,0.16); display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px;
@@ -276,11 +283,38 @@
   .unlock-icon{ font-size:24px; }
   .unlock-title{ font-size:14.5px; font-weight:700; color:var(--clay); }
   .unlock-sub{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+
+  /* --- 기본 정보 · 상태 표시 --- */
+  .seg{ display:flex; gap:8px; margin-top:12px; }
+  .seg button{
+    flex:1; border:1.5px solid var(--line); background:#fff; color:var(--muted);
+    padding:13px 0; border-radius:12px; font-size:15px; font-family:inherit; cursor:pointer;
+  }
+  .seg button.on{
+    border-color:var(--pine); background:var(--pine-tint);
+    color:var(--pine-deep); font-weight:700;
+  }
+  .notice{
+    margin-top:14px; background:var(--amber-tint); color:var(--clay);
+    border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.55;
+  }
+  .statusbar{
+    background:var(--amber-tint); color:var(--clay); font-size:12.5px;
+    padding:8px 14px; text-align:center; border-bottom:1px solid var(--line);
+  }
+  .axis-val{
+    font-size:13px; color:var(--muted); margin-left:auto; margin-right:10px;
+    font-variant-numeric:tabular-nums;
+  }
+  .axis-row .stars{ flex-shrink:0; }
+  .ci-caption{ font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.5; }
 </style>
 </head>
 <body>
 
 <div class="device">
+
+  <div class="statusbar" id="statusBar" style="display:none;"></div>
 
   <!-- ============ SCREEN 1 : 첫 점검 ============ -->
   <section class="screen active" id="s1">
@@ -290,10 +324,31 @@
       <h1 class="title">집에서 잴 수 있는 3가지만<br/>측정할게요</h1>
       <p class="sub">정확한 값이 아니어도 괜찮아요. 체력나이는 3개월마다 다시 잴 수 있어요.</p>
 
-      <!-- 유연성 -->
+      <!-- 기본 정보 -->
       <div class="measure-card">
         <div class="measure-head">
           <div class="measure-badge">1</div>
+          <div>
+            <div class="measure-name">나이 · 성별</div>
+            <div class="measure-desc">같은 또래와 비교해야 체력나이가 나와요</div>
+          </div>
+        </div>
+        <div class="field-row">
+          <input class="field-input" id="ageInput" type="number" min="13" max="100"
+                 placeholder="예: 34" value="34" oninput="onAgeChange()" />
+          <div class="field-unit">세</div>
+        </div>
+        <div class="seg" id="sexSeg">
+          <button type="button" class="on" data-sex="M" onclick="selectSex('M')">남성</button>
+          <button type="button" data-sex="F" onclick="selectSex('F')">여성</button>
+        </div>
+        <div class="notice" id="ageNotice" style="display:none;"></div>
+      </div>
+
+      <!-- 유연성 -->
+      <div class="measure-card">
+        <div class="measure-head">
+          <div class="measure-badge">2</div>
           <div>
             <div class="measure-name">앉아 윗몸 앞으로 굽히기</div>
             <div class="measure-desc">다리를 펴고 앉아 손끝이 닿는 거리</div>
@@ -308,10 +363,10 @@
       <!-- 근력 -->
       <div class="measure-card">
         <div class="measure-head">
-          <div class="measure-badge">2</div>
+          <div class="measure-badge">3</div>
           <div>
-            <div class="measure-name">의자에 앉았다 일어서기</div>
-            <div class="measure-desc">30초 동안 몇 번 반복했는지 세어주세요</div>
+            <div class="measure-name" id="strengthName">교차 윗몸일으키기</div>
+            <div class="measure-desc" id="strengthDesc">30초 동안 몇 번 반복했는지 세어주세요</div>
           </div>
         </div>
         <div class="timer-box">
@@ -331,7 +386,7 @@
       <!-- BMI -->
       <div class="measure-card">
         <div class="measure-head">
-          <div class="measure-badge">3</div>
+          <div class="measure-badge">4</div>
           <div>
             <div class="measure-name">키 · 몸무게</div>
             <div class="measure-desc">BMI는 자동으로 계산돼요</div>
@@ -350,15 +405,16 @@
       <div id="resultBlock" class="result-block" style="display:none;">
         <div class="eyebrow">당신의 체력나이</div>
         <div class="result-age"><span class="num" id="ageResult">78</span>세</div>
-        <div class="result-ci">참고용 추정치 · 신뢰구간 ±2세</div>
+        <div class="result-ci" id="ciNote">참고용 추정치</div>
         <div class="ci-scale">
           <div class="ci-track"></div>
-          <div class="ci-band" style="left:35%; width:30%;"></div>
+          <div class="ci-band" id="ciBand" style="left:35%; width:30%;"></div>
           <div class="ci-dot" style="left:calc(50% - 7px);"></div>
-          <div class="ci-label" style="left:35%;" id="ciLow">76</div>
-          <div class="ci-label" style="left:50%;" id="ciMid">78</div>
-          <div class="ci-label" style="left:65%;" id="ciHigh">80</div>
+          <div class="ci-label" id="ciLow" style="left:35%;">76</div>
+          <div class="ci-label" id="ciMid" style="left:50%;">78</div>
+          <div class="ci-label" id="ciHigh" style="left:65%;">80</div>
         </div>
+        <div class="ci-caption" id="ciCaption"></div>
       </div>
     </div>
     <div class="footer-area">
@@ -418,21 +474,21 @@
     <div class="topbar">
       <div>
         <div class="greet-eyebrow">오늘도 좋은 하루예요</div>
-        <div class="greet-title">예현 님</div>
+        <div class="greet-title" id="greetName">반가워요</div>
       </div>
-      <div class="dday-pill">재점검까지 D-62</div>
+      <div class="dday-pill" id="ddayPill">재점검까지 D-90</div>
     </div>
 
     <button class="hero-btn" onclick="goTo('s4')">
       <div class="hero-kicker">오늘의 루틴</div>
-      <div class="hero-title">근력 루틴 · 12분</div>
-      <div class="hero-meta">의자 앉았다 일어서기 외 4가지</div>
+      <div class="hero-title" id="heroTitle">오늘의 루틴</div>
+      <div class="hero-meta" id="heroMeta">먼저 첫 점검을 마쳐주세요</div>
       <div class="hero-arrow">▶</div>
     </button>
 
     <div class="prescribe-card">
       <div class="prescribe-label">오늘의 일상 처방</div>
-      <div class="prescribe-text">계단은 올라갈 때만 이용해보세요.<br/>내려올 땐 엘리베이터가 무릎에 더 안전해요.</div>
+      <div class="prescribe-text" id="dailyText">계단은 올라갈 때만 이용해보세요.<br/>내려올 땐 엘리베이터가 무릎에 더 안전해요.</div>
     </div>
 
     <div class="review-link"><button onclick="goTo('s6')">지난 점검 결과 미리 보기</button></div>
@@ -457,9 +513,9 @@
         <div class="player-set" id="playerSet">2세트 중 1세트 · 10회</div>
       </div>
       <div class="chip-row">
-        <div class="chip" id="chipKnee" onclick="toggleChip('chipKnee')">무릎</div>
-        <div class="chip" id="chipBack" onclick="toggleChip('chipBack')">허리</div>
-        <div class="chip" id="chipShoulder" onclick="toggleChip('chipShoulder')">어깨</div>
+        <div class="chip" id="chipKnee" data-part="무릎" onclick="toggleChip('chipKnee')">무릎</div>
+        <div class="chip" id="chipBack" data-part="허리" onclick="toggleChip('chipBack')">허리</div>
+        <div class="chip" id="chipShoulder" data-part="어깨" onclick="toggleChip('chipShoulder')">어깨</div>
       </div>
       <div class="heavy-btn" id="heavyBtn" onclick="toggleHeavy()">오늘 몸이 무거운 날이에요</div>
       <div class="steps-dots" id="stepsDots">
@@ -478,34 +534,25 @@
       <div class="eyebrow">스포츠 프로필</div>
       <div class="profile-hero">
         <div>
-          <div class="profile-age"><span class="num">78</span>세</div>
-          <div class="profile-age-sub">체력나이 · 참고용 추정치</div>
+          <div class="profile-age"><span class="num" id="profileAge">—</span>세</div>
+          <div class="profile-age-sub" id="profileSub">체력나이 · 참고용 추정치</div>
         </div>
       </div>
 
-      <div style="margin-top:18px;">
-        <div class="axis-row"><div class="axis-name">근력</div><div class="stars">★★☆☆☆</div></div>
-        <div class="axis-row"><div class="axis-name">유연성</div><div class="stars">★★★★★</div></div>
-        <div class="axis-row"><div class="axis-name">심폐지구력</div><div class="stars">★★★★☆</div></div>
-        <div class="axis-row"><div class="axis-name">평형성</div><div class="stars">★★★☆☆</div></div>
-        <div class="axis-row" style="border-bottom:none;"><div class="axis-name">민첩성</div><div class="stars">★★★☆☆</div></div>
-      </div>
+      <div style="margin-top:18px;" id="axisRows"></div>
+      <div class="ci-caption" id="axisNote"></div>
 
       <div class="weak-card">
         <div class="weak-kicker">약점 우선순위</div>
-        <div class="weak-text">지금 체력나이를 가장 많이 낮추는 건<br/>근력이에요.</div>
-        <div class="weak-arrow">근력만 또래 평균까지 올리면 → 78세 → 74세</div>
-        <div class="calc-table">
-          <div class="calc-row"><span>유연성만 개선</span><span>77세 (−1)</span></div>
-          <div class="calc-row"><span>심폐지구력만 개선</span><span>77.3세 (−0.7)</span></div>
-          <div class="calc-row"><span>근력만 개선</span><span>74세 (−4)</span></div>
-        </div>
+        <div class="weak-text" id="weakText">먼저 첫 점검을 마쳐주세요.</div>
+        <div class="weak-arrow" id="weakArrow"></div>
+        <div class="calc-table" id="calcTable"></div>
       </div>
 
       <div class="goal-card">
         <div class="prescribe-label">목표 설정</div>
         <div class="goal-slider-row">
-          <input type="range" min="70" max="78" value="74" id="goalSlider" oninput="updateGoal(this.value)" />
+          <input type="range" min="20" max="90" value="74" id="goalSlider" oninput="updateGoal(this.value)" />
           <div class="goal-num"><span id="goalNum">74</span>세</div>
         </div>
         <div class="goal-note" id="goalNote">근력을 또래 평균 수준까지 올리면 체력나이가 74세로 계산돼요. 근력 중심 루틴으로 전환할게요.</div>
@@ -526,37 +573,24 @@
 
       <div class="compare-wrap">
         <div class="compare-block">
-          <div class="compare-num before"><span class="num">78</span></div>
-          <div class="compare-label">6월 점검</div>
+          <div class="compare-num before"><span class="num" id="cmpBefore">—</span></div>
+          <div class="compare-label" id="cmpBeforeLabel">지난 점검</div>
         </div>
         <div class="compare-arrow">→</div>
         <div class="compare-block">
-          <div class="compare-num after"><span class="num">75</span></div>
+          <div class="compare-num after"><span class="num" id="cmpAfter">—</span></div>
           <div class="compare-label">오늘</div>
         </div>
       </div>
-      <div class="diff-pill">3세 낮아졌어요</div>
+      <div class="diff-pill" id="diffPill">—</div>
 
-      <div style="margin-top:26px;">
-        <div class="axis-compare-row">
-          <div class="axis-compare-name">근력</div>
-          <div class="axis-compare-stars"><span class="stars" style="color:var(--muted)">★★☆☆☆</span><span>→</span><span class="stars">★★★☆☆</span></div>
-        </div>
-        <div class="axis-compare-row">
-          <div class="axis-compare-name">유연성</div>
-          <div class="axis-compare-stars"><span class="stars">★★★★★</span><span>→</span><span class="stars">★★★★★</span></div>
-        </div>
-        <div class="axis-compare-row">
-          <div class="axis-compare-name">심폐지구력</div>
-          <div class="axis-compare-stars"><span class="stars">★★★★☆</span><span>→</span><span class="stars">★★★★☆</span></div>
-        </div>
-      </div>
+      <div style="margin-top:26px;" id="cmpRows"></div>
 
-      <div class="unlock-card">
+      <div class="unlock-card" id="unlockCard" style="display:none;">
         <div class="unlock-icon">🔓</div>
         <div>
-          <div class="unlock-title">근력 루틴 4개 해금</div>
-          <div class="unlock-sub">근력이 또래 평균에 가까워지며 새 루틴이 열렸어요</div>
+          <div class="unlock-title" id="unlockTitle"></div>
+          <div class="unlock-sub" id="unlockSub"></div>
         </div>
       </div>
     </div>
@@ -567,131 +601,426 @@
 
 </div>
 
+<script src="js/api.js"></script>
 <script>
-  function goTo(id){
-    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    document.querySelector('.device').scrollTop = 0;
-    const content = document.getElementById(id).querySelector('.content');
-    if(content) content.scrollTop = 0;
-    if(id === 's4') resetRoutine();
+/* ---------------------------------------------------------------------------
+   화면 상태와 백엔드 연결.
+
+   원칙: 계산은 전부 백엔드(backend/fitness_age.py)가 한다. 여기서는 값을
+   받아 그리기만 한다. 서버에 못 붙으면 아래 offlineAge() 로 떨어져서
+   화면 흐름만이라도 시연할 수 있게 한다(예시값임을 상단에 표시).
+--------------------------------------------------------------------------- */
+
+const state = {
+  age: 34, sex: 'M', ageGbn: '성인',
+  flexibility: null, strength: 18, height: 164, weight: 61,
+  purpose: null,
+  result: null,        // /fitness-age 응답
+  first: null,         // 첫 점검 결과 (재점검 비교용)
+  routine: [],         // /routine 응답
+  intensity: null,     // /daily 의 강도
+};
+
+const PURPOSE_LABEL = {
+  diet: '다이어트', basic: '기초 체력 증진', sport: '특정 운동을 위한 체력 증진',
+  fall: '낙상 예방', study: '수험생 체력 증진', flex: '유연성 강화',
+};
+
+/* 연령군마다 근력 측정 항목이 다르다 (backend/fitness_age.py 와 같은 규칙) */
+const STRENGTH_ITEM = {
+  '어르신': { name: '의자에 앉았다 일어서기', desc: '30초 동안 몇 번 반복했는지 세어주세요' },
+  '성인':   { name: '교차 윗몸일으키기',      desc: '30초 동안 몇 번 반복했는지 세어주세요' },
+  '청소년': { name: '교차 윗몸일으키기',      desc: '30초 동안 몇 번 반복했는지 세어주세요' },
+};
+
+function ageGroup(age) {
+  if (age >= 65) return '어르신';
+  if (age >= 19) return '성인';
+  return '청소년';
+}
+
+function $(id) { return document.getElementById(id); }
+
+function setStatus(msg) {
+  const bar = $('statusBar');
+  bar.textContent = msg;
+  bar.style.display = msg ? 'block' : 'none';
+}
+
+/* ---- 화면 전환 ---- */
+function goTo(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $(id).classList.add('active');
+  document.querySelector('.device').scrollTop = 0;
+  const content = $(id).querySelector('.content');
+  if(content) content.scrollTop = 0;
+  if(id === 's3') loadHome();
+  if(id === 's4') resetRoutine();
+  if(id === 's5') renderProfile();
+  if(id === 's6') renderRecheck();
+}
+
+/* ---- 화면 1 : 기본 정보 ---- */
+function onAgeChange(){
+  const age = parseInt($('ageInput').value, 10);
+  if (!age) return;
+  state.age = age;
+  state.ageGbn = ageGroup(age);
+  const item = STRENGTH_ITEM[state.ageGbn];
+  $('strengthName').textContent = item.name;
+  $('strengthDesc').textContent = item.desc;
+
+  const notice = $('ageNotice');
+  if (state.ageGbn === '청소년') {
+    notice.innerHTML = '공개된 청소년 측정 데이터는 연령구간이 <b>10~14 · 15~19</b> 둘뿐이라 ' +
+      '체력나이를 신뢰할 수 있게 계산할 수 없어요. 지금은 <b>만 19세 이상</b>만 지원합니다.';
+    notice.style.display = 'block';
+  } else {
+    notice.style.display = 'none';
+  }
+}
+
+function selectSex(sex){
+  state.sex = sex;
+  document.querySelectorAll('#sexSeg button').forEach(b=>b.classList.toggle('on', b.dataset.sex===sex));
+}
+
+function syncInputs(){
+  state.age = parseInt($('ageInput').value, 10) || state.age;
+  state.ageGbn = ageGroup(state.age);
+  const f = parseFloat($('flexInput').value);
+  state.flexibility = Number.isFinite(f) ? f : null;
+  state.strength = count;
+  state.height = parseFloat($('heightInput').value) || null;
+  state.weight = parseFloat($('weightInput').value) || null;
+}
+
+function measurement(){
+  return {
+    age_gbn: state.ageGbn, sex: state.sex,
+    flexibility: state.flexibility, strength: state.strength,
+    height_cm: state.height, weight_kg: state.weight,
+  };
+}
+
+/* 서버에 못 붙었을 때만 쓰는 예시 계산 (화면 확인용) */
+function offlineAge(){
+  const bmi = (state.height && state.weight) ? state.weight / Math.pow(state.height/100, 2) : 22;
+  const flexAge = Math.min(90, Math.max(15, 55 - (state.flexibility ?? 12)));
+  const strengthAge = Math.min(90, Math.max(15, 70 - state.strength));
+  const bmiAge = Math.min(90, Math.max(15, 25 + Math.abs(bmi - 22) * 6));
+  const parts = { 유연성: +flexAge.toFixed(1), 근력: +strengthAge.toFixed(1), 체성분: +bmiAge.toFixed(1) };
+  const vals = Object.values(parts);
+  const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
+  const sd = Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/vals.length);
+  const best = Math.min(...vals);
+  const gains = {};
+  Object.keys(parts).forEach(k=>{
+    const others = Object.entries(parts).filter(([kk])=>kk!==k).map(([,v])=>v);
+    const alt = [...others, best].reduce((a,b)=>a+b,0)/(others.length+1);
+    gains[k] = +(mean - alt).toFixed(1);
+  });
+  const top = Object.keys(gains).reduce((a,b)=>gains[a]>=gains[b]?a:b);
+  return {
+    체력나이: +mean.toFixed(1),
+    신뢰구간: +(sd/Math.sqrt(vals.length)).toFixed(1),
+    항목별: parts,
+    약점: { 약점: top, 개선효과: gains[top], 전체: gains },
+  };
+}
+
+async function calcAge(){
+  syncInputs();
+  if (state.ageGbn === '청소년') { onAgeChange(); return; }
+  if (state.flexibility === null && !state.height) {
+    $('ageNotice').textContent = '측정값을 최소 하나는 입력해주세요.';
+    $('ageNotice').style.display = 'block';
+    return;
   }
 
-  /* ---- Screen 4 : 5개 동작을 순서대로 진행 (더미 루틴 데이터) ---- */
-  const routineSteps = [
-    { name:'의자에 앉았다 일어서기', set:'2세트 중 1세트 · 10회' },
-    { name:'벽 짚고 팔굽혀펴기', set:'2세트 중 1세트 · 10회' },
-    { name:'한 다리로 서기 (좌우)', set:'2세트 중 1세트 · 20초' },
-    { name:'뒤꿈치 들기', set:'2세트 중 1세트 · 15회' },
-    { name:'옆구리 스트레칭', set:'정리 운동 · 20초 유지' }
-  ];
-  let currentStep = 0;
-  function resetRoutine(){
-    currentStep = 0;
-    renderStep();
+  const btn = $('calcBtn');
+  btn.disabled = true; btn.textContent = '계산 중…';
+  try {
+    state.result = await API.fitnessAge(measurement());
+    setStatus('');
+  } catch (e) {
+    state.result = offlineAge();
+    API.offline = true;
+    setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');
   }
-  function renderStep(){
-    const step = routineSteps[currentStep];
-    document.getElementById('playerTag').textContent = (currentStep+1)+' / '+routineSteps.length;
-    document.getElementById('playerName').textContent = step.name;
-    document.getElementById('playerSet').textContent = step.set;
-    document.querySelectorAll('#stepsDots .d').forEach((d,i)=>d.classList.toggle('on', i<=currentStep));
-    const btn = document.getElementById('stepBtn');
-    btn.textContent = (currentStep === routineSteps.length-1) ? '루틴 완료' : '다음 동작';
+  btn.disabled = false; btn.textContent = '체력나이 계산하기';
+
+  if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+  renderResult();
+}
+
+function renderResult(){
+  const r = state.result;
+  const age = Math.round(r.체력나이);
+  const ci = r.신뢰구간 ?? 0;
+
+  $('ageResult').textContent = age;
+  $('ciLow').textContent  = Math.round(r.체력나이 - ci);
+  $('ciMid').textContent  = age;
+  $('ciHigh').textContent = Math.round(r.체력나이 + ci);
+
+  // 편차가 클수록 띠도 넓게 그린다 (±1세 ≈ 6%)
+  const width = Math.min(72, Math.max(10, ci * 12));
+  const band = $('ciBand');
+  band.style.width = width + '%';
+  band.style.left = (50 - width/2) + '%';
+  $('ciLow').style.left  = (50 - width/2) + '%';
+  $('ciHigh').style.left = (50 + width/2) + '%';
+
+  $('ciNote').textContent = `참고용 추정치 · 항목 간 편차 ±${ci}세`;
+  $('ciCaption').textContent = ci >= 5
+    ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있을 수 있으니 한 숫자보다 폭으로 봐주세요.'
+    : '항목별 결과가 서로 비슷해요. 비교적 안정적인 추정치예요.';
+
+  const diff = age - state.age;
+  $('resultBlock').style.display = 'block';
+  $('nextBtn1').style.display = 'block';
+  $('calcBtn').style.display = 'none';
+  $('greetName').textContent = diff <= 0
+    ? `또래보다 ${Math.abs(diff)}세 젊어요`
+    : `또래보다 ${diff}세 높아요`;
+}
+
+/* ---- 화면 2 : 목적 ---- */
+function selectPurpose(p){
+  state.purpose = p;
+  document.querySelectorAll('.purpose-card').forEach(c=>c.classList.remove('selected'));
+  document.querySelector('[data-p="'+p+'"]').classList.add('selected');
+  $('nextBtn2').disabled = false;
+}
+
+/* ---- 화면 3 : 홈 ---- */
+function starCount(factorAge){
+  // 실제 나이보다 환산나이가 낮을수록 좋다. ±3세를 보통(★3)으로 본다.
+  const d = factorAge - state.age;
+  if (d <= -10) return 5;
+  if (d <= -3)  return 4;
+  if (d <   3)  return 3;
+  if (d <  10)  return 2;
+  return 1;
+}
+const starStr = (n) => '★'.repeat(n) + '☆'.repeat(5-n);
+
+async function loadHome(){
+  if (!state.result) return;
+  const stars = starCount(state.result.항목별.근력 ?? state.result.체력나이);
+  try {
+    const d = await API.daily({ strength_stars: stars, walk_minutes: 12, days_since_start: 0 });
+    state.intensity = d.강도;
+    $('dailyText').innerHTML = d.계단.문구 + (d.도보 ? '<br/>' + d.도보.문구 : '');
+  } catch (e) { /* 서버 없으면 기본 문구 유지 */ }
+
+  await loadRoutine();
+  const weak = state.result.약점?.약점 ?? '근력';
+  $('heroTitle').textContent = `${weak} 루틴 · ${Math.max(8, state.routine.length * 2)}분`;
+  $('heroMeta').textContent = state.routine.length
+    ? `${state.routine[0].운동명} 외 ${state.routine.length - 1}가지`
+    : '루틴을 불러오지 못했어요';
+}
+
+async function loadRoutine(){
+  try {
+    state.routine = await API.routine({
+      age_gbn: state.ageGbn, sex: state.sex,
+      purpose: PURPOSE_LABEL[state.purpose],
+      weak_factor: state.result?.약점?.약점,
+    });
+  } catch (e) {
+    state.routine = [
+      { 단계:'준비운동', 운동명:'전신 루틴 스트레칭', 체력요인:'유연성' },
+      { 단계:'본운동',   운동명:'의자에 앉았다 일어서기', 체력요인:'근력' },
+      { 단계:'본운동',   운동명:'벽 짚고 팔굽혀펴기', 체력요인:'근력' },
+      { 단계:'본운동',   운동명:'제자리 걷기', 체력요인:'심폐지구력' },
+      { 단계:'정리운동', 운동명:'옆구리 스트레칭', 체력요인:'유연성' },
+    ];
   }
-  function nextStep(){
-    if(currentStep < routineSteps.length-1){
-      currentStep++;
-      renderStep();
-    } else {
-      goTo('s3');
+}
+
+/* ---- 화면 4 : 루틴 플레이어 ---- */
+let currentStep = 0;
+function resetRoutine(){ currentStep = 0; renderStep(); }
+
+function renderStep(){
+  if (!state.routine.length) return;
+  const step = state.routine[currentStep];
+  const it = state.intensity || { 세트: 2, 반복: 10 };
+  $('playerTag').textContent = (currentStep+1)+' / '+state.routine.length;
+  $('playerName').textContent = step.운동명;
+  $('playerSet').textContent = step.단계 === '본운동'
+    ? `${it.세트}세트 중 1세트 · ${heavyOn ? Math.round(it.반복*0.7) : it.반복}회`
+    : `${step.단계} · ${step.체력요인}`;
+
+  const dots = $('stepsDots');
+  dots.innerHTML = state.routine.map((_,i)=>`<div class="d${i<=currentStep?' on':''}"></div>`).join('');
+  $('stepBtn').textContent = (currentStep === state.routine.length-1) ? '루틴 완료' : '다음 동작';
+}
+
+function nextStep(){
+  if(currentStep < state.routine.length-1){ currentStep++; renderStep(); }
+  else { goTo('s3'); }
+}
+
+/* ---- 화면 1 : 타이머 · 횟수 ---- */
+let timerInterval = null, timerSeconds = 30, timerRunning = false;
+function toggleTimer(){
+  const btn = $('timerBtn');
+  if(timerRunning){
+    clearInterval(timerInterval); timerRunning = false; btn.textContent = '시작';
+    return;
+  }
+  timerRunning = true; btn.textContent = '일시정지';
+  timerInterval = setInterval(()=>{
+    timerSeconds--;
+    const m = String(Math.floor(timerSeconds/60)).padStart(2,'0');
+    const s = String(timerSeconds%60).padStart(2,'0');
+    $('timerDisplay').textContent = m+':'+s;
+    if(timerSeconds<=0){
+      clearInterval(timerInterval); timerRunning = false; btn.textContent = '완료';
     }
-  }
+  },1000);
+}
 
-  /* ---- Screen 1 : timer ---- */
-  let timerInterval = null, timerSeconds = 30, timerRunning = false;
-  function toggleTimer(){
-    const btn = document.getElementById('timerBtn');
-    if(timerRunning){
-      clearInterval(timerInterval); timerRunning = false; btn.textContent = '시작';
-      return;
-    }
-    timerRunning = true; btn.textContent = '일시정지';
-    timerInterval = setInterval(()=>{
-      timerSeconds--;
-      const m = String(Math.floor(timerSeconds/60)).padStart(2,'0');
-      const s = String(timerSeconds%60).padStart(2,'0');
-      document.getElementById('timerDisplay').textContent = m+':'+s;
-      if(timerSeconds<=0){
-        clearInterval(timerInterval); timerRunning = false; btn.textContent = '완료';
-      }
-    },1000);
-  }
-  let count = 18;
-  function changeCount(d){
-    count = Math.max(0, count+d);
-    document.getElementById('countVal').textContent = count;
-  }
+let count = 18;
+function changeCount(d){
+  count = Math.max(0, count+d);
+  $('countVal').textContent = count;
+}
 
-  function calcAge(){
-    const flex = parseFloat(document.getElementById('flexInput').value) || 12;
-    const height = parseFloat(document.getElementById('heightInput').value) || 164;
-    const weight = parseFloat(document.getElementById('weightInput').value) || 61;
-    const bmi = weight / Math.pow(height/100, 2);
+/* ---- 화면 4 : 부담 부위 · 컨디션 ---- */
+/* 칩을 끄면 그 부위에 부담이 가는 동영상을 루틴에서 뺀다 (/videos?exclude_parts=) */
+function excludedParts(){
+  return [...document.querySelectorAll('.chip-row .chip.off')].map(c=>c.dataset.part);
+}
 
-    // 더미 환산 로직 (실제 산출식은 팀 데이터 분석 결과로 대체 예정)
-    const flexAge = Math.min(90, Math.max(15, 55 - flex));
-    const strengthAge = Math.min(90, Math.max(15, 70 - count));
-    const bmiDev = Math.abs(bmi - 22);
-    const bmiAge = Math.min(90, Math.max(15, 25 + bmiDev*6));
-    const finalAge = Math.round((flexAge + strengthAge + bmiAge) / 3);
+async function toggleChip(id){
+  $(id).classList.toggle('off');
+  const exclude = excludedParts();
+  const toast = $('toast');
+  try {
+    const res = await API.videos({
+      factor: state.result?.약점?.약점,
+      exclude_parts: exclude.join(','),
+    });
+    toast.textContent = exclude.length
+      ? `${exclude.join('·')} 부담 동작을 뺐어요 (남은 동영상 ${res.개수}개)`
+      : '부위 제한을 해제했어요';
+  } catch (e) {
+    toast.textContent = exclude.length ? `${exclude.join('·')} 부담 동작을 빼고 안내할게요` : '부위 제한을 해제했어요';
+  }
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'), 1800);
+}
 
-    document.getElementById('ageResult').textContent = finalAge;
-    document.getElementById('ciLow').textContent = finalAge - 2;
-    document.getElementById('ciMid').textContent = finalAge;
-    document.getElementById('ciHigh').textContent = finalAge + 2;
-    document.getElementById('resultBlock').style.display = 'block';
-    document.getElementById('calcBtn').style.display = 'none';
-    document.getElementById('nextBtn1').style.display = 'block';
+let heavyOn = false;
+function toggleHeavy(){
+  heavyOn = !heavyOn;
+  const btn = $('heavyBtn');
+  btn.classList.toggle('active', heavyOn);
+  btn.textContent = heavyOn ? '오늘은 가볍게 진행할게요' : '오늘 몸이 무거운 날이에요';
+  const toast = $('toast');
+  if(heavyOn){
+    toast.textContent = '반복 횟수를 30% 줄여서 안내할게요';
+    toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'), 1800);
   }
+  renderStep();
+}
 
-  /* ---- Screen 2 : purpose select ---- */
-  function selectPurpose(p){
-    document.querySelectorAll('.purpose-card').forEach(c=>c.classList.remove('selected'));
-    document.querySelector('[data-p="'+p+'"]').classList.add('selected');
-    document.getElementById('nextBtn2').disabled = false;
-  }
+/* ---- 화면 5 : 프로필 ---- */
+function renderProfile(){
+  const r = state.result;
+  if (!r) return;
+  $('profileAge').textContent = Math.round(r.체력나이);
+  $('profileSub').textContent = `체력나이 · 만 ${state.age}세 기준 · 항목 간 편차 ±${r.신뢰구간}세`;
 
-  /* ---- Screen 4 : chips / heavy day ---- */
-  function toggleChip(id){
-    document.getElementById(id).classList.toggle('off');
-  }
-  let heavyOn = false;
-  function toggleHeavy(){
-    heavyOn = !heavyOn;
-    const btn = document.getElementById('heavyBtn');
-    btn.classList.toggle('active', heavyOn);
-    btn.textContent = heavyOn ? '오늘은 가볍게 진행할게요' : '오늘 몸이 무거운 날이에요';
-    const toast = document.getElementById('toast');
-    if(heavyOn){
-      toast.textContent = '강도를 낮춰서 안내할게요';
-      toast.classList.add('show');
-      setTimeout(()=>toast.classList.remove('show'), 1800);
-    }
-  }
+  $('axisRows').innerHTML = Object.entries(r.항목별).map(([k,v],i,arr)=>`
+    <div class="axis-row"${i===arr.length-1?' style="border-bottom:none;"':''}>
+      <div class="axis-name">${k}</div>
+      <div class="axis-val">${v}세 수준</div>
+      <div class="stars">${starStr(starCount(v))}</div>
+    </div>`).join('');
+  $('axisNote').textContent =
+    '공개 데이터로 잴 수 있는 항목만 표시합니다. 평형성·민첩성은 자가 측정이 어려워 아직 넣지 않았어요.';
 
-  /* ---- Screen 5 : goal slider ---- */
-  function updateGoal(v){
-    document.getElementById('goalNum').textContent = v;
-    const note = document.getElementById('goalNote');
-    if(v >= 77){
-      note.textContent = '유연성을 조금 더 다듬으면 체력나이가 '+v+'세로 계산돼요. 가벼운 목표예요.';
-    } else if(v >= 75){
-      note.textContent = '근력과 심폐지구력을 함께 올리면 체력나이가 '+v+'세로 계산돼요.';
-    } else {
-      note.textContent = '근력을 또래 평균 수준까지 올리면 체력나이가 '+v+'세로 계산돼요. 근력 중심 루틴으로 전환할게요.';
-    }
+  const w = r.약점;
+  if (!w) { $('weakText').textContent = '측정 항목이 하나뿐이라 약점을 비교할 수 없어요.'; return; }
+  $('weakText').innerHTML = `지금 체력나이를 가장 많이 낮추는 건<br/>${w.약점}이에요.`;
+  const after = (r.체력나이 - w.개선효과).toFixed(1);
+  $('weakArrow').textContent = `${w.약점}을 본인의 가장 좋은 항목 수준까지 올리면 → ${r.체력나이}세 → ${after}세`;
+  $('calcTable').innerHTML = Object.entries(w.전체)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([k,g])=>`<div class="calc-row"><span>${k}만 개선</span><span>${
+        g > 0 ? `${(r.체력나이-g).toFixed(1)}세 (−${g.toFixed(1)})` : '변화 없음'
+      }</span></div>`)
+    .join('');
+
+  const slider = $('goalSlider');
+  const best = Math.round(r.체력나이 - Math.max(...Object.values(w.전체)));
+  slider.min = Math.max(15, best - 2);
+  slider.max = Math.round(r.체력나이);
+  slider.value = best;
+  updateGoal(best);
+}
+
+function updateGoal(v){
+  $('goalNum').textContent = v;
+  const r = state.result;
+  const note = $('goalNote');
+  if (!r || !r.약점) { note.textContent = ''; return; }
+  const need = (r.체력나이 - v).toFixed(1);
+  const w = r.약점;
+  note.textContent = need <= 0
+    ? '지금 수준을 유지하는 목표예요.'
+    : `${w.약점}을 본인의 가장 좋은 항목 수준까지 올리면 체력나이가 ${v}세로 계산돼요. ` +
+      `${w.약점} 중심 루틴으로 전환할게요. (필요한 감소량 ${need}세)`;
+}
+
+/* ---- 화면 6 : 재점검 ---- */
+async function renderRecheck(){
+  if (!state.first || !state.result) return;
+  const before = state.first.결과.체력나이;
+  const after  = state.result.체력나이;
+
+  $('cmpBefore').textContent = Math.round(before);
+  $('cmpAfter').textContent  = Math.round(after);
+  const d = +(after - before).toFixed(1);
+  $('diffPill').textContent = d === 0 ? '변화 없어요'
+    : d < 0 ? `${Math.abs(d)}세 낮아졌어요` : `${d}세 높아졌어요`;
+
+  const b = state.first.결과.항목별, a = state.result.항목별;
+  $('cmpRows').innerHTML = Object.keys(a).map(k=>`
+    <div class="axis-compare-row">
+      <div class="axis-compare-name">${k}</div>
+      <div class="axis-compare-stars">
+        <span class="stars" style="color:var(--muted)">${starStr(starCount(b[k] ?? a[k]))}</span>
+        <span>→</span>
+        <span class="stars">${starStr(starCount(a[k]))}</span>
+      </div>
+    </div>`).join('');
+
+  const improved = Object.keys(a).filter(k => (b[k] ?? a[k]) - a[k] >= 3);
+  const card = $('unlockCard');
+  if (improved.length) {
+    $('unlockTitle').textContent = `${improved.join(' · ')} 루틴 해금`;
+    $('unlockSub').textContent = `${improved.join(' · ')}이(가) 3세 이상 좋아지면서 새 루틴이 열렸어요`;
+    card.style.display = 'flex';
+  } else {
+    card.style.display = 'none';
   }
+}
+
+/* ---- 시작 ---- */
+(async function init(){
+  onAgeChange();
+  const h = await API.health();
+  if (!h) setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');
+  else if (h.안내) setStatus(h.안내);
+})();
 </script>
 </body>
 </html>

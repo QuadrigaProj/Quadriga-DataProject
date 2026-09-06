@@ -1,5 +1,5 @@
 """
-분포 테이블 · 처방 빈도 생성 — 담당 A·D 공통
+분포 테이블 · 처방 빈도 생성
 
 수집한 측정결과에서
   1) 연령군 × 성별 × 연령구간 × 항목별 백분위 분포  → fitness_distribution.csv
@@ -7,8 +7,8 @@
 를 만든다.
 
 사용법:
-    python scripts/collect_measurements.py   # 먼저 수집
-    python src/build_distribution.py
+    python backend/collect_measurements.py   # 먼저 수집
+    python backend/build_distribution.py
 """
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ def load_raw() -> pd.DataFrame:
     csv = RAW.with_suffix(".csv")
     if csv.exists():
         return pd.read_csv(csv)
-    raise SystemExit(f"{RAW} 가 없습니다. scripts/collect_measurements.py 를 먼저 실행하세요.")
+    raise SystemExit(f"{RAW} 가 없습니다. backend/collect_measurements.py 를 먼저 실행하세요.")
 
 
 def main() -> None:

@@ -1,13 +1,15 @@
 """
-체력나이 API 서버 — 담당 D
+체력나이 API 서버
 
-프론트(담당 C)와 영상 화면(담당 B)이 붙는 지점.
-src/fitness_age.py, src/prescription.py 를 HTTP 로 감쌌다.
+frontend/ 화면이 붙는 지점. 정적 파일도 이 서버가 함께 내보낸다.
+backend/fitness_age.py, backend/prescription.py 를 HTTP 로 감쌌다.
 
 실행:
-    pip install fastapi uvicorn
-    uvicorn api.main:app --reload
-문서:
+    pip install -r requirements.txt
+    uvicorn backend.main:app --reload
+화면:
+    http://localhost:8000
+API 문서:
     http://localhost:8000/docs
 """
 from __future__ import annotations
@@ -16,18 +18,25 @@ import sys
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from src import fitness_age as fa          # noqa: E402
-from src import prescription as pr         # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:                                        # 저장소 루트에서 실행할 때
+    from backend import daily, fitness_age as fa, prescription as pr, paths
+except ImportError:                         # backend/ 안에서 직접 실행할 때
+    import daily                            # noqa: E402
+    import fitness_age as fa                # noqa: E402
+    import paths                            # noqa: E402
+    import prescription as pr               # noqa: E402
 
 app = FastAPI(
     title="체력나이 API",
     description="국민체력100 공공데이터 기반 체력나이 산출·운동 처방",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 # 개발 중에는 프론트 로컬 서버를 허용한다. 배포 시 도메인으로 좁힐 것.
@@ -74,8 +83,9 @@ def health() -> dict:
         "분포_로드됨": _dist is not None,
         "처방_로드됨": _freq is not None,
         "안내": None if _dist is not None else
-               "python scripts/collect_measurements.py --sample 450 후 "
-               "python src/build_distribution.py 를 실행하세요.",
+               "python backend/collect_measurements.py --sample 450 후 "
+               "python backend/build_distribution.py 를 실행하세요. "
+               "(data/sample/ 이 있으면 자동으로 그쪽을 씁니다)",
     }
 
 
@@ -196,3 +206,64 @@ def post_recheck(body: RecheckIn) -> dict:
         "항목별_이전": before.항목별,
         "항목별_현재": after.항목별,
     }
+
+
+# ---------- 5. 일상 처방 ----------
+
+@app.get("/daily")
+def get_daily(
+    strength_stars: int = Query(3, ge=1, le=5, description="근력 별점 1~5"),
+    walk_minutes: float | None = Query(None, ge=0, description="목적지까지 도보 분"),
+    days_since_start: int = Query(0, ge=0, description="시작 후 경과일"),
+) -> dict:
+    """운동 시간을 따로 내지 않아도 되는 일상 제안 (화면 3).
+
+    교통 데이터는 쓰지 않는다. 사용자가 알려준 값만으로 판단한다.
+    """
+    return {
+        "계단": daily.stairs(strength_stars),
+        "도보": daily.walk(walk_minutes),
+        "강도": daily.intensity(days_since_start),
+    }
+
+
+# ---------- 6. 동영상 ----------
+
+@app.get("/videos")
+def get_videos(
+    factor: str | None = None,
+    se: str | None = Query(None, description="준비운동 / 본운동 / 정리운동"),
+    place: str | None = None,
+    level: str | None = None,
+    max_sec: int | None = None,
+    exclude_parts: str | None = Query(None, description="쉼표로 구분. 예: 무릎,허리"),
+) -> dict:
+    """루틴 플레이어(화면 4)가 쓰는 동영상 목록.
+
+    지금은 data/sample/videos.json 기반이다. 실제 동영상 API 응답을 같은
+    필드명으로 채워 넣으면 화면은 그대로 둔 채 데이터만 교체된다.
+    """
+    parts = [p.strip() for p in (exclude_parts or "").split(",") if p.strip()]
+    items = daily.videos(factor=factor, se=se, place=place, level=level,
+                         max_sec=max_sec, exclude_parts=parts)
+    return {"출처": "sample", "개수": len(items), "items": items}
+
+
+# ---------- 7. 인증센터 ----------
+
+@app.get("/centers")
+def get_centers(lat: float | None = None, lon: float | None = None,
+                limit: int = Query(5, ge=1, le=50)) -> dict:
+    """가까운 체력인증센터. 좌표를 주면 거리순으로 정렬한다."""
+    return {"출처": "sample", "items": daily.centers(lat, lon, limit)}
+
+
+# ---------- 정적 프론트엔드 ----------
+# 모든 API 라우트를 정의한 뒤 마운트해야 "/" 가 API 를 가리지 않는다.
+
+if paths.FRONTEND.exists():
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        return FileResponse(paths.FRONTEND / "index.html")
+
+    app.mount("/", StaticFiles(directory=paths.FRONTEND), name="frontend")

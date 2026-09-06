@@ -66,6 +66,10 @@ secrets.json
 *.pem
 *.key
 
+# ===== Node (프론트에서 쓰게 되면) =====
+node_modules/
+package-lock.json
+
 # ===== 에디터 / OS =====
 .vscode/
 .idea/

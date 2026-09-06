@@ -1,14 +1,14 @@
 """
-체력나이 산출 — 담당 A 참조 구현
+체력나이 산출
 
-data/processed/fitness_distribution.csv 의 연령구간별 중앙값(p50)을 이용해
+data/processed/ (없으면 data/sample/) 의 fitness_distribution.csv 의 연령구간별 중앙값(p50)을 이용해
 사용자 측정값이 어느 연령대 수준인지 선형보간으로 역산한다.
 
 국민체력100은 등급(1~6)만 제공하고 체력나이는 제공하지 않는다.
 공개 측정결과 데이터의 성별·연령대별 분포에서 우리가 직접 산출하는 지표다.
 
 사용법:
-    python src/fitness_age.py
+    python backend/fitness_age.py
 """
 from __future__ import annotations
 
@@ -17,8 +17,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DIST = Path("data/processed/fitness_distribution.csv")
+try:                                     # 저장소 루트에서 실행할 때
+    from backend.paths import find_data
+except ImportError:                      # backend/ 안에서 직접 실행할 때
+    from paths import find_data
+
 BMI_IDEAL = 22.0
+
+# 연령구간이 2개뿐이면 선형보간이 양 끝값에 붙어버려 누구나 같은 값이 나온다.
+# (예: 청소년은 공개 데이터에 10~14 / 15~19 두 구간뿐이라 산출 불가)
+MIN_BANDS = 3
 
 # 항목별 방향: True = 값이 클수록 좋음(젊음)
 HIGHER_IS_BETTER = {
@@ -38,8 +46,8 @@ def band_mid(b: str) -> float:
     return (lo + hi) / 2
 
 
-def load(path: Path = DIST) -> pd.DataFrame:
-    d = pd.read_csv(path)
+def load(path: Path | None = None) -> pd.DataFrame:
+    d = pd.read_csv(path or find_data("fitness_distribution.csv"))
     d["age_mid"] = d["연령구간"].map(band_mid)
     return d
 
@@ -48,7 +56,7 @@ def convert_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float
     """측정값 → 환산 나이. 해당 성별·연령군의 p50 곡선에 선형보간한다."""
     sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == item)]
     sub = sub.sort_values("age_mid")
-    if len(sub) < 2:
+    if len(sub) < MIN_BANDS:
         return None
     ages, meds = sub["age_mid"].to_numpy(), sub["p50"].to_numpy()
     # 값이 클수록 좋으면 나이가 들수록 p50이 감소 → 보간을 위해 뒤집는다
@@ -79,7 +87,7 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None) -
         # 적정치(22)로부터의 편차 절댓값으로 변환해 단조 관계를 만든다.
         sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == "BMI")]
         sub = sub.sort_values("age_mid")
-        if len(sub) >= 2:
+        if len(sub) >= MIN_BANDS:
             dev = (sub["p50"] - BMI_IDEAL).abs().to_numpy()
             ages = sub["age_mid"].to_numpy()
             order = np.argsort(dev)

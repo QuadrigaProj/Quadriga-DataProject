@@ -173,3 +173,70 @@ def test_centers_거리순():
                                            "limit": 3}).json()["items"]
     거리 = [c["거리km"] for c in items]
     assert 거리 == sorted(거리)
+
+
+# ---------- 성장기 (만 11~18세) ----------
+
+@needs_data
+def test_성장기_산출된다():
+    """5세 단위로 묶으면 구간이 2개뿐이라 계산이 무너진다.
+    1세 단위(11~18, 8구간)로 나눠야 보간이 의미를 갖는다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성장기", "sex": "M", "age": 15,
+        "flexibility": 6, "strength": 195, "height_cm": 170, "weight_kg": 61,
+    }).json()
+    assert 11 <= b["체력나이"] <= 19
+    assert "순발력" in b["항목별"]        # 성장기 근력 항목은 제자리멀리뛰기
+    assert "발달" in b["해석"]
+
+
+@needs_data
+def test_성장기_잘하면_발달수준이_높게_나온다():
+    """성장기는 나이가 들수록 기록이 좋아진다 → 방향이 성인과 반대다."""
+    def 산출(flex, jump):
+        return client.post("/fitness-age", json={
+            "age_gbn": "성장기", "sex": "M", "age": 15,
+            "flexibility": flex, "strength": jump, "bmi": 21}).json()["체력나이"]
+
+    assert 산출(14, 225) > 산출(4, 165)
+
+
+@needs_data
+def test_또래백분위():
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 45,
+        "flexibility": 8, "strength": 25, "bmi": 24.2}).json()
+    p = b["또래비교"]["근력"]
+    assert 0 <= p["백분위"] <= 100
+    assert p["표본수"] > 30
+    assert "백분위" not in b["또래비교"]["체성분"]     # BMI 는 U자형이라 백분위를 내지 않는다
+
+
+@needs_data
+def test_환산나이는_절대_음수가_안된다():
+    """website/server.js 에 있던 결함: 재점검 캡 때문에 개선효과가 음수로 나왔다."""
+    for flex in (-30, -10, 0, 15, 50):
+        for st in (0, 5, 40, 200):
+            for bmi in (10, 22, 45):
+                r = client.post("/fitness-age", json={
+                    "age_gbn": "성인", "sex": "M", "age": 45,
+                    "flexibility": flex, "strength": st, "bmi": bmi})
+                if r.status_code != 200:
+                    continue
+                b = r.json()
+                assert b["체력나이"] > 0
+                assert all(v > 0 for v in b["항목별"].values())
+                if b["약점"] and "개선효과" in b["약점"]:
+                    assert all(g >= 0 for g in b["약점"]["전체"].values())
+
+
+@needs_data
+def test_recheck_는_측정편차와_함께_알려준다():
+    """작은 변화를 '좋아졌다' 고 단정하지 않는다."""
+    base = {"age_gbn": "성인", "sex": "M", "age": 45,
+            "flexibility": 8, "strength": 25, "height_cm": 175, "weight_kg": 74}
+    b = client.post("/recheck", json={"이전": base,
+                                      "현재": {**base, "flexibility": 9.5}}).json()
+    assert b["측정편차"] > 0
+    assert b["유의미한변화"] is False
+    assert "편차" in b["메시지"]

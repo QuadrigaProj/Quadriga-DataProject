@@ -47,7 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-AgeGroup = Literal["성인", "어르신", "청소년"]
+AgeGroup = Literal["성인", "어르신", "성장기"]
 Sex = Literal["M", "F"]
 Purpose = Literal[
     "다이어트", "기초 체력 증진", "특정 운동을 위한 체력 증진",
@@ -92,10 +92,15 @@ def health() -> dict:
 # ---------- 1. 체력나이 ----------
 
 class MeasureIn(BaseModel):
-    age_gbn: AgeGroup = Field(..., description="연령군")
+    age_gbn: AgeGroup = Field(..., description="연령군 (성장기 = 만 11~18세)")
     sex: Sex
+    age: float | None = Field(None, ge=5, le=110,
+                              description="만 나이. 주면 또래 백분위를 함께 계산한다")
     flexibility: float | None = Field(None, description="앉아윗몸앞으로굽히기 (cm). 음수 가능")
-    strength: int | None = Field(None, description="교차윗몸일으키기(성인) 또는 의자앉았다일어서기(어르신) 회수")
+    strength: float | None = Field(
+        None,
+        description="연령군별 항목: 성인=교차윗몸일으키기(회), "
+                    "어르신=의자앉았다일어서기(회), 성장기=제자리멀리뛰기(cm)")
     height_cm: float | None = Field(None, gt=0)
     weight_kg: float | None = Field(None, gt=0)
     bmi: float | None = Field(None, gt=0, description="직접 주거나 키·몸무게로 계산")
@@ -106,6 +111,8 @@ class MeasureOut(BaseModel):
     신뢰구간: float | None
     항목별: dict[str, float]
     약점: dict | None
+    또래비교: dict = {}
+    해석: str = ""
 
 
 @app.post("/fitness-age", response_model=MeasureOut)
@@ -133,7 +140,32 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
     if result["체력나이"] is None:
         raise HTTPException(422, "해당 연령군·성별의 분포가 부족해 산출할 수 없습니다.")
 
-    return MeasureOut(**result, 약점=fa.weakest_link(result))
+    peers = {}
+    if body.age is not None:
+        peers = fa.peer_report(_dist, body.age_gbn, body.sex, body.age,
+                               flexibility=body.flexibility, strength=body.strength,
+                               bmi=bmi)
+
+    약점 = fa.weakest_link(result)
+
+    # 성장기는 나이가 들수록 기록이 좋아지므로 "체력나이가 높다 = 나쁘다" 가 아니다.
+    # 연령 폭도 11~18세로 좁아 개선효과(세) 차이가 거의 안 난다.
+    # 그래서 약점을 "또래 백분위가 가장 낮은 항목" 으로 바꿔서 고른다.
+    if body.age_gbn == fa.GROWTH and peers and any("백분위" in v for v in peers.values()):
+        후보 = {k: v for k, v in peers.items() if "백분위" in v}
+        낮은순 = sorted(후보.items(), key=lambda kv: kv[1]["백분위"])
+        약점 = {
+            "약점": 낮은순[0][0],
+            "백분위": 낮은순[0][1]["백분위"],
+            "기준": "또래 백분위",
+            "전체": {k: v["백분위"] for k, v in 후보.items()},
+        }
+
+    해석 = ("발달 수준입니다. 숫자가 실제 나이보다 높을수록 또래보다 앞서 있다는 뜻이에요."
+            if body.age_gbn == fa.GROWTH else
+            "체력나이입니다. 숫자가 실제 나이보다 낮을수록 좋아요.")
+
+    return MeasureOut(**result, 약점=약점, 또래비교=peers, 해석=해석)
 
 
 # ---------- 2. 루틴 ----------
@@ -190,19 +222,43 @@ class RecheckIn(BaseModel):
 
 @app.post("/recheck")
 def post_recheck(body: RecheckIn) -> dict:
-    """3개월 재점검 — 변화량을 반환한다.
+    """3개월 재점검 — 두 실측값의 차이만 계산한다. 예측이 아니다.
 
-    예측이 아니라 두 실측값의 차이만 계산한다.
+    자가 측정은 오차가 크다. 그렇다고 변화 폭을 인위적으로 깎으면
+    "지금 45세인데 근력을 고치면 53세" 같은 모순이 생긴다.
+    (실제로 그런 결함이 있었다: 걷어낸 website/server.js 의 ±5세 캡.
+     캡은 체력나이에만 걸리고 약점 계산은 캡 전 값으로 해서 개선효과가 음수로 나왔다.)
+
+    그래서 값은 그대로 두고, 변화가 측정 편차 안인지 밖인지를 함께 알려준다.
     """
     before = post_fitness_age(body.이전)
     after = post_fitness_age(body.현재)
     delta = round((after.체력나이 or 0) - (before.체력나이 or 0), 1)
+
+    # 두 측정의 편차를 합쳐 "이 정도 차이는 오차일 수 있다" 는 문턱을 만든다
+    노이즈 = round(((before.신뢰구간 or 0) ** 2 + (after.신뢰구간 or 0) ** 2) ** 0.5, 1)
+    유의미 = abs(delta) > 노이즈
+
+    성장 = body.현재.age_gbn == fa.GROWTH
+    좋아짐 = delta > 0 if 성장 else delta < 0      # 성장기는 숫자가 오르는 게 좋다
+
+    if delta == 0:
+        메시지 = "변화 없음"
+    elif not 유의미:
+        메시지 = (f"{abs(delta)}세 움직였지만 측정 편차(±{노이즈}세) 안이라 "
+                "아직 변화라고 보긴 일러요")
+    elif 성장:
+        메시지 = f"발달 수준이 {abs(delta)}세 {'앞당겨졌습니다' if 좋아짐 else '뒤처졌습니다'}"
+    else:
+        메시지 = f"체력나이가 {abs(delta)}세 {'어려졌습니다' if 좋아짐 else '늘었습니다'}"
+
     return {
         "이전": before.체력나이,
         "현재": after.체력나이,
         "변화": delta,
-        "메시지": f"체력나이가 {abs(delta)}세 {'어려졌습니다' if delta < 0 else '늘었습니다'}"
-                  if delta else "변화 없음",
+        "측정편차": 노이즈,
+        "유의미한변화": 유의미,
+        "메시지": 메시지,
         "항목별_이전": before.항목별,
         "항목별_현재": after.항목별,
     }

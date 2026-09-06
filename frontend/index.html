@@ -369,17 +369,17 @@
             <div class="measure-desc" id="strengthDesc">30초 동안 몇 번 반복했는지 세어주세요</div>
           </div>
         </div>
-        <div class="timer-box">
+        <div class="timer-box" id="timerBox">
           <div class="timer-time" id="timerDisplay">00:30</div>
           <button class="timer-btn" id="timerBtn" onclick="toggleTimer()">시작</button>
         </div>
         <div class="count-row">
           <div class="stepper">
             <button onclick="changeCount(-1)">−</button>
-            <span id="countVal">18</span>
+            <span id="countVal">25</span>
             <button onclick="changeCount(1)">+</button>
           </div>
-          <div class="field-unit">회</div>
+          <div class="field-unit" id="countUnit">회</div>
         </div>
       </div>
 
@@ -549,7 +549,7 @@
         <div class="calc-table" id="calcTable"></div>
       </div>
 
-      <div class="goal-card">
+      <div class="goal-card" id="goalCard">
         <div class="prescribe-label">목표 설정</div>
         <div class="goal-slider-row">
           <input type="range" min="20" max="90" value="74" id="goalSlider" oninput="updateGoal(this.value)" />
@@ -626,17 +626,21 @@ const PURPOSE_LABEL = {
   fall: '낙상 예방', study: '수험생 체력 증진', flex: '유연성 강화',
 };
 
-/* 연령군마다 근력 측정 항목이 다르다 (backend/fitness_age.py 와 같은 규칙) */
+/* 연령군마다 잴 수 있는 항목이 다르다 (backend/fitness_age.py 와 같은 규칙) */
 const STRENGTH_ITEM = {
-  '어르신': { name: '의자에 앉았다 일어서기', desc: '30초 동안 몇 번 반복했는지 세어주세요' },
-  '성인':   { name: '교차 윗몸일으키기',      desc: '30초 동안 몇 번 반복했는지 세어주세요' },
-  '청소년': { name: '교차 윗몸일으키기',      desc: '30초 동안 몇 번 반복했는지 세어주세요' },
+  '어르신': { name: '의자에 앉았다 일어서기', desc: '30초 동안 몇 번 반복했는지 세어주세요',
+             unit: '회', step: 1,  init: 18,  timer: true  },
+  '성인':   { name: '교차 윗몸일으키기',      desc: '30초 동안 몇 번 반복했는지 세어주세요',
+             unit: '회', step: 1,  init: 25,  timer: true  },
+  '성장기': { name: '제자리 멀리뛰기',        desc: '두 발로 서서 뛴 거리를 줄자로 재주세요',
+             unit: 'cm', step: 5,  init: 190, timer: false },
 };
 
 function ageGroup(age) {
   if (age >= 65) return '어르신';
   if (age >= 19) return '성인';
-  return '청소년';
+  if (age >= 11) return '성장기';
+  return null;                      // 만 11세 미만은 데이터가 없다
 }
 
 function $(id) { return document.getElementById(id); }
@@ -665,19 +669,24 @@ function onAgeChange(){
   const age = parseInt($('ageInput').value, 10);
   if (!age) return;
   state.age = age;
-  state.ageGbn = ageGroup(age);
-  const item = STRENGTH_ITEM[state.ageGbn];
+  const gbn = ageGroup(age);
+  const notice = $('ageNotice');
+
+  if (!gbn) {
+    notice.innerHTML = '공개 데이터에 <b>만 11세 미만</b> 기록이 충분하지 않아 아직 지원하지 못해요.';
+    notice.style.display = 'block';
+    return;
+  }
+  notice.style.display = 'none';
+
+  const changed = gbn !== state.ageGbn;
+  state.ageGbn = gbn;
+  const item = STRENGTH_ITEM[gbn];
   $('strengthName').textContent = item.name;
   $('strengthDesc').textContent = item.desc;
-
-  const notice = $('ageNotice');
-  if (state.ageGbn === '청소년') {
-    notice.innerHTML = '공개된 청소년 측정 데이터는 연령구간이 <b>10~14 · 15~19</b> 둘뿐이라 ' +
-      '체력나이를 신뢰할 수 있게 계산할 수 없어요. 지금은 <b>만 19세 이상</b>만 지원합니다.';
-    notice.style.display = 'block';
-  } else {
-    notice.style.display = 'none';
-  }
+  $('countUnit').textContent = item.unit;
+  $('timerBox').style.display = item.timer ? 'flex' : 'none';
+  if (changed) { count = item.init; $('countVal').textContent = count; }
 }
 
 function selectSex(sex){
@@ -697,11 +706,13 @@ function syncInputs(){
 
 function measurement(){
   return {
-    age_gbn: state.ageGbn, sex: state.sex,
+    age_gbn: state.ageGbn, sex: state.sex, age: state.age,
     flexibility: state.flexibility, strength: state.strength,
     height_cm: state.height, weight_kg: state.weight,
   };
 }
+
+const isGrowth = () => state.ageGbn === '성장기';
 
 /* 서버에 못 붙었을 때만 쓰는 예시 계산 (화면 확인용) */
 function offlineAge(){
@@ -731,7 +742,7 @@ function offlineAge(){
 
 async function calcAge(){
   syncInputs();
-  if (state.ageGbn === '청소년') { onAgeChange(); return; }
+  if (!state.ageGbn) { onAgeChange(); return; }
   if (state.flexibility === null && !state.height) {
     $('ageNotice').textContent = '측정값을 최소 하나는 입력해주세요.';
     $('ageNotice').style.display = 'block';
@@ -772,18 +783,23 @@ function renderResult(){
   $('ciLow').style.left  = (50 - width/2) + '%';
   $('ciHigh').style.left = (50 + width/2) + '%';
 
-  $('ciNote').textContent = `참고용 추정치 · 항목 간 편차 ±${ci}세`;
-  $('ciCaption').textContent = ci >= 5
-    ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있을 수 있으니 한 숫자보다 폭으로 봐주세요.'
-    : '항목별 결과가 서로 비슷해요. 비교적 안정적인 추정치예요.';
+  $('ciNote').textContent = (isGrowth() ? '발달 수준 · 항목 간 편차 ±' : '참고용 추정치 · 항목 간 편차 ±') + `${ci}세`;
+
+  const peers = Object.entries(r.또래비교 || {});
+  const 백분위문구 = peers.length
+    ? peers.map(([k,v])=>`${k} 또래 상위 ${Math.round(100-v.백분위)}% (또래 중앙값 ${v.또래중앙값}${v.항목==='제자리멀리뛰기'?'cm':''})`).join(' · ')
+    : '';
+  $('ciCaption').textContent = (r.해석 ? r.해석 + ' ' : '') +
+    (ci >= 5 ? '항목별 결과가 서로 많이 달라요. 집에서 잰 값이라 오차가 있으니 한 숫자보다 폭으로 봐주세요. ' : '') +
+    백분위문구;
 
   const diff = age - state.age;
   $('resultBlock').style.display = 'block';
   $('nextBtn1').style.display = 'block';
   $('calcBtn').style.display = 'none';
-  $('greetName').textContent = diff <= 0
-    ? `또래보다 ${Math.abs(diff)}세 젊어요`
-    : `또래보다 ${diff}세 높아요`;
+  $('greetName').textContent = isGrowth()
+    ? (diff >= 0 ? `또래보다 ${diff}세 앞서 있어요` : `또래보다 ${Math.abs(diff)}세 뒤처져 있어요`)
+    : (diff <= 0 ? `또래보다 ${Math.abs(diff)}세 젊어요` : `또래보다 ${diff}세 높아요`);
 }
 
 /* ---- 화면 2 : 목적 ---- */
@@ -796,12 +812,19 @@ function selectPurpose(p){
 
 /* ---- 화면 3 : 홈 ---- */
 function starCount(factorAge){
-  // 실제 나이보다 환산나이가 낮을수록 좋다. ±3세를 보통(★3)으로 본다.
-  const d = factorAge - state.age;
-  if (d <= -10) return 5;
-  if (d <= -3)  return 4;
-  if (d <   3)  return 3;
-  if (d <  10)  return 2;
+  // 성인·어르신은 환산나이가 낮을수록 좋다.
+  // 성장기는 나이가 들수록 기록이 좋아지므로 방향이 반대다.
+  // 성장기는 연령 폭이 11~18세로 좁아 문턱도 좁게 잡는다.
+  let d = factorAge - state.age;
+  if (isGrowth()) return starFromDelta(-d, 1, 3);
+  return starFromDelta(d, 3, 10);
+}
+
+function starFromDelta(d, near, far){
+  if (d <= -far)  return 5;
+  if (d <= -near) return 4;
+  if (d <   near) return 3;
+  if (d <   far)  return 2;
   return 1;
 }
 const starStr = (n) => '★'.repeat(n) + '☆'.repeat(5-n);
@@ -885,9 +908,10 @@ function toggleTimer(){
   },1000);
 }
 
-let count = 18;
+let count = 25;
 function changeCount(d){
-  count = Math.max(0, count+d);
+  const step = STRENGTH_ITEM[state.ageGbn]?.step ?? 1;
+  count = Math.max(0, count + d * step);
   $('countVal').textContent = count;
 }
 
@@ -938,17 +962,41 @@ function renderProfile(){
   $('profileAge').textContent = Math.round(r.체력나이);
   $('profileSub').textContent = `체력나이 · 만 ${state.age}세 기준 · 항목 간 편차 ±${r.신뢰구간}세`;
 
-  $('axisRows').innerHTML = Object.entries(r.항목별).map(([k,v],i,arr)=>`
-    <div class="axis-row"${i===arr.length-1?' style="border-bottom:none;"':''}>
+  const peers = r.또래비교 || {};
+  $('axisRows').innerHTML = Object.entries(r.항목별).map(([k,v],i,arr)=>{
+    const pr = peers[k];
+    // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
+    const 값 = (k === '체성분' && pr)
+      ? `BMI ${pr.내기록} · 또래 ${pr.또래중앙값}`
+      : `${v}세 수준`;
+    const 오른쪽 = (k === '체성분' && pr)
+      ? `<div class="stars" style="font-size:13px;color:var(--muted)">${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}</div>`
+      : `<div class="stars">${starStr(starCount(v))}</div>`;
+    return `<div class="axis-row"${i===arr.length-1?' style="border-bottom:none;"':''}>
       <div class="axis-name">${k}</div>
-      <div class="axis-val">${v}세 수준</div>
-      <div class="stars">${starStr(starCount(v))}</div>
-    </div>`).join('');
+      <div class="axis-val">${값}</div>
+      ${오른쪽}
+    </div>`;
+  }).join('');
   $('axisNote').textContent =
     '공개 데이터로 잴 수 있는 항목만 표시합니다. 평형성·민첩성은 자가 측정이 어려워 아직 넣지 않았어요.';
 
   const w = r.약점;
   if (!w) { $('weakText').textContent = '측정 항목이 하나뿐이라 약점을 비교할 수 없어요.'; return; }
+
+  // 성장기는 개선효과(세)가 거의 안 벌어져서 또래 백분위로 약점을 고른다
+  if (w.기준 === '또래 백분위') {
+    $('weakText').innerHTML = `또래와 견줘 가장 처지는 건<br/>${w.약점}이에요.`;
+    $('weakArrow').textContent = `${w.약점} 또래 상위 ${Math.round(100 - w.백분위)}%`;
+    $('calcTable').innerHTML = Object.entries(w.전체)
+      .sort((a,b)=>a[1]-b[1])
+      .map(([k,pct])=>`<div class="calc-row"><span>${k}</span><span>또래 상위 ${Math.round(100-pct)}%</span></div>`)
+      .join('');
+    $('goalCard').style.display = 'none';
+    return;
+  }
+  $('goalCard').style.display = 'block';
+
   $('weakText').innerHTML = `지금 체력나이를 가장 많이 낮추는 건<br/>${w.약점}이에요.`;
   const after = (r.체력나이 - w.개선효과).toFixed(1);
   $('weakArrow').textContent = `${w.약점}을 본인의 가장 좋은 항목 수준까지 올리면 → ${r.체력나이}세 → ${after}세`;
@@ -959,12 +1007,14 @@ function renderProfile(){
       }</span></div>`)
     .join('');
 
+  // 최대 개선효과가 0이면 하한과 상한이 뒤집힌다 → 항상 min < max 가 되게 잡는다
   const slider = $('goalSlider');
-  const best = Math.round(r.체력나이 - Math.max(...Object.values(w.전체)));
-  slider.min = Math.max(15, best - 2);
-  slider.max = Math.round(r.체력나이);
-  slider.value = best;
-  updateGoal(best);
+  const 최대개선 = Math.max(0, ...Object.values(w.전체));
+  const hi = Math.round(r.체력나이);
+  const lo = Math.max(5, Math.min(hi - 1, Math.round(r.체력나이 - 최대개선) - 2));
+  slider.min = lo; slider.max = hi;
+  slider.value = Math.max(lo, Math.min(hi, Math.round(r.체력나이 - 최대개선)));
+  updateGoal(slider.value);
 }
 
 function updateGoal(v){
@@ -989,8 +1039,13 @@ async function renderRecheck(){
   $('cmpBefore').textContent = Math.round(before);
   $('cmpAfter').textContent  = Math.round(after);
   const d = +(after - before).toFixed(1);
-  $('diffPill').textContent = d === 0 ? '변화 없어요'
-    : d < 0 ? `${Math.abs(d)}세 낮아졌어요` : `${d}세 높아졌어요`;
+  try {
+    const rc = await API.recheck(state.first.측정, measurement());
+    $('diffPill').textContent = rc.메시지;
+  } catch (e) {
+    $('diffPill').textContent = d === 0 ? '변화 없어요'
+      : d < 0 ? `${Math.abs(d)}세 낮아졌어요` : `${d}세 높아졌어요`;
+  }
 
   const b = state.first.결과.항목별, a = state.result.항목별;
   $('cmpRows').innerHTML = Object.keys(a).map(k=>`

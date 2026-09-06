@@ -453,7 +453,10 @@ def auth_setup(request: Request) -> str:
     for name in PROVIDER_CONSOLE:
         uri = public_url(request, f"/auth/{name}/callback")
         cid, sec = auth.client_config(name)
-        state = "✅ 설정됨" if (cid and sec) else "⚠️ .env 에 키 없음"
+        if cid and (sec or name in auth.SECRET_OPTIONAL):
+            state = "✅ 설정됨" + ("" if sec else " (Client Secret 없이)")
+        else:
+            state = "⚠️ 키 없음"
         rows.append(f"""<tr><td><b>{name}</b></td><td>{state}</td>
             <td><code>{uri}</code></td>
             <td><a href="{PROVIDER_CONSOLE[name]}" target="_blank" rel="noreferrer">콘솔 열기</a></td></tr>""")
@@ -553,11 +556,13 @@ def auth_delete_me(response: Response,
 def auth_start(provider: str, request: Request) -> RedirectResponse:
     if provider not in auth.PROVIDERS:
         raise HTTPException(404, "지원하지 않는 로그인 수단입니다.")
-    client_id, _ = auth.client_config(provider)
-    if not client_id:
+    client_id, secret = auth.client_config(provider)
+    if not client_id or not (secret or provider in auth.SECRET_OPTIONAL):
+        필요 = (f"{provider.upper()}_CLIENT_ID"
+              if provider in auth.SECRET_OPTIONAL
+              else f"{provider.upper()}_CLIENT_ID 와 _CLIENT_SECRET")
         raise HTTPException(503,
-            f"{provider} 로그인이 아직 설정되지 않았습니다. "
-            f".env 에 {provider.upper()}_CLIENT_ID 와 _CLIENT_SECRET 를 넣어주세요.")
+            f"{provider} 로그인이 아직 설정되지 않았습니다. {필요} 를 넣어주세요.")
     auth.init_db()
     conf = auth.PROVIDERS[provider]
     params = {
@@ -594,13 +599,18 @@ async def auth_callback(provider: str, request: Request,
 
     client_id, client_secret = auth.client_config(provider)
     conf = auth.PROVIDERS[provider]
+    form = {
+        "grant_type": "authorization_code", "code": code,
+        "client_id": client_id,
+        "redirect_uri": public_url(request, f"/auth/{provider}/callback"),
+        "state": state,
+    }
+    if client_secret:                    # 카카오는 콘솔에서 안 켜면 값이 없다
+        form["client_secret"] = client_secret
+
     async with httpx.AsyncClient(timeout=10) as http:
-        tok = await http.post(conf["token"], data={
-            "grant_type": "authorization_code", "code": code,
-            "client_id": client_id, "client_secret": client_secret,
-            "redirect_uri": public_url(request, f"/auth/{provider}/callback"),
-            "state": state,
-        }, headers={"Accept": "application/json"})
+        tok = await http.post(conf["token"], data=form,
+                              headers={"Accept": "application/json"})
         access = (tok.json() or {}).get("access_token")
         if not access:
             return RedirectResponse("/?login=failed")

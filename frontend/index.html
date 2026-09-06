@@ -649,7 +649,9 @@
   .move-thumb img{ width:30px; height:30px; display:block; }
 
   /* 시트: .device(position:relative; overflow:hidden) 기준 absolute — fixed 는 쓰지 않는다.
-     z-index 는 .acct-panel(40) 위: backdrop 50, sheet 60. 9·11·12번 작업이 재사용한다. */
+     z-index 는 .acct-panel(40) 위: backdrop 50, sheet 60. 9·11·12번 작업이 재사용한다.
+     .device 는 내용만큼 자라고 스크롤은 페이지 전체가 하므로 bottom:0 은 긴 화면에서 화면 밖에 뜬다 —
+     bottom(과 max-height)은 openSheet 가 지금 보이는 뷰포트의 바닥에 맞춰 인라인으로 덮어쓴다. */
   .sheet-backdrop{ position:absolute; inset:0; background:rgba(32,38,31,0.45); z-index:50; }
   .sheet{
     position:absolute; left:0; right:0; bottom:0; z-index:60;
@@ -2886,17 +2888,32 @@ const MOVE_MEDIA = {
   'high-knee':   { svg: '/img/moves/high-knee.svg',   gif: '/img/moves/high-knee.gif',   이름: '2분 제자리 높은 무릎 뛰기' },
 };
 
-/* 시트(모달) 공용 — 제목과 본문 HTML 을 받아 .device 안에 띄운다. 닫기: 닫기 버튼 · 딤 배경 · Esc */
+/* 시트(모달) 공용 — 제목과 본문 HTML 을 받아 .device 안에 띄운다. 닫기: 닫기 버튼 · 딤 배경 · Esc
+   .device 는 내용만큼 자라고(min-height 만 있음) 스크롤은 페이지 전체가 하므로, 시트를 bottom:0 에 붙이면
+   긴 화면(s1)에서는 기기 바닥(화면 밖)에 뜬다. 열 때 지금 보이는 뷰포트의 바닥에 시트 bottom 을 맞추고
+   (position:fixed 는 규약상 금지), 닫을 때는 열기 전 스크롤 위치로 돌려놓는다.
+   top 이 아니라 bottom 을 잡는 이유: GIF <img> 가 placeholder 로 바뀌며 시트 높이가 변해도 바닥에 붙어 있게. */
 let sheetOpener = null;   // 닫을 때 포커스를 돌려줄 요소(썸네일 버튼)
+let sheetScrollY = 0;     // 열기 전 window.scrollY — 닫을 때 그대로 복원
+function placeSheet(sheet){
+  const device = document.querySelector('.device');
+  const deviceTop = device.getBoundingClientRect().top + window.scrollY;   // 페이지 기준 기기 상단
+  const viewTop = Math.max(0, window.scrollY - deviceTop);                 // 기기 기준, 지금 보이는 영역의 위
+  const viewBottom = Math.min(device.offsetHeight, window.scrollY + window.innerHeight - deviceTop);  // 아래
+  sheet.style.maxHeight = Math.round((viewBottom - viewTop) * 0.88) + 'px';
+  sheet.style.bottom = Math.round(device.offsetHeight - viewBottom) + 'px';  // 기기 바닥이 보이면 0
+}
 function openSheet(title, html){
   sheetOpener = document.activeElement;
+  sheetScrollY = window.scrollY;
   $('sheetTitle').textContent = title;
   $('sheetBody').innerHTML = html;
   $('sheetBackdrop').hidden = false;
   const sheet = $('sheet');
   sheet.hidden = false;
   sheet.scrollTop = 0;
-  $('sheetClose').focus();
+  placeSheet(sheet);
+  $('sheetClose').focus({ preventScroll: true });
 }
 function closeSheet(){
   const sheet = $('sheet');
@@ -2904,7 +2921,8 @@ function closeSheet(){
   sheet.hidden = true;
   $('sheetBackdrop').hidden = true;
   $('sheetBody').innerHTML = '';          // GIF 반복 재생을 멈춘다
-  if (sheetOpener && sheetOpener.focus) sheetOpener.focus();
+  if (sheetOpener && sheetOpener.focus) sheetOpener.focus({ preventScroll: true });
+  window.scrollTo(0, sheetScrollY);       // 포커스 복귀와 별개로 열기 전 스크롤 위치로
   sheetOpener = null;
 }
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });

@@ -45,6 +45,14 @@ def test_시트와_gif_경로가_있다():
     assert "동작 GIF 준비 중" in html
 
 
+def test_시트는_보이는_뷰포트에_뜨고_닫으면_스크롤이_복원된다():
+    """.device 는 내용만큼 자라 페이지 전체가 스크롤되므로, 시트 top 은 열 때 계산하고 닫을 때 스크롤을 되돌린다."""
+    html = _index()
+    assert "function placeSheet(" in html
+    assert "sheetScrollY = window.scrollY" in html
+    assert "window.scrollTo(0, sheetScrollY)" in html
+
+
 def test_gif_는_있으면_그대로_서빙된다():
     """파일을 넣으면 200(image/gif), 없으면 404 — 어느 쪽이든 서버 오류(5xx)는 아니어야 한다."""
     for slug in SLUGS:

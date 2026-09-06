@@ -30,7 +30,7 @@ PURPOSE_FACTORS = {
     "다이어트": ["심폐지구력", "근지구력"],
     "기초 체력 증진": ["근력", "유연성", "심폐지구력"],
     "특정 운동을 위한 체력 증진": ["근력", "심폐지구력"],
-    "낙상 예방": ["평형성", "근력"],
+    "재활 및 기능 회복": ["평형성", "근력"],
     "수험생 체력 증진": ["유연성", "심폐지구력"],
     "유연성 강화": ["유연성"],
 }
@@ -119,8 +119,8 @@ if __name__ == "__main__":
     for label, kw in [
         ("성인 남성 · 기초 체력 증진 · 약점 근력",
          dict(age_gbn="성인", sex="M", purpose="기초 체력 증진", weak_factor="근력")),
-        ("어르신 여성 · 낙상 예방 · 약점 평형성",
-         dict(age_gbn="어르신", sex="F", purpose="낙상 예방", weak_factor="평형성")),
+        ("어르신 여성 · 재활 및 기능 회복 · 약점 평형성",
+         dict(age_gbn="어르신", sex="F", purpose="재활 및 기능 회복", weak_factor="평형성")),
     ]:
         print(f"=== {label} ===")
         for i, step in enumerate(build_routine(recommend(freq, **kw)), 1):

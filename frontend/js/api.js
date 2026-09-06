@@ -63,6 +63,11 @@ const API = (() => {
     signin: (b) => post('/auth/login', b),
     signout: () => post('/auth/logout', {}),
     deleteAccount: () => call('/auth/me', { method: 'DELETE' }),
+    rename: (이름) => call('/auth/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 이름 }),
+    }),
     myMeasurements: () => call('/me/measurements'),
     pushMeasurement: (b) => post('/me/measurements', b),
   };

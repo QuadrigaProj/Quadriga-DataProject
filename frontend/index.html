@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>체력나이 — 일상 운동 루틴 처방</title>
+<title>Fitage — 체력나이로 오늘 할 운동을 정해요</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/img/logo-180.png" />
 <meta name="theme-color" content="#EDEFE6" />
@@ -327,12 +327,13 @@
   .appbar.on{ display:flex; }
   .brand{
     display:flex; align-items:center; gap:9px;
-    background:none; border:none; padding:4px 6px 4px 0; margin:0;
+    background:none; border:none; padding:4px 8px 4px 4px; margin:0;
     font:inherit; color:var(--ink); cursor:pointer; border-radius:10px;
   }
   .brand:hover{ background:var(--bg); }
-  .brand img{ width:28px; height:28px; display:block; }
-  .brand span{ font-size:15.5px; font-weight:800; letter-spacing:-0.02em; }
+  .brand-mark{ width:30px; height:30px; display:block; line-height:0; }
+  .brand-mark svg{ width:100%; height:100%; display:block; }
+  .brand-word{ height:17px; display:block; }
   .acct-btn{
     margin-left:auto; background:none; border:none; padding:0; cursor:pointer;
     border-radius:50%; line-height:0;
@@ -364,12 +365,61 @@
   .acct-row dt{ color:var(--muted); flex-shrink:0; }
   .acct-row dd{ margin:0; text-align:right; font-weight:600; }
   .acct-empty{ font-size:12.5px; color:var(--muted); line-height:1.6; }
+  .acct-more{ font-size:11.5px; color:var(--muted); margin-top:12px; text-align:center;
+              line-height:1.5; }
   .acct-logout{
     width:100%; margin-top:14px; padding:10px 0;
     border:1px solid var(--line); border-radius:10px; background:var(--bg);
     font:inherit; font-size:13.5px; color:var(--ink); cursor:pointer;
   }
   .acct-logout:hover{ background:var(--pine-tint); }
+
+  /* ---- 홈 큰 게이지 ---- */
+  .gauge-card{
+    display:flex; align-items:center; gap:18px;
+    margin:16px 22px 0; padding:18px 20px;
+    background:var(--bg); border:1px solid var(--line); border-radius:20px;
+  }
+  .gauge-figure{ width:104px; height:104px; flex-shrink:0; line-height:0; }
+  .gauge-figure svg{ width:100%; height:100%; display:block; }
+  .gauge-read{ min-width:0; }
+  .gauge-now{ font-size:34px; font-weight:800; letter-spacing:-0.03em; line-height:1;
+              font-variant-numeric:tabular-nums; }
+  .gauge-now small{ font-size:15px; font-weight:700; margin-left:2px; }
+  .gauge-now-label{ font-size:12.5px; color:var(--muted); margin-top:4px; }
+  .gauge-legend{ margin-top:10px; display:flex; gap:14px; font-size:12.5px; color:var(--muted); }
+  .gauge-legend b{ color:var(--ink); }
+  .sw{ display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px; }
+  .sw-green{ background:#12B76A; }
+  .sw-track{ background:#E4DACA; }
+
+  /* ---- 프로필 : 내 정보 편집 ---- */
+  .edit-card{
+    margin-top:18px; padding:16px 18px 18px;
+    background:var(--paper); border:1px solid var(--line); border-radius:18px;
+  }
+  .edit-head{ display:flex; align-items:baseline; justify-content:space-between;
+              font-size:14px; font-weight:700; margin-bottom:6px; }
+  .edit-hint{ font-size:12px; font-weight:500; color:var(--pine); }
+  .edit-row{ display:flex; align-items:center; gap:12px; padding:9px 0;
+             border-bottom:1px solid var(--line); font-size:13.5px; }
+  .edit-row:last-of-type{ border-bottom:none; }
+  .edit-row > span:first-child{ color:var(--muted); width:104px; flex-shrink:0; }
+  .edit-row input, .edit-row select{
+    flex:1; min-width:0; font:inherit; font-size:14px; color:var(--ink);
+    background:var(--bg); border:1px solid var(--line); border-radius:9px;
+    padding:8px 10px; text-align:right;
+  }
+  .edit-row input:focus, .edit-row select:focus{ outline:2px solid var(--pine-tint); }
+  .edit-seg{ flex:1; display:flex; gap:6px; justify-content:flex-end; }
+  .edit-seg button{
+    padding:8px 14px; border-radius:9px; border:1px solid var(--line);
+    background:var(--bg); font:inherit; font-size:13.5px; cursor:pointer; color:var(--muted);
+  }
+  .edit-seg button.on{ background:var(--pine); border-color:var(--pine); color:#fff; font-weight:600; }
+  .edit-note{ font-size:12px; color:var(--muted); line-height:1.55; margin-top:12px; }
+  .edit-save{ margin-top:12px; }
+  .edit-save:disabled{ opacity:0.45; cursor:default; }
 
   .statusbar{
     background:var(--amber-tint); color:var(--clay); font-size:12.5px;
@@ -384,7 +434,10 @@
 
   /* --- 로그인 --- */
   .login{ flex:1; display:flex; flex-direction:column; justify-content:center; padding:40px 26px; }
-  .login-mark{ width:60px; height:60px; display:block; margin-bottom:20px; }
+  .login-logo{ display:flex; align-items:center; gap:14px; margin-bottom:22px; }
+  .login-mark{ width:62px; height:62px; line-height:0; flex-shrink:0; }
+  .login-mark svg{ width:100%; height:100%; display:block; }
+  .login-word{ height:50px; display:block; }
   .policy-links{
     margin-top:26px; text-align:center; font-size:12px; color:var(--muted);
   }
@@ -473,8 +526,8 @@
   <!-- ============ 상단 바 (로그인 후 모든 화면) ============ -->
   <header class="appbar" id="appbar">
     <button class="brand" onclick="goHome()" title="메인 화면으로">
-      <img src="/img/logo-mark.svg" alt="" />
-      <span>체력나이</span>
+      <span class="brand-mark" id="barGauge"></span>
+      <img class="brand-word" src="/img/wordmark-fitage.svg" alt="Fitage" />
     </button>
 
     <button class="acct-btn" id="acctBtn" aria-expanded="false" aria-haspopup="dialog"
@@ -491,6 +544,7 @@
         </div>
       </div>
       <dl class="acct-rows" id="acctRows"></dl>
+      <div class="acct-more">한 번 더 누르면 프로필에서 수정할 수 있어요</div>
       <button class="acct-logout" onclick="logout()">로그아웃</button>
     </div>
   </header>
@@ -499,7 +553,10 @@
   <!-- ============ SCREEN 0 : 로그인 ============ -->
   <section class="screen active" id="s0">
     <div class="login">
-      <img class="login-mark" src="/img/logo-mark.svg" alt="체력나이" />
+      <div class="login-logo">
+        <div class="login-mark" id="loginGauge"></div>
+        <img class="login-word" src="/img/wordmark.svg" alt="Fitage — 체력나이" />
+      </div>
       <h1 class="login-title">체력나이로<br/>오늘 할 운동을 정해요</h1>
       <p class="login-sub">국민체력100 공개 데이터로 또래와 비교합니다.<br/>3분이면 첫 점검이 끝나요.</p>
 
@@ -715,6 +772,18 @@
       <div class="dday-pill" id="ddayPill">재점검까지 D-90</div>
     </div>
 
+    <div class="gauge-card">
+      <div class="gauge-figure" id="homeGauge"></div>
+      <div class="gauge-read">
+        <div class="gauge-now"><span id="gaugeNow">—</span><small>세</small></div>
+        <div class="gauge-now-label">지금 체력나이</div>
+        <div class="gauge-legend">
+          <div><i class="sw sw-green"></i>목표 <b id="gaugeGoal">—</b></div>
+          <div><i class="sw sw-track"></i>실제 <b id="gaugeReal">—</b></div>
+        </div>
+      </div>
+    </div>
+
     <button class="hero-btn" onclick="goTo('s4')">
       <div class="hero-kicker">오늘의 루틴</div>
       <div class="hero-title" id="heroTitle">오늘의 루틴</div>
@@ -778,6 +847,32 @@
 
       <div style="margin-top:18px;" id="axisRows"></div>
       <div class="ci-caption" id="axisNote"></div>
+
+      <div class="edit-card">
+        <div class="edit-head"><span>내 정보</span><span class="edit-hint" id="editHint"></span></div>
+        <label class="edit-row"><span>별명</span>
+          <input id="editName" type="text" maxlength="20" oninput="markDirty()" /></label>
+        <label class="edit-row"><span>나이</span>
+          <input id="editAge" type="number" min="11" max="100" inputmode="numeric"
+                 oninput="markDirty()" /></label>
+        <div class="edit-row"><span>성별</span>
+          <div class="edit-seg" id="editSex">
+            <button type="button" data-sex="M" onclick="pickSex('M')">남성</button>
+            <button type="button" data-sex="F" onclick="pickSex('F')">여성</button>
+          </div></div>
+        <label class="edit-row"><span>원하는 운동 방식</span>
+          <select id="editPurpose" onchange="markDirty()"></select></label>
+        <label class="edit-row"><span>목표 체력나이</span>
+          <input id="editTarget" type="number" min="5" max="100" inputmode="numeric"
+                 oninput="markDirty()" /></label>
+        <div class="edit-note">
+          로고와 홈 화면의 게이지는 이 값을 그립니다.
+          <b>초록</b>은 0세부터 목표까지, <b>주황 점</b>은 지금 체력나이,
+          오른쪽 끝은 실제 나이예요.
+        </div>
+        <button class="btn btn-primary edit-save" id="editSave"
+                onclick="saveEdits()" disabled>저장</button>
+      </div>
 
       <div class="weak-card">
         <div class="weak-kicker">집중 개선 영역</div>
@@ -855,6 +950,7 @@
 </div>
 
 <script src="js/api.js"></script>
+<script src="js/gauge.js"></script>
 <script>
 /* ---------------------------------------------------------------------------
    화면 상태와 백엔드 연결.
@@ -871,6 +967,7 @@ const state = {
   age: null, sex: 'M', ageGbn: '성인',
   flexibility: null, strength: null, height: null, weight: null,
   purpose: null,
+  targetAge: null,     // 사용자가 정한 목표 체력나이 (로고 초록 구간)
   result: null,        // /fitness-age 응답
   first: null,         // 첫 점검 결과 (재점검 비교용)
   routine: [],         // 오늘의 루틴 steps
@@ -946,7 +1043,12 @@ function goHome(){
 function toggleAccount(ev){
   if (ev) ev.stopPropagation();
   const panel = $('acctPanel');
-  if (panel.classList.contains('open')) { closeAccount(); return; }
+  // 열려 있는데 또 누르면 = 프로필 페이지로 넘어간다
+  if (panel.classList.contains('open')) {
+    closeAccount();
+    if (state.user) goTo('s5');
+    return;
+  }
   renderAccount();
   panel.classList.add('open');
   $('acctBtn').setAttribute('aria-expanded', 'true');
@@ -983,6 +1085,146 @@ function renderAccount(){
     ? rows.map(([k, v]) =>
         `<div class="acct-row"><dt>${k}</dt><dd>${v}</dd></div>`).join('')
     : '<div class="acct-empty">아직 입력한 정보가 없어요.<br/>첫 점검을 마치면 여기에 표시됩니다.</div>';
+}
+
+/* ---------------------------------------------------------------------------
+   게이지 — 로고가 곧 데이터다.
+   왼쪽 끝 0세, 오른쪽 끝 실제 나이, 초록은 목표까지, 주황 점은 지금 체력나이.
+   체력나이가 실제 나이를 넘으면 점이 밑바닥 한가운데(눈금 밖)로 간다.
+   --------------------------------------------------------------------------- */
+
+/* 목표를 아직 안 정했으면 "실제 나이보다 5세 젊게" 를 기본값으로 제안한다. */
+function targetAge(){
+  if (state.targetAge) return state.targetAge;
+  if (!state.age) return null;
+  return Math.max(11, state.age - 5);
+}
+
+function gaugeData(){
+  return { age: state.age, fitnessAge: state.result?.체력나이, targetAge: targetAge() };
+}
+
+function paintGauges({ animate = false } = {}){
+  const d = gaugeData();
+  GAUGE.render($('barGauge'), d, { animate: false });      // 상단 바는 늘 최종 상태
+  GAUGE.render($('loginGauge'), d, { animate });
+  GAUGE.render($('homeGauge'), d, { animate });
+
+  const r = state.result;
+  if ($('gaugeNow')) {
+    $('gaugeNow').textContent = r ? Math.round(r.체력나이) : '—';
+    $('gaugeGoal').textContent = targetAge() ? `만 ${targetAge()}세` : '—';
+    $('gaugeReal').textContent = state.age ? `만 ${state.age}세` : '—';
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   프로필 편집 — 별명·나이·성별·운동 방식·목표 체력나이
+   --------------------------------------------------------------------------- */
+
+let editDirty = false;
+
+function markDirty(){
+  editDirty = true;
+  $('editSave').disabled = false;
+  $('editHint').textContent = '';
+}
+
+function pickSex(sex){
+  document.querySelectorAll('#editSex button').forEach(b =>
+    b.classList.toggle('on', b.dataset.sex === sex));
+  markDirty();
+}
+
+function renderEdit(){
+  $('editName').value = state.user || '';
+  $('editAge').value = state.age ?? '';
+  document.querySelectorAll('#editSex button').forEach(b =>
+    b.classList.toggle('on', b.dataset.sex === state.sex));
+  const sel = $('editPurpose');
+  sel.innerHTML = '<option value="">선택 안 함</option>' +
+    Object.entries(PURPOSE_LABEL).map(([k, v]) =>
+      `<option value="${k}"${k === state.purpose ? ' selected' : ''}>${v}</option>`).join('');
+  $('editTarget').value = targetAge() ?? '';
+  editDirty = false;
+  $('editSave').disabled = true;
+  $('editHint').textContent = '';
+}
+
+async function saveEdits(){
+  const name = $('editName').value.trim();
+  const age = parseInt($('editAge').value, 10);
+  const sex = document.querySelector('#editSex button.on')?.dataset.sex || state.sex;
+  const purpose = $('editPurpose').value || null;
+  const target = parseInt($('editTarget').value, 10);
+
+  if (!name) return editError('별명을 입력해주세요.');
+  if (!Number.isFinite(age) || !ageGroup(age))
+    return editError('나이는 만 11세부터 지원해요.');
+  if (Number.isFinite(target) && (target < 5 || target > age))
+    return editError('목표 체력나이는 실제 나이보다 어리게 정해주세요.');
+
+  const btn = $('editSave');
+  btn.disabled = true; btn.textContent = '저장 중…';
+
+  const oldName = state.user;
+  const recalc = (age !== state.age || sex !== state.sex);
+
+  try {
+    if (state.account && name !== oldName) {
+      const r = await API.rename(name);
+      state.user = r.이름;
+    } else if (!state.account && name !== oldName) {
+      renameLocalProfile(oldName, name);      // 이 기기 프로필은 키를 옮긴다
+      state.user = name;
+    }
+    state.age = age;
+    state.sex = sex;
+    state.purpose = purpose;
+    state.targetAge = Number.isFinite(target) ? target : null;
+
+    // 나이·성별이 바뀌면 기준표가 달라진다. 값이 있으면 다시 계산한다.
+    state.ageGbn = ageGroup(age);
+    if (recalc && state.result && state.flexibility !== null && state.strength !== null) {
+      try { state.result = await API.fitnessAge(measurement()); } catch (e) { /* 이전 값 유지 */ }
+    }
+    await saveProfile();
+    $('greetName').textContent = `${state.user} 님`;
+    syncInputsFromState();
+    renderProfile();
+    renderEdit();
+    paintGauges({ animate: true });
+    $('editHint').textContent = '저장했어요';
+  } catch (e) {
+    editError(e.message || '저장하지 못했어요.');
+  } finally {
+    btn.textContent = '저장';
+  }
+}
+
+function editError(msg){
+  $('editHint').style.color = 'var(--clay)';
+  $('editHint').textContent = msg;
+  $('editSave').disabled = false;
+  $('editSave').textContent = '저장';
+  setTimeout(() => { $('editHint').style.color = ''; }, 2500);
+}
+
+/* 이 기기 프로필은 별명이 곧 저장 키라서 옮겨 담아야 한다. */
+function renameLocalProfile(from, to){
+  const all = readProfiles();
+  if (!from || !(from in all)) return;
+  all[to] = all[from];
+  delete all[from];
+  writeProfiles(all);
+  renderProfileList();
+}
+
+/* 편집으로 나이·성별이 바뀌면 1번 화면 입력칸도 맞춰둔다. */
+function syncInputsFromState(){
+  if ($('ageInput')) $('ageInput').value = state.age ?? '';
+  onAgeChange();
+  selectSex(state.sex);
 }
 
 /* 로그인 화면(s0)에서는 상단 바를 감춘다 — 그 화면엔 이미 큰 로고가 있다. */
@@ -1094,6 +1336,7 @@ function snapshot(){
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
     purpose: state.purpose,
+    targetAge: state.targetAge,
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
     updated: new Date().toISOString().slice(0, 10),
@@ -1135,6 +1378,7 @@ function applyProfile(saved){
   selectSex(state.sex);
   $('greetName').textContent = `${state.user} 님`;
 
+  paintGauges();
   if (state.result) {
     renderResult();
     goTo('s3');
@@ -1275,9 +1519,9 @@ function goTo(id){
   const content = $(id).querySelector('.content');
   if(content) content.scrollTop = 0;
   if(id === 's2') renderPurpose();
-  if(id === 's3') loadHome();
+  if(id === 's3') { loadHome(); paintGauges({ animate: true }); }
   if(id === 's4') resetRoutine();
-  if(id === 's5') { renderProfile(); syncDangerRow(); cancelDelete(); }
+  if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
   if(id === 's6') renderRecheck();
 }
 
@@ -1403,6 +1647,7 @@ async function calcAge(){
 
 function renderResult(){
   const r = state.result;
+  paintGauges();
   const age = Math.round(r.체력나이);
   const ci = r.신뢰구간 ?? 0;
 
@@ -1862,6 +2107,8 @@ async function renderRecheck(){
     const me = await API.me();
     if (me.로그인) await enterAsAccount(me.이름, me.수단);
   } catch (e) {}
+
+  paintGauges({ animate: true });
 
   const h = await API.health();
   if (!h) setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');

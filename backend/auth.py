@@ -318,6 +318,12 @@ def list_measurements(user_id: int, limit: int = 20) -> list[dict]:
     return [{"측정시각": r["measured_at"], **json.loads(r["payload"])} for r in rows]
 
 
+def rename_user(user_id: int, name: str) -> None:
+    """표시 이름(별명)만 바꾼다. 로그인 수단이나 기록은 건드리지 않는다."""
+    with db() as con:
+        con.execute("UPDATE users SET display_name=? WHERE id=?", (name, user_id))
+
+
 def delete_account(user_id: int) -> None:
     """계정과 그에 딸린 기록을 모두 지운다. 되돌릴 수 없다."""
     with db() as con:

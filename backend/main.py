@@ -76,7 +76,7 @@ PROVIDER_CONSOLE = {
 AgeGroup = Literal["성인", "어르신", "성장기"]
 Sex = Literal["M", "F"]
 Purpose = Literal[
-    "다이어트", "기초 체력 증진", "특정 운동을 위한 체력 증진",
+    "다이어트", "기초 체력 증진",
     "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
 ]
 

@@ -215,6 +215,40 @@
   .tab.active .tab-label{ color:var(--pine-deep); }
   .tab.active .tab-icon{ filter:none; }
 
+  /* ===================== SCREEN 7 : 운동 기록 ===================== */
+  .rec-stats{ display:flex; gap:10px; margin-top:20px; }
+  .rec-stat{
+    flex:1; padding:16px 10px; border-radius:16px; text-align:center;
+    background:var(--bg); border:1px solid var(--line);
+  }
+  .rec-num{ font-size:24px; font-weight:800; letter-spacing:-0.02em;
+            font-variant-numeric:tabular-nums; }
+  .rec-cap{ font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .rec-block{ margin-top:22px; }
+  .rec-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+  .rec-age-row{
+    display:flex; align-items:center; justify-content:space-around;
+    padding:18px 12px; border-radius:16px; background:var(--pine-tint);
+  }
+  .rec-age-num{ font-size:26px; font-weight:800; text-align:center;
+                font-variant-numeric:tabular-nums; }
+  .rec-arrow{ font-size:14px; font-weight:700; color:var(--pine-deep); }
+  .rec-note{ font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.6; }
+  .rec-item{
+    display:flex; align-items:center; gap:12px; padding:12px 2px;
+    border-bottom:1px solid var(--line); font-size:14px;
+  }
+  .rec-item:last-child{ border-bottom:none; }
+  .rec-date{ font-size:12.5px; color:var(--muted); width:74px; flex-shrink:0;
+             font-variant-numeric:tabular-nums; }
+  .rec-name{ flex:1; min-width:0; }
+  .rec-check{ color:var(--pine); font-weight:700; }
+  .rec-empty{
+    padding:24px 18px; border-radius:16px; background:var(--bg);
+    border:1px dashed var(--line); font-size:13px; color:var(--muted);
+    line-height:1.7; text-align:center;
+  }
+
   /* ===================== SCREEN 4 : 루틴 플레이어 ===================== */
   .player-video{
     margin:0 22px; margin-top:18px; aspect-ratio:4/3; border-radius:18px; background:linear-gradient(160deg,#2C4B3E,#1F3830);
@@ -895,10 +929,7 @@
 
     <div style="flex:1;"></div>
 
-    <div class="tabbar">
-      <button class="tab active" onclick="goTo('s3')"><div class="tab-icon">🏠</div><div class="tab-label">홈</div></button>
-      <button class="tab" onclick="goTo('s5')"><div class="tab-icon">👤</div><div class="tab-label">프로필</div></button>
-    </div>
+    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 4 : 루틴 플레이어 ============ -->
@@ -1020,10 +1051,43 @@
     </div>
     <div class="reset-row"><button onclick="resetSettings()">설정 초기화</button></div>
 
-    <div class="tabbar">
-      <button class="tab" onclick="goTo('s3')"><div class="tab-icon">🏠</div><div class="tab-label">홈</div></button>
-      <button class="tab active" onclick="goTo('s5')"><div class="tab-icon">👤</div><div class="tab-label">프로필</div></button>
+    <div class="tabbar" data-tabbar></div>
+  </section>
+
+  <!-- ============ SCREEN 7 : 운동 기록 ============ -->
+  <section class="screen" id="s7">
+    <div class="content">
+      <div class="eyebrow">기록</div>
+      <h1 class="title">지금까지 이렇게<br/>움직였어요</h1>
+
+      <div class="rec-stats">
+        <div class="rec-stat"><div class="rec-num" id="recDay">—</div><div class="rec-cap">프로그램</div></div>
+        <div class="rec-stat"><div class="rec-num" id="recDone">—</div><div class="rec-cap">완료한 루틴</div></div>
+        <div class="rec-stat"><div class="rec-num" id="recStreak">—</div><div class="rec-cap">연속</div></div>
+      </div>
+
+      <div class="rec-block" id="recAgeBlock" style="display:none;">
+        <div class="rec-head">체력나이 변화</div>
+        <div class="rec-age-row">
+          <div><div class="rec-age-num" id="recFirstAge">—</div><div class="rec-cap">첫 점검</div></div>
+          <div class="rec-arrow" id="recDelta">→</div>
+          <div><div class="rec-age-num" id="recNowAge">—</div><div class="rec-cap">지금</div></div>
+        </div>
+        <div class="rec-note" id="recAgeNote"></div>
+      </div>
+
+      <div class="rec-block">
+        <div class="rec-head">운동한 날</div>
+        <div id="recList"></div>
+      </div>
+
+      <div class="rec-block" id="recMeasureBlock" style="display:none;">
+        <div class="rec-head">점검 기록</div>
+        <div id="recMeasures"></div>
+      </div>
     </div>
+
+    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
@@ -1679,10 +1743,99 @@ function setStatus(msg) {
   bar.style.display = msg ? 'block' : 'none';
 }
 
+/* ---------------------------------------------------------------------------
+   하단 탭바 — 한 곳에서 그린다. 화면마다 복사해 두면 탭이 늘 때마다 어긋난다.
+   --------------------------------------------------------------------------- */
+
+const TABS = [
+  { id: 's3', icon: '🏠', label: '홈' },
+  { id: 's7', icon: '📈', label: '기록' },
+  { id: 's5', icon: '👤', label: '프로필' },
+];
+
+function renderTabbar(activeId){
+  const html = TABS.map(t =>
+    `<button class="tab${t.id === activeId ? ' active' : ''}" onclick="goTo('${t.id}')">
+       <div class="tab-icon">${t.icon}</div><div class="tab-label">${t.label}</div>
+     </button>`).join('');
+  document.querySelectorAll('[data-tabbar]').forEach(el => { el.innerHTML = html; });
+}
+
+/* ---------------------------------------------------------------------------
+   운동 기록 — 루틴을 실제로 한 날과 체력나이 변화
+   --------------------------------------------------------------------------- */
+
+/* 오늘부터 거꾸로 세어 며칠 연속으로 했는지. 오늘 아직 안 했으면 어제부터 센다. */
+function streakDays(log){
+  const days = new Set((log || []).map(e => e.date));
+  if (!days.size) return 0;
+  const d = new Date();
+  const iso = (x) => x.toISOString().slice(0, 10);
+  if (!days.has(iso(d))) d.setDate(d.getDate() - 1);
+  let n = 0;
+  while (days.has(iso(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+const fmtDate = (s) => {
+  const [y, m, d] = String(s).split('-');
+  return m && d ? `${Number(m)}월 ${Number(d)}일` : s;
+};
+
+async function renderRecords(){
+  const log = [...(state.routineLog || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  $('recDay').textContent = state.programStart ? `D+${programDay()}` : '—';
+  $('recDone').textContent = log.length ? `${log.length}회` : '0회';
+  const st = streakDays(log);
+  $('recStreak').textContent = st ? `${st}일` : '—';
+
+  // 체력나이 변화 — 첫 점검이 있어야 비교가 성립한다
+  const first = state.first?.체력나이 ?? null;
+  const now = state.result?.체력나이 ?? null;
+  if (first !== null && now !== null) {
+    $('recAgeBlock').style.display = 'block';
+    $('recFirstAge').textContent = `${Math.round(first)}세`;
+    $('recNowAge').textContent = `${Math.round(now)}세`;
+    const d = now - first;
+    $('recDelta').textContent = Math.abs(d) < 0.5 ? '→' : (d < 0 ? '↓' : '↑');
+    $('recAgeNote').textContent = Math.abs(d) < 0.5
+      ? '첫 점검과 큰 차이가 없어요. 3개월 뒤 다시 재보면 흐름이 보입니다.'
+      : (d < 0 ? `첫 점검보다 ${Math.abs(d).toFixed(1)}세 젊어졌어요.`
+               : `첫 점검보다 ${d.toFixed(1)}세 올라갔어요. 측정 편차일 수 있으니 다시 재보세요.`);
+  } else {
+    $('recAgeBlock').style.display = 'none';
+  }
+
+  $('recList').innerHTML = log.length
+    ? log.slice(0, 30).map(e => `<div class="rec-item">
+        <div class="rec-date">${fmtDate(e.date)}</div>
+        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
+        <div class="rec-check">✓</div>
+      </div>`).join('')
+    : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
+         홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
+
+  // 계정이면 서버에 남은 점검 기록도 같이 보여준다
+  const box = $('recMeasureBlock');
+  if (!state.account) { box.style.display = 'none'; return; }
+  try {
+    const r = await API.myMeasurements();
+    const rows = (r.기록 || []).filter(m => m.result?.체력나이 != null);
+    if (!rows.length) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    $('recMeasures').innerHTML = rows.slice(0, 10).map(m => `<div class="rec-item">
+        <div class="rec-date">${m.updated || ''}</div>
+        <div class="rec-name">체력나이 ${Math.round(m.result.체력나이)}세</div>
+      </div>`).join('');
+  } catch (e) { box.style.display = 'none'; }
+}
+
 /* ---- 화면 전환 ---- */
 function goTo(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
+  renderTabbar(id);
   syncAppbar(id);
   closeAccount();
   document.querySelector('.device').scrollTop = 0;
@@ -1692,6 +1845,7 @@ function goTo(id){
   if(id === 's3') { loadHome(); paintGauges({ animate: true }); }
   if(id === 's4') resetRoutine();
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
+  if(id === 's7') renderRecords();
   if(id === 's6') renderRecheck();
 }
 
@@ -2181,7 +2335,8 @@ function logRoutineDone(){
   const today = new Date().toISOString().slice(0,10);
   const no = state.routineMeta?.루틴번호 ?? null;
   if (!state.routineLog.some(e => e.date === today)) {
-    state.routineLog.push({ date: today, no, done: true });
+    state.routineLog.push({ date: today, no, done: true,
+                           name: state.routineMeta?.루틴명 || null });
     saveProfile();
     showToast(`오늘 루틴 완료 · 이번 3개월 ${state.routineLog.length}회`);
   }

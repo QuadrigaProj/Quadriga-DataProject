@@ -59,7 +59,7 @@ Quadriga-DataProject/
 │   ├── main.py                  #   FastAPI 엔드포인트 — 화면이 붙는 지점
 │   ├── fitness_age.py           #   체력나이 산출 + 약점 지목
 │   ├── prescription.py          #   실제 처방 기록 기반 운동 추천
-│   ├── auth.py                  #   계정 · 세션 · 측정 기록 (SQLite)
+│   ├── auth.py                  #   계정 · 세션 · 측정 기록 (SQLite / Postgres)
 │   ├── daily.py                 #   일상 처방 · 강도 점증 · 영상 필터
 │   ├── paths.py                 #   데이터 경로 탐색
 │   ├── collect_measurements.py  #   공공데이터 수집
@@ -73,7 +73,9 @@ Quadriga-DataProject/
 ├── docs/
 │   ├── 기획안.md
 │   └── Git-가이드.md             # Git 처음이면 여기부터 ← 작업 전 필독
-├── requirements.txt
+├── render.yaml                  # 배포 설정 (Render Blueprint)
+├── requirements.txt             # 서버 실행용
+├── requirements-dev.txt         # 분석 · 노트북용
 ├── AGENTS.md                    # AI 도구 사용 규칙
 └── CONTRIBUTING.md              # 브랜치 전략 & 협업 규칙 ← 작업 전 필독
 ```
@@ -108,8 +110,11 @@ cd Quadriga-DataProject
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 
-# 3. 패키지 설치
+# 3. 패키지 설치 (서버 실행용)
 pip install -r requirements.txt
+
+# 3-1. 분석·노트북까지 하려면
+pip install -r requirements-dev.txt
 
 # 4. 노트북 출력 자동 제거 (한 번만)
 nbstripout --install
@@ -278,6 +283,49 @@ pytest -q
 ```
 
 API 응답 모양이 바뀌면 화면이 조용히 깨집니다. `backend/` 를 고쳤다면 PR 전에 한 번 돌려주세요.
+
+## ☁️ 배포 (Render)
+
+`render.yaml` 이 있어 Blueprint 로 한 번에 올라갑니다.
+
+1. [render.com](https://render.com) 에 GitHub 계정으로 로그인
+2. **New → Blueprint** → 이 저장소 선택 → **Apply**
+3. 웹 서비스와 Postgres 가 함께 생성되고 `DATABASE_URL` 이 자동 연결됩니다
+4. 배포가 끝나면 **Environment** 에서 `PUBLIC_BASE_URL` 을 실제 주소로 채웁니다
+   (예: `https://quadriga-fitness-age.onrender.com`)
+5. 소셜 로그인을 쓰려면 각 `CLIENT_ID`/`CLIENT_SECRET` 도 여기에 넣습니다
+
+> **키는 Render 대시보드에만 넣으세요.** 저장소에 커밋하지 않습니다.
+
+### 저장소는 환경에 따라 갈립니다
+
+| 환경 | DB | 데이터 |
+|---|---|---|
+| 로컬 | SQLite (`data/app.db`) | 그 컴퓨터에만 |
+| 배포 | Postgres (`DATABASE_URL`) | 영구 저장, 기기 간 공유 |
+
+코드는 하나입니다. `DATABASE_URL` 이 있으면 Postgres, 없으면 SQLite 로 붙습니다.
+테스트도 양쪽에서 모두 통과하는지 확인합니다.
+
+```bash
+pytest -q                                    # SQLite
+DATABASE_URL=postgresql://... pytest -q      # Postgres
+```
+
+### 배포 후 소셜 로그인
+
+`PUBLIC_BASE_URL` 을 넣으면 `/auth/setup` 의 리디렉션 URI 가 **배포 주소로 바뀝니다.**
+각 콘솔에 로컬용과 배포용 **둘 다** 등록해두면 개발과 시연을 함께 할 수 있습니다.
+
+```
+http://localhost:8000/auth/google/callback      ← 개발
+https://<배포주소>/auth/google/callback          ← 시연
+```
+
+### 무료 플랜 주의
+
+15분간 요청이 없으면 서비스가 잠들고, 다음 접속에서 깨어나는 데 **약 30초**가 걸립니다.
+심사·시연 직전에 한 번 열어서 깨워두세요.
 
 ## 🌿 협업 방법
 

@@ -264,12 +264,23 @@ def test_video_routine_부담부위_제외():
 
 @pytest.fixture(autouse=True, scope="module")
 def _clean_db():
-    """테스트용 DB 를 따로 쓴다."""
+    """테스트용 DB 를 따로 쓴다.
+
+    DATABASE_URL 이 있으면 그 Postgres 로, 없으면 임시 SQLite 파일로 돈다.
+    배포(Postgres)와 로컬(SQLite)에서 같은 테스트가 통과해야 한다.
+    """
+    import os
     import tempfile
     from backend import auth
     old = auth.DB_PATH
-    auth.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
-    auth.init_db()
+    if auth.is_postgres():
+        with auth.db() as con:                    # 남은 데이터를 비우고 시작
+            auth.init_db()
+            for t in ("measurements", "sessions", "oauth_states", "users"):
+                con.execute(f"DELETE FROM {t}")
+    else:
+        auth.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
+        auth.init_db()
     yield
     auth.DB_PATH = old
 
@@ -397,3 +408,25 @@ def test_콜백을_직접_열면_설명이_나온다():
     r = c.get("/auth/google/callback", follow_redirects=False)
     assert r.status_code == 200
     assert "통로" in r.text
+
+
+# ---------- 배포 ----------
+
+def test_프록시_뒤에서_https로_인식한다():
+    """Render 는 앞에 프록시가 있어 request.url.scheme 이 http 로 보인다.
+    그대로 쓰면 OAuth 리디렉션 URI 가 콘솔 등록값과 어긋나고 쿠키도 Secure 가 안 붙는다."""
+    c = _fresh()
+    h = {"x-forwarded-proto": "https", "host": "fitness.example.com"}
+    html = c.get("/auth/setup", headers=h).text
+    assert "https://fitness.example.com/auth/google/callback" in html
+
+    r = c.post("/auth/signup", json={"email": "proxy@ex.com", "password": "abcd1234"},
+               headers=h)
+    assert "secure" in r.headers.get("set-cookie", "").lower()
+
+
+def test_로컬_http에서는_secure를_붙이지_않는다():
+    """붙이면 localhost 에서 쿠키가 저장되지 않아 로그인이 안 된다."""
+    c = _fresh()
+    r = c.post("/auth/signup", json={"email": "local@ex.com", "password": "abcd1234"})
+    assert "secure" not in r.headers.get("set-cookie", "").lower()

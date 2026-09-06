@@ -1,0 +1,24 @@
+# 분석 · 데이터 수집용. 서버 실행에는 필요 없습니다.
+#   pip install -r requirements.txt -r requirements-dev.txt
+
+# 데이터 수집 (backend/collect_measurements.py)
+requests
+python-dotenv
+tqdm
+pyarrow                  # parquet 저장
+
+# 시각화
+matplotlib
+seaborn
+
+# 분석 / 모델링
+scikit-learn
+scipy
+
+# 노트북
+jupyter
+ipykernel
+nbstripout               # 설치 후 `nbstripout --install` 한 번 실행
+
+# 기준표 수집 (스크래핑)
+playwright

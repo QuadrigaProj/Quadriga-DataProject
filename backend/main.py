@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode
 from typing import Literal
@@ -39,7 +40,18 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """배포 직후 첫 요청에서 테이블이 없어 500 이 나지 않도록 미리 만든다."""
+    try:
+        auth.init_db()
+    except Exception as e:                       # DB 가 아직 안 붙어도 서버는 뜬다
+        print(f"[warn] DB 초기화 실패: {type(e).__name__}")
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="체력나이 API",
     description="국민체력100 공공데이터 기반 체력나이 산출·운동 처방",
     version="0.2.0",
@@ -48,7 +60,9 @@ app = FastAPI(
 # 개발 중에는 프론트 로컬 서버를 허용한다. 배포 시 도메인으로 좁힐 것.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=[o for o in ["http://localhost:3000", "http://localhost:5173",
+                               os.getenv("PUBLIC_BASE_URL", "").rstrip("/")] if o],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -389,13 +403,35 @@ class LoginIn(BaseModel):
     password: str = Field(..., max_length=200)
 
 
-def _set_session(response: Response, user_id: int) -> None:
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+
+
+def public_url(request: Request, path: str) -> str:
+    """배포된 주소 기준의 절대 URL.
+
+    Render 같은 곳은 앞에 프록시가 있어서 request.url 의 scheme 이 http 로 보인다.
+    그대로 쓰면 OAuth 리디렉션 URI 가 콘솔 등록값과 어긋난다.
+    PUBLIC_BASE_URL 이 있으면 그걸 쓰고, 없으면 X-Forwarded-Proto 를 본다.
+    """
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL + path
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return f"{proto}://{request.headers.get('host', request.url.netloc)}{path}"
+
+
+def is_https(request: Request) -> bool:
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL.startswith("https://")
+    return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+
+
+def _set_session(response: Response, user_id: int, request: Request) -> None:
     response.set_cookie(
         auth.SESSION_COOKIE, auth.create_session(user_id),
         max_age=auth.SESSION_DAYS * 86400,
         httponly=True,          # 자바스크립트가 못 읽는다
         samesite="lax",         # 다른 사이트에서 실려 나가지 않는다
-        secure=bool(os.getenv("HTTPS")),
+        secure=is_https(request),   # https 로 들어왔으면 https 로만 오간다
     )
 
 
@@ -415,7 +451,7 @@ def auth_setup(request: Request) -> str:
     """
     rows = []
     for name in PROVIDER_CONSOLE:
-        uri = str(request.url_for("auth_callback", provider=name))
+        uri = public_url(request, f"/auth/{name}/callback")
         cid, sec = auth.client_config(name)
         state = "✅ 설정됨" if (cid and sec) else "⚠️ .env 에 키 없음"
         rows.append(f"""<tr><td><b>{name}</b></td><td>{state}</td>
@@ -453,7 +489,7 @@ def auth_providers() -> dict:
 
 
 @app.post("/auth/signup")
-def auth_signup(body: SignupIn, response: Response) -> dict:
+def auth_signup(body: SignupIn, response: Response, request: Request) -> dict:
     auth.init_db()
     email = body.email.strip().lower()
     if "@" not in email or len(email) < 5:
@@ -468,12 +504,12 @@ def auth_signup(body: SignupIn, response: Response) -> dict:
     uid = auth.upsert_user("password", email, email=email,
                            name=body.display_name or email.split("@")[0],
                            salt=salt, pw_hash=pw_hash)
-    _set_session(response, uid)
+    _set_session(response, uid, request)
     return {"ok": True, "이름": body.display_name or email.split("@")[0]}
 
 
 @app.post("/auth/login")
-def auth_login(body: LoginIn, response: Response) -> dict:
+def auth_login(body: LoginIn, response: Response, request: Request) -> dict:
     auth.init_db()
     row = auth.find_password_user(body.email)
     # 이메일이 없을 때와 비밀번호가 틀렸을 때의 응답을 같게 둔다.
@@ -481,7 +517,7 @@ def auth_login(body: LoginIn, response: Response) -> dict:
     if not row or not auth.verify_password(body.password, row["password_salt"],
                                            row["password_hash"]):
         raise HTTPException(401, "이메일 또는 비밀번호가 맞지 않습니다.")
-    _set_session(response, row["id"])
+    _set_session(response, row["id"], request)
     return {"ok": True, "이름": row["display_name"]}
 
 
@@ -527,7 +563,7 @@ def auth_start(provider: str, request: Request) -> RedirectResponse:
     params = {
         "response_type": "code",
         "client_id": client_id,
-        "redirect_uri": str(request.url_for("auth_callback", provider=provider)),
+        "redirect_uri": public_url(request, f"/auth/{provider}/callback"),
         "state": auth.new_state(provider),
     }
     if conf["scope"]:
@@ -562,7 +598,7 @@ async def auth_callback(provider: str, request: Request,
         tok = await http.post(conf["token"], data={
             "grant_type": "authorization_code", "code": code,
             "client_id": client_id, "client_secret": client_secret,
-            "redirect_uri": str(request.url_for("auth_callback", provider=provider)),
+            "redirect_uri": public_url(request, f"/auth/{provider}/callback"),
             "state": state,
         }, headers={"Accept": "application/json"})
         access = (tok.json() or {}).get("access_token")
@@ -578,7 +614,7 @@ async def auth_callback(provider: str, request: Request,
     uid = auth.upsert_user(provider, profile["uid"],
                            email=profile.get("email"), name=profile.get("name"))
     res = RedirectResponse("/?login=ok")
-    _set_session(res, uid)
+    _set_session(res, uid, request)
     return res
 
 

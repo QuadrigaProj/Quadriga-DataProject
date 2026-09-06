@@ -1,0 +1,28 @@
+{
+  "_출처": "국민체력100 동영상 정보 API (data.go.kr/data/15108846) 목업 데이터",
+  "_주의": "실제 서비스키 발급 전까지 사용하는 샘플입니다. ftns_fctr_nm/trng_se_nm/tool_nm/trng_plc_nm/trng_aim_nm은 기획안 15절에서 확인한 실제 필드명입니다. lvl_nm(난이도)은 명세 확인 전 가정한 필드로, 실제 응답을 받으면 필드명을 맞춰 교체해야 합니다.",
+  "items": [
+    { "id": "v001", "videoNm": "목·어깨 풀기 스트레칭", "ftns_fctr_nm": "유연성", "trng_se_nm": "준비운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "일상 컨디션", "lvl_nm": "초급", "playSec": 90, "burdenParts": ["어깨"], "thumb": "🧘" },
+    { "id": "v002", "videoNm": "전신 관절 풀어주기", "ftns_fctr_nm": "유연성", "trng_se_nm": "준비운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "요통 예방", "lvl_nm": "초급", "playSec": 120, "burdenParts": [], "thumb": "🤸" },
+    { "id": "v003", "videoNm": "앉아서 하체 스트레칭", "ftns_fctr_nm": "유연성", "trng_se_nm": "준비운동", "tool_nm": "의자", "trng_plc_nm": "실내", "trng_aim_nm": "낙상 예방", "lvl_nm": "초급", "playSec": 100, "burdenParts": ["무릎"], "thumb": "🪑" },
+    { "id": "v010", "videoNm": "매트 위 코어 근지구력", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "매트", "trng_plc_nm": "실내", "trng_aim_nm": "체중 감량", "lvl_nm": "중급", "playSec": 240, "burdenParts": ["허리"], "thumb": "💪" },
+    { "id": "v011", "videoNm": "맨몸 스쿼트 루틴", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "기초 체력", "lvl_nm": "초급", "playSec": 200, "burdenParts": ["무릎"], "thumb": "🏋️" },
+    { "id": "v012", "videoNm": "의자 활용 하체 근력", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "의자", "trng_plc_nm": "실내", "trng_aim_nm": "낙상 예방", "lvl_nm": "초급", "playSec": 220, "burdenParts": [], "thumb": "🪑" },
+    { "id": "v013", "videoNm": "짐볼 상체 근력", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "짐볼", "trng_plc_nm": "실내", "trng_aim_nm": "특정 운동 준비", "lvl_nm": "중급", "playSec": 260, "burdenParts": ["어깨"], "thumb": "🟠" },
+    { "id": "v014", "videoNm": "벽 짚고 팔굽혀펴기", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "기초 체력", "lvl_nm": "고급", "playSec": 210, "burdenParts": ["어깨"], "thumb": "🧱" },
+    { "id": "v020", "videoNm": "제자리 걷기 유산소", "ftns_fctr_nm": "심폐지구력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "체중 감량", "lvl_nm": "초급", "playSec": 300, "burdenParts": [], "thumb": "🚶" },
+    { "id": "v021", "videoNm": "계단 스텝업 유산소", "ftns_fctr_nm": "심폐지구력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내/실외", "trng_aim_nm": "체중 감량", "lvl_nm": "중급", "playSec": 280, "burdenParts": ["무릎"], "thumb": "🪜" },
+    { "id": "v022", "videoNm": "저강도 실내 걷기 루틴", "ftns_fctr_nm": "심폐지구력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "낙상 예방", "lvl_nm": "초급", "playSec": 260, "burdenParts": [], "thumb": "🚶" },
+    { "id": "v030", "videoNm": "8자 보행 균형 훈련", "ftns_fctr_nm": "평형성", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "낙상 예방", "lvl_nm": "초급", "playSec": 180, "burdenParts": [], "thumb": "🔁" },
+    { "id": "v031", "videoNm": "한 발 서기 균형 강화", "ftns_fctr_nm": "평형성", "trng_se_nm": "본운동", "tool_nm": "의자", "trng_plc_nm": "실내", "trng_aim_nm": "낙상 예방", "lvl_nm": "중급", "playSec": 150, "burdenParts": [], "thumb": "🧍" },
+    { "id": "v040", "videoNm": "3m 표적 돌아오기 민첩성", "ftns_fctr_nm": "민첩성·순발력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "특정 운동 준비", "lvl_nm": "중급", "playSec": 170, "burdenParts": ["무릎"], "thumb": "⚡" },
+    { "id": "v041", "videoNm": "등산 준비 하체 순발력", "ftns_fctr_nm": "민첩성·순발력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내/실외", "trng_aim_nm": "특정 운동 준비", "lvl_nm": "고급", "playSec": 230, "burdenParts": ["무릎"], "thumb": "⛰️" },
+    { "id": "v050", "videoNm": "전신 마무리 스트레칭", "ftns_fctr_nm": "유연성", "trng_se_nm": "정리운동", "tool_nm": "매트", "trng_plc_nm": "실내", "trng_aim_nm": "일상 컨디션", "lvl_nm": "초급", "playSec": 150, "burdenParts": [], "thumb": "🧘" },
+    { "id": "v051", "videoNm": "호흡 정리와 이완", "ftns_fctr_nm": "유연성", "trng_se_nm": "정리운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "일상 컨디션", "lvl_nm": "초급", "playSec": 120, "burdenParts": [], "thumb": "💨" },
+    { "id": "b001", "videoNm": "[짬보너스] 목 스트레칭 3분", "ftns_fctr_nm": "유연성", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "일상 컨디션", "lvl_nm": "초급", "playSec": 180, "burdenParts": [], "thumb": "⏱️" },
+    { "id": "b002", "videoNm": "[짬보너스] 손목·발목 풀기", "ftns_fctr_nm": "유연성", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실내", "trng_aim_nm": "일상 컨디션", "lvl_nm": "초급", "playSec": 200, "burdenParts": [], "thumb": "⏱️" },
+    { "id": "b003", "videoNm": "[짬보너스] 앉은 자리 종아리 운동", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "의자", "trng_plc_nm": "실내", "trng_aim_nm": "낙상 예방", "lvl_nm": "초급", "playSec": 190, "burdenParts": [], "thumb": "⏱️" },
+    { "id": "u001", "videoNm": "[해금] 계단 인터벌 근지구력", "ftns_fctr_nm": "근력·근지구력", "trng_se_nm": "본운동", "tool_nm": "맨몸", "trng_plc_nm": "실외", "trng_aim_nm": "기초 체력", "lvl_nm": "고급", "playSec": 300, "burdenParts": ["무릎"], "thumb": "🔓" },
+    { "id": "u002", "videoNm": "[해금] 짐볼 밸런스 심화", "ftns_fctr_nm": "평형성", "trng_se_nm": "본운동", "tool_nm": "짐볼", "trng_plc_nm": "실내", "trng_aim_nm": "특정 운동 준비", "lvl_nm": "고급", "playSec": 280, "burdenParts": [], "thumb": "🔓" }
+  ]
+}

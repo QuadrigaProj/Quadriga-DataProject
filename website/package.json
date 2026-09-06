@@ -1,0 +1,17 @@
+{
+  "name": "bodyage-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "체력나이 기반 일상 운동 루틴 및 생활활동 처방 서비스 - 2026 국민체육진흥공단 공공데이터 활용 경진대회 시제품",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

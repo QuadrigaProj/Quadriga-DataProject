@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>체력나이 - 일상 운동 루틴 & 생활활동 처방</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">🏃 <span>체력나이</span></div>
+    <div id="topbarRight" class="ddate"></div>
+  </header>
+
+  <main id="main">
+
+    <!-- ============ 온보딩 1: 첫 점검 ============ -->
+    <section class="screen" id="screen-measure">
+      <h1 class="page-title">첫 점검</h1>
+      <p class="page-sub">집에서 장비 없이, 3가지 항목만 재면 됩니다. 측정은 오늘 한 번, 다음은 3개월 뒤예요.</p>
+
+      <div class="card">
+        <h3>1. 기본 정보</h3>
+        <div class="row" style="margin-bottom:10px">
+          <label class="field">성별
+            <div class="segmented" id="sexSeg">
+              <button type="button" data-val="M" class="active">남성</button>
+              <button type="button" data-val="F">여성</button>
+            </div>
+          </label>
+          <label class="field">출생연도
+            <input type="number" id="birthYear" placeholder="예: 1999" inputmode="numeric" />
+          </label>
+        </div>
+        <div class="row">
+          <label class="field">키 (cm)
+            <input type="number" id="heightCm" placeholder="예: 168" inputmode="decimal" />
+          </label>
+          <label class="field">몸무게 (kg)
+            <input type="number" id="weightKg" placeholder="예: 60" inputmode="decimal" />
+          </label>
+        </div>
+        <p class="hint" id="bmiPreview" style="margin-top:8px"></p>
+      </div>
+
+      <div class="card">
+        <h3>2. 유연성 — 앉아 윗몸 앞으로 굽히기</h3>
+        <p class="hint">바닥에 앉아 다리를 펴고 상체를 숙여, 손끝이 발끝 기준으로 얼마나 더 갔는지(+) 혹은 못 미쳤는지(−)를 cm로 입력하세요.</p>
+        <label class="field">기록 (cm, 못 미치면 음수)
+          <input type="number" id="flexCm" placeholder="예: 8" inputmode="decimal" />
+        </label>
+      </div>
+
+      <div class="card">
+        <h3>3. 근력 · 근지구력</h3>
+        <p class="hint" id="strengthTestLabel">만 65세 미만: 교차윗몸일으키기 1분, 만 65세 이상: 의자에 앉았다 일어서기 30초</p>
+        <div class="timer-box">
+          <div class="timer-display" id="timerDisplay">00:60</div>
+          <div class="counter-display">횟수: <b id="repCount">0</b>회</div>
+          <button type="button" class="tap-btn" id="tapBtn">탭해서<br/>카운트</button>
+          <div class="row">
+            <button type="button" class="btn btn-secondary btn-sm" id="timerStartBtn">타이머 시작</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="timerResetBtn">초기화</button>
+          </div>
+        </div>
+        <p class="hint">타이머 없이 직접 측정한 횟수를 알고 있다면 아래에 바로 입력해도 됩니다.</p>
+        <label class="field">횟수 (회)
+          <input type="number" id="strengthReps" inputmode="numeric" />
+        </label>
+      </div>
+
+      <button class="btn btn-primary" id="submitMeasureBtn">체력나이 계산하기</button>
+      <p class="disclaimer">자가 측정값은 참고용 추정치입니다. 자세와 측정 방식에 따라 편차가 있을 수 있으며, 정확한 값은 가까운 국민체력100 체력인증센터의 무료 측정으로 확인할 수 있어요.</p>
+    </section>
+
+    <!-- ============ 온보딩 1-결과 ============ -->
+    <section class="screen" id="screen-measure-result" hidden>
+      <h1 class="page-title">측정 결과</h1>
+      <div class="card age-hero">
+        <div class="small">추정 체력나이 (참고용)</div>
+        <div class="value"><span id="resultAgeActual"></span>세 실제 → <span id="resultAgeNum">--</span><span>세</span></div>
+        <div id="resultAgeChip"></div>
+      </div>
+      <div class="card" id="resultProfileCard"></div>
+      <button class="btn btn-primary" id="goPurposeBtn">다음: 목적 선택</button>
+    </section>
+
+    <!-- ============ 온보딩 2: 목적 선택 ============ -->
+    <section class="screen" id="screen-purpose" hidden>
+      <h1 class="page-title">목적을 하나만 골라주세요</h1>
+      <p class="page-sub">나이가 아니라 목적으로 루틴을 구성해요. 나중에 언제든 바꿀 수 있어요.</p>
+      <div class="choice-grid" id="purposeGrid"></div>
+      <button class="btn btn-primary" id="confirmPurposeBtn" disabled>이 목적으로 시작하기</button>
+    </section>
+
+    <!-- ============ 홈 ============ -->
+    <section class="screen" id="screen-home" hidden>
+      <h1 class="page-title">오늘도 같은 시간, 같은 루틴</h1>
+      <p class="page-sub" id="homeSub"></p>
+
+      <button class="btn btn-hero" id="startRoutineBtn">
+        ▶ 오늘의 루틴 시작
+        <small id="homeRoutineMeta"></small>
+      </button>
+
+      <div class="card">
+        <div class="toggle-row">
+          <div>
+            <div style="font-weight:600;font-size:14px">🌥 몸이 무거운 날</div>
+            <div class="hint">누르면 오늘 루틴이 절반 길이 · 저강도로 바뀌어요</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="heavyDayToggle"/><span class="slider"></span></label>
+        </div>
+      </div>
+
+      <div class="card" id="dailyPrescriptionCard"></div>
+
+      <div class="card" id="bonusCard"></div>
+
+      <div class="card">
+        <h3>다음 정기 점검까지</h3>
+        <div style="font-size:26px;font-weight:700" id="ddayText">D-90</div>
+        <div class="hint">3개월마다 재측정하면 체력나이가 갱신돼요.</div>
+      </div>
+
+      <div class="card">
+        <h3>🚶 도보 이동 제안</h3>
+        <label class="field">목적지까지 예상 도보 시간(분)
+          <input type="number" id="walkMinutesInput" placeholder="예: 15" />
+        </label>
+        <button class="btn btn-secondary btn-sm" id="walkCheckBtn" style="margin-top:8px">확인하기</button>
+        <p class="hint" id="walkResult"></p>
+      </div>
+    </section>
+
+    <!-- ============ 루틴 플레이어 ============ -->
+    <section class="screen" id="screen-routine" hidden>
+      <h1 class="page-title">오늘의 루틴</h1>
+      <p class="page-sub" id="routineMetaText"></p>
+
+      <div class="card">
+        <h3>부위 필터</h3>
+        <p class="hint">불편한 부위를 선택하면 해당 동작을 제외해요.</p>
+        <div class="tags" id="partFilterTags">
+          <button class="tag-btn" data-part="무릎">무릎</button>
+          <button class="tag-btn" data-part="허리">허리</button>
+          <button class="tag-btn" data-part="어깨">어깨</button>
+        </div>
+      </div>
+
+      <div class="card" id="playerCard">
+        <div class="player-stage">
+          <div class="emoji" id="stageEmoji">🧘</div>
+          <div class="name" id="stageName">준비 중…</div>
+          <div class="rep" id="stageRep"></div>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="stageProgress" style="width:0%"></div></div>
+        <div class="hint" style="text-align:center;margin-top:6px" id="stageCountText"></div>
+        <div class="player-controls" style="margin-top:12px">
+          <button class="btn btn-secondary" id="stagePrevBtn">이전</button>
+          <button class="btn btn-primary" id="stagePlayBtn">시작</button>
+          <button class="btn btn-secondary" id="stageNextBtn">다음</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>오늘의 순서</h3>
+        <div class="list" id="playlistList"></div>
+      </div>
+
+      <button class="btn btn-primary" id="finishRoutineBtn">오늘의 루틴 완료</button>
+    </section>
+
+    <!-- ============ 프로필 ============ -->
+    <section class="screen" id="screen-profile" hidden>
+      <h1 class="page-title">스포츠 프로필</h1>
+
+      <div class="card age-hero">
+        <div class="small">현재 체력나이</div>
+        <div class="value" id="profileBodyAge">--세</div>
+        <div id="profileDeltaChip"></div>
+      </div>
+
+      <div class="card" id="profileStarsCard">
+        <h3>체력요인 별점</h3>
+        <div id="factorRows"></div>
+      </div>
+
+      <div class="card" id="weakPointCard"></div>
+
+      <div class="card">
+        <h3>🎯 목표 체력나이</h3>
+        <label class="field">목표 나이
+          <input type="number" id="targetAgeInput" placeholder="예: 74" />
+        </label>
+        <button class="btn btn-secondary btn-sm" id="targetCalcBtn" style="margin-top:8px">도달 조건 계산</button>
+        <div id="targetResult" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <h3>목적</h3>
+        <div id="currentPurposeText" class="hint"></div>
+        <button class="btn btn-ghost btn-sm" id="changePurposeBtn">목적 바꾸기</button>
+      </div>
+    </section>
+
+    <!-- ============ 분기 점검 ============ -->
+    <section class="screen" id="screen-recheck" hidden>
+      <h1 class="page-title">3개월 재점검</h1>
+      <p class="page-sub">실제로 3개월을 기다릴 수 없는 데모 환경이라, 재측정값을 입력하면 변화를 시뮬레이션해요.</p>
+
+      <div class="card">
+        <h3>재측정</h3>
+        <div class="row">
+          <label class="field">유연성 (cm)<input type="number" id="reFlexCm" /></label>
+          <label class="field">근력 횟수<input type="number" id="reStrengthReps" /></label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label class="field">키 (cm)<input type="number" id="reHeightCm" /></label>
+          <label class="field">몸무게 (kg)<input type="number" id="reWeightKg" /></label>
+        </div>
+        <button class="btn btn-primary" id="submitRecheckBtn" style="margin-top:12px">비교 보기</button>
+        <button class="btn btn-ghost btn-sm" id="autoFillRecheckBtn" style="margin-top:6px">완료한 루틴 기반으로 자동 채우기</button>
+      </div>
+
+      <div class="card" id="recheckResultCard"></div>
+      <div class="card" id="unlockCard"></div>
+    </section>
+
+    <!-- ============ 설정 ============ -->
+    <section class="screen" id="screen-settings" hidden>
+      <h1 class="page-title">설정</h1>
+
+      <div class="card">
+        <h3>⏱ 짬 보너스 시간대</h3>
+        <p class="hint">자주 비는 시간을 2~3개 등록하면, 홈에서 3~5분 보너스 루틴을 추천해요.</p>
+        <div class="row">
+          <input type="text" id="bonusSlotInput" placeholder="예: 점심 12:30" />
+          <button class="btn btn-secondary btn-sm" id="addBonusSlotBtn">추가</button>
+        </div>
+        <div class="list" id="bonusSlotList" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <h3>👨‍👩‍👧 가족 공유</h3>
+        <div class="toggle-row">
+          <div style="font-weight:600;font-size:14px">주 1회 안심 리포트 보내기</div>
+          <label class="switch"><input type="checkbox" id="familyShareToggle"/><span class="slider"></span></label>
+        </div>
+        <label class="field">받는 분 이름
+          <input type="text" id="familyNameInput" placeholder="예: 어머니" />
+        </label>
+        <div class="card" id="familyPreviewCard" style="margin-top:10px;background:var(--surface-2)"></div>
+        <button class="btn btn-secondary btn-sm" id="sendFamilyBtn" style="margin-top:8px">지금 보내기 (미리보기)</button>
+      </div>
+
+      <div class="card">
+        <h3>📍 가까운 체력인증센터</h3>
+        <p class="hint">정확한 체력 측정을 원하면 무료로 이용할 수 있어요. 위치는 저장되지 않고 거리 계산에만 사용해요.</p>
+        <button class="btn btn-secondary btn-sm" id="findCenterBtn">내 주변 센터 찾기</button>
+        <div class="list" id="centerList" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <h3>데이터 초기화</h3>
+        <p class="hint">모든 측정 기록과 설정을 지우고 처음부터 다시 시작합니다.</p>
+        <button class="btn btn-secondary btn-sm" id="resetAllBtn">전체 초기화</button>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="tabbar" id="tabbar" hidden>
+    <button data-tab="home"><span class="ic">🏠</span>홈</button>
+    <button data-tab="routine"><span class="ic">▶</span>루틴</button>
+    <button data-tab="profile"><span class="ic">⭐</span>프로필</button>
+    <button data-tab="recheck"><span class="ic">📅</span>재점검</button>
+    <button data-tab="settings"><span class="ic">⚙︎</span>설정</button>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/charts.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -54,24 +54,38 @@
 Quadriga-DataProject/
 ├── frontend/                    # 화면 (브라우저에서 도는 것 전부)
 │   ├── index.html               #   로그인 + 6개 화면 · 스타일 · 화면 로직
-│   └── js/api.js                #   백엔드 호출 계층
+│   ├── privacy.html             #   개인정보처리방침
+│   ├── terms.html               #   이용약관
+│   ├── js/api.js                #   백엔드 호출 계층
+│   ├── js/gauge.js              #   로고 게이지 렌더링
+│   └── img/                     #   로고 · 워드마크
 ├── backend/                     # 서버 (계산 · 데이터 전부)
 │   ├── main.py                  #   FastAPI 엔드포인트 — 화면이 붙는 지점
 │   ├── fitness_age.py           #   체력나이 산출 + 약점 지목
 │   ├── prescription.py          #   실제 처방 기록 기반 운동 추천
 │   ├── auth.py                  #   계정 · 세션 · 측정 기록 (SQLite / Postgres)
 │   ├── daily.py                 #   일상 처방 · 강도 점증 · 영상 필터
+│   ├── routines.py              #   250 고정 루틴 순환 · 강도 · 컨디션 조정
+│   ├── routine_player.py        #   요인 · 부위 · 도구로 영상 루틴 구성
+│   ├── bodycomp.py              #   InBody 결과 → 체성분 분석
+│   ├── hometest.py              #   홈 체력측정 4항목 → 추정 체력나이
+│   ├── geo.py                   #   지역명 · 역명 → 대략 좌표
 │   ├── paths.py                 #   데이터 경로 탐색
 │   ├── collect_measurements.py  #   공공데이터 수집
+│   ├── nfa_video_api.py         #   동영상 오퍼레이션 명세 · 표본 수집
+│   ├── routine_comparison.py    #   영상 표본 품질 · 중복 비교 (분석용)
 │   └── build_distribution.py    #   분포표 · 처방 빈도 생성
 ├── data/
 │   ├── raw/                     # API 원본 응답 (Git 추적 안 함)
 │   ├── processed/               # 가공 결과 (Git 추적 안 함)
 │   └── sample/                  # 공유용 소용량 샘플 (Git 추적 O)
-├── tests/                       # API 스모크 테스트
+├── tests/                       # API 스모크 · 루틴 · Phase 3 테스트
 ├── notebooks/                   # 데이터 분석 (여기만 담당자별 파일)
 ├── docs/
 │   ├── 기획안.md
+│   ├── routines_250_schema.md   #   250 고정 루틴 데이터 스키마
+│   ├── routine_player_api.md    #   영상 루틴 API 명세
+│   ├── phase3_notes.md          #   InBody · 홈 측정 · 센터 검색 메모
 │   └── Git-가이드.md             # Git 처음이면 여기부터 ← 작업 전 필독
 ├── render.yaml                  # 배포 설정 (Render Blueprint)
 ├── requirements.txt             # 서버 실행용
@@ -145,18 +159,22 @@ uvicorn backend.main:app --reload
 | 메서드 | 경로 | 용도 | 화면 |
 |---|---|---|---|
 | `GET` | `/health` | 데이터 로드 여부 | 앱 시작 시 |
-| `GET` | `/purposes` | 목적 6종 목록 | 화면 2 |
+| `GET` | `/purposes` | 목적 5종 목록 | 화면 2 |
 | `POST` | `/fitness-age` | 측정값 → 체력나이 + 약점 | 화면 1 · 5 |
 | `GET` | `/routine` | 준비 2 → 본 3 → 정리 2 루틴 | 화면 4 |
 | `GET` | `/daily` | 계단 · 도보 제안 + 주차별 강도 | 화면 3 |
 | `GET` | `/videos` | 요인 · 부담부위로 거른 동영상 | 화면 4 |
 | `GET` | `/video-routine` | 준비→본→정리 **영상** 루틴 (`routine_player.py`) | 화면 4 |
-| `GET` | `/centers` | 가까운 인증센터 | (예정) |
+| `GET` | `/program/routine` | 250 고정 루틴 중 오늘 것 한 벌 + 강도 (`routines.py`) | 화면 3 |
+| `GET` | `/program/purposes` | 목적 5종 + 연령대별 재프레이밍 라벨 | (api.js 에만 연결) |
+| `POST` | `/bodycomp` | InBody 결과 → 체성분 분석 (`bodycomp.py`) | 화면 1 |
+| `POST` | `/hometest` | 홈 체력측정 4분 → 추정 체력나이 (`hometest.py`) | 화면 1 |
+| `GET` | `/centers` | 가까운 인증센터 (좌표 또는 지역명 검색) | 프로필 |
 | `POST` | `/recheck` | 3개월 뒤 변화량 + 측정편차 판정 | 화면 6 |
 | `GET` | `/auth/providers` | 활성화된 소셜 제공자 | 화면 0 |
 | `POST` | `/auth/signup` · `/auth/login` · `/auth/logout` | 이메일 계정 | 화면 0 |
 | `GET` | `/auth/{provider}/start` | 소셜 로그인 시작 | 화면 0 |
-| `GET`·`DELETE` | `/auth/me` | 내 계정 조회 · 삭제 | 프로필 |
+| `GET`·`PATCH`·`DELETE` | `/auth/me` | 내 계정 조회 · 별명 변경 · 삭제 | 프로필 |
 | `GET`·`POST` | `/me/measurements` | 측정 기록 (기기 간 이어보기) | 전체 |
 
 <details>

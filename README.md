@@ -69,6 +69,7 @@ Quadriga-DataProject/
 │   ├── routine_player.py        #   요인 · 부위 · 도구로 영상 루틴 구성
 │   ├── bodycomp.py              #   InBody 결과 → 체성분 분석
 │   ├── hometest.py              #   홈 체력측정 4항목 → 추정 체력나이
+│   ├── sports.py                #   운동 종목 목록 · 체력요인 매핑
 │   ├── geo.py                   #   지역명 · 역명 → 대략 좌표
 │   ├── paths.py                 #   데이터 경로 탐색
 │   ├── collect_measurements.py  #   공공데이터 수집
@@ -156,6 +157,12 @@ uvicorn backend.main:app --reload
 
 ### 엔드포인트
 
+아래 표의 **화면 N** 은 `frontend/index.html` 의 `<section id="sN">` 입니다.
+
+| 화면 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|---|
+| | 로그인 | 첫 점검 | 목적 선택 | 홈 | 루틴 플레이어 | 스포츠 프로필 | 3개월 재점검 | 기록 | 운동 고르기 |
+
 | 메서드 | 경로 | 용도 | 화면 |
 |---|---|---|---|
 | `GET` | `/health` | 데이터 로드 여부 | 앱 시작 시 |
@@ -169,12 +176,14 @@ uvicorn backend.main:app --reload
 | `GET` | `/program/purposes` | 목적 5종 + 연령대별 재프레이밍 라벨 | (api.js 에만 연결) |
 | `POST` | `/bodycomp` | InBody 결과 → 체성분 분석 (`bodycomp.py`) | 화면 1 |
 | `POST` | `/hometest` | 홈 체력측정 4분 → 추정 체력나이 (`hometest.py`) | 화면 1 |
-| `GET` | `/centers` | 가까운 인증센터 (좌표 또는 지역명 검색) | 프로필 |
+| `GET` | `/sports` | 배우고 싶은 운동 종목 목록 (`sports.py`) | 화면 8 |
+| `GET` | `/sports/summary` | 고른 종목이 요구하는 체력요인 · 주의 부위 | 화면 8 |
+| `GET` | `/centers` | 가까운 인증센터 (좌표 또는 지역명 검색) | 화면 5 |
 | `POST` | `/recheck` | 3개월 뒤 변화량 + 측정편차 판정 | 화면 6 |
 | `GET` | `/auth/providers` | 활성화된 소셜 제공자 | 화면 0 |
 | `POST` | `/auth/signup` · `/auth/login` · `/auth/logout` | 이메일 계정 | 화면 0 |
 | `GET` | `/auth/{provider}/start` | 소셜 로그인 시작 | 화면 0 |
-| `GET`·`PATCH`·`DELETE` | `/auth/me` | 내 계정 조회 · 별명 변경 · 삭제 | 프로필 |
+| `GET`·`PATCH`·`DELETE` | `/auth/me` | 내 계정 조회 · 별명 변경 · 삭제 | 화면 5 |
 | `GET`·`POST` | `/me/measurements` | 측정 기록 (기기 간 이어보기) | 전체 |
 
 <details>

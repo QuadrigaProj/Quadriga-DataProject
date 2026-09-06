@@ -115,3 +115,33 @@ def test_키_몸무게_입력은_1_이상만_받는다():
     assert 'id="heightInput" type="number" min="1"' in html
     assert 'id="weightInput" type="number" min="1"' in html
     assert "키와 몸무게는 0보다 큰 값으로 입력해주세요." in html   # 제출 시 JS 검증 문구
+
+
+# ---------- C3/C4 타이머 ----------
+
+def test_타이머는_측정_카드마다_하나씩이다():
+    """윗몸일으키기·점프·무릎 푸시업은 30초, 높은 무릎 뛰기는 2분 — 마크업의 data-seconds 가 곧 정의다."""
+    html = _index()
+    assert 'data-timer="situp" data-seconds="30"' in html
+    assert 'data-timer="jump" data-seconds="30"' in html
+    assert 'data-timer="kneePushup" data-seconds="30"' in html
+    assert 'data-timer="highKnee" data-seconds="120"' in html
+    assert html.count('class="timer-btn"') == 4
+    assert '<div class="timer-time">02:00</div>' in html  # 2분 타이머 초기 표시
+
+
+def test_타이머_함수는_한_세트다():
+    """startTimer/pauseTimer/resetTimer 로 통합됐고, 음수로 내려가던 옛 toggleTimer() 가 없다."""
+    html = _index()
+    for fn in ("function startTimer(id, seconds)", "function pauseTimer()", "function resetTimer(id)",
+               "function resetAllTimers()", "function toggleTimer(id)"):
+        assert fn in html, fn
+    assert "timerSeconds--" not in html          # 리셋 없이 깎기만 하던 옛 코드
+    assert 'onclick="toggleTimer()"' not in html  # 인자 없는 옛 버튼
+    assert "Math.max(0, Math.ceil((timerState.endAt - Date.now()) / 1000))" in html  # 음수 불가 계산식
+
+
+def test_타이머가_끝나면_빨간색_클래스가_있다():
+    html = _index()
+    assert ".timer-time.done{ color:var(--clay); }" in html
+    assert "'다시 시작'" in html  # 00:00 뒤 재시작 버튼 문구

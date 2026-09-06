@@ -133,7 +133,11 @@ git push
 
 > **노트북(.ipynb)은 충돌이 특히 지저분합니다.**
 > 같은 노트북을 두 명이 동시에 수정하지 말고, 파일명에 담당자를 붙이세요.
-> 예: `notebooks/01_eda_영훈.ipynb`, `notebooks/02_eda_지민.ipynb`
+> 예: `notebooks/01_eda_예현.ipynb`, `notebooks/02_eda_민진.ipynb`
+>
+> **노트북 말고는 파일에 주인이 없습니다.** `frontend/` `backend/` 어디든
+> 누구나 고쳐서 PR 올리면 됩니다. 남의 코드를 고쳤다면 PR 본문에 왜 고쳤는지
+> 한 줄만 적어주세요.
 
 ---
 

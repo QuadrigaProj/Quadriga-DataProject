@@ -1,5 +1,5 @@
 """
-분포 테이블 · 처방 빈도 생성 — 담당 A·D 공통
+분포 테이블 · 처방 빈도 생성
 
 수집한 측정결과에서
   1) 연령군 × 성별 × 연령구간 × 항목별 백분위 분포  → fitness_distribution.csv
@@ -7,8 +7,8 @@
 를 만든다.
 
 사용법:
-    python scripts/collect_measurements.py   # 먼저 수집
-    python src/build_distribution.py
+    python backend/collect_measurements.py   # 먼저 수집
+    python backend/build_distribution.py
 """
 from __future__ import annotations
 
@@ -19,8 +19,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-RAW = Path("data/raw/measurements.parquet")
-OUT = Path("data/processed")
+try:                                     # 저장소 루트에서 실행할 때
+    from backend.paths import ROOT
+except ImportError:                      # backend/ 안에서 직접 실행할 때
+    from paths import ROOT
+
+RAW = ROOT / "data/raw/measurements.parquet"
+OUT = ROOT / "data/processed"
 
 # 4-6절 판독 결과
 ITEMS = {
@@ -59,7 +64,18 @@ def parse_note(note) -> dict[str, list[str]]:
 
 
 def age_band(row) -> str | None:
-    """국민체력100 공식 구간. 성인기는 5세 단위 9구간(19~24 … 60~64)."""
+    """연령구간을 나눈다.
+
+    성인·어르신은 국민체력100 공식 구간(5세 단위)을 그대로 쓴다.
+
+    성장기(11~18세)만 **1세 단위**로 나눈다. 5세 단위로 묶으면 청소년 구간이
+    `10~14`·`15~19` 둘뿐이라 체력나이 역산이 양 끝값에 붙어버려 누구나 같은
+    값이 나온다. 원본에 age_degree 가 1세 단위로 들어 있고 나이×성별당 표본이
+    2,000건을 넘으므로 잘게 나눠도 안정적이다.
+
+    유소년(11~12)과 청소년(13~18)은 성장 곡선이 이어지므로 `성장기` 하나로
+    합친다. 이렇게 해야 8구간이 되어 보간이 의미를 갖는다.
+    """
     a, g = row["age"], row.get("age_gbn")
     if pd.isna(a):
         return None
@@ -77,7 +93,14 @@ def age_band(row) -> str | None:
             if lo <= a <= hi:
                 return f"{lo}~{hi}" if hi < 120 else "80+"
         return None
-    return f"{a//5*5}~{a//5*5+4}"
+    if g in ("청소년", "유소년"):
+        return str(a) if 11 <= a <= 18 else None
+    return None                                  # 유아기는 age_degree 가 개월 수라 제외
+
+
+def merge_gbn(g: str) -> str:
+    """유소년(11~12)과 청소년(13~18)을 하나의 성장 곡선으로 합친다."""
+    return "성장기" if g in ("청소년", "유소년") else g
 
 
 def load_raw() -> pd.DataFrame:
@@ -86,7 +109,7 @@ def load_raw() -> pd.DataFrame:
     csv = RAW.with_suffix(".csv")
     if csv.exists():
         return pd.read_csv(csv)
-    raise SystemExit(f"{RAW} 가 없습니다. scripts/collect_measurements.py 를 먼저 실행하세요.")
+    raise SystemExit(f"{RAW} 가 없습니다. backend/collect_measurements.py 를 먼저 실행하세요.")
 
 
 def main() -> None:
@@ -100,6 +123,7 @@ def main() -> None:
             lo, hi = df[c].quantile([WINSOR, 1 - WINSOR])
             df[c] = df[c].clip(lo, hi)          # 이상치 윈저화
     df["연령구간"] = df.apply(age_band, axis=1)
+    df["age_gbn"] = df["age_gbn"].map(merge_gbn)
 
     OUT.mkdir(parents=True, exist_ok=True)
 

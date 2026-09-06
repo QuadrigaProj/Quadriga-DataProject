@@ -1,7 +1,7 @@
 # 루틴 플레이어 API 비교
 
 담당: 염윤서. 실행 노트북: `notebooks/04_eda_윤서.ipynb`.
-재사용 코드: `src/nfa_video_api.py`, `src/routine_comparison.py`.
+재사용 코드: `backend/nfa_video_api.py`, `backend/routine_comparison.py`.
 
 ## 명세에서 확인한 사실
 

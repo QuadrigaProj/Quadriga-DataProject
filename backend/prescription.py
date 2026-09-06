@@ -1,5 +1,5 @@
 """
-처방 추천 — 담당 D
+처방 추천
 
 국민체력100이 실제로 내린 처방(pres_note, 296만 건)을 근거로,
 사용자와 프로필이 유사한 집단에서 많이 처방된 운동을 반환한다.
@@ -7,10 +7,10 @@
 우리가 "근력이 부족하면 이 운동" 같은 기준을 만들지 않는다.
 공단이 실제로 처방한 기록을 집계할 뿐이다. 심사에서 근거를 물으면 그대로 답할 수 있다.
 
-입력: data/processed/exercise_freq.csv  (src/build_distribution.py 산출물)
+입력: data/processed/ 또는 data/sample/ 의 exercise_freq.csv  (backend/build_distribution.py 산출물)
 
 사용법:
-    python src/prescription.py
+    python backend/prescription.py
 """
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from pathlib import Path
 
 import pandas as pd
 
-FREQ = Path("data/processed/exercise_freq.csv")
+try:                                     # 저장소 루트에서 실행할 때
+    from backend.paths import find_data
+except ImportError:                      # backend/ 안에서 직접 실행할 때
+    from paths import find_data
 
 PHASES = ("준비운동", "본운동", "정리운동")
 
@@ -54,8 +57,8 @@ def classify(name: str) -> str:
     return "기타"
 
 
-def load_freq(path: Path = FREQ) -> pd.DataFrame:
-    df = pd.read_csv(path)
+def load_freq(path: Path | None = None) -> pd.DataFrame:
+    df = pd.read_csv(path or find_data("exercise_freq.csv"))
     df["체력요인"] = df["운동명"].map(classify)
     return df
 

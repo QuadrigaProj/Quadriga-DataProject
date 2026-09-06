@@ -3,7 +3,7 @@
 from copy import deepcopy
 import unittest
 
-from src.routine_player import PHASES, VideoFilter, build_video_routine, filter_videos, normalize_phase
+from backend.routine_player import PHASES, VideoFilter, build_video_routine, filter_videos, normalize_phase
 
 
 def video(name, phase="본운동", **changes):

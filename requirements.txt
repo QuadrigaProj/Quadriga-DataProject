@@ -8,6 +8,12 @@ requests
 python-dotenv
 tqdm
 
+# API 서버 (backend/main.py)
+fastapi
+uvicorn[standard]
+httpx              # TestClient 가 사용
+pytest
+
 # 시각화
 matplotlib
 seaborn

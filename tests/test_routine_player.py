@@ -8,11 +8,11 @@ from unittest.mock import patch
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlsplit
 
-from src.nfa_video_api import (
+from backend.nfa_video_api import (
     FIELDS, OPERATIONS, Page, Sample, VideoApiError, VideoClient,
     collect_all, collect_sample, load_settings, parse_response, sample_pages,
 )
-from src.routine_comparison import (
+from backend.routine_comparison import (
     combine_samples, compare_overlap, duration_seconds, evaluate_scenario, profile_sample,
     save_comparison, schema_comparison, video_identity,
 )
@@ -103,7 +103,7 @@ class ApiTests(unittest.TestCase):
         self.assertIsNone(profile_sample(sample)["fields"][FIELDS[0]]["valid_rate"])
 
     def test_key_encoding_and_network_error_redaction(self):
-        with patch("src.nfa_video_api.urlopen", side_effect=URLError("SECRET")) as opener:
+        with patch("backend.nfa_video_api.urlopen", side_effect=URLError("SECRET")) as opener:
             client = VideoClient("a%2Bb%2Fc%3D", retries=0)
             with self.assertRaises(VideoApiError) as captured:
                 client.fetch_page("TODZ_VDO_ROUTINE_I", 1)
@@ -114,7 +114,7 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn("a%2B", repr(client))
 
     def test_unsupported_filter_never_sent(self):
-        with patch("src.nfa_video_api.urlopen") as opener:
+        with patch("backend.nfa_video_api.urlopen") as opener:
             with self.assertRaises(ValueError):
                 VideoClient("test").fetch_page("TODZ_VDO_ROUTINE_I", 1,
                                                filters={"trng_plc_nm": "집"})

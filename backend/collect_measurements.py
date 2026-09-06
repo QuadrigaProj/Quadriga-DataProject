@@ -1,5 +1,5 @@
 """
-국민체력100 측정결과 수집기 — 담당 A·D 공통 선행
+국민체력100 측정결과 수집기
 
 전체 2,957,287건. 요청당 최대 1,000행(더 크게 줘도 1,000으로 잘림).
 개발계정 일일 트래픽 10,000회 → 약 2,958회면 전체 수집 가능하다.
@@ -11,8 +11,8 @@
     pip install requests pandas tqdm python-dotenv pyarrow
     # .env 에 DATA_GO_KR_KEY=... 넣어둘 것
 
-    python scripts/collect_measurements.py --sample 450   # 45만 건 표본 (약 20분)
-    python scripts/collect_measurements.py                # 전체
+    python backend/collect_measurements.py --sample 450   # 45만 건 표본 (약 20분)
+    python backend/collect_measurements.py                # 전체
 """
 from __future__ import annotations
 

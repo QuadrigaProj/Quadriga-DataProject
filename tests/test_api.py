@@ -258,3 +258,127 @@ def test_video_routine_부담부위_제외():
                     params={"factor": "근력·근지구력", "exclude_parts": "허리,무릎"}).json()
     부위 = [s["영상명"] for s in 제외["steps"]]
     assert 부위 != [s["영상명"] for s in 전체["steps"]]
+
+
+# ---------- 계정 ----------
+
+@pytest.fixture(autouse=True, scope="module")
+def _clean_db():
+    """테스트용 DB 를 따로 쓴다."""
+    import tempfile
+    from backend import auth
+    old = auth.DB_PATH
+    auth.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
+    auth.init_db()
+    yield
+    auth.DB_PATH = old
+
+
+def _fresh():
+    return TestClient(app)
+
+
+def test_가입_로그인_로그아웃():
+    c = _fresh()
+    assert c.get("/auth/me").json()["로그인"] is False
+
+    r = c.post("/auth/signup", json={"email": "A@Example.com",
+                                     "password": "abcd1234", "display_name": "예현"})
+    assert r.status_code == 200
+    assert c.get("/auth/me").json() == {"로그인": True, "이름": "예현", "수단": "password"}
+
+    c.post("/auth/logout")
+    assert c.get("/auth/me").json()["로그인"] is False
+
+    # 이메일 대소문자는 같은 계정으로 본다
+    assert c.post("/auth/login", json={"email": "a@example.com",
+                                       "password": "abcd1234"}).status_code == 200
+
+
+def test_약한_비밀번호는_거절():
+    c = _fresh()
+    for pw in ("short1a", "12345678", "abcdefgh"):
+        r = c.post("/auth/signup", json={"email": f"{pw}@ex.com", "password": pw})
+        assert r.status_code == 400
+
+
+def test_비밀번호는_평문으로_저장되지_않는다():
+    from backend import auth
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "hash@ex.com", "password": "abcd1234"})
+    row = auth.find_password_user("hash@ex.com")
+    assert row["password_hash"] not in (None, b"")
+    assert b"abcd1234" not in bytes(row["password_hash"])
+    assert auth.verify_password("abcd1234", row["password_salt"], row["password_hash"])
+    assert not auth.verify_password("abcd12345", row["password_salt"], row["password_hash"])
+
+
+def test_없는_계정과_틀린_비밀번호는_같은_응답():
+    """다르면 어떤 이메일이 가입돼 있는지 알아낼 수 있다."""
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "exists@ex.com", "password": "abcd1234"})
+    a = c.post("/auth/login", json={"email": "exists@ex.com", "password": "wrong123a"})
+    b = c.post("/auth/login", json={"email": "nobody@ex.com", "password": "wrong123a"})
+    assert a.status_code == b.status_code == 401
+    assert a.json() == b.json()
+
+
+def test_로그인_없이는_기록에_못_들어간다():
+    c = _fresh()
+    assert c.get("/me/measurements").status_code == 401
+    assert c.post("/me/measurements", json={"체력나이": 40}).status_code == 401
+
+
+def test_기록은_기기_간에_이어진다():
+    """같은 계정으로 다른 클라이언트에서 로그인하면 기록이 따라온다."""
+    기기A = _fresh()
+    기기A.post("/auth/signup", json={"email": "sync@ex.com", "password": "abcd1234"})
+    기기A.post("/me/measurements", json={"체력나이": 42.0, "age": 45})
+
+    기기B = _fresh()                      # 쿠키를 공유하지 않는 새 클라이언트
+    assert 기기B.get("/me/measurements").status_code == 401
+    기기B.post("/auth/login", json={"email": "sync@ex.com", "password": "abcd1234"})
+    기록 = 기기B.get("/me/measurements").json()["기록"]
+    assert 기록[0]["체력나이"] == 42.0
+
+
+def test_세션쿠키는_httponly():
+    c = _fresh()
+    r = c.post("/auth/signup", json={"email": "cookie@ex.com", "password": "abcd1234"})
+    setc = r.headers.get("set-cookie", "")
+    assert "httponly" in setc.lower()
+    assert "samesite=lax" in setc.lower()
+
+
+def test_소셜은_전화번호_생일을_버린다():
+    """제공자가 보내와도 KEEP_FIELDS 밖은 저장되지 않는다."""
+    from backend import auth
+    kakao = auth.normalize_profile("kakao", {
+        "id": 777,
+        "kakao_account": {"email": "k@ex.com", "phone_number": "010-1234-5678",
+                          "birthday": "0101", "gender": "male",
+                          "shipping_addresses": [{"base_address": "서울시"}],
+                          "profile": {"nickname": "카카오사용자"}},
+    })
+    assert kakao == {"uid": "777", "email": "k@ex.com", "name": "카카오사용자"}
+
+    naver = auth.normalize_profile("naver", {"response": {
+        "id": "n1", "email": "n@ex.com", "nickname": "네이버사용자",
+        "mobile": "010-0000-0000", "birthday": "01-01", "age": "20-29"}})
+    assert naver == {"uid": "n1", "email": "n@ex.com", "name": "네이버사용자"}
+
+
+def test_미설정_소셜은_안내를_준다():
+    c = _fresh()
+    r = c.get("/auth/google/start", follow_redirects=False)
+    assert r.status_code == 503
+    assert "CLIENT_ID" in r.json()["detail"]
+
+
+def test_계정_삭제():
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "bye@ex.com", "password": "abcd1234"})
+    c.post("/me/measurements", json={"체력나이": 50})
+    assert c.request("DELETE", "/auth/me").status_code == 200
+    assert c.post("/auth/login", json={"email": "bye@ex.com",
+                                       "password": "abcd1234"}).status_code == 401

@@ -308,6 +308,67 @@
   }
   .axis-row .stars{ flex-shrink:0; }
   .ci-caption{ font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.5; }
+
+  /* --- 로그인 --- */
+  .login{ flex:1; display:flex; flex-direction:column; justify-content:center; padding:40px 26px; }
+  .login-mark{
+    width:56px; height:56px; border-radius:18px; background:var(--pine);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-size:26px; margin-bottom:22px;
+  }
+  .login-title{ font-size:26px; font-weight:800; line-height:1.3; letter-spacing:-0.02em; }
+  .login-sub{ font-size:14.5px; color:var(--muted); line-height:1.6; margin-top:10px; }
+  .login-form{ margin-top:28px; }
+  .login-label{ font-size:13px; color:var(--muted); margin-bottom:8px; }
+  .login-hint{ font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.55; }
+  .login-err{ font-size:13px; color:var(--clay); margin-top:10px; display:none; }
+
+  .profile-list{ margin-top:26px; border-top:1px solid var(--line); padding-top:18px; }
+  .profile-item{
+    width:100%; display:flex; align-items:center; gap:12px; text-align:left;
+    background:none; border:none; font-family:inherit; cursor:pointer;
+    padding:12px 4px; border-bottom:1px solid var(--line);
+  }
+  .profile-item:last-child{ border-bottom:none; }
+  .profile-avatar{
+    width:38px; height:38px; border-radius:12px; background:var(--pine-tint);
+    color:var(--pine-deep); display:flex; align-items:center; justify-content:center;
+    font-size:16px; font-weight:700; flex-shrink:0;
+  }
+  .profile-name{ font-size:15px; font-weight:600; color:var(--ink); }
+  .profile-meta{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .profile-del{
+    margin-left:auto; border:none; background:none; color:var(--muted);
+    font-size:12.5px; cursor:pointer; font-family:inherit; padding:6px;
+  }
+  .social{ display:flex; flex-direction:column; gap:9px; margin-top:24px; }
+  .social button{
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    padding:14px 0; border-radius:12px; font-size:15px; font-weight:600;
+    font-family:inherit; cursor:pointer; border:1px solid transparent;
+  }
+  .social button[disabled]{ opacity:0.4; cursor:not-allowed; }
+  .s-google{ background:#fff; color:#1f1f1f; border-color:#dadce0 !important; }
+  .s-naver{ background:#03C75A; color:#fff; }
+  .s-kakao{ background:#FEE500; color:#181600; }
+  .social-mark{ font-size:15px; font-weight:800; width:18px; text-align:center; }
+
+  .divider{ display:flex; align-items:center; gap:12px; margin:22px 0 4px; }
+  .divider::before, .divider::after{ content:""; flex:1; height:1px; background:var(--line); }
+  .divider span{ font-size:12.5px; color:var(--muted); }
+
+  .tabs2{ display:flex; gap:18px; margin-bottom:14px; }
+  .tabs2 button{
+    border:none; background:none; font-family:inherit; font-size:15px;
+    color:var(--muted); padding:0 0 6px; cursor:pointer; border-bottom:2px solid transparent;
+  }
+  .tabs2 button.on{ color:var(--ink); font-weight:700; border-bottom-color:var(--pine); }
+
+  .logout-row{ margin-top:22px; text-align:center; }
+  .logout-row button{
+    border:none; background:none; color:var(--muted); font-size:13px;
+    text-decoration:underline; cursor:pointer; font-family:inherit;
+  }
 </style>
 </head>
 <body>
@@ -317,7 +378,60 @@
   <div class="statusbar" id="statusBar" style="display:none;"></div>
 
   <!-- ============ SCREEN 1 : 첫 점검 ============ -->
-  <section class="screen active" id="s1">
+  <!-- ============ SCREEN 0 : 로그인 ============ -->
+  <section class="screen active" id="s0">
+    <div class="login">
+      <div class="login-mark">🏃</div>
+      <h1 class="login-title">체력나이로<br/>오늘 할 운동을 정해요</h1>
+      <p class="login-sub">국민체력100 공개 데이터로 또래와 비교합니다.<br/>3분이면 첫 점검이 끝나요.</p>
+
+      <div class="social" id="socialBox">
+        <button type="button" class="s-google" data-p="google" onclick="social('google')">
+          <span class="social-mark">G</span> 구글로 계속하기</button>
+        <button type="button" class="s-naver" data-p="naver" onclick="social('naver')">
+          <span class="social-mark">N</span> 네이버로 계속하기</button>
+        <button type="button" class="s-kakao" data-p="kakao" onclick="social('kakao')">
+          <span class="social-mark">K</span> 카카오로 계속하기</button>
+      </div>
+      <div class="login-hint" id="socialHint"></div>
+
+      <div class="divider"><span>또는 이메일로</span></div>
+
+      <div class="login-form">
+        <div class="tabs2">
+          <button type="button" id="tabLogin" class="on" onclick="setAuthMode('login')">로그인</button>
+          <button type="button" id="tabSignup" onclick="setAuthMode('signup')">회원가입</button>
+        </div>
+        <div class="field-row" style="margin-top:0;">
+          <input class="field-input" id="authEmail" type="email" placeholder="이메일"
+                 autocomplete="email" />
+        </div>
+        <div class="field-row">
+          <input class="field-input" id="authPw" type="password" placeholder="비밀번호 (8자 이상)"
+                 autocomplete="current-password"
+                 onkeydown="if(event.key==='Enter')submitAuth()" />
+        </div>
+        <div class="field-row" id="nameRow" style="display:none;">
+          <input class="field-input" id="authName" type="text" placeholder="표시할 이름 (선택)" />
+        </div>
+        <div class="login-err" id="loginErr"></div>
+        <button class="btn btn-primary" style="margin-top:14px;" id="authBtn"
+                onclick="submitAuth()">로그인</button>
+        <div class="login-hint">
+          받는 정보는 <b>로그인 수단 · 닉네임 · 체력 측정값</b>뿐입니다.
+          휴대폰 번호나 주소는 묻지 않고, 소셜 계정에서도 가져오지 않아요.
+        </div>
+        <div class="login-hint" style="margin-top:12px;">
+          <a href="#" onclick="localOnly();return false;" style="color:var(--pine-deep);">
+            가입 없이 이 기기에서만 써볼게요 →</a>
+        </div>
+      </div>
+
+      <div class="profile-list" id="profileList" style="display:none;"></div>
+    </div>
+  </section>
+
+  <section class="screen" id="s1">
     <div class="dots"><div class="dot done"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="content">
       <div class="eyebrow">첫 점검 · 3분이면 충분해요</div>
@@ -473,7 +587,7 @@
   <section class="screen" id="s3">
     <div class="topbar">
       <div>
-        <div class="greet-eyebrow">오늘도 좋은 하루예요</div>
+        <div class="greet-eyebrow" id="greetSub">오늘도 좋은 하루예요</div>
         <div class="greet-title" id="greetName">반가워요</div>
       </div>
       <div class="dday-pill" id="ddayPill">재점검까지 D-90</div>
@@ -559,6 +673,8 @@
       </div>
     </div>
 
+    <div class="logout-row"><button onclick="logout()">로그아웃 · 다른 계정으로 전환</button></div>
+
     <div class="tabbar">
       <button class="tab" onclick="goTo('s3')"><div class="tab-icon">🏠</div><div class="tab-label">홈</div></button>
       <button class="tab active" onclick="goTo('s5')"><div class="tab-icon">👤</div><div class="tab-label">프로필</div></button>
@@ -612,6 +728,8 @@
 --------------------------------------------------------------------------- */
 
 const state = {
+  user: null,          // 표시 이름
+  account: false,      // true = 서버 계정(기기 간 이어보기), false = 이 기기에만 저장
   age: 34, sex: 'M', ageGbn: '성인',
   flexibility: null, strength: 18, height: 164, weight: 61,
   purpose: null,
@@ -644,6 +762,204 @@ function ageGroup(age) {
 }
 
 function $(id) { return document.getElementById(id); }
+
+/* ---------------------------------------------------------------------------
+   로그인 — 비밀번호를 받지 않는다.
+
+   측정값은 민감한 개인 건강정보다. 시제품 단계에서 비밀번호를 저장하면
+   사고가 나기 쉽고, 사고가 나면 되돌릴 수 없다. 그래서 계정 서버를 두지 않고
+   이 브라우저에만 프로필을 남긴다.
+
+   같은 기기를 여러 명이 쓰는 경우(가족)를 위해 프로필을 여러 개 둘 수 있다.
+   실제 배포에서 계정이 필요해지면 이 자리를 OAuth 같은 걸로 갈아끼우면 된다.
+   화면 흐름은 그대로다.
+--------------------------------------------------------------------------- */
+
+let authMode = 'login';
+
+function setAuthMode(mode){
+  authMode = mode;
+  $('tabLogin').classList.toggle('on', mode === 'login');
+  $('tabSignup').classList.toggle('on', mode === 'signup');
+  $('nameRow').style.display = mode === 'signup' ? 'flex' : 'none';
+  $('authBtn').textContent = mode === 'signup' ? '회원가입' : '로그인';
+  $('authPw').setAttribute('autocomplete', mode === 'signup' ? 'new-password' : 'current-password');
+  $('loginErr').style.display = 'none';
+}
+
+function authError(msg){
+  const e = $('loginErr');
+  e.textContent = msg;
+  e.style.display = 'block';
+}
+
+/* 소셜 로그인 — 서버가 제공자로 넘겼다가 /auth/{provider}/callback 으로 돌아온다.
+   비밀번호는 우리 화면을 거치지 않는다. */
+function social(provider){
+  location.href = `/auth/${provider}/start`;
+}
+
+async function submitAuth(){
+  const email = $('authEmail').value.trim();
+  const pw = $('authPw').value;
+  if (!email || !pw) return authError('이메일과 비밀번호를 입력해주세요.');
+
+  const btn = $('authBtn');
+  btn.disabled = true;
+  try {
+    const body = { email, password: pw };
+    if (authMode === 'signup') body.display_name = $('authName').value.trim() || null;
+    const r = authMode === 'signup' ? await API.signup(body) : await API.signin(body);
+    $('authPw').value = '';
+    await enterAsAccount(r.이름);
+  } catch (e) {
+    authError(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* 서버 계정으로 들어간다. 기록은 서버에서 받아오므로 다른 기기에서도 이어진다. */
+async function enterAsAccount(name){
+  state.user = name;
+  state.account = true;
+  let latest = null;
+  try {
+    const r = await API.myMeasurements();
+    latest = (r.기록 || [])[0] || null;
+  } catch (e) { /* 기록이 없거나 못 받아왔으면 첫 점검부터 */ }
+  applyProfile(latest);
+}
+
+function localOnly(){
+  $('socialBox').style.display = 'none';
+  document.querySelector('.divider').style.display = 'none';
+  $('tabLogin').parentElement.style.display = 'none';
+  $('authEmail').placeholder = '닉네임';
+  $('authEmail').type = 'text';
+  $('authPw').parentElement.style.display = 'none';
+  $('authBtn').textContent = '이 기기에서 시작하기';
+  $('authBtn').setAttribute('onclick', 'loginLocal()');
+  $('loginErr').style.display = 'none';
+}
+
+const STORE_KEY = 'quadriga.profiles';
+
+function readProfiles(){
+  try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); }
+  catch (e) { return {}; }        // 시크릿 모드·저장 차단 등
+}
+
+function writeProfiles(all){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(all)); }
+  catch (e) { /* 저장이 막혀도 이번 세션은 그대로 쓸 수 있다 */ }
+}
+
+function snapshot(){
+  return {
+    age: state.age, sex: state.sex, ageGbn: state.ageGbn,
+    flexibility: state.flexibility, strength: state.strength,
+    height: state.height, weight: state.weight,
+    purpose: state.purpose, first: state.first, result: state.result,
+    updated: new Date().toISOString().slice(0, 10),
+  };
+}
+
+/* 계정이면 서버에, 아니면 이 브라우저에 저장한다. */
+async function saveProfile(){
+  if (!state.user) return;
+  if (state.account) {
+    try { await API.pushMeasurement(snapshot()); } catch (e) { /* 다음 저장 때 다시 */ }
+    return;
+  }
+  const all = readProfiles();
+  all[state.user] = {
+    age: state.age, sex: state.sex, ageGbn: state.ageGbn,
+    flexibility: state.flexibility, strength: state.strength,
+    height: state.height, weight: state.weight,
+    purpose: state.purpose, first: state.first, result: state.result,
+    updated: new Date().toISOString().slice(0, 10),
+  };
+  writeProfiles(all);
+  renderProfileList();
+}
+
+/* 저장된 값을 화면에 되돌린다. 없으면 첫 점검부터. */
+function applyProfile(saved){
+  if (saved) Object.assign(state, saved);
+  $('ageInput').value = state.age;
+  $('flexInput').value = state.flexibility ?? '';
+  $('heightInput').value = state.height ?? '';
+  $('weightInput').value = state.weight ?? '';
+  onAgeChange();
+  selectSex(state.sex);
+  count = state.strength ?? STRENGTH_ITEM[state.ageGbn].init;
+  $('countVal').textContent = count;
+  $('greetName').textContent = `${state.user} 님`;
+
+  if (state.result) {
+    renderResult();
+    goTo('s3');
+  } else {
+    $('resultBlock').style.display = 'none';
+    $('nextBtn1').style.display = 'none';
+    $('calcBtn').style.display = 'block';
+    goTo('s1');
+  }
+}
+
+function renderProfileList(){
+  const all = readProfiles();
+  const names = Object.keys(all);
+  const box = $('profileList');
+  if (!names.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = '<div class="login-label">이 기기에 저장된 프로필</div>' + names.map(n => {
+    const p = all[n];
+    const meta = p.result
+      ? `${p.ageGbn === '성장기' ? '발달 수준' : '체력나이'} ${Math.round(p.result.체력나이)}세 · ${p.updated}`
+      : '첫 점검 전';
+    return `<div class="profile-item">
+      <div class="profile-avatar">${n.trim()[0] || '?'}</div>
+      <div style="flex:1;min-width:0;" onclick="loginLocal(${JSON.stringify(n).replace(/"/g,'&quot;')})">
+        <div class="profile-name">${n}</div>
+        <div class="profile-meta">${meta}</div>
+      </div>
+      <button class="profile-del" onclick="removeProfile(${JSON.stringify(n).replace(/"/g,'&quot;')})">삭제</button>
+    </div>`;
+  }).join('');
+}
+
+function removeProfile(name){
+  const all = readProfiles();
+  delete all[name];
+  writeProfiles(all);
+  renderProfileList();
+}
+
+function loginLocal(name){
+  const id = (name !== undefined ? name : $('authEmail').value).trim();
+  if (!id) return authError('닉네임을 입력해주세요.');
+  $('loginErr').style.display = 'none';
+  state.user = id;
+  state.account = false;
+  applyProfile(readProfiles()[id]);
+  saveProfile();
+}
+
+async function logout(){
+  await saveProfile();
+  if (state.account) { try { await API.signout(); } catch (e) {} }
+  state.user = null;
+  state.account = false;
+  state.result = null;
+  state.first = null;
+  state.purpose = null;
+  $('authEmail').value = '';
+  $('authPw').value = '';
+  renderProfileList();
+  goTo('s0');
+}
 
 function setStatus(msg) {
   const bar = $('statusBar');
@@ -762,6 +1078,7 @@ async function calcAge(){
   btn.disabled = false; btn.textContent = '체력나이 계산하기';
 
   if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+  saveProfile();
   renderResult();
 }
 
@@ -797,7 +1114,8 @@ function renderResult(){
   $('resultBlock').style.display = 'block';
   $('nextBtn1').style.display = 'block';
   $('calcBtn').style.display = 'none';
-  $('greetName').textContent = isGrowth()
+  $('greetName').textContent = state.user ? `${state.user} 님` : '반가워요';
+  $('greetSub').textContent = isGrowth()
     ? (diff >= 0 ? `또래보다 ${diff}세 앞서 있어요` : `또래보다 ${Math.abs(diff)}세 뒤처져 있어요`)
     : (diff <= 0 ? `또래보다 ${Math.abs(diff)}세 젊어요` : `또래보다 ${diff}세 높아요`);
 }
@@ -805,6 +1123,7 @@ function renderResult(){
 /* ---- 화면 2 : 목적 ---- */
 function selectPurpose(p){
   state.purpose = p;
+  saveProfile();
   document.querySelectorAll('.purpose-card').forEach(c=>c.classList.remove('selected'));
   document.querySelector('[data-p="'+p+'"]').classList.add('selected');
   $('nextBtn2').disabled = false;
@@ -1072,6 +1391,35 @@ async function renderRecheck(){
 /* ---- 시작 ---- */
 (async function init(){
   onAgeChange();
+  renderProfileList();
+  setAuthMode('login');
+
+  if (new URLSearchParams(location.search).get('login') === 'failed') {
+    authError('소셜 로그인에 실패했어요. 다시 시도해주세요.');
+  }
+
+  // 설정된 소셜 제공자만 살린다
+  try {
+    const p = await API.providers();
+    const on = new Set(p.소셜 || []);
+    let off = [];
+    document.querySelectorAll('#socialBox button').forEach(b => {
+      if (!on.has(b.dataset.p)) { b.disabled = true; off.push(b.textContent.trim().split(' ')[1]); }
+    });
+    if (off.length) {
+      $('socialHint').textContent =
+        '소셜 로그인은 관리자가 키를 등록하면 켜집니다. 지금은 이메일로 가입해주세요.';
+    }
+  } catch (e) {
+    document.querySelectorAll('#socialBox button').forEach(b => b.disabled = true);
+  }
+
+  // 이미 로그인된 세션이 있으면 바로 들어간다 (다른 기기에서도 동일)
+  try {
+    const me = await API.me();
+    if (me.로그인) await enterAsAccount(me.이름);
+  } catch (e) {}
+
   const h = await API.health();
   if (!h) setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');
   else if (h.안내) setStatus(h.안내);

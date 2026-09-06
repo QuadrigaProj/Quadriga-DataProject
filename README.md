@@ -21,6 +21,8 @@
 ## 🎯 핵심 구조
 
 ```
+⓪ 로그인  구글 · 네이버 · 카카오 또는 이메일 → 기기가 바뀌어도 이어짐
+            ↓
 ① 진단   집에서 3항목 자가 측정 → 체력나이 78세 (실제 72세)
             ↓
 ② 목적   다이어트 / 기초체력 / 낙상예방 / 수험생 / 유연성 / 특정운동
@@ -51,12 +53,13 @@
 ```
 Quadriga-DataProject/
 ├── frontend/                    # 화면 (브라우저에서 도는 것 전부)
-│   ├── index.html               #   6개 화면 · 스타일 · 화면 로직
+│   ├── index.html               #   로그인 + 6개 화면 · 스타일 · 화면 로직
 │   └── js/api.js                #   백엔드 호출 계층
 ├── backend/                     # 서버 (계산 · 데이터 전부)
 │   ├── main.py                  #   FastAPI 엔드포인트 — 화면이 붙는 지점
 │   ├── fitness_age.py           #   체력나이 산출 + 약점 지목
 │   ├── prescription.py          #   실제 처방 기록 기반 운동 추천
+│   ├── auth.py                  #   계정 · 세션 · 측정 기록 (SQLite)
 │   ├── daily.py                 #   일상 처방 · 강도 점증 · 영상 필터
 │   ├── paths.py                 #   데이터 경로 탐색
 │   ├── collect_measurements.py  #   공공데이터 수집
@@ -145,6 +148,11 @@ uvicorn backend.main:app --reload
 | `GET` | `/video-routine` | 준비→본→정리 **영상** 루틴 (`routine_player.py`) | 화면 4 |
 | `GET` | `/centers` | 가까운 인증센터 | (예정) |
 | `POST` | `/recheck` | 3개월 뒤 변화량 + 측정편차 판정 | 화면 6 |
+| `GET` | `/auth/providers` | 활성화된 소셜 제공자 | 화면 0 |
+| `POST` | `/auth/signup` · `/auth/login` · `/auth/logout` | 이메일 계정 | 화면 0 |
+| `GET` | `/auth/{provider}/start` | 소셜 로그인 시작 | 화면 0 |
+| `GET`·`DELETE` | `/auth/me` | 내 계정 조회 · 삭제 | 프로필 |
+| `GET`·`POST` | `/me/measurements` | 측정 기록 (기기 간 이어보기) | 전체 |
 
 <details>
 <summary>요청 · 응답 예시</summary>
@@ -179,6 +187,58 @@ uvicorn backend.main:app --reload
 ```
 
 </details>
+
+### 로그인
+
+| 수단 | 상태 |
+|---|---|
+| 구글 · 네이버 · 카카오 | `.env` 에 키를 넣으면 활성화. 없으면 버튼이 비활성으로 표시됩니다 |
+| 이메일 + 비밀번호 | 항상 사용 가능 |
+| 가입 없이 이 기기에서만 | 로그인 화면 맨 아래 링크. 브라우저에만 저장됩니다 |
+
+로그인하면 측정 기록이 서버에 남아 **다른 기기에서도 이어집니다.**
+
+#### 받는 정보 — 이게 전부입니다
+
+```
+로그인 수단 (제공자 식별자 또는 이메일)
+닉네임
+체력 측정값과 그 결과
+```
+
+**휴대폰 번호 · 주소 · 생년월일은 묻지 않습니다.** 소셜 로그인 응답에 그런 값이
+섞여 와도 `backend/auth.py` 의 `KEEP_FIELDS` 에서 걸러져 DB 에 닿지 않습니다.
+받지 않은 정보는 유출될 수도, 잘못 쓸 수도 없습니다.
+
+계정 삭제(`DELETE /auth/me`)는 측정 기록까지 함께 지웁니다.
+
+#### 비밀번호 처리
+
+평문으로 두지 않습니다. 계정마다 다른 소금(salt)을 만들어 **scrypt**(n=2¹⁴)로 늘려
+저장하고, 비교는 상수 시간으로 합니다. 표준 라이브러리만 씁니다.
+
+- 없는 계정과 틀린 비밀번호의 응답을 **같게** 둡니다 (가입 여부를 알아낼 수 없게)
+- 세션 쿠키는 `HttpOnly` + `SameSite=Lax` — 자바스크립트가 못 읽고 다른 사이트에서 실려 나가지 않습니다
+
+#### 소셜 로그인 설정
+
+각 개발자 콘솔에서 앱을 만들고 `.env` 에 키를 넣으면 버튼이 켜집니다.
+
+| 제공자 | 콘솔 | 리디렉션 URI |
+|---|---|---|
+| 구글 | console.cloud.google.com → API 및 서비스 → 사용자 인증 정보 | `http://localhost:8000/auth/google/callback` |
+| 네이버 | developers.naver.com → 애플리케이션 등록 | `http://localhost:8000/auth/naver/callback` |
+| 카카오 | developers.kakao.com → 내 애플리케이션 | `http://localhost:8000/auth/kakao/callback` |
+
+```
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+```
+
+> 권한(scope)은 **이메일 · 닉네임만** 신청하세요. 휴대폰 번호나 생일 항목은
+> 신청하지 않습니다. 받아도 서버에서 버리지만, 애초에 요청하지 않는 게 맞습니다.
+>
+> 키는 `.env` 에만 넣고 커밋하지 마세요. `.env` 는 `.gitignore` 에 있습니다.
 
 ### 알려진 한계
 

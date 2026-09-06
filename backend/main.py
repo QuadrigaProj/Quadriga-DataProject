@@ -14,21 +14,25 @@ API 문서:
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query
+import httpx
+from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:                                        # 저장소 루트에서 실행할 때
-    from backend import daily, fitness_age as fa, prescription as pr, paths
+    from backend import auth, daily, fitness_age as fa, prescription as pr, paths
     from backend import routine_player as rp
 except ImportError:                         # backend/ 안에서 직접 실행할 때
+    import auth                             # noqa: E402
     import daily                            # noqa: E402
     import routine_player as rp             # noqa: E402
     import fitness_age as fa                # noqa: E402
@@ -358,6 +362,184 @@ def get_centers(lat: float | None = None, lon: float | None = None,
                 limit: int = Query(5, ge=1, le=50)) -> dict:
     """가까운 체력인증센터. 좌표를 주면 거리순으로 정렬한다."""
     return {"출처": "sample", "items": daily.centers(lat, lon, limit)}
+
+
+# ===========================================================================
+# 계정
+#
+# 저장하는 건 로그인 수단·닉네임·체력 측정값뿐이다.
+# 휴대폰 번호나 주소는 입력받지도, 소셜 응답에서 받아 두지도 않는다.
+# (backend/auth.py 의 KEEP_FIELDS 에서 걸러진다)
+# ===========================================================================
+
+class SignupIn(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=200)
+    display_name: str | None = Field(None, max_length=40)
+
+
+class LoginIn(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=200)
+
+
+def _set_session(response: Response, user_id: int) -> None:
+    response.set_cookie(
+        auth.SESSION_COOKIE, auth.create_session(user_id),
+        max_age=auth.SESSION_DAYS * 86400,
+        httponly=True,          # 자바스크립트가 못 읽는다
+        samesite="lax",         # 다른 사이트에서 실려 나가지 않는다
+        secure=bool(os.getenv("HTTPS")),
+    )
+
+
+def _require_user(token: str | None) -> dict:
+    user = auth.user_for_token(token)
+    if not user:
+        raise HTTPException(401, "로그인이 필요합니다.")
+    return user
+
+
+@app.get("/auth/providers")
+def auth_providers() -> dict:
+    """화면이 어떤 소셜 버튼을 살릴지 결정하는 데 쓴다."""
+    return {"소셜": auth.enabled_providers(), "비밀번호": True}
+
+
+@app.post("/auth/signup")
+def auth_signup(body: SignupIn, response: Response) -> dict:
+    auth.init_db()
+    email = body.email.strip().lower()
+    if "@" not in email or len(email) < 5:
+        raise HTTPException(400, "이메일 형식을 확인해주세요.")
+    problem = auth.password_problem(body.password)
+    if problem:
+        raise HTTPException(400, problem)
+    if auth.find_password_user(email):
+        raise HTTPException(409, "이미 가입된 이메일입니다.")
+
+    salt, pw_hash = auth.hash_password(body.password)
+    uid = auth.upsert_user("password", email, email=email,
+                           name=body.display_name or email.split("@")[0],
+                           salt=salt, pw_hash=pw_hash)
+    _set_session(response, uid)
+    return {"ok": True, "이름": body.display_name or email.split("@")[0]}
+
+
+@app.post("/auth/login")
+def auth_login(body: LoginIn, response: Response) -> dict:
+    auth.init_db()
+    row = auth.find_password_user(body.email)
+    # 이메일이 없을 때와 비밀번호가 틀렸을 때의 응답을 같게 둔다.
+    # 다르게 두면 어떤 이메일이 가입돼 있는지 알아낼 수 있다.
+    if not row or not auth.verify_password(body.password, row["password_salt"],
+                                           row["password_hash"]):
+        raise HTTPException(401, "이메일 또는 비밀번호가 맞지 않습니다.")
+    _set_session(response, row["id"])
+    return {"ok": True, "이름": row["display_name"]}
+
+
+@app.post("/auth/logout")
+def auth_logout(response: Response,
+                quadriga_session: str | None = Cookie(None)) -> dict:
+    auth.drop_session(quadriga_session)
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+def auth_me(quadriga_session: str | None = Cookie(None)) -> dict:
+    auth.init_db()
+    user = auth.user_for_token(quadriga_session)
+    return {"로그인": bool(user), "이름": user["display_name"] if user else None,
+            "수단": user["provider"] if user else None}
+
+
+@app.delete("/auth/me")
+def auth_delete_me(response: Response,
+                   quadriga_session: str | None = Cookie(None)) -> dict:
+    """계정과 측정 기록을 모두 지운다. 되돌릴 수 없다."""
+    user = _require_user(quadriga_session)
+    auth.delete_account(user["id"])
+    response.delete_cookie(auth.SESSION_COOKIE)
+    return {"ok": True}
+
+
+# ---------- 소셜 로그인 ----------
+
+@app.get("/auth/{provider}/start")
+def auth_start(provider: str, request: Request) -> RedirectResponse:
+    if provider not in auth.PROVIDERS:
+        raise HTTPException(404, "지원하지 않는 로그인 수단입니다.")
+    client_id, _ = auth.client_config(provider)
+    if not client_id:
+        raise HTTPException(503,
+            f"{provider} 로그인이 아직 설정되지 않았습니다. "
+            f".env 에 {provider.upper()}_CLIENT_ID 와 _CLIENT_SECRET 를 넣어주세요.")
+    auth.init_db()
+    conf = auth.PROVIDERS[provider]
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": str(request.url_for("auth_callback", provider=provider)),
+        "state": auth.new_state(provider),
+    }
+    if conf["scope"]:
+        params["scope"] = conf["scope"]
+    return RedirectResponse(conf["authorize"] + "?" + urlencode(params))
+
+
+@app.get("/auth/{provider}/callback", name="auth_callback")
+async def auth_callback(provider: str, request: Request,
+                        code: str | None = None, state: str | None = None
+                        ) -> RedirectResponse:
+    if provider not in auth.PROVIDERS:
+        raise HTTPException(404, "지원하지 않는 로그인 수단입니다.")
+    if not code or not state or auth.take_state(state) != provider:
+        # state 가 안 맞으면 남이 만든 요청이다. 진행하지 않는다.
+        return RedirectResponse("/?login=failed")
+
+    client_id, client_secret = auth.client_config(provider)
+    conf = auth.PROVIDERS[provider]
+    async with httpx.AsyncClient(timeout=10) as http:
+        tok = await http.post(conf["token"], data={
+            "grant_type": "authorization_code", "code": code,
+            "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": str(request.url_for("auth_callback", provider=provider)),
+            "state": state,
+        }, headers={"Accept": "application/json"})
+        access = (tok.json() or {}).get("access_token")
+        if not access:
+            return RedirectResponse("/?login=failed")
+        me = await http.get(conf["profile"],
+                            headers={"Authorization": f"Bearer {access}"})
+        profile = auth.normalize_profile(provider, me.json() or {})
+
+    if not profile.get("uid"):
+        return RedirectResponse("/?login=failed")
+
+    uid = auth.upsert_user(provider, profile["uid"],
+                           email=profile.get("email"), name=profile.get("name"))
+    res = RedirectResponse("/?login=ok")
+    _set_session(res, uid)
+    return res
+
+
+# ---------- 측정 기록 (기기 간 이어보기) ----------
+
+@app.get("/me/measurements")
+def get_my_measurements(quadriga_session: str | None = Cookie(None)) -> dict:
+    user = _require_user(quadriga_session)
+    return {"이름": user["display_name"], "기록": auth.list_measurements(user["id"])}
+
+
+@app.post("/me/measurements")
+def post_my_measurement(payload: dict,
+                        quadriga_session: str | None = Cookie(None)) -> dict:
+    """측정값과 산출 결과를 저장한다. 다른 기기에서 로그인하면 그대로 이어진다."""
+    user = _require_user(quadriga_session)
+    auth.save_measurement(user["id"], payload)
+    return {"ok": True}
 
 
 # ---------- 정적 프론트엔드 ----------

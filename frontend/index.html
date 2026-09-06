@@ -240,6 +240,12 @@
     background-size:contain;
   }
 
+  .sport-applied{
+    margin:10px 22px 0; padding:12px 14px; border-radius:12px;
+    background:var(--pine-tint); font-size:12.5px; line-height:1.6; color:var(--ink);
+  }
+  .sport-applied b{ color:var(--pine-deep); }
+
   .sport-actions{
     padding:12px 22px; background:var(--paper); border-top:1px solid var(--line);
   }
@@ -998,6 +1004,7 @@
         <button type="button" class="cond-btn heavy" id="heavyBtn" onclick="toggleHeavy()">몸이 무거운 날</button>
       </div>
       <div class="cond-hint" id="condHint">아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.</div>
+      <div class="sport-applied" id="sportApplied" style="display:none;"></div>
       <div class="steps-dots" id="stepsDots">
         <div class="d on"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div>
       </div>
@@ -2438,8 +2445,9 @@ async function loadHome(){
   const m = state.routineMeta;
   if (m) {
     $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
-    $('heroMeta').textContent =
-      `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
+    const 기본 = `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
+    const 종목 = (m.고른종목 || []).length ? ` · ${m.고른종목.slice(0, 2).join('·')} 반영` : '';
+    $('heroMeta').textContent = 기본 + 종목;
   } else {
     $('heroTitle').textContent = '오늘의 루틴';
     $('heroMeta').textContent = state.routine.length ? `${state.routine.length}가지 동작` : '루틴을 불러오지 못했어요';
@@ -2460,6 +2468,7 @@ async function loadRoutine(){
       heavy: heavyOn,
       fitness_age: state.result?.체력나이,
       real_age: state.age,
+      sports: (state.sports || []).join(','),
     });
     state.routineMeta = r;
     state.intensity = r.강도;
@@ -2483,7 +2492,28 @@ async function loadRoutine(){
    몸 무거운 날·제외 부위는 서버(/program/routine)가 steps 와 강도에 이미 반영해 준다.
    오프라인 폴백일 때만 본운동 앞 2개로 클라이언트에서 줄인다. */
 let currentStep = 0;
-function resetRoutine(){ currentStep = 0; renderStep(); }
+function resetRoutine(){ currentStep = 0; renderStep(); renderSportApplied(); }
+
+/* 고른 종목이 오늘 루틴에 어떻게 반영됐는지 한 줄로 알려준다. */
+function renderSportApplied(){
+  const box = $('sportApplied');
+  const m = state.routineMeta;
+  if (!box) return;
+  const 종목 = m?.고른종목 || [];
+  const 반영 = m?.종목반영 || [];
+  if (!종목.length) { box.style.display = 'none'; return; }
+
+  const 바꾼 = 반영.find(t => t.바꾼것);
+  let 말 = `<b>${종목.join(' · ')}</b> 을(를) 고르셔서 `;
+  if (바꾼) 말 += `<b>${바꾼.바꾼것.대체}</b> 를 넣었어요.`;
+  else if (반영.length) 말 += '관련된 동작을 앞으로 옮겼어요.';
+  else 말 += '오늘 루틴이 이미 잘 맞아서 그대로 갑니다.';
+
+  const 부위 = m?.조심할부위 || [];
+  if (부위.length) 말 += `<br/>이 종목들이 자주 무리를 주는 <b>${부위.join('·')}</b> 이(가) 아프면 위 버튼을 눌러주세요.`;
+  box.innerHTML = 말;
+  box.style.display = 'block';
+}
 
 function activeRoutine(){
   if (state.routineMeta || !heavyOn) return state.routine;    // 서버 응답이면 그대로

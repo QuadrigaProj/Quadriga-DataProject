@@ -107,11 +107,39 @@ def _safe_substitute(age_gbn: str, step: dict, exclude: set[str], used: set[str]
     return None                     # 후보 없음 — 그래도 제외 조건은 풀지 않는다
 
 
+def _has_factor(step: dict, factor: str) -> bool:
+    """체력요인 표기가 '근력·근지구력(하체)' 처럼 붙어 있어서 부분 일치로 본다."""
+    return any(factor in f for f in step.get("체력요인", []))
+
+
+def _score(step: dict, prefer: list[str]) -> int:
+    """선호 요인 몇 개를 건드리는 동작인가. 순서를 정하는 데만 쓴다."""
+    return sum(1 for p in prefer if _has_factor(step, p))
+
+
+def _prefer_substitute(age_gbn: str, factor: str, exclude: set[str],
+                       used: set[str]) -> dict | None:
+    """그 요인을 쓰는 본운동을 풀에서 하나 찾는다. 안전 조건은 그대로 지킨다."""
+    pool = load()["pools"].get(age_gbn, {}).get("본운동", {})
+    for code, info in pool.items():
+        if code in used:
+            continue
+        if set(info.get("부담부위", [])) & exclude:
+            continue
+        if _has_factor(info, factor):
+            return _step(age_gbn, "본운동", code)
+    return None
+
+
 def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
-                          exclude_parts=None, heavy: bool = False) -> dict:
+                          exclude_parts=None, heavy: bool = False,
+                          prefer_factors=None) -> dict:
     """오늘의 루틴 한 벌 (준비 1 · 본 3 · 마무리 1).
 
     exclude_parts: 통증/제외 부위. heavy: 몸이 무거운 날.
+    prefer_factors: 사용자가 고른 운동 종목이 많이 쓰는 체력요인.
+        루틴을 새로 만들지 않는다. 본운동 안에서 해당 요인을 앞으로 당기고,
+        하나도 없을 때만 마지막 하나를 같은 풀의 안전한 동작으로 바꾼다.
     """
     d = load()
     r = routine_for(age_gbn, purpose, day)
@@ -134,6 +162,35 @@ def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
                 continue
         steps.append(s)
 
+    # ---- 고른 운동 종목 반영 ----
+    # 커리큘럼을 갈아엎지 않는다. 최대 한 동작만 바꾸고, 나머지는 순서만 당긴다.
+    prefer = [f for f in (prefer_factors or []) if f]
+    tuned: list[dict] = []
+    if prefer:
+        prep = [s for s in steps if s["단계"] == "준비운동"]
+        cool = [s for s in steps if s["단계"] == "정리운동"]
+        mains = [s for s in steps if s["단계"] == "본운동"]
+
+        # 1순위 요인이 오늘 루틴에 아예 없으면, 가장 관련 없는 동작 하나만 바꾼다.
+        top = prefer[0]
+        if mains and not any(_has_factor(s, top) for s in mains):
+            alt = _prefer_substitute(age_gbn, top, exclude,
+                                     used | {s["코드"] for s in mains})
+            if alt:
+                i = min(range(len(mains)), key=lambda k: (_score(mains[k], prefer), -k))
+                tuned.append({"바꾼것": {"원래": mains[i]["동작"], "대체": alt["동작"]},
+                              "이유": f"고른 운동이 많이 쓰는 {top} 동작이 없어서 하나 넣었습니다"})
+                mains[i] = alt
+
+        # 관련 있는 동작을 앞으로 (같은 점수면 원래 순서를 지킨다)
+        before = [s["코드"] for s in mains]
+        mains.sort(key=lambda s: -_score(s, prefer))
+        if [s["코드"] for s in mains] != before:
+            tuned.append({"바꾼것": None,
+                          "이유": "고른 운동과 관련된 동작을 앞으로 옮겼습니다"})
+
+        steps = prep + mains + cool
+
     main_steps = [s for s in steps if s["단계"] == "본운동"]
     if heavy:
         hd = d["config"]["intensity"]["heavy_day"]
@@ -153,6 +210,7 @@ def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
         "예상시간분": [lo, hi] if not heavy else [max(3, lo - 3), hi - 3],
         "몸무거운날": heavy,
         "대체": dropped,
+        "종목반영": tuned,
         "steps": [dict(s, 순서=i + 1) for i, s in enumerate(steps)],
         "안전문구": d["config"].get("safety_note", ""),
         "샘플": is_sample(),

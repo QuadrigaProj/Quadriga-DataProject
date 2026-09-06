@@ -132,6 +132,16 @@ def test_program_routine_제외부위_반영():
             assert not (set(s["부담부위"]) & {"무릎", "허리", "어깨"})
 
 
+def test_program_routine_exclude_parts_없이_heavy만_보내도_가볍게_돌려준다():
+    """C9: 화면이 실제로 보내는 모양(heavy 만, exclude_parts 없음)으로도 가볍게 돌아온다."""
+    b = client.get("/program/routine", params={
+        "age_gbn": "성인", "purpose": "다이어트", "day": 0, "week": 1,
+        "heavy": "true"}).json()
+    assert b["몸무거운날"] is True
+    assert sum(1 for s in b["steps"] if s["단계"] == "본운동") == 2
+    assert b["강도"]["세트"] == 1
+
+
 def test_없는_연령대는_422():
     r = client.get("/program/routine", params={"age_gbn": "노년기", "purpose": "다이어트"})
     assert r.status_code == 422

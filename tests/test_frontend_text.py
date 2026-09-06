@@ -227,3 +227,26 @@ def test_센터_검색은_매칭방식으로_안내_위치를_정한다():
     html = _index()
     assert "r.매칭방식 === '거리'" in html
     assert "구 이름으로 다시 입력해 주세요" in html
+
+
+# ---------- C8/C9 오늘 컨디션 ----------
+
+def test_아픈_부위_선택_UI가_화면에_없다():
+    """C8: 무릎·허리·어깨 칩과 관련 함수·안내 문구가 index.html 에서 사라졌다."""
+    html = _index()
+    for gone in ("chipKnee", "chipBack", "chipShoulder", "toggleChip(", "excludedParts(",
+                 "data-part=", "exclude_parts", ".cond-btn.off",
+                 "아픈 부위나 오늘 컨디션을 누르면", "부위에 부담이 가는 영상을 제외했어요",
+                 "부위 제한을 해제했어요", "아프면 위 버튼을 눌러주세요"):
+        assert gone not in html, gone
+
+
+def test_컨디션_선택지는_몸이_무거운_날_하나만():
+    """C9: cond-btn 은 heavyBtn 하나뿐이고, heavy 는 계속 서버로 보낸다."""
+    html = _index()
+    assert html.count('class="cond-btn') == 1
+    assert 'id="heavyBtn"' in html
+    assert "몸이 무거운 날" in html
+    assert "toggleHeavy()" in html
+    assert "heavy: heavyOn" in html
+    assert "아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요" in html

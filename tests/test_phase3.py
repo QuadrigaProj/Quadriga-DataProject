@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from backend import geo                        # noqa: E402
+from backend import daily, geo                 # noqa: E402
 from backend.main import app                   # noqa: E402
 
 client = TestClient(app)
@@ -165,6 +165,26 @@ def test_centers_좌표만_주면_종전과_같다():
     assert b["지역인식실패"] is False
     거리 = [c["거리km"] for c in b["items"]]
     assert 거리 == sorted(거리)
+
+
+def test_centers_짧은_구_이름은_긴_구_이름_꼬리에_안_걸린다():
+    """'동구' 는 '남동구' 와 다른 구다 — 주소 일치가 없으니 가까운 순 폴백(매칭방식 '거리')으로 간다."""
+    assert daily.centers_by_addr("동구") == []
+    assert daily.centers_by_addr("인천 동구") == []
+    b = client.get("/centers", params={"region": "동구"}).json()
+    assert b["매칭방식"] == "거리"
+    assert "가까운 순" in b["안내"]
+
+
+def test_centers_by_addr_구_이름은_낱말_단위로_대조(monkeypatch):
+    """구 이름(…구)은 주소 낱말과 통째로 맞아야 하고(서구 ≠ 강서구), 시·도 이름은 종전처럼 부분 문자열."""
+    items = [{"addr": a} for a in ("인천광역시 동구", "인천광역시 남동구", "서울특별시 강서구",
+                                    "부산광역시 서구", "서울특별시 중구")]
+    monkeypatch.setattr(daily, "load_json", lambda name: {"items": items})
+    assert [c["addr"] for c in daily.centers_by_addr("동구")] == ["인천광역시 동구"]
+    assert [c["addr"] for c in daily.centers_by_addr("서구")] == ["부산광역시 서구"]
+    assert [c["addr"] for c in daily.centers_by_addr("인천광역시 동구")] == ["인천광역시 동구"]
+    assert [c["addr"] for c in daily.centers_by_addr("서울")] == ["서울특별시 강서구", "서울특별시 중구"]
 
 
 def test_geo_부분일치():

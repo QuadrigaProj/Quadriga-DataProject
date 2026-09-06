@@ -240,3 +240,21 @@ def test_recheck_는_측정편차와_함께_알려준다():
     assert b["측정편차"] > 0
     assert b["유의미한변화"] is False
     assert "편차" in b["메시지"]
+
+
+# ---------- 영상 루틴 (backend/routine_player.py 연결) ----------
+
+def test_video_routine_준비_본_정리_순서():
+    b = client.get("/video-routine",
+                   params={"factor": "근력·근지구력", "main_count": 2}).json()
+    assert b["상태"] == "complete"
+    assert [s["단계"] for s in b["steps"]] == ["준비운동", "본운동", "본운동", "정리운동"]
+    assert b["총시간초"] > 0
+
+
+def test_video_routine_부담부위_제외():
+    전체 = client.get("/video-routine", params={"factor": "근력·근지구력"}).json()
+    제외 = client.get("/video-routine",
+                    params={"factor": "근력·근지구력", "exclude_parts": "허리,무릎"}).json()
+    부위 = [s["영상명"] for s in 제외["steps"]]
+    assert 부위 != [s["영상명"] for s in 전체["steps"]]

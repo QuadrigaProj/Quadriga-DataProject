@@ -94,3 +94,29 @@ def centers(lat: float | None = None, lon: float | None = None, limit: int = 5) 
             key=lambda c: c["거리km"],
         )
     return items[:limit]
+
+
+# ---------------------------------------------------------------------------
+# 실제 동영상 API 스키마로의 변환
+#
+# backend/routine_player.py 는 공공데이터 동영상 API 의 필드명을 그대로 받는다.
+# 샘플(data/sample/videos.json)은 손으로 만든 목업이라 필드가 조금 다르다.
+# 서비스키가 나오면 이 변환기를 빼고 API 응답을 바로 넘기면 된다.
+# ---------------------------------------------------------------------------
+
+def to_api_schema(v: dict) -> dict:
+    """목업 한 건 → 동영상 API 필드명."""
+    return {
+        "vdo_ttl_nm": v.get("videoNm"),
+        "ftns_fctr_nm": v.get("ftns_fctr_nm"),
+        "trng_se_nm": v.get("trng_se_nm"),
+        "tool_nm": v.get("tool_nm"),
+        "trng_plc_nm": v.get("trng_plc_nm"),
+        "trng_part_nm": " / ".join(v.get("burdenParts") or []) or None,
+        "vdo_len": f"{int(v.get('playSec', 0))}초",
+        "file_url": f"https://example.invalid/sample/{v.get('id')}.mp4",
+    }
+
+
+def sample_records() -> list[dict]:
+    return [to_api_schema(v) for v in load_json("videos.json").get("items", [])]

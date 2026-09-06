@@ -142,6 +142,7 @@ uvicorn backend.main:app --reload
 | `GET` | `/routine` | 준비 2 → 본 3 → 정리 2 루틴 | 화면 4 |
 | `GET` | `/daily` | 계단 · 도보 제안 + 주차별 강도 | 화면 3 |
 | `GET` | `/videos` | 요인 · 부담부위로 거른 동영상 | 화면 4 |
+| `GET` | `/video-routine` | 준비→본→정리 **영상** 루틴 (`routine_player.py`) | 화면 4 |
 | `GET` | `/centers` | 가까운 인증센터 | (예정) |
 | `POST` | `/recheck` | 3개월 뒤 변화량 + 측정편차 판정 | 화면 6 |
 

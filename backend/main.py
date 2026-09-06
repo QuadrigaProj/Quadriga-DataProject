@@ -27,8 +27,10 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:                                        # 저장소 루트에서 실행할 때
     from backend import daily, fitness_age as fa, prescription as pr, paths
+    from backend import routine_player as rp
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import daily                            # noqa: E402
+    import routine_player as rp             # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -305,7 +307,51 @@ def get_videos(
     return {"출처": "sample", "개수": len(items), "items": items}
 
 
-# ---------- 7. 인증센터 ----------
+# ---------- 7. 영상 루틴 (준비 → 본 → 정리) ----------
+
+@app.get("/video-routine")
+def get_video_routine(
+    factor: str | None = Query(None, description="체력요인. 예: 근력·근지구력"),
+    place: str | None = None,
+    exclude_parts: str | None = Query(None, description="쉼표로 구분. 예: 무릎,허리"),
+    main_count: int = Query(2, ge=1, le=5, description="본운동 개수"),
+) -> dict:
+    """backend/routine_player.py 로 만든 영상 루틴.
+
+    /routine 은 공단의 실제 처방 기록(pres_note)에서 뽑은 **운동명** 목록이고,
+    이쪽은 동영상 API 레코드에서 고른 **영상** 목록이다. 둘은 용도가 다르다.
+    지금은 샘플을 API 스키마로 변환해 넘긴다. 서비스키가 나오면
+    backend/nfa_video_api.py 가 받아온 레코드를 그대로 넣으면 된다.
+    """
+    parts = frozenset(p.strip() for p in (exclude_parts or "").split(",") if p.strip())
+    # 부위 제외·장소는 전 단계 공통, 체력요인은 본운동에만 건다.
+    # 공통으로 걸면 준비운동(유연성)까지 걸러져 루틴이 미완성이 된다.
+    공통 = rp.VideoFilter(excluded_parts=parts,
+                         places=frozenset([place]) if place else None)
+    본운동 = rp.VideoFilter(factors=frozenset([factor])) if factor else rp.VideoFilter()
+    result = rp.build_video_routine(
+        daily.sample_records(),
+        criteria=공통,
+        phase_filters={"본운동": 본운동},
+        counts={"준비운동": 1, "본운동": main_count, "정리운동": 1},
+    )
+    return {
+        "출처": "sample",
+        "상태": result.status,
+        "부족한단계": result.missing,
+        "총시간초": result.total_seconds,
+        "steps": [
+            {"순서": s["order"], "단계": s["phase"],
+             "영상명": s["video"].get("vdo_ttl_nm"),
+             "체력요인": s["video"].get("ftns_fctr_nm"),
+             "초": s.get("duration_seconds"),
+             "재생주소": s.get("file_url")}
+            for s in result.steps
+        ],
+    }
+
+
+# ---------- 8. 인증센터 ----------
 
 @app.get("/centers")
 def get_centers(lat: float | None = None, lon: float | None = None,

@@ -178,7 +178,7 @@ uvicorn backend.main:app --reload
 | `POST` | `/hometest` | 홈 체력측정 4분 → 추정 체력나이 (`hometest.py`) | 화면 1 |
 | `GET` | `/sports` | 배우고 싶은 운동 종목 목록 (`sports.py`) | 화면 8 |
 | `GET` | `/sports/summary` | 고른 종목이 요구하는 체력요인 · 주의 부위 | 화면 8 |
-| `GET` | `/centers` | 가까운 인증센터 (좌표 또는 지역명 검색) | 화면 5 |
+| `GET` | `/centers` | 인증센터 검색 — 구 단위 주소 일치 우선, 없으면 가까운 순 (`매칭방식` 반환) | 화면 5 |
 | `POST` | `/recheck` | 3개월 뒤 변화량 + 측정편차 판정 | 화면 6 |
 | `GET` | `/auth/providers` | 활성화된 소셜 제공자 | 화면 0 |
 | `POST` | `/auth/signup` · `/auth/login` · `/auth/logout` | 이메일 계정 | 화면 0 |

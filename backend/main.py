@@ -530,26 +530,40 @@ BOOKING_URL = "https://nfa.kspo.or.kr/reserve/main.kspo"    # 국민체력100 �
 
 @app.get("/centers")
 def get_centers(lat: float | None = None, lon: float | None = None,
-                region: str | None = Query(None, description="지하철역 또는 지역명"),
+                region: str | None = Query(None, description="구 단위 지역명 (예: 성북구)"),
                 limit: int = Query(3, ge=1, le=50)) -> dict:
-    """가까운 체력인증센터.
+    """체력인증센터 검색 — 구 단위 주소 일치 우선.
 
-    좌표(lat/lon) 또는 region 문자열을 주면 직선거리순으로 정렬한다.
+    1. region 이 센터 주소(addr)에 문자열로 그대로 들어 있으면("성북구" 처럼 "…구" 로 끝나는 구 이름이
+       대표 사례) 그 센터만 먼저 거른다 → 매칭방식 "주소". 정렬은 기존과 같이 직선거리순이고,
+       좌표를 못 구하면 파일 순서 그대로 둔다.
+    2. 일치하는 센터가 없으면 기존 geocode 경로로 폴백해 가까운 순으로 돌려준다 → 매칭방식 "거리".
+    좌표(lat/lon)만 주면 종전과 같이 직선거리순이다.
     길찾기 API 가 없어 **도보 시간은 계산하지 않으며**, 예약은 공식 예약 페이지로 연결한다.
     """
     resolved = None
+    matched = daily.centers_by_addr(region) if region else []
+    by_addr = bool(matched)
     if lat is None and lon is None and region:
         c = geo.geocode(region)
         if c:
             lat, lon, resolved = c[0], c[1], region
-    items = daily.centers(lat, lon, limit)
+    items = daily.centers(lat, lon, limit, items=matched if by_addr else None)
     for it in items:
         it["예약"] = BOOKING_URL
+    if by_addr:
+        note = "입력한 구 주소와 일치하는 센터예요. 예약은 국민체력100 공식 페이지에서 진행합니다."
+    elif region and lat is not None:
+        note = ("주소가 일치하는 센터가 없어 가까운 순으로 보여드려요. 직선거리 기준이에요. "
+                "도보 시간은 지도 앱에서 확인하세요. 예약은 국민체력100 공식 페이지에서 진행합니다.")
+    else:
+        note = "직선거리 기준이에요. 도보 시간은 지도 앱에서 확인하세요. 예약은 국민체력100 공식 페이지에서 진행합니다."
     return {
         "출처": "sample",
+        "매칭방식": "주소" if by_addr else "거리",
         "기준좌표": {"위도": lat, "경도": lon, "입력": resolved} if lat is not None else None,
-        "지역인식실패": bool(region) and lat is None,
-        "안내": "직선거리 기준이에요. 도보 시간은 지도 앱에서 확인하세요. 예약은 국민체력100 공식 페이지에서 진행합니다.",
+        "지역인식실패": bool(region) and lat is None and not by_addr,
+        "안내": note,
         "items": items,
     }
 

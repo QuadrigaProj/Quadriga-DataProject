@@ -104,6 +104,69 @@ def test_centers_모르는_지역():
     assert b["기준좌표"] is None
 
 
+# ---------- 센터: 구 단위 주소 일치 (C7) ----------
+
+def test_centers_구_주소_일치():
+    """'양천구' 처럼 구 이름을 넣으면 주소(addr)에 그 구가 있는 센터만 나온다."""
+    b = client.get("/centers", params={"region": "양천구", "limit": 3}).json()
+    assert b["매칭방식"] == "주소"
+    assert b["지역인식실패"] is False
+    assert len(b["items"]) == 1
+    assert all("양천구" in c["addr"] for c in b["items"])
+    assert all("예약" in c for c in b["items"])
+
+
+def test_centers_주소_일치_여러_건은_거리순():
+    """같은 구 이름이 여러 시·도에 있으면(대전 서구·광주 서구) 전부 보이고, 좌표가 있으면 가까운 순."""
+    b = client.get("/centers", params={"region": "서구", "lat": 36.35, "lon": 127.38}).json()
+    assert b["매칭방식"] == "주소"
+    assert [c["addr"] for c in b["items"]] == ["대전광역시 서구", "광주광역시 서구"]
+    거리 = [c["거리km"] for c in b["items"]]
+    assert 거리 == sorted(거리)
+
+
+def test_centers_주소_일치_좌표_없으면_순서_그대로():
+    """좌표표(geo.PLACES)에 없는 구(남동구)는 거리를 붙이지 않고 파일 순서 그대로 둔다."""
+    b = client.get("/centers", params={"region": "남동구"}).json()
+    assert b["매칭방식"] == "주소"
+    assert b["기준좌표"] is None
+    assert b["지역인식실패"] is False
+    assert len(b["items"]) == 1 and "거리km" not in b["items"][0]
+
+
+def test_centers_주소_불일치는_가까운_순_폴백():
+    """주소에 없는 구(성북구)는 기존 geocode 경로로 폴백해 가까운 순으로 돌려준다."""
+    b = client.get("/centers", params={"region": "성북구", "limit": 3}).json()
+    assert b["매칭방식"] == "거리"
+    assert b["지역인식실패"] is False
+    assert b["기준좌표"]["입력"] == "성북구"
+    assert len(b["items"]) == 3
+    거리 = [c["거리km"] for c in b["items"]]
+    assert 거리 == sorted(거리)
+    assert "가까운 순" in b["안내"]
+
+
+def test_centers_공백_섞인_입력도_구로_대조():
+    """'서울 양천구' 처럼 시·도를 앞에 붙여도 마지막 낱말(양천구)로 주소를 대조한다."""
+    b = client.get("/centers", params={"region": "서울 양천구"}).json()
+    assert b["매칭방식"] == "주소"
+    assert [c["addr"] for c in b["items"]] == ["서울특별시 양천구"]
+
+
+def test_centers_모르는_지역은_매칭방식_거리():
+    b = client.get("/centers", params={"region": "없는동네12345"}).json()
+    assert b["매칭방식"] == "거리"
+    assert b["지역인식실패"] is True
+
+
+def test_centers_좌표만_주면_종전과_같다():
+    b = client.get("/centers", params={"lat": 37.55, "lon": 127.0, "limit": 3}).json()
+    assert b["매칭방식"] == "거리"
+    assert b["지역인식실패"] is False
+    거리 = [c["거리km"] for c in b["items"]]
+    assert 거리 == sorted(거리)
+
+
 def test_geo_부분일치():
     assert geo.geocode("서울 강남구") == geo.PLACES["강남구"]
     assert geo.geocode("수원 영통구") is not None

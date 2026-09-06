@@ -705,6 +705,20 @@ def post_my_measurement(payload: dict,
     return {"ok": True}
 
 
+# ---------- 약관 · 개인정보처리방침 ----------
+# 소셜 로그인 콘솔(구글·네이버·카카오)이 공개 URL 을 요구한다.
+# frontend/ 아래 정적 파일이지만 확장자 없는 주소로도 열리게 라우트를 둔다.
+
+@app.get("/privacy", include_in_schema=False)
+def privacy() -> FileResponse:
+    return FileResponse(paths.FRONTEND / "privacy.html")
+
+
+@app.get("/terms", include_in_schema=False)
+def terms() -> FileResponse:
+    return FileResponse(paths.FRONTEND / "terms.html")
+
+
 # ---------- 정적 프론트엔드 ----------
 # 모든 API 라우트를 정의한 뒤 마운트해야 "/" 가 API 를 가리지 않는다.
 

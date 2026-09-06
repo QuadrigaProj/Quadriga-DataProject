@@ -547,3 +547,51 @@ def test_이메일이_없어도_계정이_만들어진다():
     assert p == {"uid": "4242", "email": None, "name": "예현"}
     uid = auth.upsert_user("kakao", p["uid"], email=p["email"], name=p["name"])
     assert uid > 0
+
+
+# ---------- 약관 · 로고 (소셜 로그인 콘솔이 공개 URL 을 요구한다) ----------
+
+def test_개인정보처리방침이_열린다():
+    c = _fresh()
+    r = c.get("/privacy")
+    assert r.status_code == 200
+    assert "개인정보처리방침" in r.text
+
+
+def test_이용약관이_열린다():
+    c = _fresh()
+    r = c.get("/terms")
+    assert r.status_code == 200
+    assert "이용약관" in r.text
+
+
+def test_방침에_안_받는_항목이_명시돼_있다():
+    """받지 않겠다고 약속한 항목은 방침에도 적혀 있어야 한다."""
+    c = _fresh()
+    t = c.get("/privacy").text
+    for 항목 in ("휴대전화번호", "집 주소", "생년월일"):
+        assert 항목 in t
+
+
+def test_로고_파일이_서빙된다():
+    """구글·카카오 콘솔에 올릴 아이콘과 파비콘."""
+    c = _fresh()
+    for path, ctype in (("/favicon.svg", "image/svg+xml"),
+                        ("/img/logo-mark.svg", "image/svg+xml"),
+                        ("/img/logo-120.png", "image/png"),
+                        ("/img/logo-512.png", "image/png")):
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert ctype in r.headers["content-type"], path
+
+
+def test_계정_삭제로_기록까지_사라진다():
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "gone@example.com", "password": "pw12345678"})
+    c.post("/me/measurements", json={"age": 40, "체력나이": 38})
+    assert c.get("/me/measurements").json()["기록"]
+    assert c.delete("/auth/me").status_code == 200
+    # 같은 이메일로 다시 가입하면 빈 상태여야 한다 (기록이 딸려오면 안 된다)
+    c2 = _fresh()
+    c2.post("/auth/signup", json={"email": "gone@example.com", "password": "pw12345678"})
+    assert c2.get("/me/measurements").json()["기록"] == []

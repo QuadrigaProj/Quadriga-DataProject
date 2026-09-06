@@ -62,6 +62,7 @@ const API = (() => {
     signup: (b) => post('/auth/signup', b),
     signin: (b) => post('/auth/login', b),
     signout: () => post('/auth/logout', {}),
+    deleteAccount: () => call('/auth/me', { method: 'DELETE' }),
     myMeasurements: () => call('/me/measurements'),
     pushMeasurement: (b) => post('/me/measurements', b),
   };

@@ -49,7 +49,9 @@ HIGHER_IS_BETTER = {
     "교차윗몸일으키기": True, "앉아윗몸앞으로굽히기": True,
     "의자앉았다일어서기": True, "6분걷기": True, "2분제자리걷기": True,
     "왕복오래달리기": True, "제자리멀리뛰기": True, "상대악력": True,
+    "반복점프": True,
     "3m표적돌아오기": False, "8자보행": False,   # 초 단위 = 작을수록 좋음
+    "체지방률": False,                          # 체지방률은 높을수록 불리 → 나이 들수록 상승
 }
 
 
@@ -93,12 +95,54 @@ STABILIZE_LIMIT = 15.0
 FOCUS_GAP = 10.0
 
 
-def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
-                age=None) -> dict:
-    """필수 3항목 → 체력나이. 없는 항목은 평균에서 제외한다.
+def u_shaped_age(d, age_gbn, sex, item, value, ideal=None) -> float | None:
+    """BMI·체지방률처럼 U자형(적정치에서 멀수록 나쁨) 항목의 환산나이.
 
-    age(만 나이)를 주면 그 값을 기준점으로 안정화한다. 없으면 항목 중앙값이 기준점.
+    적정치로부터의 편차 절댓값을 그 성별·연령군 p50 편차 곡선에 대조한다.
     """
+    sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == item)]
+    sub = sub.sort_values("age_mid")
+    if len(sub) < MIN_BANDS:
+        return None
+    if ideal is None:
+        ideal = float(sub["p50"].median()) if (age_gbn == GROWTH or item != "BMI") else BMI_IDEAL
+    dev = (sub["p50"] - ideal).abs().to_numpy()
+    ages = sub["age_mid"].to_numpy()
+    order = np.argsort(dev)
+    return float(np.interp(abs(value - ideal), dev[order], ages[order]))
+
+
+def aggregate_age(parts: dict[str, float], age_gbn: str, age=None) -> dict:
+    """항목별 환산나이(dict) → 안정화된 체력나이 + 편차 + 집중 개선 영역.
+
+    한 항목이 기준점(실제 나이, 없으면 중앙값)에서 ±STABILIZE_LIMIT 를 넘겨
+    체력나이를 끌어당기지 못하게 한다. 근거 없는 가중치는 두지 않는다.
+    """
+    if not parts:
+        return {"체력나이": None, "신뢰구간": None, "항목별": {}, "집중개선영역": []}
+
+    raw = list(parts.values())
+    anchor = float(age) if age is not None else float(np.median(raw))
+    clamped = [float(np.clip(v, anchor - STABILIZE_LIMIT, anchor + STABILIZE_LIMIT)) for v in raw]
+    body_age = float(np.mean(clamped))
+    if age is not None:
+        body_age = float(np.clip(body_age, age - STABILIZE_LIMIT, age + STABILIZE_LIMIT))
+
+    focus = [
+        k for k, v in parts.items()
+        if (anchor - v if age_gbn == GROWTH else v - anchor) >= FOCUS_GAP
+    ]
+    return {
+        "체력나이": round(body_age, 1),
+        "신뢰구간": round(float(np.std(raw)) / max(len(raw) ** 0.5, 1), 1),
+        "항목별": {k: round(v, 1) for k, v in parts.items()},
+        "집중개선영역": focus,
+    }
+
+
+def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
+                body_fat=None, age=None) -> dict:
+    """자가 측정 항목 → 체력나이. 없는 항목은 평균에서 제외한다."""
     parts: dict[str, float] = {}
 
     if flexibility is not None:
@@ -113,47 +157,17 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
             parts[label] = a
 
     if bmi is not None:
-        # BMI는 U자형이라 원값을 역산하면 저체중이 "젊음"으로 계산된다.
-        # 적정치로부터의 편차 절댓값으로 변환해 단조 관계를 만든다.
-        sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == "BMI")]
-        sub = sub.sort_values("age_mid")
-        if len(sub) >= MIN_BANDS:
-            # 성장기는 성인 기준(22)이 맞지 않는다. 그 나이대 중앙값을 기준으로 쓴다.
-            ideal = float(sub["p50"].median()) if age_gbn == GROWTH else BMI_IDEAL
-            dev = (sub["p50"] - ideal).abs().to_numpy()
-            ages = sub["age_mid"].to_numpy()
-            order = np.argsort(dev)
-            parts["체성분"] = float(np.interp(abs(bmi - ideal), dev[order], ages[order]))
+        a = u_shaped_age(d, age_gbn, sex, "BMI", bmi)
+        if a is not None:
+            parts["체성분"] = a
 
-    if not parts:
-        return {"체력나이": None, "신뢰구간": None, "항목별": {}, "집중개선영역": []}
+    if body_fat is not None:
+        # 체지방률은 높을수록 불리하고 나이 들수록 오르는 단조 항목 → 곡선에 직접 대조한다.
+        a = convert_age(d, age_gbn, sex, "체지방률", body_fat)
+        if a is not None:                        # 체지방률이 있으면 체성분을 이 값으로 대체(더 직접적)
+            parts["체성분"] = a
 
-    raw = list(parts.values())
-
-    # --- 안정화 ---
-    # 기준점: 실제 나이가 있으면 실제 나이, 없으면 항목들의 중앙값.
-    anchor = float(age) if age is not None else float(np.median(raw))
-    # 항목별 영향도를 먼저 안정화한다(단순 최종 clamp보다 앞선다).
-    clamped = [float(np.clip(v, anchor - STABILIZE_LIMIT, anchor + STABILIZE_LIMIT))
-               for v in raw]
-    body_age = float(np.mean(clamped))
-    if age is not None:                          # 최종 표시값도 실제 나이 ±15세 안으로
-        body_age = float(np.clip(body_age, age - STABILIZE_LIMIT, age + STABILIZE_LIMIT))
-
-    # 집중 개선 영역: 환산나이가 기준점보다 FOCUS_GAP 이상 나쁜 항목.
-    # 성장기는 나이가 많을수록 좋으므로 방향이 반대다.
-    focus = [
-        k for k, v in parts.items()
-        if (anchor - v if age_gbn == GROWTH else v - anchor) >= FOCUS_GAP
-    ]
-
-    return {
-        "체력나이": round(body_age, 1),
-        # 항목 간 편차가 클수록 추정이 불안정하다 → 화면에 ± 로 함께 표시한다
-        "신뢰구간": round(float(np.std(raw)) / max(len(raw) ** 0.5, 1), 1),
-        "항목별": {k: round(v, 1) for k, v in parts.items()},
-        "집중개선영역": focus,
-    }
+    return aggregate_age(parts, age_gbn, age)
 
 
 def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,

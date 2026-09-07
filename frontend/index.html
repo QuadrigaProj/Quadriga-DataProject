@@ -647,6 +647,18 @@
                      font:inherit; font-size:14px; }
   .wlog-unit{ font-size:12px; color:var(--muted); }
   .wlog-count{ font-size:13px; color:var(--muted); margin-top:4px; }
+
+  /* 그날의 몸 상태 (K2) — 종목 목록보다 먼저 받는다 */
+  .wlog-sum{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .wlog-sum label{ display:flex; flex-direction:column; gap:5px; }
+  .wlog-sum .k{ font-size:12.5px; color:var(--muted); }
+  .wlog-sum .box{ display:flex; align-items:center; gap:6px; }
+  .wlog-sum input{ width:100%; min-width:0; padding:9px 10px; border:1px solid var(--line);
+    border-radius:10px; font:inherit; font-size:14px; background:var(--paper);
+    color:var(--ink); text-align:right; }
+  .wlog-sum input:focus{ outline:none; border-color:var(--pine); }
+  .wlog-sum .u{ font-size:12px; color:var(--muted); flex-shrink:0; width:20px; }
+  .wlog-sumnote{ font-size:12px; color:var(--muted); margin-top:9px; line-height:1.6; }
   .rec-log-btn{ width:100%; margin-top:14px; padding:12px 0; border-radius:12px;
                 border:1.5px solid var(--pine); background:var(--paper);
                 color:var(--pine-deep); font:inherit; font-size:15px; font-weight:600;
@@ -1637,6 +1649,12 @@
     <div class="content">
       <h1 class="title" id="logTitle">오늘 한 운동을<br/>적어주세요</h1>
       <p class="sub" id="logSub">루틴 말고 다르게 운동한 날에 씁니다. 값을 넣은 종목만 저장돼요.</p>
+      <div class="wlog-group">
+        <div class="wlog-head">그날의 몸 상태</div>
+        <div class="wlog-sum" id="logSummary"></div>
+        <div class="wlog-sumnote" id="logSummaryNote">
+          아는 것만 적으면 됩니다. 빈 칸은 저장하지 않아요.</div>
+      </div>
       <div id="logGroups"></div>
     </div>
     <div class="footer-area">
@@ -3803,7 +3821,7 @@ function allRoutineLog(){
 /* 직접 기록 한 줄을 이름으로 — '스쿼트 외 2종목' */
 function manualLogName(w){
   const names = (w.items || []).map(x => x.이름);
-  if (!names.length) return '직접 기록';
+  if (!names.length) return Object.keys(w.요약 || {}).length ? '몸 상태 기록' : '직접 기록';
   return names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}종목`;
 }
 
@@ -4270,8 +4288,51 @@ async function renderDailyLog(){
     return `<div class="wlog-group"><div class="wlog-head">${g}</div>${rows}</div>`;
   }).join('');
 
+  renderLogSummary(이전);
   cat.종목.forEach(x => markLogRow(x.id));
   paintLogSaveBtn();
+}
+
+/* 그날 함께 받는 몸 상태 (K2).
+   종목 목록과 달리 항목이 고정이라 여기에 둔다. min/max 는 오타를 거르는 선이다. */
+const LOG_SUMMARY = [
+  { key: '운동시간', 이름: '총 운동 시간', 단위: '분',  max: 1440 },
+  { key: '휴식시간', 이름: '휴식 시간',    단위: '분',  max: 1440 },
+  { key: '키',      이름: '키',           단위: 'cm', min: 80,  max: 250 },
+  { key: '몸무게',   이름: '몸무게',        단위: 'kg', min: 20,  max: 300 },
+  { key: '체지방률', 이름: '체지방률',      단위: '%',  max: 70,  인바디: true },
+  { key: '골격근량', 이름: '골격근량',      단위: 'kg', max: 100, 인바디: true },
+];
+
+function renderLogSummary(이전){
+  const box = $('logSummary');
+  if (!box) return;
+  const 값 = 이전?.요약 || {};
+  box.innerHTML = LOG_SUMMARY.map(f => `
+    <label>
+      <span class="k">${f.이름}${f.인바디 ? ' <small>(인바디)</small>' : ''}</span>
+      <span class="box">
+        <input type="number" min="${f.min ?? 0}" max="${f.max}" step="any" inputmode="decimal"
+               data-sum="${f.key}" aria-label="${f.이름} (${f.단위})"
+               value="${값[f.key] ?? ''}" oninput="paintLogSaveBtn()" />
+        <span class="u">${f.단위}</span>
+      </span>
+    </label>`).join('');
+}
+
+/* 적은 것만 모은다. 범위를 벗어난 값은 오타로 보고 버린다. */
+function collectLogSummary(){
+  const out = {};
+  LOG_SUMMARY.forEach(f => {
+    const el = document.querySelector(`#logSummary input[data-sum="${f.key}"]`);
+    if (!el || el.value === '') return;
+    const v = Number(el.value);
+    if (!Number.isFinite(v)) return;
+    if (v < (f.min ?? 0) || v > f.max) return;
+    if (v <= 0) return;
+    out[f.key] = v;
+  });
+  return out;
 }
 
 /* 값이 하나라도 들어간 종목은 눈에 띄게 — 다 적고 나서 훑어보기 쉽게. */
@@ -4303,8 +4364,10 @@ function paintLogSaveBtn(){
   const btn = $('logSaveBtn');
   if (!btn) return;
   const n = collectLogItems().length;
-  btn.disabled = !n;
-  btn.textContent = n ? `${n}종목 저장` : '적은 종목이 없어요';
+  const m = Object.keys(collectLogSummary()).length;      // 몸 상태만 적어도 저장한다 (K2)
+  btn.disabled = !n && !m;
+  btn.textContent = n ? `${n}종목 저장`
+    : (m ? '몸 상태만 저장' : '적은 것이 없어요');
 }
 
 /* 최근 28일 동안 각 체력요인을 운동한 '날 수'. 같은 날 같은 요인은 한 번만 센다. */
@@ -4359,11 +4422,19 @@ function displayAge(){
 /* 하루에 하나. 같은 날 다시 저장하면 덮어쓴다. */
 async function saveDailyLog(){
   const items = collectLogItems();
-  if (!items.length) return;
+  const 요약 = collectLogSummary();
+  if (!items.length && !Object.keys(요약).length) return;
   const 날 = logTargetDate || todayIso();
   if (!Array.isArray(state.workoutLog)) state.workoutLog = [];
   state.workoutLog = state.workoutLog.filter(w => w.date !== 날);
-  state.workoutLog.push({ date: 날, items });
+  state.workoutLog.push({ date: 날, items, 요약 });
+
+  // 오늘 잰 키·몸무게는 프로필에도 반영한다. 지난 날짜를 고칠 때는 건드리지 않는다
+  // — 그때 값으로 지금 프로필을 덮으면 안 된다.
+  if (날 === todayIso()) {
+    if (요약.키) state.height = 요약.키;
+    if (요약.몸무게) state.weight = 요약.몸무게;
+  }
   await refreshActivityAge();     // 기록을 더했으니 체력나이도 다시 본다 (I3)
   await saveProfile();
   paintGauges();
@@ -4376,7 +4447,9 @@ async function saveDailyLog(){
 /* 기록 화면의 '직접 적은 운동' — 최근 것부터. */
 function renderManualRecords(){
   const box = $('recManualBlock');
-  const log = [...(state.workoutLog || [])].filter(w => (w.items || []).length)
+  // 몸 상태만 적은 날도 보여 준다 (K2)
+  const log = [...(state.workoutLog || [])]
+    .filter(w => (w.items || []).length || Object.keys(w.요약 || {}).length)
     .sort((a, b) => (a.date < b.date ? 1 : -1));
   if (!log.length) { box.style.display = 'none'; return; }
   box.style.display = 'block';
@@ -4388,13 +4461,23 @@ function renderManualRecords(){
         </div>`).join('');
 }
 
-/* 직접 적은 운동 한 날의 상세 — 종목마다 적은 값을 그대로 (J4) */
+/* 직접 적은 운동 한 날의 상세 — 종목마다 적은 값과 그날 몸 상태 (J4·K2) */
 function manualDetailHtml(w){
-  return (w.items || []).map(x => {
+  const 종목 = (w.items || []).map(x => {
     const 값 = Object.entries(x.값 || {})
       .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
     return `<div class="rec-detail-row wide"><b>${x.이름}</b><span>${값}</span></div>`;
   }).join('');
+  return 종목 + summaryDetailHtml(w.요약);
+}
+
+/* 그날 몸 상태를 상세에 붙인다 (K2). 적은 것만 나온다. */
+function summaryDetailHtml(요약){
+  if (!요약) return '';
+  return LOG_SUMMARY
+    .filter(f => 요약[f.key] != null)
+    .map(f => `<div class="rec-detail-row wide"><b>${f.이름}</b><span>${요약[f.key]}${f.단위}</span></div>`)
+    .join('');
 }
 
 /* 측정한 날의 상세 — 항목별 환산나이와 편차 (J5) */

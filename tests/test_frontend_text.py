@@ -682,3 +682,71 @@ def test_시작하면_결제_수단을_불러온다():
     시작 = html.split("(async function init()")[1]
     assert "await handlePayReturn();" in 시작
 
+
+# ---------- K2. 그날의 몸 상태 (운동 시간·휴식·키·몸무게·인바디) ----------
+
+def test_그날_몸_상태를_함께_받는다():
+    html = _index()
+    assert 'id="logSummary"' in html
+    assert "const LOG_SUMMARY = [" in html
+    표 = html.split("const LOG_SUMMARY = [")[1].split("];")[0]
+    for k in ("운동시간", "휴식시간", "키", "몸무게", "체지방률", "골격근량"):
+        assert f"key: '{k}'" in 표, k
+    # 인바디에서 오는 값은 그렇게 표시한다
+    assert 표.count("인바디: true") == 2
+
+
+def test_말도_안_되는_값은_버린다():
+    """키 3cm, 몸무게 9999kg 같은 오타를 그대로 저장하면 분석이 망가진다."""
+    html = _index()
+    표 = html.split("const LOG_SUMMARY = [")[1].split("];")[0]
+    assert "max: 250" in 표 and "min: 80" in 표          # 키
+    assert "max: 300" in 표 and "min: 20" in 표          # 몸무게
+    본문 = html.split("function collectLogSummary()")[1].split("\n}")[0]
+    assert "v < (f.min ?? 0) || v > f.max" in 본문
+    assert "if (v <= 0) return;" in 본문
+
+
+def test_몸_상태만_적어도_저장된다():
+    html = _index()
+    본문 = html.split("function paintLogSaveBtn()")[1].split("\n}")[0]
+    assert "collectLogSummary()" in 본문
+    assert "btn.disabled = !n && !m;" in 본문
+    저장 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "if (!items.length && !Object.keys(요약).length) return;" in 저장
+    assert "state.workoutLog.push({ date: 날, items, 요약 });" in 저장
+
+
+def test_오늘_잰_키_몸무게만_프로필에_반영한다():
+    """지난 날짜를 고칠 때 그때 값으로 지금 프로필을 덮으면 안 된다."""
+    html = _index()
+    저장 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "if (날 === todayIso()) {" in 저장
+    assert "state.height = 요약.키" in 저장
+    assert "state.weight = 요약.몸무게" in 저장
+
+
+def test_몸_상태만_적은_날은_운동한_날로_세지_않는다():
+    """연속 일수·완료 루틴 수가 부풀면 안 된다."""
+    html = _index()
+    본문 = html.split("function allRoutineLog()")[1].split("\n}")[0]
+    assert "(w.items || []).length" in 본문
+    assert "요약" not in 본문
+
+
+def test_몸_상태도_자세히_보기에_나온다():
+    html = _index()
+    assert "function summaryDetailHtml(요약)" in html
+    본문 = html.split("function manualDetailHtml(w)")[1].split("\n}")[0]
+    assert "summaryDetailHtml(w.요약)" in 본문
+    상세 = html.split("function summaryDetailHtml(요약)")[1].split("\n}")[0]
+    assert "요약[f.key] != null" in 상세          # 적은 것만 보여 준다
+
+
+def test_몸_상태만_적은_날도_목록에_나온다():
+    html = _index()
+    본문 = html.split("function renderManualRecords()")[1].split("\n}")[0]
+    assert "Object.keys(w.요약 || {}).length" in 본문
+    이름 = html.split("function manualLogName(w)")[1].split("\n}")[0]
+    assert "몸 상태 기록" in 이름
+

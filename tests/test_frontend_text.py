@@ -1066,3 +1066,117 @@ def test_친구와_찾은_사람에게_채팅_버튼이_붙는다():
     배선 = html.split("function wireFriendButtons()")[1].split("\n}")[0]
     assert "openDirect(b.dataset.dm)" in 배선
 
+
+# ---------- L5·L6. 목록 버튼 · 멤버 관리 ----------
+
+def test_단체_채팅방에만_목록_버튼이_있다():
+    html = _index()
+    assert 'id="chatMenuBtn"' in html
+    assert 'onclick="openRoomMembers()"' in html
+    본문 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
+    assert "rm['종류'] === 'direct'" in 본문       # 개인 채팅에는 안 보인다
+
+
+def test_멤버_창에_요청한_것들이_다_있다():
+    html = _index()
+    창 = html.split('id="roomMembers"')[1].split("</section>")[0]
+    assert 'id="memberList"' in 창              # 멤버 확인
+    assert 'id="memberFriends"' in 창           # 친구 초대
+    assert 'id="inviteQuery"' in 창             # 아이디로 초대
+    assert "leaveFromMembers()" in 창           # 나가기
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "멤버 ${MEMBERS['인원']}명" in 본문     # 상단에 인원수
+
+
+def test_방장만_내보내기_버튼을_본다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "방장 && !u['나']" in 본문
+    assert "data-kick=" in 본문
+    assert "API.commRoomKick" in 본문
+
+
+def test_내보내기와_나가기는_한_번_묻는다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "confirm(" in 본문
+    나가기 = html.split("async function leaveFromMembers()")[1].split("\n}")[0]
+    assert "confirm(" in 나가기
+    assert "API.commRoomLeave" in 나가기
+
+
+def test_초대해_둔_사람은_초대_목록에서_뺀다():
+    html = _index()
+    친구 = html.split("async function renderInviteFriends()")[1].split("\n}")[0]
+    assert "MEMBERS?.['초대중']" in 친구
+
+
+def test_친구는_바로_초대하고_아니면_아이디로_초대한다():
+    html = _index()
+    친구 = html.split("async function renderInviteFriends()")[1].split("\n}")[0]
+    assert "API.commFriends()" in 친구
+    assert "이미.has(u['아이디'])" in 친구        # 이미 들어온 친구는 빼고
+    assert "data-invite=" in 친구
+    아이디 = html.split("async function inviteByHandle()")[1].split("\n}")[0]
+    assert "API.commRoomInvite(COMM.room, h)" in 아이디
+
+
+def test_멤버_창도_닉네임과_아이디만_그린다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "esc(u['닉네임'])" in 본문 and "esc(u['아이디'])" in 본문
+    for 금지 in ("체력나이", "email", "measureLog"):
+        assert 금지 not in 본문, 금지
+
+
+def test_방을_닫으면_멤버_창도_닫는다():
+    html = _index()
+    본문 = html.split("function closeRoom()")[1].split("\n}")[0]
+    assert "closeRoomMembers()" in 본문
+
+
+# ---------- 초대는 받은 사람이 수락해야 들어간다 ----------
+
+def test_받은_초대_자리가_있다():
+    html = _index()
+    assert 'id="inviteBox"' in html
+    assert 'id="inviteList"' in html
+    assert "async function loadInvites()" in html
+    본문 = html.split("async function loadInvites()")[1].split("\n}")[0]
+    assert "API.commInvites()" in 본문
+    # 채팅방 목록을 그릴 때마다 초대도 본다
+    방목록 = html.split("async function loadRooms()")[1].split("\n}\n\n")[0]
+    assert "loadInvites()" in 방목록
+
+
+def test_비공개_방은_초대받아도_비밀번호를_묻는다():
+    """초대가 비밀번호를 건너뛰면 비공개 방이 무너진다."""
+    html = _index()
+    본문 = html.split("async function acceptInvite(roomId, isPrivate, name)")[1].split("\n}")[0]
+    assert "isPrivate" in 본문 and "prompt(" in 본문
+    assert "if (isPrivate && !password) return;" in 본문
+    assert "API.commInviteAccept(roomId, password)" in 본문
+
+
+def test_초대_카드에_비밀번호가_필요한지_적는다():
+    html = _index()
+    본문 = html.split("async function loadInvites()")[1].split("\n}")[0]
+    assert "비밀번호 필요" in 본문
+    assert "data-accept=" in 본문 and "data-decline=" in 본문
+    assert "API.commInviteDecline" in 본문
+
+
+def test_방장_화면에_수락_대기가_보인다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "수락 대기" in 본문
+    assert "초대함 ${초대중.length}명" in 본문
+    assert "data-uninvite=" in 본문               # 초대를 거둘 수 있다
+    assert "API.commRoomInviteCancel" in 본문
+
+
+def test_초대하면_바로_들어오지_않는다고_적는다():
+    html = _index()
+    창 = html.split('id="roomMembers"')[1].split("</section>")[0]
+    assert "상대가 수락해야 들어와요" in 창
+

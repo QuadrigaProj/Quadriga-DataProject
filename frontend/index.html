@@ -532,7 +532,13 @@
              border-radius:12px; }
   .wlog-row:last-child{ border-bottom:none; }
   .wlog-row.on{ background:var(--pine-tint); border-bottom-color:transparent; }
-  .wlog-picto{ width:26px; height:26px; flex-shrink:0; margin-top:2px; }
+  /* 자세 그림 위에 요인 아이콘을 얹는다 (H7) */
+  .wlog-art{ width:34px; flex-shrink:0; display:flex; flex-direction:column;
+             align-items:center; gap:2px; color:var(--pine-deep); }
+  .wlog-art .move-factor{ width:15px; height:15px; color:var(--amber); }
+  .wlog-art .move-pose{ width:32px; height:32px; }
+  .axis-icon{ width:17px; height:17px; margin-right:6px; vertical-align:-3px;
+              color:var(--amber); }
   .wlog-main{ flex:1; min-width:0; }
   .wlog-name{ font-size:15px; }
   .wlog-fields{ display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
@@ -1573,6 +1579,7 @@
 
 <script src="js/api.js"></script>
 <script src="js/gauge.js"></script>
+<script src="js/move-art.js"></script>
 <script>
 /* ---------------------------------------------------------------------------
    화면 상태와 백엔드 연결.
@@ -3408,7 +3415,7 @@ function renderProfile(){
       오른쪽 = `<div class="stars">${starStr(starCount(v))}</div>`;
     }
     return `<div class="axis-row"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
-      <div class="axis-name">${k}</div>
+      <div class="axis-name">${MOVE_ART.factor(k, 'axis-icon')}${k}</div>
       <div class="axis-val">${값}</div>
       ${오른쪽}
     </div>`;
@@ -4012,7 +4019,6 @@ async function renderDailyLog(){
 
   box.innerHTML = cat.분류.map(g => {
     const rows = cat.종목.filter(x => x.분류 === g).map(x => {
-      const 픽 = MOVE_CATEGORY_MEDIA[x.그림] || MOVE_CATEGORY_MEDIA.strength;
       const fields = x.입력.map(k => `
             <label class="wlog-field">
               <input type="number" min="0" step="any" inputmode="decimal"
@@ -4023,7 +4029,9 @@ async function renderDailyLog(){
             </label>`).join('');
       return `
         <div class="wlog-row" id="wlog-${x.id}">
-          <img class="wlog-picto" src="${픽.svg}" alt="" style="color:#1F4136" />
+          <div class="wlog-art" title="${x.요인 || ''}">
+            ${MOVE_ART.factor(x.요인)}${MOVE_ART.pose(x.id)}
+          </div>
           <div class="wlog-main">
             <div class="wlog-name">${x.이름}</div>
             <div class="wlog-fields">${fields}</div>
@@ -4247,6 +4255,7 @@ async function useRecommend(){
 
 /* ---- 시작 ---- */
 (async function init(){
+  MOVE_ART.install();
   onAgeChange();
   renderProfileList();
   setAuthMode('login');

@@ -1007,6 +1007,31 @@
   }
   .move-gif-fallback img{ width:72px; height:72px; }
   .move-gif-fallback code{ font-size:12px; color:var(--pine-deep); word-break:break-all; }
+  /* 친구 (앱 내 아이디로만 찾는다) */
+  .friend-me{ display:flex; align-items:center; gap:10px; }
+  .friend-me b{ font-size:17px; letter-spacing:0.06em; font-variant-numeric:tabular-nums; }
+  .friend-copy{ margin-left:auto; background:none; border:1px solid var(--line);
+    border-radius:999px; padding:5px 11px; font:inherit; font-size:12px;
+    color:var(--pine-deep); cursor:pointer; }
+  .friend-copy:hover{ border-color:var(--pine); }
+  .friend-note{ font-size:12.5px; color:var(--muted); line-height:1.6; margin:10px 2px 14px; }
+  .friend-find input{ text-transform:lowercase; }
+  .friend-card{ display:flex; align-items:center; gap:10px; padding:12px 2px;
+    border-bottom:1px solid var(--line); }
+  .friend-card:last-child{ border-bottom:none; }
+  .friend-card .who{ flex:1; min-width:0; }
+  .friend-card .nm{ font-size:14.5px; }
+  .friend-card .hd{ font-size:12px; color:var(--muted); margin-top:2px;
+    font-variant-numeric:tabular-nums; }
+  .friend-card button{ flex-shrink:0; background:var(--pine); border:1.5px solid var(--pine);
+    color:#fff; border-radius:999px; padding:7px 13px; font:inherit; font-size:12.5px;
+    cursor:pointer; }
+  .friend-card button.ghost{ background:var(--paper); color:var(--pine-deep);
+    border-color:var(--line); }
+  .friend-card button:disabled{ opacity:0.5; cursor:default; }
+  .friend-head{ font-size:12.5px; font-weight:700; color:var(--muted);
+    margin:18px 2px 4px; }
+
   /* ===================== SCREEN 13 : 커뮤니티 ===================== */
   .comm-compose{ margin-top:16px; border:1px solid var(--line); border-radius:var(--radius-lg); padding:14px; background:var(--paper); }
   .comm-compose textarea{ width:100%; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-family:inherit; font-size:14.5px; resize:vertical; box-sizing:border-box; }
@@ -1804,6 +1829,7 @@
       <div class="seg" id="commTab" style="margin-top:14px;">
         <button type="button" class="on" data-c="feed" onclick="commTab('feed')">피드</button>
         <button type="button" data-c="chat" onclick="commTab('chat')">운동 모임</button>
+        <button type="button" data-c="friend" onclick="commTab('friend')">친구</button>
       </div>
 
       <div id="commGate" class="more-card" hidden>
@@ -1816,6 +1842,27 @@
         <div class="comm-list-head"><span>게시글</span><button type="button" class="comm-add" onclick="openPostComposer()" aria-label="게시글 작성">＋</button></div>
         <div id="feedList"></div>
         <button id="feedMore" class="more-card" hidden onclick="loadFeed(true)">더 보기</button>
+      </div>
+
+      <!-- 친구 -->
+      <div id="commFriend" hidden>
+        <div class="more-card friend-me">
+          <span>내 아이디</span>
+          <b id="myHandle">—</b>
+          <button type="button" class="friend-copy" onclick="copyMyHandle()">복사</button>
+        </div>
+        <p class="friend-note">이 아이디로만 서로를 찾을 수 있어요.
+          상대에게는 <b>닉네임과 아이디만</b> 보입니다.</p>
+
+        <div class="comm-compose-row friend-find">
+          <input id="friendQuery" type="text" placeholder="친구 아이디 입력"
+                 autocapitalize="off" spellcheck="false"
+                 onkeydown="if(event.key==='Enter')findFriend()" />
+          <button class="btn btn-primary comm-post-btn" type="button" onclick="findFriend()">찾기</button>
+        </div>
+        <div id="friendFound"></div>
+
+        <div id="friendLists"></div>
       </div>
 
       <!-- 운동 모임 채팅 -->
@@ -3026,8 +3073,87 @@ function commTab(t){
   document.querySelectorAll('#commTab button').forEach(b=>b.classList.toggle('on', b.dataset.c===t));
   $('commFeed').hidden = t !== 'feed';
   $('commChat').hidden = t !== 'chat';
+  $('commFriend').hidden = t !== 'friend';
   if (t === 'feed') { COMM.oldest = null; loadFeed(false); }
+  else if (t === 'friend') loadFriends();
   else { closeRoom(); loadRooms(); }
+}
+
+/* ---- 친구 ----
+   서로의 프로필은 볼 수 없다. 오가는 건 닉네임과 앱 내 아이디뿐이다.
+   찾기는 아이디가 정확히 맞을 때만 된다 — 부분 검색을 열어 주면 회원 목록을 훑을 수 있다. */
+let MY_HANDLE = null;
+
+async function loadFriends(){
+  $('friendFound').innerHTML = '';
+  try {
+    const me = await API.commMyHandle();
+    MY_HANDLE = me['아이디'];
+    $('myHandle').textContent = MY_HANDLE || '—';
+  } catch (e) { $('myHandle').textContent = '—'; }
+  try {
+    const f = await API.commFriends();
+    $('friendLists').innerHTML =
+        friendGroup('받은 신청', f['받은신청'], '수락')
+      + friendGroup('친구', f['친구'], '끊기')
+      + friendGroup('보낸 신청', f['보낸신청'], '취소');
+    wireFriendButtons();
+  } catch (e) { $('friendLists').innerHTML = '<div class="more-card">친구 목록을 불러오지 못했어요.</div>'; }
+}
+
+function friendGroup(제목, 목록, 버튼){
+  if (!목록 || !목록.length) return '';
+  const 취소류 = 버튼 !== '수락';
+  return `<div class="friend-head">${제목} ${목록.length}</div>`
+    + 목록.map(u => `
+      <div class="friend-card">
+        <div class="who"><div class="nm">${esc(u['닉네임'])}</div>
+          <div class="hd">@${esc(u['아이디'])}</div></div>
+        <button type="button" class="${취소류 ? 'ghost' : ''}"
+                data-fr="${버튼 === '수락' ? 'add' : 'del'}"
+                data-handle="${esc(u['아이디'])}">${버튼}</button>
+      </div>`).join('');
+}
+
+function wireFriendButtons(){
+  document.querySelectorAll('[data-fr]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      if (b.dataset.fr === 'add') await API.commFriendAdd(b.dataset.handle);
+      else await API.commFriendRemove(b.dataset.handle);
+      await loadFriends();
+    } catch (e) { b.disabled = false; showToast(e.message); }
+  });
+}
+
+const FRIEND_LABEL = { '없음': '친구 신청', '보냄': '신청함', '받음': '수락하기', '친구': '친구', '나': '나' };
+
+async function findFriend(){
+  const q = ($('friendQuery').value || '').trim().toLowerCase();
+  const box = $('friendFound');
+  if (!q) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="more-card">찾는 중…</div>';
+  try {
+    const u = await API.commFindUser(q);
+    const 관계 = u['관계'];
+    const 누를수있음 = 관계 === '없음' || 관계 === '받음';
+    box.innerHTML = `
+      <div class="friend-card">
+        <div class="who"><div class="nm">${esc(u['닉네임'])}</div>
+          <div class="hd">@${esc(u['아이디'])}</div></div>
+        <button type="button" ${누를수있음 ? '' : 'disabled'} class="${누를수있음 ? '' : 'ghost'}"
+                data-fr="add" data-handle="${esc(u['아이디'])}">${FRIEND_LABEL[관계] || 관계}</button>
+      </div>`;
+    wireFriendButtons();
+  } catch (e) {
+    box.innerHTML = '<div class="more-card">그 아이디를 쓰는 회원이 없어요.</div>';
+  }
+}
+
+async function copyMyHandle(){
+  if (!MY_HANDLE) return;
+  try { await navigator.clipboard.writeText(MY_HANDLE); showToast('아이디를 복사했어요'); }
+  catch (e) { showToast(MY_HANDLE); }
 }
 
 /* ---- 피드 ---- */

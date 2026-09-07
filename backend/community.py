@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import time
 
 from fastapi import APIRouter, Cookie, HTTPException
@@ -78,6 +79,23 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cmsg_room ON chat_messages(room_id, id);
+
+/* 앱 내 아이디 — 다른 사람에게 보이는 유일한 식별자다.
+   이메일로 사람을 찾게 두면 이메일이 곧 검색키가 된다(가입 여부가 새어 나간다). */
+CREATE TABLE IF NOT EXISTS user_handles (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  handle  TEXT NOT NULL UNIQUE
+);
+
+/* 상호 친구 — 한 줄이 '신청' 이고, 양쪽 줄이 다 있으면 친구다.
+   (a,b) 와 (b,a) 를 각각 두어 "내가 건 신청" 과 "받은 신청" 을 그대로 읽는다. */
+CREATE TABLE IF NOT EXISTS friend_links (
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  other_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, other_id)
+);
+CREATE INDEX IF NOT EXISTS idx_friend_other ON friend_links(other_id);
 """
 SCHEMA_PG = (SCHEMA_SQLITE
              .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"))
@@ -104,6 +122,120 @@ def init_db() -> None:
 
 
 DATA_URL = re.compile(r"^data:(image|video)/[\w.+-]+;base64,[A-Za-z0-9+/=\s]+$")
+
+
+# 앱 내 아이디에 쓰는 글자. 헷갈리는 0/O, 1/l 은 뺀다.
+HANDLE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+HANDLE_LEN = 6
+HANDLE_RE = re.compile(r"^[a-z0-9]{3,20}$")
+
+
+def _new_handle(con) -> str:
+    """안 쓰는 아이디를 하나 만든다. 이름에서 만들지 않는다 — 본명이 새어 나간다."""
+    for _ in range(50):
+        h = "".join(secrets.choice(HANDLE_ALPHABET) for _ in range(HANDLE_LEN))
+        if not con.execute("SELECT 1 FROM user_handles WHERE handle=?", (h,)).fetchone():
+            return h
+    raise HTTPException(503, "아이디를 만들지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+
+
+def handle_for(user_id: int) -> str:
+    """그 사람의 앱 내 아이디. 없으면 이때 만들어 준다(예전 가입자)."""
+    with auth.db() as con:
+        r = con.execute("SELECT handle FROM user_handles WHERE user_id=?", (user_id,)).fetchone()
+        if r:
+            return r["handle"]
+        h = _new_handle(con)
+        con.execute("INSERT INTO user_handles (user_id, handle) VALUES (?,?)", (user_id, h))
+        return h
+
+
+def _public_user(con, user_id: int) -> dict:
+    """다른 사람에게 보여 주는 전부 — 닉네임과 아이디뿐이다.
+
+    체력나이·측정 기록·이메일은 넣지 않는다. 여기서 한 번 막으면 화면이
+    실수로 흘릴 일이 없다.
+    """
+    r = con.execute("SELECT display_name FROM users WHERE id=?", (user_id,)).fetchone()
+    h = con.execute("SELECT handle FROM user_handles WHERE user_id=?", (user_id,)).fetchone()
+    return {"아이디": h["handle"] if h else None,
+            "닉네임": r["display_name"] if r else "(탈퇴한 회원)"}
+
+
+def find_by_handle(handle: str) -> dict | None:
+    """아이디로 사람 찾기. 정확히 맞아야 찾힌다 — 부분 검색은 목록 훑기가 된다."""
+    handle = (handle or "").strip().lower()
+    if not HANDLE_RE.match(handle):
+        return None
+    with auth.db() as con:
+        r = con.execute("SELECT user_id FROM user_handles WHERE handle=?", (handle,)).fetchone()
+        if not r:
+            return None
+        return {**_public_user(con, r["user_id"]), "user_id": r["user_id"]}
+
+
+# ---------- 상호 친구 ----------
+
+def _link(con, a: int, b: int) -> bool:
+    return bool(con.execute("SELECT 1 FROM friend_links WHERE user_id=? AND other_id=?",
+                            (a, b)).fetchone())
+
+
+def friend_state(con, me: int, other: int) -> str:
+    """'친구' | '보냄' | '받음' | '없음'"""
+    if me == other:
+        return "나"
+    보냄, 받음 = _link(con, me, other), _link(con, other, me)
+    if 보냄 and 받음:
+        return "친구"
+    return "보냄" if 보냄 else ("받음" if 받음 else "없음")
+
+
+def are_friends(con, a: int, b: int) -> bool:
+    return _link(con, a, b) and _link(con, b, a)
+
+
+def request_friend(me: int, handle: str) -> dict:
+    """아이디로 친구 신청. 상대가 이미 나에게 걸어 뒀으면 그 자리에서 친구가 된다."""
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    other = target["user_id"]
+    if other == me:
+        raise HTTPException(400, "나 자신과는 친구가 될 수 없어요.")
+    with auth.db() as con:
+        if not _link(con, me, other):
+            con.execute("INSERT INTO friend_links (user_id, other_id, created_at) VALUES (?,?,?)",
+                        (me, other, int(time.time())))
+        return {"상태": friend_state(con, me, other),
+                "상대": {k: v for k, v in target.items() if k != "user_id"}}
+
+
+def unfriend(me: int, handle: str) -> dict:
+    """내가 건 줄만 지운다. 상대가 건 줄은 상대 것이다."""
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    with auth.db() as con:
+        con.execute("DELETE FROM friend_links WHERE user_id=? AND other_id=?",
+                    (me, target["user_id"]))
+        return {"상태": friend_state(con, me, target["user_id"])}
+
+
+def friends(me: int) -> dict:
+    """친구·보낸 신청·받은 신청을 한 번에."""
+    with auth.db() as con:
+        보냄 = [r["other_id"] for r in con.execute(
+            "SELECT other_id FROM friend_links WHERE user_id=?", (me,)).fetchall()]
+        받음 = [r["user_id"] for r in con.execute(
+            "SELECT user_id FROM friend_links WHERE other_id=?", (me,)).fetchall()]
+        보냄셋, 받음셋 = set(보냄), set(받음)
+        친구 = 보냄셋 & 받음셋
+        return {
+            "친구": [_public_user(con, u) for u in sorted(친구)],
+            "보낸신청": [_public_user(con, u) for u in sorted(보냄셋 - 친구)],
+            "받은신청": [_public_user(con, u) for u in sorted(받음셋 - 친구)],
+        }
 
 
 def _clean_media(media) -> str:
@@ -435,6 +567,10 @@ class RoomIn(BaseModel):
     member_email: str | None = Field(None, max_length=320)
 
 
+class HandleIn(BaseModel):
+    handle: str = Field(..., max_length=20)
+
+
 class RoomJoinIn(BaseModel):
     password: str | None = Field(None, max_length=128)
 
@@ -541,3 +677,48 @@ def room_send(room_id: int, body: MessageIn,
     me = _uid(quadriga_session)
     send_message(me, room_id, body.body)
     return {"messages": messages(me, room_id, 0)[-30:]}
+
+
+# ---------- 앱 내 아이디 · 상호 친구 ----------
+
+@router.get("/me/handle")
+def my_handle(quadriga_session: str | None = Cookie(None)) -> dict:
+    """내 앱 내 아이디. 아직 없으면 이때 만들어진다."""
+    me = _uid(quadriga_session)
+    with auth.db() as con:
+        나 = _public_user(con, me)
+    나["아이디"] = handle_for(me)
+    return 나
+
+
+@router.get("/users/{handle}")
+def user_lookup(handle: str, quadriga_session: str | None = Cookie(None)) -> dict:
+    """아이디로 사람 찾기.
+
+    닉네임과 아이디만 돌려준다. 체력나이·측정 기록·이메일은 넣지 않는다.
+    """
+    me = _uid(quadriga_session)
+    found = find_by_handle(handle)
+    if not found:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    other = found.pop("user_id")
+    with auth.db() as con:
+        found["관계"] = friend_state(con, me, other)
+    return found
+
+
+@router.get("/friends")
+def friend_list(quadriga_session: str | None = Cookie(None)) -> dict:
+    return friends(_uid(quadriga_session))
+
+
+@router.post("/friends")
+def friend_add(body: HandleIn, quadriga_session: str | None = Cookie(None)) -> dict:
+    """친구 신청. 상대도 나를 신청해 뒀으면 그 자리에서 친구가 된다."""
+    return request_friend(_uid(quadriga_session), body.handle)
+
+
+@router.delete("/friends/{handle}")
+def friend_remove(handle: str, quadriga_session: str | None = Cookie(None)) -> dict:
+    return unfriend(_uid(quadriga_session), handle)
+

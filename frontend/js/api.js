@@ -93,6 +93,13 @@ const API = (() => {
     commComment: (id, body) => post('/community/posts/' + id + '/comments', { body }),
     commReact: (target_type, target_id, emoji) =>
       post('/community/reactions', { target_type, target_id, emoji }),
+    // 앱 내 아이디와 상호 친구. 다른 사람에게 보이는 건 닉네임과 아이디뿐이다.
+    commMyHandle: () => call('/community/me/handle'),
+    commFindUser: (handle) => call('/community/users/' + encodeURIComponent(handle)),
+    commFriends: () => call('/community/friends'),
+    commFriendAdd: (handle) => post('/community/friends', { handle }),
+    commFriendRemove: (handle) => call('/community/friends/' + encodeURIComponent(handle),
+                                       { method: 'DELETE' }),
     commRooms: () => call('/community/rooms'),
     commRoomNew: (body) => post('/community/rooms', body),
     commRoomJoin: (id, password) => post('/community/rooms/' + id + '/join', { password }),

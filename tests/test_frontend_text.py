@@ -964,3 +964,55 @@ def test_직접기록을_지우면_날짜별_체력나이를_다시_센다():
         assert "refreshLogAges({ 전부: true })" in 본문, 함수
         assert "refreshActivityAge()" in 본문, 함수
 
+
+# ---------- L. 앱 내 아이디 · 상호 친구 ----------
+
+def test_커뮤니티에_친구_탭이_있다():
+    html = _index()
+    assert 'data-c="friend"' in html
+    assert 'id="commFriend"' in html
+    본문 = html.split("function commTab(t)")[1].split("\n}")[0]
+    assert "$('commFriend').hidden = t !== 'friend'" in 본문
+    assert "loadFriends()" in 본문
+
+
+def test_내_아이디를_보여준다():
+    html = _index()
+    assert 'id="myHandle"' in html
+    본문 = html.split("async function loadFriends()")[1].split("\n}")[0]
+    assert "API.commMyHandle()" in 본문
+
+
+def test_친구는_아이디로만_찾는다():
+    """이메일로 찾게 두면 이메일이 곧 검색키가 된다(가입 여부가 새어 나간다)."""
+    html = _index()
+    본문 = html.split("async function findFriend()")[1].split("\n}")[0]
+    assert "API.commFindUser(" in 본문
+    assert "email" not in 본문.lower()
+    assert 'id="friendQuery"' in html
+
+
+def test_친구_카드에_닉네임과_아이디만_쓴다():
+    """서로의 프로필은 볼 수 없다 — 체력나이나 기록이 새면 안 된다."""
+    html = _index()
+    본문 = html.split("function friendGroup(제목, 목록, 버튼)")[1].split("\n}")[0]
+    assert "u['닉네임']" in 본문 and "u['아이디']" in 본문
+    for 금지 in ("체력나이", "항목별", "measureLog", "email"):
+        assert 금지 not in 본문, 금지
+
+
+def test_세_가지_상태를_나눠_보여준다():
+    html = _index()
+    본문 = html.split("async function loadFriends()")[1].split("\n}")[0]
+    for k in ("받은신청", "친구", "보낸신청"):
+        assert f"f['{k}']" in 본문, k
+
+
+def test_아이디를_그대로_넣지_않고_이스케이프한다():
+    """닉네임과 아이디는 남이 정한 값이다."""
+    html = _index()
+    본문 = html.split("function friendGroup(제목, 목록, 버튼)")[1].split("\n}")[0]
+    assert "esc(u['닉네임'])" in 본문 and "esc(u['아이디'])" in 본문
+    찾기 = html.split("async function findFriend()")[1].split("\n}")[0]
+    assert "esc(u['닉네임'])" in 찾기 and "esc(u['아이디'])" in 찾기
+

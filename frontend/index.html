@@ -521,6 +521,35 @@
   .rec-step-sub{ font-size:12px; color:var(--muted); margin-top:3px; }
   .rec-step-amt{ flex-shrink:0; font-size:13px; font-weight:700; color:var(--pine-deep);
                  padding-top:2px; }
+  /* 추천 방식 고르기 · 이용권 (I1) */
+  .reco-mode{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
+  .reco-mode button{
+    padding:12px 8px; border:1.5px solid var(--line); border-radius:14px;
+    background:#fff; color:var(--muted); font:inherit; font-size:14px; cursor:pointer;
+  }
+  .reco-mode button.on{ border-color:var(--pine); background:var(--pine-tint);
+                        color:var(--pine-deep); font-weight:700; }
+  .reco-mode button:disabled{ opacity:0.5; cursor:default; }
+  .reco-mode .mode-sub{ display:block; font-size:11.5px; margin-top:3px; font-weight:400; }
+  .pay-row{ display:flex; align-items:baseline; gap:8px; margin-top:10px; }
+  .pay-amt{ font-size:26px; font-weight:700; letter-spacing:-0.02em; }
+  .pay-times{ font-size:13px; color:var(--muted); }
+  .pay-btn{ width:100%; min-height:50px; margin-top:14px; border-radius:14px;
+            border:1.5px solid var(--pine); background:var(--pine); color:#fff;
+            font:inherit; font-size:15px; font-weight:600; cursor:pointer; }
+  .pay-btn.ghost{ background:var(--paper); color:var(--pine-deep); }
+  .pay-log{ margin-top:14px; }
+  .pay-log .rec-item{ font-size:13px; }
+  .pay-note{ font-size:12px; color:var(--muted); margin-top:10px; line-height:1.6; }
+  .pay-pick{ display:grid; gap:8px; }
+  .pay-pick button{ display:flex; justify-content:space-between; align-items:center;
+    padding:14px 16px; border:1.5px solid var(--line); border-radius:14px;
+    background:var(--paper); font:inherit; font-size:15px; color:var(--ink); cursor:pointer; }
+  .pay-pick button.on{ border-color:var(--pine); background:var(--pine-tint); }
+  .pay-pick b{ font-size:16px; }
+  .pay-warn{ font-size:12.5px; color:var(--clay); background:var(--amber-tint);
+             border-radius:12px; padding:11px 13px; margin-top:12px; line-height:1.6; }
+
   /* 네 버튼을 같은 크기·같은 모양으로 (I2). 2×2 로 놓고 칸을 똑같이 나눈다.
      이름을 .reco-actions 로 둔 것은 기록 화면의 .rec-actions 와 겹치지 않게 하려는 것이다. */
   .reco-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
@@ -1341,6 +1370,17 @@
         <div class="program-note" style="margin-top:0;">3개월간 맞춤 운동을 진행한 뒤, 다시 측정해 달라진 체력을 확인해보세요.</div>
       </div>
 
+      <div class="program-card" id="creditCard">
+        <div class="prescribe-label">AI 추천 이용권</div>
+        <div class="pay-row">
+          <div class="pay-amt" id="creditAmt">0원</div>
+          <div class="pay-times" id="creditTimes">AI 추천 0회</div>
+        </div>
+        <div class="program-note" id="creditState">아직 충전하지 않았어요. 무료 추천은 그대로 쓸 수 있어요.</div>
+        <button type="button" class="pay-btn" onclick="openPaySheet()">이용권 충전하기</button>
+        <div class="pay-log" id="creditLog"></div>
+      </div>
+
       <div class="program-card">
         <div class="prescribe-label">더 정확한 체력 측정을 원한다면?</div>
         <div class="program-note">가까운 국민체력100 체력인증센터에서 무료로 정밀 측정을 받을 수 있어요.</div>
@@ -1540,6 +1580,12 @@
     <div class="content">
       <h1 class="title">지금 하기 좋은<br/>루틴을 골라봤어요</h1>
       <p class="sub" id="recoSub">점검 결과와 고른 것들을 보고 추천합니다.</p>
+      <div class="reco-mode" id="recoMode">
+        <button type="button" class="on" data-mode="free" onclick="setRecoMode('free')">
+          무료 추천<span class="mode-sub">가지고 있는 데이터로</span></button>
+        <button type="button" data-mode="ai" onclick="setRecoMode('ai')">
+          AI 추천<span class="mode-sub">1회 100원</span></button>
+      </div>
       <div id="recoBody"></div>
     </div>
   </section>
@@ -1627,6 +1673,8 @@ const state = {
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
+  credit: 0,           // I1: AI 추천 이용권 잔액(원). 미리 충전해 둘 수 있다
+  creditLog: [],       // I1: [{date, 종류:'충전'|'사용', 금액, 잔액}]
   gripKg: null,        // G6 선택 입력: 악력(kg) — 몸무게로 나눠 상대악력으로 본다
   endurance: null,     // G6 선택 입력: 심폐지구력(성인 왕복오래달리기 / 어르신 2분제자리걷기)
 };
@@ -2085,6 +2133,7 @@ function snapshot(){
     age: state.age, sex: state.sex, ageGbn: state.ageGbn,
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
+    credit: state.credit, creditLog: state.creditLog,
     gripKg: state.gripKg, endurance: state.endurance,
     purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
@@ -2130,6 +2179,8 @@ function applyProfile(saved){
   state.history = Array.isArray(saved?.history) ? saved.history : [];
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
+  state.credit = Number.isFinite(saved?.credit) ? saved.credit : 0;
+  state.creditLog = Array.isArray(saved?.creditLog) ? saved.creditLog : [];
   state.gripKg = saved?.gripKg ?? null;
   state.endurance = saved?.endurance ?? null;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
@@ -2261,6 +2312,8 @@ async function doDelete(){
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
+  state.credit = 0;
+  state.creditLog = [];
   state.commute = null;
   state.styleTest = null;
   $('authEmail').value = '';
@@ -2284,6 +2337,8 @@ async function logout(){
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
+  state.credit = 0;
+  state.creditLog = [];
   state.sports = [];
   state.sportsDone = false;
   state.commute = null;
@@ -2319,6 +2374,8 @@ async function resetSettings(){
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
+  state.credit = 0;
+  state.creditLog = [];
   state.commute = null;
   state.styleTest = null;
   state.flexibility = null;
@@ -3402,6 +3459,7 @@ function axisOrder(항목별){
 }
 
 function renderProfile(){
+  renderCredit();
   const r = state.result;
   if (!r) return;
   $('profileAge').textContent = Math.round(r.체력나이);
@@ -4135,6 +4193,7 @@ let recoAt = 0;
 let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
+let recoAiReady = false;   // 서버에 키가 있는지 (I1)
 
 /* 체력나이 항목별에서 뒤처지는 요인 — 값이 큰(늙은) 쪽이 약점이다.
    성장기는 방향이 반대라 작은 쪽을 고른다. 체성분은 U자형이라 뺀다. */
@@ -4157,6 +4216,23 @@ async function renderRecommend(){
   const 약점 = weakFactors();
   const 목표격차 = (state.result?.체력나이 != null && state.targetAge != null)
     ? Math.max(0, state.result.체력나이 - state.targetAge) : null;
+
+  // AI 방식은 이용권을 한 번 쓴다. 모자라면 무료로 내려간다 (I1).
+  let ai쓰기 = false;
+  if (recoMode === 'ai') {
+    if (!recoAiReady) {
+      recoMode = 'free';
+    } else if ((state.credit || 0) < AI_PRICE) {
+      recoMode = 'free';
+      paintRecoMode();
+      box.innerHTML = `<div class="rec-empty">이용권이 모자라요.<br/>
+        프로필에서 충전하면 AI 추천을 쓸 수 있어요.</div>`;
+      return;
+    } else {
+      ai쓰기 = true;
+    }
+  }
+
   try {
     const r = await API.recommendRoutines({
       age_gbn: pg,
@@ -4166,10 +4242,22 @@ async function renderRecommend(){
       target_gap: 목표격차,
       week: programWeek(),
       limit: 12,
+      ai: ai쓰기 ? 1 : 0,
     });
     recoList = r.추천 || [];
     recoCare = r.조심할부위 || [];
     recoBy = r.출처 || '점수';
+    recoAiReady = !!r.ai가능;
+    // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
+    if (ai쓰기 && recoBy === 'ai') {
+      state.credit = Math.max(0, (state.credit || 0) - AI_PRICE);
+      state.creditLog.push({ date: todayIso(), 종류: '사용', 금액: AI_PRICE, 잔액: state.credit });
+      await saveProfile();
+      renderCredit();
+    } else if (ai쓰기) {
+      recoMode = 'free';
+    }
+    paintRecoMode();
     recoAt = 0;
     recoBack = [];
   } catch (e) {
@@ -4227,7 +4315,7 @@ function paintRecommend(){
       </div>
       ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
-      <div class="rec-by">${recoBy === 'ai' ? 'AI 가 순서와 설명을 다듬었어요' : '측정값과 고른 것들로 골랐어요'}</div>
+      <div class="rec-by">${recoBy === 'ai' ? `AI 가 다듬었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
         <button type="button" class="reco-btn" onclick="backRecommend()" ${recoBack.length ? '' : 'disabled'}>이전 루틴</button>
         <button type="button" class="reco-btn" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
@@ -4264,6 +4352,100 @@ async function useRecommend(){
     await saveProfile();
   }
   goTo('s3');
+}
+
+/* ---------------------------------------------------------------------------
+   AI 추천 이용권 (I1) — 추천을 두 방식으로 나눈다.
+     무료  가지고 있는 데이터로 점수를 매겨 고른다 (지금까지와 같다)
+     유료  거기에 AI 를 한 번 불러 순서와 설명을 다듬는다. 1회 100원
+   미리 충전해 두고 쓰며, 잔액과 내역은 프로필에서 본다.
+
+   ⚠ 지금 결제는 시연용 모의 승인이다. 실제 카드 결제는 PG 계약과 사업자
+   등록이 필요하고, 카드 번호를 앱이 직접 받아서는 안 된다. 그래서 결제창은
+   흐름만 보여주고 카드 정보를 묻지 않는다.
+   --------------------------------------------------------------------------- */
+const AI_PRICE = 100;                       // AI 추천 1회 값(원)
+const PAY_PACKS = [1000, 3000, 5000];       // 충전 단위(원)
+let recoMode = 'free';
+let payPick = PAY_PACKS[0];
+
+const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+
+function creditTimes(){ return Math.floor((state.credit || 0) / AI_PRICE); }
+
+/* 프로필의 이용권 블록 */
+function renderCredit(){
+  const box = $('creditCard');
+  if (!box) return;
+  const 횟수 = creditTimes();
+  $('creditAmt').textContent = won(state.credit || 0);
+  $('creditTimes').textContent = `AI 추천 ${횟수}회`;
+  $('creditState').textContent = 횟수
+    ? `충전돼 있어요. AI 추천을 ${횟수}번 더 쓸 수 있습니다.`
+    : '아직 충전하지 않았어요. 무료 추천은 그대로 쓸 수 있어요.';
+  const log = [...(state.creditLog || [])].reverse().slice(0, 5);
+  $('creditLog').innerHTML = log.length
+    ? log.map(e => `<div class="rec-item">
+        <div class="rec-date">${fmtDate(e.date)}</div>
+        <div class="rec-name">${e.종류} ${won(e.금액)}</div>
+        <div class="rec-way">남은 ${won(e.잔액)}</div>
+      </div>`).join('')
+    : '';
+}
+
+/* 결제창 — 카드 정보를 묻지 않는다. 금액만 고르고 모의 승인한다. */
+function openPaySheet(){
+  payPick = PAY_PACKS[0];
+  openSheet('이용권 충전', paySheetHtml());
+}
+
+function paySheetHtml(){
+  const 목록 = PAY_PACKS.map(v => `
+    <button type="button" class="${v === payPick ? 'on' : ''}" onclick="pickPay(${v})">
+      <span>AI 추천 ${v / AI_PRICE}회</span><b>${won(v)}</b>
+    </button>`).join('');
+  return `
+    <div class="pay-pick">${목록}</div>
+    <div class="pay-warn">시연용 모의 결제입니다. 카드 정보를 받지 않고 실제로 돈이
+      빠져나가지 않아요. 실제 결제를 붙이려면 사업자 등록과 PG 계약이 필요합니다.</div>
+    <button type="button" class="pay-btn" onclick="confirmPay()">${won(payPick)} 결제하기</button>
+    <div class="pay-note">충전한 이용권은 AI 추천에만 쓰입니다. 무료 추천은 언제나 그대로예요.</div>`;
+}
+
+function pickPay(v){
+  payPick = v;
+  $('sheetBody').innerHTML = paySheetHtml();
+}
+
+async function confirmPay(){
+  const 금액 = payPick;
+  state.credit = (state.credit || 0) + 금액;
+  if (!Array.isArray(state.creditLog)) state.creditLog = [];
+  state.creditLog.push({ date: todayIso(), 종류: '충전', 금액, 잔액: state.credit });
+  await saveProfile();
+  closeSheet();
+  renderCredit();
+  if (document.querySelector('.screen.active')?.id === 's12') paintRecoMode();
+}
+
+/* 추천 방식 고르기 */
+function setRecoMode(mode){
+  if (mode === 'ai' && !recoAiReady) return;
+  recoMode = mode;
+  paintRecoMode();
+  renderRecommend();
+}
+
+function paintRecoMode(){
+  document.querySelectorAll('#recoMode button').forEach(b =>
+    b.classList.toggle('on', b.dataset.mode === recoMode));
+  const ai = document.querySelector('#recoMode button[data-mode="ai"]');
+  if (!ai) return;
+  ai.disabled = !recoAiReady;
+  const 횟수 = creditTimes();
+  ai.querySelector('.mode-sub').textContent = !recoAiReady
+    ? '관리자가 키를 등록하면 켜져요'
+    : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음` : `1회 ${AI_PRICE}원 · 충전 필요`);
 }
 
 /* ---- 시작 ---- */

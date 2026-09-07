@@ -35,6 +35,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import routines as rt, bodycomp as bc, hometest as ht, geo
     from backend import sports as sp
     from backend import style_test as st
+    from backend import workout_items as wi
     from backend import route
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
@@ -46,6 +47,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import geo                              # noqa: E402
     import sports as sp                     # noqa: E402
     import style_test as st                 # noqa: E402
+    import workout_items as wi              # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -905,6 +907,17 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
         raise HTTPException(400, str(e))
     out["종목"] = sp.resolve(out["유형"]["추천종목"])   # 화면이 이름·아이콘을 바로 그리게
     return out
+
+
+# ---------- 11. 당일 기록 종목 ----------
+
+@app.get("/workout-items")
+def get_workout_items() -> dict:
+    """당일 기록 작성 화면이 나열할 운동 종목. 화면이 그대로 그린다."""
+    try:
+        return wi.catalog()
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
 
 
 # ---------- 약관 · 개인정보처리방침 ----------

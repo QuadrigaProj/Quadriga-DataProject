@@ -471,6 +471,29 @@
   .program-note{ font-size:13px; color:var(--muted); margin-top:8px; line-height:1.6; }
   .program-note b{ color:var(--ink); }
 
+  /* ===================== SCREEN 11 : 당일 기록 작성 (G3·G4) ===================== */
+  .wlog-group{ margin-top:22px; }
+  .wlog-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:6px; }
+  .wlog-row{ display:flex; gap:10px; padding:11px 8px; border-bottom:1px solid var(--line);
+             border-radius:12px; }
+  .wlog-row:last-child{ border-bottom:none; }
+  .wlog-row.on{ background:var(--pine-tint); border-bottom-color:transparent; }
+  .wlog-picto{ width:26px; height:26px; flex-shrink:0; margin-top:2px; }
+  .wlog-main{ flex:1; min-width:0; }
+  .wlog-name{ font-size:15px; }
+  .wlog-fields{ display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+  .wlog-field{ display:flex; align-items:center; gap:4px; }
+  .wlog-field input{ width:58px; padding:7px 8px; border:1px solid var(--line);
+                     border-radius:9px; background:var(--paper); color:var(--ink);
+                     font:inherit; font-size:14px; }
+  .wlog-unit{ font-size:12px; color:var(--muted); }
+  .wlog-count{ font-size:13px; color:var(--muted); margin-top:4px; }
+  .rec-log-btn{ width:100%; margin-top:14px; padding:12px 0; border-radius:12px;
+                border:1.5px solid var(--pine); background:var(--paper);
+                color:var(--pine-deep); font:inherit; font-size:15px; font-weight:600;
+                cursor:pointer; }
+  .rec-log-btn:hover{ background:var(--pine-tint); }
+
   /* ===================== SCREEN 6 : 분기 점검 ===================== */
   .compare-wrap{ display:flex; align-items:center; justify-content:center; gap:18px; margin-top:20px; }
   .compare-block{ text-align:center; }
@@ -1298,6 +1321,12 @@
       <div class="rec-block">
         <div class="rec-head">운동한 날</div>
         <div id="recList"></div>
+        <button type="button" class="rec-log-btn" onclick="goTo('s11')">당일 기록 작성</button>
+      </div>
+
+      <div class="rec-block" id="recManualBlock" style="display:none;">
+        <div class="rec-head">직접 적은 운동</div>
+        <div id="recManual"></div>
       </div>
 
       <div class="rec-block" id="recMeasureBlock" style="display:none;">
@@ -1394,6 +1423,19 @@
     </div>
   </section>
 
+  <!-- ============ SCREEN 11 : 당일 기록 작성 ============ -->
+  <section class="screen" id="s11">
+    <div class="content">
+      <h1 class="title">오늘 한 운동을<br/>적어주세요</h1>
+      <p class="sub" id="logSub">루틴 말고 다르게 운동한 날에 씁니다. 값을 넣은 종목만 저장돼요.</p>
+      <div id="logGroups"></div>
+    </div>
+    <div class="footer-area">
+      <button class="btn btn-primary" id="logSaveBtn" onclick="saveDailyLog()">저장</button>
+      <button class="btn btn-text" onclick="goTo('s7')">그만두기</button>
+    </div>
+  </section>
+
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
   <section class="screen" id="s6">
     <div class="content">
@@ -1475,6 +1517,7 @@ const state = {
   measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 결과가 나올 때마다 append (같은 날 여러 번 재면 모두 남긴다)
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
+  workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
 };
 
 const PURPOSE_LABEL = {
@@ -1935,7 +1978,7 @@ function snapshot(){
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
     sports: state.sports, sportsDone: state.sportsDone,
-    history: state.history, measureLog: state.measureLog,
+    history: state.history, measureLog: state.measureLog, workoutLog: state.workoutLog,
     commute: state.commute,
     styleTest: state.styleTest,
     updated: new Date().toISOString().slice(0, 10),
@@ -1973,6 +2016,7 @@ function applyProfile(saved){
   state.sportsDone = !!saved?.sportsDone && state.sports.length > 0;
   state.history = Array.isArray(saved?.history) ? saved.history : [];
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
+  state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
   if (!state.measureLog.length && state.first?.결과?.체력나이 != null) {
     const f = state.first.결과;
@@ -2099,6 +2143,7 @@ async function doDelete(){
   state.purpose = null;
   state.history = [];
   state.measureLog = [];
+  state.workoutLog = [];
   state.commute = null;
   state.styleTest = null;
   $('authEmail').value = '';
@@ -2121,6 +2166,7 @@ async function logout(){
   state.routineLog = [];
   state.history = [];
   state.measureLog = [];
+  state.workoutLog = [];
   state.sports = [];
   state.sportsDone = false;
   state.commute = null;
@@ -2155,6 +2201,7 @@ async function resetSettings(){
   state.routineLog = [];
   state.history = [];
   state.measureLog = [];
+  state.workoutLog = [];
   state.commute = null;
   state.styleTest = null;
   state.flexibility = null;
@@ -2267,6 +2314,7 @@ async function renderRecords(){
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
 
   renderMeasureRecords();
+  renderManualRecords();
 }
 
 /* 점검 기록 (G1) — measureLog 한 줄이 측정 한 번이다.
@@ -2451,6 +2499,7 @@ function goTo(id){
   if(id === 's6') renderRecheck();
   if(id === 's9') renderCalendar();
   if(id === 's10') renderStyleTest();
+  if(id === 's11') renderDailyLog();
 }
 
 /* ---- 화면 1 : 기본 정보 ---- */
@@ -3353,7 +3402,18 @@ let serverPoints = [];       // 계정의 서버 스냅샷에서 뽑은 측정 �
 /* 지난 기간 + 현재 기간의 루틴 기록 전부 */
 function allRoutineLog(){
   const past = (state.history || []).flatMap(h => Array.isArray(h.routineLog) ? h.routineLog : []);
-  return [...past, ...(state.routineLog || [])];
+  // 직접 적은 운동도 '운동한 날' 이다 (G3). 날짜 Set 으로 세므로 루틴과 겹쳐도 두 번 세지 않는다.
+  const manual = (state.workoutLog || [])
+    .filter(w => w && w.date && (w.items || []).length)
+    .map(w => ({ date: w.date, name: manualLogName(w), done: true, 직접: true }));
+  return [...past, ...(state.routineLog || []), ...manual];
+}
+
+/* 직접 기록 한 줄을 이름으로 — '스쿼트 외 2종목' */
+function manualLogName(w){
+  const names = (w.items || []).map(x => x.이름);
+  if (!names.length) return '직접 기록';
+  return names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}종목`;
 }
 
 /* 측정 시점 목록(날짜 오름차순, 날짜당 하나 — 같은 날 여러 번 쟀으면 마지막 값).
@@ -3729,6 +3789,127 @@ function styleStartPurpose(){
   if (key) selectPurpose(key);
   goTo('s2');
 }
+
+/* ---------------------------------------------------------------------------
+   당일 기록 작성 (G3·G4) — 루틴을 따르지 않고 따로 운동한 날을 직접 적는다.
+   종목·단위는 /workout-items(data/sample/workout_items.json)가 정한다.
+   화면은 받은 대로 그리기만 해서, 팀이 종목을 고쳐도 JSON 만 바꾸면 된다.
+   --------------------------------------------------------------------------- */
+let workoutCatalog = null;
+
+async function loadWorkoutCatalog(){
+  if (!workoutCatalog) workoutCatalog = await API.workoutItems();
+  return workoutCatalog;
+}
+
+/* 오늘 이미 적어둔 값이 있으면 채워서 이어 쓰게 한다. */
+async function renderDailyLog(){
+  const box = $('logGroups');
+  let cat;
+  try {
+    cat = await loadWorkoutCatalog();
+  } catch (e) {
+    box.innerHTML = '<div class="rec-empty">종목 목록을 불러오지 못했어요.<br/>잠시 뒤 다시 시도해주세요.</div>';
+    return;
+  }
+  const 오늘 = todayIso();
+  const 이전 = (state.workoutLog || []).find(w => w.date === 오늘);
+  const 값 = {};
+  (이전?.items || []).forEach(x => { 값[x.id] = x.값 || {}; });
+  $('logSub').textContent = 이전
+    ? '오늘 적어둔 기록이 있어요. 고쳐서 다시 저장하면 덮어씁니다.'
+    : '루틴 말고 다르게 운동한 날에 씁니다. 값을 넣은 종목만 저장돼요.';
+
+  box.innerHTML = cat.분류.map(g => {
+    const rows = cat.종목.filter(x => x.분류 === g).map(x => {
+      const 픽 = MOVE_CATEGORY_MEDIA[x.그림] || MOVE_CATEGORY_MEDIA.strength;
+      const fields = x.입력.map(k => `
+            <label class="wlog-field">
+              <input type="number" min="0" step="any" inputmode="decimal"
+                     data-item="${x.id}" data-key="${k}"
+                     aria-label="${x.이름} ${k}"
+                     value="${값[x.id]?.[k] ?? ''}" oninput="markLogRow('${x.id}')" />
+              <span class="wlog-unit">${cat.단위[k] || k}</span>
+            </label>`).join('');
+      return `
+        <div class="wlog-row" id="wlog-${x.id}">
+          <img class="wlog-picto" src="${픽.svg}" alt="" style="color:#1F4136" />
+          <div class="wlog-main">
+            <div class="wlog-name">${x.이름}</div>
+            <div class="wlog-fields">${fields}</div>
+          </div>
+        </div>`;
+    }).join('');
+    return `<div class="wlog-group"><div class="wlog-head">${g}</div>${rows}</div>`;
+  }).join('');
+
+  cat.종목.forEach(x => markLogRow(x.id));
+  paintLogSaveBtn();
+}
+
+/* 값이 하나라도 들어간 종목은 눈에 띄게 — 다 적고 나서 훑어보기 쉽게. */
+function markLogRow(id){
+  const row = $(`wlog-${id}`);
+  if (row) row.classList.toggle('on', collectLogItem(id) !== null);
+  paintLogSaveBtn();
+}
+
+/* 한 종목의 입력값을 모은다. 0 보다 큰 값이 하나도 없으면 null (안 한 종목). */
+function collectLogItem(id){
+  const inputs = [...document.querySelectorAll(`#logGroups input[data-item="${id}"]`)];
+  const 값 = {};
+  inputs.forEach(el => {
+    const v = Number(el.value);
+    if (el.value !== '' && Number.isFinite(v) && v > 0) 값[el.dataset.key] = v;
+  });
+  return Object.keys(값).length ? 값 : null;
+}
+
+function collectLogItems(){
+  if (!workoutCatalog) return [];
+  return workoutCatalog.종목
+    .map(x => ({ id: x.id, 이름: x.이름, 값: collectLogItem(x.id) }))
+    .filter(x => x.값);
+}
+
+function paintLogSaveBtn(){
+  const btn = $('logSaveBtn');
+  if (!btn) return;
+  const n = collectLogItems().length;
+  btn.disabled = !n;
+  btn.textContent = n ? `${n}종목 저장` : '적은 종목이 없어요';
+}
+
+/* 하루에 하나. 같은 날 다시 저장하면 덮어쓴다. */
+async function saveDailyLog(){
+  const items = collectLogItems();
+  if (!items.length) return;
+  const 오늘 = todayIso();
+  if (!Array.isArray(state.workoutLog)) state.workoutLog = [];
+  state.workoutLog = state.workoutLog.filter(w => w.date !== 오늘);
+  state.workoutLog.push({ date: 오늘, items });
+  await saveProfile();
+  goTo('s7');
+}
+
+/* 기록 화면의 '직접 적은 운동' — 최근 것부터. */
+function renderManualRecords(){
+  const box = $('recManualBlock');
+  const log = [...(state.workoutLog || [])].filter(w => (w.items || []).length)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  if (!log.length) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  $('recManual').innerHTML = log.slice(0, 20).map(w => `
+        <div class="rec-item">
+          <div class="rec-date">${fmtDate(w.date)}</div>
+          <div class="rec-name">${manualLogName(w)}
+            <div class="wlog-count">${w.items.map(x => `${x.이름} ${Object.entries(x.값).map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ')}`).join(' / ')}</div>
+          </div>
+        </div>`).join('');
+}
+
+/* 화면에 붙이는 단위 — /workout-items 의 단위표와 같다(오프라인 대비 사본). */
+const WLOG_UNIT = { 세트: '세트', 횟수: '회', 무게: 'kg', 시간: '분', 거리: 'km' };
 
 /* ---- 시작 ---- */
 (async function init(){

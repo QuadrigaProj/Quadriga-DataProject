@@ -147,37 +147,38 @@ def test_방_목록_참여여부():
 def test_비공개_단체방은_비밀번호를_검증하고_목록에_표시한다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
+    # L2: 비밀번호는 숫자만 받는다
     rid = a.post("/community/rooms", json={
-        "name": "비밀 러닝", "room_type": "group", "is_private": True, "password": "run1234",
+        "name": "비밀 러닝", "is_private": True, "password": "824135",
     }).json()["id"]
     room = b.get("/community/rooms").json()["rooms"][0]
     assert room["종류"] == "group" and room["비공개"] is True
-    assert b.post(f"/community/rooms/{rid}/join", json={"password": "wrong"}).status_code == 403
-    assert b.post(f"/community/rooms/{rid}/join", json={"password": "run1234"}).status_code == 200
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "999999"}).status_code == 403
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "824135"}).status_code == 200
     with auth.db() as con:
         saved = con.execute("SELECT password_hash FROM chat_rooms WHERE id=?", (rid,)).fetchone()
-    assert saved["password_hash"] != "run1234"
+    assert saved["password_hash"] != "824135"
 
 
 def test_방장만_비공개방_비밀번호를_바꾼다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     rid = a.post("/community/rooms", json={
-        "name": "비밀 모임", "is_private": True, "password": "old1234",
+        "name": "비밀 모임", "is_private": True, "password": "111111",
     }).json()["id"]
-    assert b.put(f"/community/rooms/{rid}/password", json={"password": "new1234"}).status_code == 403
-    assert a.put(f"/community/rooms/{rid}/password", json={"password": "new1234"}).status_code == 200
-    assert b.post(f"/community/rooms/{rid}/join", json={"password": "old1234"}).status_code == 403
-    assert b.post(f"/community/rooms/{rid}/join", json={"password": "new1234"}).status_code == 200
+    assert b.put(f"/community/rooms/{rid}/password", json={"password": "222222"}).status_code == 403
+    assert a.put(f"/community/rooms/{rid}/password", json={"password": "222222"}).status_code == 200
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "111111"}).status_code == 403
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "222222"}).status_code == 200
 
 
 def test_개인_채팅방은_상대만_참여자로_추가한다():
+    """L1: 개인 채팅방은 방 만들기로 못 만든다. 상대 아이디로 열 때 생긴다."""
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     c = _login(app, "c@x.com", "다")
-    rid = a.post("/community/rooms", json={
-        "name": "가와 나", "room_type": "direct", "member_email": "b@x.com",
-    }).json()["id"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
     room = b.get("/community/rooms").json()["rooms"][0]
     assert room["종류"] == "direct" and room["참여중"] is True and room["인원"] == 2
     assert c.post(f"/community/rooms/{rid}/join", json={}).status_code == 403
@@ -313,4 +314,84 @@ def test_친구_기능도_로그인이_필요하다():
     c = TestClient(app)
     assert c.get("/community/friends").status_code == 401
     assert c.post("/community/friends", json={"handle": "abcdef"}).status_code == 401
+
+
+# ---------- L1·L2. 개인 채팅은 '채팅 보내기' 로만, 방 만들기는 단체만 ----------
+
+def test_방_만들기로는_개인_채팅방을_못_만든다():
+    """상대를 지정하는 자리가 아예 없어야 한다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    r = a.post("/community/rooms", json={
+        "name": "몰래", "room_type": "direct", "member_email": "b@x.com"})
+    assert r.status_code == 200                      # 남는 값은 무시되고
+    rooms = a.get("/community/rooms").json()["rooms"]
+    assert [x["종류"] for x in rooms] == ["group"]    # 단체방으로 만들어진다
+
+
+def test_비공개_방은_숫자_비밀번호가_필수다():
+    a = _login(app, "a@x.com", "가")
+    for 나쁜 in (None, "", "   ", "abc123", "12", "1" * 13, "12 34", "１２３４"):
+        r = a.post("/community/rooms", json={"name": "방", "is_private": True, "password": 나쁜})
+        assert r.status_code in (400, 422), 나쁜
+    assert a.post("/community/rooms",
+                  json={"name": "방", "is_private": True, "password": "0417"}).status_code == 200
+
+
+def test_공개_방은_비밀번호가_없어도_된다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "누구나"}).json()["id"]
+    assert b.post(f"/community/rooms/{rid}/join", json={}).status_code == 200
+
+
+def test_채팅_보내기는_같은_방을_두_번_만들지_않는다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    r1 = a.post("/community/direct", json={"handle": hb}).json()
+    r2 = a.post("/community/direct", json={"handle": hb}).json()
+    assert r1["새로"] is True and r2["새로"] is False
+    assert r1["room_id"] == r2["room_id"]
+    # 상대 쪽에서 열어도 같은 방이다
+    r3 = b.post("/community/direct", json={"handle": ha}).json()
+    assert r3["room_id"] == r1["room_id"] and r3["새로"] is False
+
+
+def test_친구가_아니어도_채팅을_보낼_수_있다():
+    """아이디를 알면 보낼 수 있다 — 게시글 글쓴이에게 바로 보내는 길이다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    assert a.post("/community/direct", json={"handle": hb}).status_code == 200
+
+
+def test_나_자신과는_채팅방이_안_생긴다():
+    a = _login(app, "a@x.com", "가")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    assert a.post("/community/direct", json={"handle": ha}).status_code == 400
+
+
+def test_없는_아이디로는_채팅방이_안_생긴다():
+    a = _login(app, "a@x.com", "가")
+    assert a.post("/community/direct", json={"handle": "zzzzzz"}).status_code == 404
+
+
+def test_개인_채팅방은_상대_이름으로_보인다():
+    """'개인 채팅' 이라는 방 이름 대신 상대 닉네임을 보여 준다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/direct", json={"handle": hb})
+    방 = a.get("/community/rooms").json()["rooms"][0]
+    assert 방["이름"] == "나"
+    assert 방["상대"] == {"닉네임": "나", "아이디": hb}
+    # 상대 쪽에서는 내 이름으로 보인다
+    assert b.get("/community/rooms").json()["rooms"][0]["이름"] == "가"
+
+
+def test_채팅_열기도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.post("/community/direct", json={"handle": "abcdef"}).status_code == 401
 

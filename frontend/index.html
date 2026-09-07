@@ -471,6 +471,17 @@
   .program-note{ font-size:13px; color:var(--muted); margin-top:8px; line-height:1.6; }
   .program-note b{ color:var(--ink); }
 
+  /* 잰 사람만 넣는 선택 항목 (G6) */
+  .more-card{ margin-top:18px; border:1px dashed var(--line); border-radius:var(--radius-lg);
+              padding:16px 18px; }
+  .more-toggle{ width:100%; display:flex; align-items:center; justify-content:space-between;
+                gap:8px; background:none; border:none; padding:0; font:inherit;
+                font-size:15px; color:var(--ink); cursor:pointer; text-align:left; }
+  .more-toggle .more-mark{ color:var(--muted); font-size:13px; flex-shrink:0; }
+  .more-desc{ font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.6; }
+  .more-body{ margin-top:14px; }
+  .more-body .measure-name{ font-size:14.5px; }
+
   /* ===================== SCREEN 11 : 당일 기록 작성 (G3·G4) ===================== */
   .wlog-group{ margin-top:22px; }
   .wlog-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:6px; }
@@ -1026,6 +1037,30 @@
         </div>
       </div>
 
+      <!-- 잰 사람만 넣는 선택 항목 (G6) — 근력·심폐지구력 -->
+      <div class="more-card" id="moreCard">
+        <button type="button" class="more-toggle" onclick="toggleMoreMeasure()"
+                aria-expanded="false" aria-controls="moreBody">
+          <span>따로 잰 값이 있나요? <b>근력 · 심폐지구력</b></span>
+          <span class="more-mark" id="moreMark">펼치기</span>
+        </button>
+        <div class="more-desc" id="moreDesc">
+          악력계나 체력인증센터에서 잰 값이 있으면 넣어주세요. 넣은 항목만 체력나이에 더해집니다.
+        </div>
+        <div class="more-body" id="moreBody" hidden>
+          <div class="measure-name">악력</div>
+          <div class="measure-desc">더 센 손 기준. 몸무게로 나눠 상대악력으로 봅니다</div>
+          <div class="field-row"><input class="field-input" id="gripInput" type="number"
+               min="1" step="any" placeholder="예: 42" /><div class="field-unit">kg</div></div>
+          <div id="enduranceRow" style="margin-top:14px;">
+            <div class="measure-name" id="enduranceName">왕복오래달리기</div>
+            <div class="measure-desc" id="enduranceDesc">20m 왕복 달리기 횟수</div>
+            <div class="field-row"><input class="field-input" id="enduranceInput" type="number"
+                 min="0" step="any" placeholder="예: 60" /><div class="field-unit">회</div></div>
+          </div>
+        </div>
+      </div>
+
       <!-- InBody 추가 항목 -->
       <div id="inbodyGroup" hidden>
         <div class="measure-card">
@@ -1518,6 +1553,8 @@ const state = {
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
+  gripKg: null,        // G6 선택 입력: 악력(kg) — 몸무게로 나눠 상대악력으로 본다
+  endurance: null,     // G6 선택 입력: 심폐지구력(성인 왕복오래달리기 / 어르신 2분제자리걷기)
 };
 
 const PURPOSE_LABEL = {
@@ -1613,6 +1650,7 @@ function commitResult(){
    홈 체력등급(homeGradeBlock·state.home)과 카드 타이머도 처음 상태로 되돌린다. */
 function resetMeasureForm(){
   ['flexInput', 'strengthInput', 'jumpInput', 'kneePushupInput', 'highKneeInput',
+   'gripInput', 'enduranceInput',
    'waistInput', 'smmInput', 'bfpInput', 'tbwInput'].forEach(id => { const el = $(id); if (el) el.value = ''; });
   ['resultBlock', 'peerBlock', 'genericResult', 'homeGradeBlock', 'nextBtn1'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
   const calc = $('calcBtn');
@@ -1973,6 +2011,7 @@ function snapshot(){
     age: state.age, sex: state.sex, ageGbn: state.ageGbn,
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
+    gripKg: state.gripKg, endurance: state.endurance,
     purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
     first: state.first, result: state.result,
@@ -2017,6 +2056,8 @@ function applyProfile(saved){
   state.history = Array.isArray(saved?.history) ? saved.history : [];
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
+  state.gripKg = saved?.gripKg ?? null;
+  state.endurance = saved?.endurance ?? null;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
   if (!state.measureLog.length && state.first?.결과?.체력나이 != null) {
     const f = state.first.결과;
@@ -2034,6 +2075,8 @@ function applyProfile(saved){
   $('strengthInput').value = saved?.strength ?? '';
   $('heightInput').value = saved?.height ?? '';
   $('weightInput').value = saved?.weight ?? '';
+  $('gripInput').value = saved?.gripKg ?? '';
+  $('enduranceInput').value = saved?.endurance ?? '';
   $('commuteFrom').value = state.commute?.from ?? '';
   $('commuteTo').value   = state.commute?.to ?? '';
   $('commuteMeta').textContent = '';
@@ -2528,6 +2571,7 @@ function onAgeChange(){
   if (strengthThumb) strengthThumb.hidden = item.name !== '윗몸일으키기';
   $('timerBox').style.display = item.timer ? 'flex' : 'none';
   if (!item.timer) resetTimer('situp');   // 타이머 없는 항목(성장기 제자리 멀리뛰기)으로 바뀌면 돌던 타이머를 멈추고 되돌린다
+  syncMoreMeasure();                      // 연령군마다 심폐 항목이 다르다 (G6)
 }
 
 function selectSex(sex){
@@ -2545,6 +2589,11 @@ function syncInputs(){
   state.strength = Number.isFinite(s) ? s : null;
   state.height = parseFloat($('heightInput').value) || null;
   state.weight = parseFloat($('weightInput').value) || null;
+  // 선택 항목 (G6) — 잰 사람만. 0 이하는 안 잰 것으로 본다
+  const g = parseFloat($('gripInput').value);
+  state.gripKg = Number.isFinite(g) && g > 0 ? g : null;
+  const e = parseFloat($('enduranceInput').value);
+  state.endurance = Number.isFinite(e) && e >= 0 && CARDIO_LABEL[state.ageGbn] ? e : null;
 }
 
 /* 현재 연령군에서 측정하는 근력 항목 이름 */
@@ -2557,7 +2606,38 @@ function measurement(){
     age_gbn: state.ageGbn, sex: state.sex, age: state.age,
     flexibility: state.flexibility, strength: state.strength,
     height_cm: state.height, weight_kg: state.weight,
+    grip_kg: state.gripKg, endurance: state.endurance,   // 잰 사람만 (G6)
   };
+}
+
+/* 선택 항목 펼치기 (G6) */
+function toggleMoreMeasure(){
+  const body = $('moreBody');
+  body.hidden = !body.hidden;
+  $('moreMark').textContent = body.hidden ? '펼치기' : '접기';
+  document.querySelector('.more-toggle').setAttribute('aria-expanded', String(!body.hidden));
+}
+
+/* 심폐 항목은 연령군마다 다르고 성장기는 공개 분포가 없다 (G6) */
+const CARDIO_LABEL = {
+  '성인':   { 이름: '왕복오래달리기', 설명: '20m 왕복 달리기 횟수' },
+  '어르신': { 이름: '2분제자리걷기',  설명: '2분 동안 제자리 걸음 횟수' },
+};
+
+function syncMoreMeasure(){
+  const c = CARDIO_LABEL[state.ageGbn];
+  const row = $('enduranceRow');
+  if (!row) return;
+  row.hidden = !c;
+  if (c) {
+    $('enduranceName').textContent = c.이름;
+    $('enduranceDesc').textContent = c.설명;
+  } else {
+    $('enduranceInput').value = '';
+  }
+  $('moreDesc').textContent = c
+    ? '악력계나 체력인증센터에서 잰 값이 있으면 넣어주세요. 넣은 항목만 체력나이에 더해집니다.'
+    : '악력을 잰 값이 있으면 넣어주세요. 이 연령대는 공개 데이터에 심폐지구력 항목이 없어 악력만 받습니다.';
 }
 
 const isGrowth = () => state.ageGbn === '성장기';

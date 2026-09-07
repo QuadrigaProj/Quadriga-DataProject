@@ -325,3 +325,32 @@ def test_화면을_옮기면_목록이_닫힌다():
     goto = html.split("function goTo(id){")[1].split("\n}")[0]
     assert "renderMenu(id);" in goto
     assert "closeMenu();" in goto
+
+
+# ---------- G1 점검기록 선택 삭제 ----------
+
+def test_점검기록_선택_삭제_UI가_있다():
+    html = _index()
+    assert 'id="recDeleteBtn"' in html
+    assert 'onclick="deleteSelectedMeasures()"' in html
+    assert "삭제할 기록을 고르세요" in html
+    assert "function renderMeasureRecords()" in html
+    assert "function pickMeasure(i, on)" in html
+    assert "async function deleteSelectedMeasures()" in html
+
+
+def test_점검기록은_measureLog를_보여준다():
+    """달력·변화추이와 같은 배열을 읽어야 지운 결과가 함께 반영된다."""
+    html = _index()
+    body = html.split("function renderMeasureRecords()")[1].split("\nfunction pickMeasure")[0]
+    assert "state.measureLog" in body
+    # 서버 스냅샷 목록을 쓰던 옛 경로는 사라졌다
+    assert "const rows = (r.기록 || []).filter" not in html
+
+
+def test_삭제는_저장까지_한다():
+    html = _index()
+    body = html.split("async function deleteSelectedMeasures()")[1].split("\n}")[0]
+    assert "confirm(" in body            # 되돌릴 수 없으니 한 번 묻는다
+    assert "saveProfile()" in body       # 기기·계정 모두에 반영
+    assert "renderRecords()" in body

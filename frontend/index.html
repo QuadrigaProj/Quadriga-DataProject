@@ -332,6 +332,17 @@
              font-variant-numeric:tabular-nums; }
   .rec-name{ flex:1; min-width:0; }
   .rec-check{ color:var(--pine); font-weight:700; }
+  /* 점검 기록 고르기·지우기 (G1) */
+  .rec-pick{ cursor:pointer; }
+  .rec-pick input{ width:17px; height:17px; margin:0 10px 0 0; flex-shrink:0;
+                   accent-color:var(--pine); }
+  .rec-way{ font-size:12px; color:var(--muted); flex-shrink:0; }
+  .rec-actions{ margin-top:12px; }
+  .rec-del{ width:100%; padding:11px 0; border-radius:12px;
+            border:1px solid var(--line); background:var(--paper);
+            color:var(--clay); font:inherit; font-size:14px; font-weight:600; cursor:pointer; }
+  .rec-del:disabled{ color:var(--muted); cursor:default; }
+  .rec-del:not(:disabled):hover{ background:var(--amber-tint); }
   .rec-empty{
     padding:24px 18px; border-radius:16px; background:var(--bg);
     border:1px dashed var(--line); font-size:13px; color:var(--muted);
@@ -1281,6 +1292,11 @@
       <div class="rec-block" id="recMeasureBlock" style="display:none;">
         <div class="rec-head">점검 기록</div>
         <div id="recMeasures"></div>
+        <div class="rec-actions">
+          <button type="button" class="rec-del" id="recDeleteBtn" disabled
+                  onclick="deleteSelectedMeasures()">삭제할 기록을 고르세요</button>
+        </div>
+        <div class="rec-note" id="recDeleteNote"></div>
       </div>
     </div>
 
@@ -2229,19 +2245,61 @@ async function renderRecords(){
     : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
 
-  // 계정이면 서버에 남은 점검 기록도 같이 보여준다
+  renderMeasureRecords();
+}
+
+/* 점검 기록 (G1) — measureLog 한 줄이 측정 한 번이다.
+   달력·변화추이가 읽는 배열과 같아서, 여기서 지우면 그쪽에서도 함께 사라진다.
+   measureLog 는 스냅샷에 담겨 저장되므로 계정이면 서버에도 그대로 반영된다. */
+const MEASURE_WAY = { home: '홈 체력측정', inbody: 'InBody' };
+let measurePicked = new Set();
+
+function renderMeasureRecords(){
   const box = $('recMeasureBlock');
-  if (!state.account) { box.style.display = 'none'; return; }
-  try {
-    const r = await API.myMeasurements();
-    const rows = (r.기록 || []).filter(m => m.result?.체력나이 != null);
-    if (!rows.length) { box.style.display = 'none'; return; }
-    box.style.display = 'block';
-    $('recMeasures').innerHTML = rows.slice(0, 10).map(m => `<div class="rec-item">
-        <div class="rec-date">${m.updated || ''}</div>
-        <div class="rec-name">체력나이 ${Math.round(m.result.체력나이)}세</div>
-      </div>`).join('');
-  } catch (e) { box.style.display = 'none'; }
+  const note = $('recDeleteNote');
+  if (note) note.textContent = '';
+  const list = Array.isArray(state.measureLog) ? state.measureLog : [];
+  if (!list.length) { measurePicked.clear(); box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  // 고른 자리는 배열의 원래 위치로 기억한다 — 목록을 최신순으로 뒤집어 그려도 어긋나지 않는다
+  measurePicked = new Set([...measurePicked].filter(i => i < list.length));
+  const rows = list.map((m, i) => ({ m, i })).sort((a, b) => (a.m.date < b.m.date ? 1 : -1));
+  $('recMeasures').innerHTML = rows.map(({ m, i }) => `
+        <label class="rec-item rec-pick">
+          <input type="checkbox" ${measurePicked.has(i) ? 'checked' : ''}
+                 onchange="pickMeasure(${i}, this.checked)" />
+          <div class="rec-date">${fmtDate(m.date)}</div>
+          <div class="rec-name">체력나이 ${Math.round(m.체력나이)}세</div>
+          <div class="rec-way">${MEASURE_WAY[m.method] || ''}</div>
+        </label>`).join('');
+  paintMeasureDeleteBtn();
+}
+
+function pickMeasure(i, on){
+  if (on) measurePicked.add(i); else measurePicked.delete(i);
+  paintMeasureDeleteBtn();
+}
+
+function paintMeasureDeleteBtn(){
+  const btn = $('recDeleteBtn');
+  if (!btn) return;
+  const n = measurePicked.size;
+  btn.disabled = !n;
+  btn.textContent = n ? `선택한 ${n}개 삭제` : '삭제할 기록을 고르세요';
+}
+
+/* 고른 기록을 지운다. 되돌릴 수 없어서 한 번 묻는다. */
+async function deleteSelectedMeasures(){
+  const n = measurePicked.size;
+  if (!n) return;
+  if (!confirm(`점검 기록 ${n}개를 지울까요?
+달력과 변화추이에서도 사라지고, 되돌릴 수 없어요.`)) return;
+  state.measureLog = (state.measureLog || []).filter((_, i) => !measurePicked.has(i));
+  measurePicked.clear();
+  await saveProfile();
+  renderRecords();
+  const note = $('recDeleteNote');
+  if (note) note.textContent = `점검 기록 ${n}개를 지웠어요.`;
 }
 
 /* ---------------------------------------------------------------------------

@@ -934,7 +934,8 @@ def get_recommend_routines(
     style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
-    limit: int = Query(5, ge=1, le=20),
+    limit: int = Query(12, ge=1, le=30, description="난이도를 오갈 수 있게 넉넉히 준다"),
+    week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
 ) -> dict:
     """사용자 데이터로 250개 고정 루틴에 점수를 매겨 순위를 낸다.
@@ -946,7 +947,7 @@ def get_recommend_routines(
     picked = [s.strip() for s in (sports or "").split(",") if s.strip()]
     try:
         out = rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
-                          sports=picked, target_gap=target_gap, limit=limit)
+                          sports=picked, target_gap=target_gap, limit=limit, week=week)
     except (KeyError, FileNotFoundError) as e:
         raise HTTPException(404, str(e))
 

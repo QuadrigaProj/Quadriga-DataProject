@@ -354,3 +354,30 @@ def test_삭제는_저장까지_한다():
     assert "confirm(" in body            # 되돌릴 수 없으니 한 번 묻는다
     assert "saveProfile()" in body       # 기기·계정 모두에 반영
     assert "renderRecords()" in body
+
+
+# ---------- G2 변화추이 기간 직접 입력 ----------
+
+def test_전체_버튼이_직접_입력으로_바뀌었다():
+    html = _index()
+    assert 'onclick="setTrendPeriod(0)">전체</button>' not in html
+    assert 'id="trendCustomBtn"' in html
+    assert 'onclick="toggleTrendCustom()">직접</button>' in html
+
+
+def test_숫자와_단위를_고를_수_있다():
+    html = _index()
+    assert 'id="trendNum"' in html
+    assert 'id="trendUnit"' in html
+    for v, u in (("1", "일"), ("7", "주"), ("30", "개월")):
+        assert f'value="{v}"' in html and f">{u}</option>" in html, u
+    assert "function applyTrendCustom()" in html
+
+
+def test_기간_이름이_단위를_살린다():
+    """'최근 90일' 이 아니라 '최근 3개월' 로 보이게 trendLabel 을 쓴다."""
+    html = _index()
+    assert "let trendLabel" in html
+    assert "const label = trendLabel;" in html
+    body = html.split("function applyTrendCustom()")[1].split("\n}")[0]
+    assert "trendLabel = `최근 ${n}${unit}`;" in body

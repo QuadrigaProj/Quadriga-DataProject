@@ -35,8 +35,9 @@ def test_탭바에_달력이_들어갔다():
 
 
 def test_변화추이_기간_선택지가_있다():
+    """넷째 칸은 G2 에서 고정 '전체' 대신 직접 입력('직접')으로 바뀌었다."""
     html = _index()
-    for label in ("7일", "30일", "90일", "전체"):
+    for label in ("7일", "30일", "90일", "직접"):
         assert f">{label}</button>" in html
 
 

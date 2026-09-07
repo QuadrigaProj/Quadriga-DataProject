@@ -377,6 +377,17 @@
   .cal-legend .cal-dot.done{ background:var(--pine); }
   .cal-legend .cal-dot.measure{ background:var(--amber); }
   .seg.trend-seg button{ padding:9px 0; font-size:13.5px; }   /* .seg button(뒤에 선언) 보다 우선하도록 클래스 둘 */
+  /* 기간 직접 입력 (G2) — 숫자 + 단위(일·주·개월) */
+  .trend-custom{ display:flex; gap:8px; align-items:center; margin-top:10px; }
+  .trend-custom input, .trend-custom select{
+    padding:10px; border:1.5px solid var(--line); border-radius:12px;
+    background:#fff; color:var(--ink); font:inherit; font-size:15px;
+  }
+  .trend-custom input{ width:78px; }
+  .trend-custom .trend-apply{
+    flex:1; padding:10px 0; border:1.5px solid var(--pine); border-radius:12px;
+    background:var(--pine); color:#fff; font:inherit; font-size:15px; cursor:pointer;
+  }
   .trend-chart{ margin-top:14px; border:1px solid var(--line); border-radius:16px; padding:12px 10px 8px; background:var(--bg); }
   .trend-chart svg{ display:block; width:100%; height:auto; }
   .trend-empty{ font-size:13px; color:var(--muted); text-align:center; padding:18px 0; line-height:1.7; }
@@ -1327,7 +1338,17 @@
           <button type="button" data-days="7" onclick="setTrendPeriod(7)">7일</button>
           <button type="button" class="on" data-days="30" onclick="setTrendPeriod(30)">30일</button>
           <button type="button" data-days="90" onclick="setTrendPeriod(90)">90일</button>
-          <button type="button" data-days="0" onclick="setTrendPeriod(0)">전체</button>
+          <button type="button" id="trendCustomBtn" onclick="toggleTrendCustom()">직접</button>
+        </div>
+        <div class="trend-custom" id="trendCustom" hidden>
+          <input type="number" id="trendNum" min="1" max="999" step="1" value="6"
+                 inputmode="numeric" aria-label="기간 숫자" onkeydown="if(event.key==='Enter')applyTrendCustom()" />
+          <select id="trendUnit" aria-label="기간 단위">
+            <option value="1">일</option>
+            <option value="7" selected>주</option>
+            <option value="30">개월</option>
+          </select>
+          <button type="button" class="trend-apply" onclick="applyTrendCustom()">적용</button>
         </div>
         <div class="rec-stats">
           <div class="rec-stat"><div class="rec-num" id="trendCount">—</div><div class="rec-cap">운동 횟수</div></div>
@@ -3325,7 +3346,8 @@ const isoDay = (d) => d.toISOString().slice(0, 10);   // 임의의 Date 용 — 
 const pad2 = (n) => String(n).padStart(2, '0');
 let calYm = null;            // 달력에 보이는 달 { y, m(0~11) }
 let calSelected = null;      // 선택한 날짜 'yyyy-mm-dd'
-let trendDays = 30;          // 변화추이 기간(일). 0 = 전체
+let trendDays = 30;          // 변화추이 기간(일)
+let trendLabel = '최근 30일'; // 화면에 쓰는 이름 — '최근 3개월' 처럼 단위를 살린다
 let serverPoints = [];       // 계정의 서버 스냅샷에서 뽑은 측정 시점 (달력을 열 때마다 새로 받는다)
 
 /* 지난 기간 + 현재 기간의 루틴 기록 전부 */
@@ -3444,7 +3466,37 @@ function renderCalDay(){
 
 function setTrendPeriod(days){
   trendDays = days;
+  trendLabel = `최근 ${days}일`;
   document.querySelectorAll('#trendSeg button').forEach(b => b.classList.toggle('on', Number(b.dataset.days) === days));
+  $('trendCustom').hidden = true;
+  renderTrend();
+}
+
+/* 기간 직접 입력 (G2) — 넷째 칸은 고정된 '전체' 대신 숫자 + 단위를 받는다. */
+function toggleTrendCustom(){
+  const box = $('trendCustom');
+  box.hidden = !box.hidden;
+  if (!box.hidden) $('trendNum').focus();
+}
+
+function applyTrendCustom(){
+  const n = Math.floor(Number($('trendNum').value));
+  const unitSel = $('trendUnit');
+  const per = Number(unitSel.value);                       // 일 1 · 주 7 · 개월 30
+  const unit = unitSel.selectedOptions[0].textContent;
+  const note = $('trendNote');
+  if (!Number.isFinite(n) || n < 1) {
+    note.textContent = '기간은 1 이상의 숫자로 넣어주세요.';
+    return;
+  }
+  if (n * per > 3650) {
+    note.textContent = '10년 안으로 정해주세요.';
+    return;
+  }
+  trendDays = n * per;
+  trendLabel = `최근 ${n}${unit}`;
+  document.querySelectorAll('#trendSeg button')
+    .forEach(b => b.classList.toggle('on', b.id === 'trendCustomBtn'));
   renderTrend();
 }
 
@@ -3486,7 +3538,7 @@ function renderTrend(){
   const log = allRoutineLog();
   const workoutDays = new Set(log.filter(e => inRange(e.date)).map(e => e.date));
   const pts = measurePoints().filter(p => inRange(p.date));
-  const label = trendDays ? `최근 ${trendDays}일` : '전체 기간';
+  const label = trendLabel;
 
   $('trendCount').textContent = `${workoutDays.size}회`;
   const st = streakDays(log);

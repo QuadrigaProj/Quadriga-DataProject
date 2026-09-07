@@ -79,5 +79,59 @@ def test_화면에_루틴_추천이_붙어_있다():
     assert 'id="s12"' in html
     assert "label: '루틴 추천'" in html
     assert "async function renderRecommend()" in html
-    assert "function nextRecommend()" in html      # 다음 추천
+    # '다음 추천' 은 H3·H4 에서 네 버튼으로 갈라졌다
+    assert "function easierRecommend()" in html
+    assert "function harderRecommend()" in html
+    assert "function backRecommend()" in html
     assert "async function useRecommend()" in html
+
+
+# ---------- H2·H3·H4 상세 안내와 네 버튼 ----------
+
+def test_추천에_동작이_자세히_들어온다():
+    """H2: 어떤 루틴인지 종목과 단위수까지 한 페이지에 보여줄 재료."""
+    x = rc.for_user("성인", limit=3, week=5)["추천"][0]
+    assert x["steps"], "동작 목록이 없다"
+    assert x["예상시간분"]
+    단계 = {s["단계"] for s in x["steps"]}
+    assert {"준비운동", "본운동", "정리운동"} <= 단계
+    for s in x["steps"]:
+        assert s["동작"] and s["수행량"]          # 이름과 단위수
+        assert "체력요인" in s and "도구" in s
+
+
+def test_수행량은_주차에_따라_늘어난다():
+    앞 = rc.for_user("성인", limit=1, week=1)["강도"]
+    뒤 = rc.for_user("성인", limit=1, week=10)["강도"]
+    assert 뒤["세트"] >= 앞["세트"]
+    assert 뒤["반복"] > 앞["반복"]
+
+
+def test_난이도가_붙고_쉬움과_어려움이_모두_나온다():
+    """H3: '더 쉽게 / 더 어렵게' 로 오가려면 폭이 있어야 한다."""
+    xs = rc.for_user("성인", limit=12)["추천"]
+    점수 = [x["난이도점수"] for x in xs]
+    assert all(0 <= p <= 1 for p in 점수)
+    assert max(점수) > min(점수), "난이도가 모두 같으면 오갈 수 없다"
+    assert {x["난이도"] for x in xs} & {"쉬움", "보통", "어려움"}
+
+
+def test_난이도_계산은_구성을_따른다():
+    쉬움 = rc.difficulty([{"단계": "본운동", "체력요인": ["유연성"], "도구": "맨몸", "부담부위": []}])
+    어려움 = rc.difficulty([{"단계": "본운동", "체력요인": ["심폐지구력"], "도구": "의자",
+                          "부담부위": ["무릎"]}])
+    assert 쉬움 == 0.0 and 어려움 == 1.0
+    assert rc.difficulty_label(쉬움) == "쉬움"
+    assert rc.difficulty_label(어려움) == "어려움"
+
+
+def test_화면에_네_버튼이_순서대로_있다():
+    """H4 최종 순서: 이전 루틴, 더 쉬운 루틴, 더 어려운 루틴, 이 루틴으로 시작."""
+    html = client.get("/").text
+    # 기록 화면에도 같은 이름의 .rec-actions 가 있어 추천 카드 쪽으로 좁힌다
+    card = html.split("function paintRecommend()")[1]
+    actions = card.split('<div class="rec-actions">')[1].split("</div>")[0]
+    자리 = [actions.find(t) for t in
+           ("이전 루틴", "더 쉬운 루틴", "더 어려운 루틴", "이 루틴으로 시작")]
+    assert all(i >= 0 for i in 자리), 자리
+    assert 자리 == sorted(자리), "버튼 순서가 요구와 다르다"

@@ -498,8 +498,23 @@
   .rec-word{ font-size:14px; color:var(--pine-deep); background:var(--pine-tint);
              border-radius:12px; padding:11px 13px; margin-top:14px; line-height:1.6; }
   .rec-by{ font-size:11.5px; color:var(--muted); margin-top:12px; }
-  .rec-actions{ display:flex; gap:8px; margin-top:18px; }
-  .rec-actions .btn{ margin:0; min-height:52px; font-size:15px; }
+  .rec-level{ display:inline-block; margin-left:6px; padding:3px 9px; border-radius:999px;
+              background:var(--bg); color:var(--muted); font-size:12px; font-weight:700; }
+  .rec-level.hard{ background:var(--amber-tint); color:var(--clay); }
+  .rec-level.easy{ background:var(--pine-tint); color:var(--pine-deep); }
+  .rec-steps{ margin-top:16px; }
+  .rec-step{ display:flex; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .rec-step:last-child{ border-bottom:none; }
+  .rec-step-phase{ width:52px; flex-shrink:0; font-size:11.5px; color:var(--muted);
+                   padding-top:2px; }
+  .rec-step-main{ flex:1; min-width:0; }
+  .rec-step-name{ font-size:14.5px; }
+  .rec-step-sub{ font-size:12px; color:var(--muted); margin-top:3px; }
+  .rec-step-amt{ flex-shrink:0; font-size:13px; font-weight:700; color:var(--pine-deep);
+                 padding-top:2px; }
+  .rec-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
+  .rec-actions .btn{ margin:0; min-height:50px; font-size:14.5px; }
+  .rec-actions .btn.wide{ grid-column:1 / -1; }
 
   /* ===================== SCREEN 11 : 당일 기록 작성 (G3·G4) ===================== */
   .wlog-group{ margin-top:22px; }
@@ -4028,6 +4043,7 @@ const WLOG_UNIT = { 세트: '세트', 횟수: '회', 무게: 'kg', 시간: '분'
    --------------------------------------------------------------------------- */
 let recoList = [];
 let recoAt = 0;
+let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
 
@@ -4059,12 +4075,14 @@ async function renderRecommend(){
       style_purpose: state.styleTest?.result?.추천목적 || null,
       sports: (state.sports || []).join(','),
       target_gap: 목표격차,
-      limit: 5,
+      week: programWeek(),
+      limit: 12,
     });
     recoList = r.추천 || [];
     recoCare = r.조심할부위 || [];
     recoBy = r.출처 || '점수';
     recoAt = 0;
+    recoBack = [];
   } catch (e) {
     box.innerHTML = '<div class="rec-empty">추천을 불러오지 못했어요.<br/>잠시 뒤 다시 시도해주세요.</div>';
     return;
@@ -4075,6 +4093,21 @@ async function renderRecommend(){
   paintRecommend();
 }
 
+/* 지금보다 쉬운(-1) / 어려운(+1) 후보의 자리. 없으면 -1 을 돌려준다. */
+function recoStep(dir){
+  const now = recoList[recoAt];
+  if (!now) return -1;
+  const 기준 = now.난이도점수 ?? 0;
+  let best = -1, bestGap = Infinity;
+  recoList.forEach((x, i) => {
+    if (i === recoAt) return;
+    const gap = (x.난이도점수 ?? 0) - 기준;
+    if (dir < 0 ? gap >= 0 : gap <= 0) return;      // 방향이 맞아야 한다
+    if (Math.abs(gap) < bestGap) { bestGap = Math.abs(gap); best = i; }
+  });
+  return best;
+}
+
 function paintRecommend(){
   const box = $('recoBody');
   if (!recoList.length) {
@@ -4082,13 +4115,23 @@ function paintRecommend(){
     return;
   }
   const x = recoList[recoAt];
-  const 마지막 = recoAt >= recoList.length - 1;
+  const 쉬움 = recoStep(-1), 어려움 = recoStep(1);
+  const lv = x.난이도 === '어려움' ? 'hard' : (x.난이도 === '쉬움' ? 'easy' : '');
   box.innerHTML = `
     <div class="rec-card">
-      <div class="rec-rank">추천 ${x.순위} / ${recoList.length}</div>
+      <div class="rec-rank">${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서</div>
       <div class="rec-purpose">${x.표시목적 || x.목적}</div>
-      <div class="rec-title">${x.루틴명}</div>
-      <div class="rec-meta">동작 ${x.동작수}개 · ${(x.체력요인 || []).slice(0, 3).join(' · ')}</div>
+      <div class="rec-title">${x.루틴명}<span class="rec-level ${lv}">${x.난이도 || ''}</span></div>
+      <div class="rec-meta">동작 ${x.동작수}개 · ${(x.예상시간분 || []).join('~')}분 · ${(x.체력요인 || []).slice(0, 3).join(' · ')}</div>
+      <div class="rec-steps">${(x.steps || []).map(s => `
+        <div class="rec-step">
+          <div class="rec-step-phase">${s.단계}</div>
+          <div class="rec-step-main">
+            <div class="rec-step-name">${s.동작}</div>
+            <div class="rec-step-sub">${(s.체력요인 || []).join(' · ')}${s.도구 && s.도구 !== '맨몸' ? ` · ${s.도구}` : ''}${(s.부담부위 || []).length ? ` · ${s.부담부위.join('·')} 주의` : ''}</div>
+          </div>
+          <div class="rec-step-amt">${s.수행량 || ''}</div>
+        </div>`).join('')}</div>
       <div class="rec-why">
         <div class="rec-why-head">왜 이걸 골랐나요</div>
         <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
@@ -4097,15 +4140,29 @@ function paintRecommend(){
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
       <div class="rec-by">${recoBy === 'ai' ? 'AI 가 순서와 설명을 다듬었어요' : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="rec-actions">
-        <button class="btn btn-ghost" onclick="nextRecommend()" ${마지막 ? 'disabled' : ''}>
-          ${마지막 ? '마지막 추천이에요' : '다음 추천'}</button>
-        <button class="btn btn-primary" onclick="useRecommend()">이 루틴으로 시작</button>
+        <button class="btn btn-ghost" onclick="backRecommend()" ${recoBack.length ? '' : 'disabled'}>이전 루틴</button>
+        <button class="btn btn-ghost" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
+        <button class="btn btn-ghost" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>
+        <button class="btn btn-primary wide" onclick="useRecommend()">이 루틴으로 시작</button>
       </div>
     </div>`;
 }
 
-function nextRecommend(){
-  if (recoAt < recoList.length - 1) { recoAt++; paintRecommend(); }
+/* 지금 것을 기억해 두고 자리를 옮긴다 — '이전 루틴' 이 되돌아갈 곳이다. */
+function goRecommend(i){
+  if (i < 0 || i === recoAt) return;
+  recoBack.push(recoAt);
+  recoAt = i;
+  paintRecommend();
+}
+
+function easierRecommend(){ goRecommend(recoStep(-1)); }
+function harderRecommend(){ goRecommend(recoStep(1)); }
+
+function backRecommend(){
+  if (!recoBack.length) return;
+  recoAt = recoBack.pop();
+  paintRecommend();
 }
 
 /* 고른 추천의 목적을 그대로 적용한다. 홈의 오늘 루틴이 그 목적으로 바뀐다. */

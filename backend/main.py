@@ -34,6 +34,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import routine_player as rp
     from backend import routines as rt, bodycomp as bc, hometest as ht, geo
     from backend import sports as sp
+    from backend import route
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -46,6 +47,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
+    import route                            # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -567,6 +569,30 @@ def get_centers(lat: float | None = None, lon: float | None = None,
         "안내": note,
         "items": items,
     }
+
+
+# ---------- 9. 경로 분석 (출발지→목적지) ----------
+
+@app.get("/route/advice")
+async def get_route_advice(
+    from_: str = Query(..., alias="from", min_length=1, max_length=80,
+                       description="출발지 (구 이름·역 이름·장소명)"),
+    to: str = Query(..., min_length=1, max_length=80, description="목적지"),
+    strength_stars: int = Query(3, ge=1, le=5, description="근력 별점 1~5"),
+) -> dict:
+    """출발지→목적지 가는 길의 특성(거리·시간·오르막·계단)을 읽어 걷기/계단을 추천한다 (화면 3).
+
+    카카오 REST 키(KAKAO_CLIENT_ID)가 없거나 호출이 실패하면 geo.geocode + 직선거리 추정으로
+    폴백한다(출처: "추정"). 지역을 못 찾으면 404, 출발·목적지가 같으면 400.
+    """
+    # route 의 전용 예외만 상태코드로 바꾼다. 부모 클래스(LookupError·ValueError)를 잡으면 파싱 중 난
+    # KeyError·IndexError·float() 실패까지 404/400 으로 둔갑해 내부 오류 문자열이 화면에 그대로 보인다.
+    try:
+        return await route.advise(from_, to, strength_stars)
+    except route.PlaceNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except route.SamePointError as e:
+        raise HTTPException(400, str(e))
 
 
 # ===========================================================================

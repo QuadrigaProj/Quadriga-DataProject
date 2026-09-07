@@ -1052,6 +1052,18 @@
     font:inherit; font-size:12.5px; cursor:pointer; }
   .member-row button:hover{ border-color:var(--clay); }
   .member-invite{ margin-top:18px; padding-top:4px; border-top:1px solid var(--line); }
+  /* 받은 초대 */
+  .invite-card{ display:flex; align-items:center; gap:10px; padding:12px 13px;
+    border:1px solid var(--line); border-radius:14px; background:var(--pine-tint);
+    margin-bottom:8px; }
+  .invite-card .who{ flex:1; min-width:0; }
+  .invite-card .nm{ font-size:14.5px; }
+  .invite-card .sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .invite-card button{ flex-shrink:0; border-radius:999px; padding:7px 13px;
+    font:inherit; font-size:12.5px; cursor:pointer;
+    background:var(--pine); border:1.5px solid var(--pine); color:#fff; }
+  .invite-card button.ghost{ background:var(--paper); color:var(--muted);
+    border-color:var(--line); }
   .member-foot{ display:flex; justify-content:flex-end; margin-top:18px; }
   .member-leave{ background:var(--paper); color:var(--clay);
     border:1.5px solid var(--line); border-radius:12px; padding:10px 18px;
@@ -1893,6 +1905,10 @@
 
       <!-- 운동 모임 채팅 -->
       <div id="commChat" hidden>
+        <div id="inviteBox" hidden>
+          <div class="friend-head" style="margin-top:0;">받은 초대</div>
+          <div id="inviteList"></div>
+        </div>
         <div class="comm-list-head"><span>채팅방</span><button type="button" class="comm-add" onclick="openRoomComposer()" aria-label="채팅방 만들기">＋</button></div>
         <div id="roomList"></div>
 
@@ -1952,6 +1968,8 @@
       <div class="member-invite">
         <div class="friend-head" style="margin-top:0;">친구 초대</div>
         <div id="memberFriends"></div>
+        <p class="friend-note" style="margin:0 2px 10px;">초대하면 상대가 수락해야 들어와요.
+          비공개 방이면 상대도 비밀번호를 넣어야 합니다.</p>
         <div class="comm-compose-row">
           <input id="inviteQuery" type="text" placeholder="아이디로 초대"
                  autocapitalize="off" spellcheck="false"
@@ -3402,6 +3420,51 @@ async function loadRooms(){
     });
     box.querySelectorAll('button[data-password-room]').forEach(btn => btn.onclick = () => changeRoomPassword(+btn.dataset.passwordRoom));
   } catch (e) { $('roomList').innerHTML = '<div class="more-card">모임을 불러오지 못했어요.</div>'; }
+  loadInvites();
+}
+
+/* ---- 받은 초대 ----
+   초대만으로는 들어가지지 않는다. 수락해야 하고, 비공개 방이면 비밀번호를 넣어야 한다.
+   초대가 비밀번호를 건너뛰면 비공개 방이 무너진다. */
+async function loadInvites(){
+  const box = $('inviteBox');
+  if (!box) return;
+  let 초대 = [];
+  try { 초대 = (await API.commInvites())['초대'] || []; } catch (e) { 초대 = []; }
+  box.hidden = !초대.length;
+  if (!초대.length) { $('inviteList').innerHTML = ''; return; }
+  $('inviteList').innerHTML = 초대.map(v => `
+    <div class="invite-card">
+      <div class="who">
+        <div class="nm">${esc(v['이름'])}${v['비공개'] ? ' 🔒' : ''}</div>
+        <div class="sub">${esc(v['초대한사람']['닉네임'])} 님이 초대 · 멤버 ${v['인원']}명${
+          v['비공개'] ? ' · 비밀번호 필요' : ''}</div>
+      </div>
+      <button type="button" class="ghost" data-decline="${v.room_id}">거절</button>
+      <button type="button" data-accept="${v.room_id}" data-private="${v['비공개'] ? 1 : 0}"
+              data-name="${esc(v['이름'])}">참여</button>
+    </div>`).join('');
+
+  $('inviteList').querySelectorAll('[data-accept]').forEach(b => b.onclick = () =>
+    acceptInvite(+b.dataset.accept, b.dataset.private === '1', b.dataset.name));
+  $('inviteList').querySelectorAll('[data-decline]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await API.commInviteDecline(+b.dataset.decline); loadInvites(); }
+    catch (e) { b.disabled = false; showToast(e.message); }
+  });
+}
+
+async function acceptInvite(roomId, isPrivate, name){
+  // 비공개 방이면 초대를 받았어도 비밀번호를 넣어야 한다
+  const password = isPrivate
+    ? prompt(`「${name}」은 비공개 방이에요.\n비밀번호(숫자)를 입력해주세요.`)
+    : null;
+  if (isPrivate && !password) return;
+  try {
+    await API.commInviteAccept(roomId, password);
+    await loadRooms();
+    openRoom(roomId, name);
+  } catch (e) { showToast(e.message); }
 }
 
 const ROOM_PIN_RE = /^[0-9]{4,12}$/;      // 서버(community.ROOM_PIN_RE)와 같아야 한다
@@ -3489,8 +3552,10 @@ async function loadRoomMembers(){
   }
   $('roomMembersTitle').textContent = MEMBERS['이름'] || '멤버';
   const 방장 = MEMBERS['내가방장'];
+  const 초대중 = MEMBERS['초대중'] || [];
   $('memberList').innerHTML =
-    `<div class="member-count">멤버 ${MEMBERS['인원']}명</div>`
+    `<div class="member-count">멤버 ${MEMBERS['인원']}명${
+      초대중.length ? ` · 초대함 ${초대중.length}명` : ''}</div>`
     + (MEMBERS['멤버'] || []).map(u => `
       <div class="member-row">
         <div class="who"><div class="nm">${esc(u['닉네임'])}
@@ -3499,7 +3564,20 @@ async function loadRoomMembers(){
           <div class="hd">@${esc(u['아이디'])}</div></div>
         ${방장 && !u['나'] ? `<button type="button" data-kick="${esc(u['아이디'])}"
             data-name="${esc(u['닉네임'])}">내보내기</button>` : ''}
+      </div>`).join('')
+    + 초대중.map(u => `
+      <div class="member-row">
+        <div class="who"><div class="nm">${esc(u['닉네임'])}
+          <span class="member-tag">수락 대기</span></div>
+          <div class="hd">@${esc(u['아이디'])}</div></div>
+        <button type="button" data-uninvite="${esc(u['아이디'])}">초대 취소</button>
       </div>`).join('');
+
+  $('memberList').querySelectorAll('[data-uninvite]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await API.commRoomInviteCancel(COMM.room, b.dataset.uninvite); await loadRoomMembers(); }
+    catch (e) { b.disabled = false; showToast(e.message); }
+  });
 
   $('memberList').querySelectorAll('[data-kick]').forEach(b => b.onclick = async () => {
     if (!confirm(`${b.dataset.name} 님을 내보낼까요?`)) return;
@@ -3518,7 +3596,9 @@ async function renderInviteFriends(){
   if (!box) return;
   let 친구 = [];
   try { 친구 = (await API.commFriends())['친구'] || []; } catch (e) {}
-  const 이미 = new Set((MEMBERS?.['멤버'] || []).map(u => u['아이디']));
+  // 이미 멤버이거나 이미 초대해 둔 사람은 뺀다
+  const 이미 = new Set([...(MEMBERS?.['멤버'] || []), ...(MEMBERS?.['초대중'] || [])]
+    .map(u => u['아이디']));
   const 남은 = 친구.filter(u => !이미.has(u['아이디']));
   box.innerHTML = 남은.length
     ? 남은.map(u => `

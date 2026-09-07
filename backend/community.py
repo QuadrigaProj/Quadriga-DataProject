@@ -96,6 +96,17 @@ CREATE TABLE IF NOT EXISTS friend_links (
   PRIMARY KEY (user_id, other_id)
 );
 CREATE INDEX IF NOT EXISTS idx_friend_other ON friend_links(other_id);
+
+/* 초대 — 넣는 순간 멤버가 되지 않는다. 받은 사람이 수락해야 들어간다.
+   비공개 방이면 그때 비밀번호를 넣어야 한다(초대가 비밀번호를 건너뛰지 않게). */
+CREATE TABLE IF NOT EXISTS chat_invites (
+  room_id    INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invited_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (room_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cinv_user ON chat_invites(user_id);
 """
 SCHEMA_PG = (SCHEMA_SQLITE
              .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"))
@@ -139,15 +150,24 @@ def _new_handle(con) -> str:
     raise HTTPException(503, "아이디를 만들지 못했어요. 잠시 뒤 다시 시도해 주세요.")
 
 
+def _handle_in(con, user_id: int) -> str:
+    """읽거나, 없으면 그 자리에서 만든다.
+
+    다른 사람에게 보이는 유일한 식별자라 비어 있으면 안 된다 — 자기 아이디를
+    한 번도 안 본 사람이 남의 화면에 '@없음' 으로 뜨게 된다.
+    """
+    r = con.execute("SELECT handle FROM user_handles WHERE user_id=?", (user_id,)).fetchone()
+    if r:
+        return r["handle"]
+    h = _new_handle(con)
+    con.execute("INSERT INTO user_handles (user_id, handle) VALUES (?,?)", (user_id, h))
+    return h
+
+
 def handle_for(user_id: int) -> str:
     """그 사람의 앱 내 아이디. 없으면 이때 만들어 준다(예전 가입자)."""
     with auth.db() as con:
-        r = con.execute("SELECT handle FROM user_handles WHERE user_id=?", (user_id,)).fetchone()
-        if r:
-            return r["handle"]
-        h = _new_handle(con)
-        con.execute("INSERT INTO user_handles (user_id, handle) VALUES (?,?)", (user_id, h))
-        return h
+        return _handle_in(con, user_id)
 
 
 def _public_user(con, user_id: int) -> dict:
@@ -157,9 +177,9 @@ def _public_user(con, user_id: int) -> dict:
     실수로 흘릴 일이 없다.
     """
     r = con.execute("SELECT display_name FROM users WHERE id=?", (user_id,)).fetchone()
-    h = con.execute("SELECT handle FROM user_handles WHERE user_id=?", (user_id,)).fetchone()
-    return {"아이디": h["handle"] if h else None,
-            "닉네임": r["display_name"] if r else "(탈퇴한 회원)"}
+    if not r:
+        return {"아이디": None, "닉네임": "(탈퇴한 회원)"}
+    return {"아이디": _handle_in(con, user_id), "닉네임": r["display_name"]}
 
 
 def find_by_handle(handle: str) -> dict | None:
@@ -563,8 +583,12 @@ def room_members(me: int, room_id: int) -> dict:
             u["나"] = r["user_id"] == me
             u["친구"] = are_friends(con, me, r["user_id"])
             멤버.append(u)
+        초대중 = [_public_user(con, r["user_id"]) for r in con.execute(
+            "SELECT user_id FROM chat_invites WHERE room_id=? ORDER BY created_at",
+            (room_id,)).fetchall()]
     return {"이름": room["name"], "종류": room["room_type"],
-            "내가방장": 방장 == me, "인원": len(멤버), "멤버": 멤버}
+            "내가방장": 방장 == me, "인원": len(멤버), "멤버": 멤버,
+            "초대중": 초대중}
 
 
 def kick_member(me: int, room_id: int, handle: str) -> dict:
@@ -592,7 +616,9 @@ def kick_member(me: int, room_id: int, handle: str) -> dict:
 def invite_member(me: int, room_id: int, handle: str) -> dict:
     """멤버가 사람을 초대한다 (L6).
 
-    초대는 비밀번호를 건너뛴다 — 그래서 **멤버만** 부를 수 있게 한다.
+    **초대만 남기고 넣지는 않는다.** 받은 사람이 수락해야 들어가고,
+    비공개 방이면 그때 비밀번호를 넣어야 한다. 초대가 비밀번호를 건너뛰면
+    비공개가 무너진다.
     """
     target = find_by_handle(handle)
     if not target:
@@ -607,14 +633,66 @@ def invite_member(me: int, room_id: int, handle: str) -> dict:
             raise HTTPException(403, "참여한 사람만 초대할 수 있어요.")
         if _is_member(con, room_id, target["user_id"]):
             raise HTTPException(400, "이미 참여 중인 사람이에요.")
-        con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
-                    (room_id, target["user_id"], int(time.time())))
+        if con.execute("SELECT 1 FROM chat_invites WHERE room_id=? AND user_id=?",
+                       (room_id, target["user_id"])).fetchone():
+            raise HTTPException(400, "이미 초대한 사람이에요.")
+        con.execute("INSERT INTO chat_invites (room_id, user_id, invited_by, created_at)"
+                    " VALUES (?,?,?,?)",
+                    (room_id, target["user_id"], me, int(time.time())))
     return room_members(me, room_id)
+
+
+def cancel_invite(me: int, room_id: int, handle: str) -> dict:
+    """보낸 초대를 거둔다. 멤버면 누구든 거둘 수 있다."""
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    with auth.db() as con:
+        if not _is_member(con, room_id, me):
+            raise HTTPException(403, "참여한 사람만 할 수 있어요.")
+        con.execute("DELETE FROM chat_invites WHERE room_id=? AND user_id=?",
+                    (room_id, target["user_id"]))
+    return room_members(me, room_id)
+
+
+def my_invites(me: int) -> list[dict]:
+    """내가 받은 초대. 비공개 방이면 수락할 때 비밀번호를 받아야 한다."""
+    with auth.db() as con:
+        rows = con.execute(
+            "SELECT i.room_id, i.invited_by, i.created_at,"
+            " r.name, r.is_private,"
+            " (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id) AS 인원"
+            " FROM chat_invites i JOIN chat_rooms r ON r.id=i.room_id"
+            " WHERE i.user_id=? ORDER BY i.created_at DESC", (me,)).fetchall()
+        return [{"room_id": r["room_id"], "이름": r["name"],
+                 "비공개": bool(r["is_private"]), "인원": r["인원"],
+                 "초대한사람": _public_user(con, r["invited_by"])} for r in rows]
+
+
+def accept_invite(me: int, room_id: int, password: str | None = None) -> dict:
+    """받은 초대를 수락한다. 비공개 방이면 비밀번호가 맞아야 들어간다."""
+    with auth.db() as con:
+        inv = con.execute("SELECT 1 FROM chat_invites WHERE room_id=? AND user_id=?",
+                          (room_id, me)).fetchone()
+        if not inv:
+            raise HTTPException(404, "받은 초대가 없어요.")
+    join_room(me, room_id, password)          # 비밀번호 확인은 여기서 한다
+    with auth.db() as con:
+        con.execute("DELETE FROM chat_invites WHERE room_id=? AND user_id=?", (room_id, me))
+    return {"ok": True}
+
+
+def decline_invite(me: int, room_id: int) -> dict:
+    with auth.db() as con:
+        con.execute("DELETE FROM chat_invites WHERE room_id=? AND user_id=?", (room_id, me))
+    return {"ok": True}
 
 
 def leave_room(user_id: int, room_id: int) -> None:
     with auth.db() as con:
         con.execute("DELETE FROM chat_members WHERE room_id=? AND user_id=?", (room_id, user_id))
+        # 나간 사람에게 남아 있던 초대는 의미가 없다
+        con.execute("DELETE FROM chat_invites WHERE room_id=? AND user_id=?", (room_id, user_id))
 
 
 def _is_member(con, room_id: int, user_id: int) -> bool:
@@ -791,6 +869,31 @@ def room_member_list(room_id: int, quadriga_session: str | None = Cookie(None)) 
 def room_invite(room_id: int, body: HandleIn,
                 quadriga_session: str | None = Cookie(None)) -> dict:
     return invite_member(_uid(quadriga_session), room_id, body.handle)
+
+
+@router.delete("/rooms/{room_id}/invite/{handle}")
+def room_invite_cancel(room_id: int, handle: str,
+                       quadriga_session: str | None = Cookie(None)) -> dict:
+    return cancel_invite(_uid(quadriga_session), room_id, handle)
+
+
+@router.get("/invites")
+def invite_list(quadriga_session: str | None = Cookie(None)) -> dict:
+    return {"초대": my_invites(_uid(quadriga_session))}
+
+
+@router.post("/invites/{room_id}/accept")
+def invite_accept(room_id: int, body: RoomJoinIn,
+                  quadriga_session: str | None = Cookie(None)) -> dict:
+    """수락. 비공개 방이면 비밀번호가 맞아야 들어간다."""
+    me = _uid(quadriga_session)
+    accept_invite(me, room_id, body.password)
+    return {"ok": True, "rooms": list_rooms(me)}
+
+
+@router.delete("/invites/{room_id}")
+def invite_decline(room_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    return decline_invite(_uid(quadriga_session), room_id)
 
 
 @router.post("/rooms/{room_id}/kick")

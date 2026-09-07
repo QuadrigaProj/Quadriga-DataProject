@@ -108,6 +108,12 @@ const API = (() => {
     // 단체 채팅방 멤버 관리 (L6). 초대·내보내기 모두 아이디로 한다.
     commRoomMembers: (id) => call('/community/rooms/' + id + '/members'),
     commRoomInvite: (id, handle) => post('/community/rooms/' + id + '/invite', { handle }),
+    commRoomInviteCancel: (id, handle) =>
+      call('/community/rooms/' + id + '/invite/' + encodeURIComponent(handle), { method: 'DELETE' }),
+    // 초대는 받은 사람이 수락해야 들어간다. 비공개 방이면 그때 비밀번호를 넣는다.
+    commInvites: () => call('/community/invites'),
+    commInviteAccept: (id, password) => post('/community/invites/' + id + '/accept', { password }),
+    commInviteDecline: (id) => call('/community/invites/' + id, { method: 'DELETE' }),
     commRoomKick: (id, handle) => post('/community/rooms/' + id + '/kick', { handle }),
     commRoomLeave: (id) => post('/community/rooms/' + id + '/leave', {}),
     commRoomPassword: (id, password) => call('/community/rooms/' + id + '/password', {

@@ -1105,6 +1105,12 @@ def test_내보내기와_나가기는_한_번_묻는다():
     assert "API.commRoomLeave" in 나가기
 
 
+def test_초대해_둔_사람은_초대_목록에서_뺀다():
+    html = _index()
+    친구 = html.split("async function renderInviteFriends()")[1].split("\n}")[0]
+    assert "MEMBERS?.['초대중']" in 친구
+
+
 def test_친구는_바로_초대하고_아니면_아이디로_초대한다():
     html = _index()
     친구 = html.split("async function renderInviteFriends()")[1].split("\n}")[0]
@@ -1127,4 +1133,50 @@ def test_방을_닫으면_멤버_창도_닫는다():
     html = _index()
     본문 = html.split("function closeRoom()")[1].split("\n}")[0]
     assert "closeRoomMembers()" in 본문
+
+
+# ---------- 초대는 받은 사람이 수락해야 들어간다 ----------
+
+def test_받은_초대_자리가_있다():
+    html = _index()
+    assert 'id="inviteBox"' in html
+    assert 'id="inviteList"' in html
+    assert "async function loadInvites()" in html
+    본문 = html.split("async function loadInvites()")[1].split("\n}")[0]
+    assert "API.commInvites()" in 본문
+    # 채팅방 목록을 그릴 때마다 초대도 본다
+    방목록 = html.split("async function loadRooms()")[1].split("\n}\n\n")[0]
+    assert "loadInvites()" in 방목록
+
+
+def test_비공개_방은_초대받아도_비밀번호를_묻는다():
+    """초대가 비밀번호를 건너뛰면 비공개 방이 무너진다."""
+    html = _index()
+    본문 = html.split("async function acceptInvite(roomId, isPrivate, name)")[1].split("\n}")[0]
+    assert "isPrivate" in 본문 and "prompt(" in 본문
+    assert "if (isPrivate && !password) return;" in 본문
+    assert "API.commInviteAccept(roomId, password)" in 본문
+
+
+def test_초대_카드에_비밀번호가_필요한지_적는다():
+    html = _index()
+    본문 = html.split("async function loadInvites()")[1].split("\n}")[0]
+    assert "비밀번호 필요" in 본문
+    assert "data-accept=" in 본문 and "data-decline=" in 본문
+    assert "API.commInviteDecline" in 본문
+
+
+def test_방장_화면에_수락_대기가_보인다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "수락 대기" in 본문
+    assert "초대함 ${초대중.length}명" in 본문
+    assert "data-uninvite=" in 본문               # 초대를 거둘 수 있다
+    assert "API.commRoomInviteCancel" in 본문
+
+
+def test_초대하면_바로_들어오지_않는다고_적는다():
+    html = _index()
+    창 = html.split('id="roomMembers"')[1].split("</section>")[0]
+    assert "상대가 수락해야 들어와요" in 창
 

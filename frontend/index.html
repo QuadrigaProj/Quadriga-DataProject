@@ -570,6 +570,44 @@
   .pay-warn{ font-size:12.5px; color:var(--clay); background:var(--amber-tint);
              border-radius:12px; padding:11px 13px; margin-top:12px; line-height:1.6; }
 
+  /* 결제 수단 고르기 (J2) */
+  .pay-step{ font-size:12px; color:var(--muted); margin:16px 0 8px; font-weight:700; }
+  .pay-step:first-child{ margin-top:0; }
+  .pay-ways{ display:grid; gap:8px; }
+  .pay-way{ display:flex; align-items:center; gap:11px; width:100%;
+    padding:13px 14px; border:1.5px solid var(--line); border-radius:14px;
+    background:var(--paper); font:inherit; font-size:14.5px; color:var(--ink);
+    cursor:pointer; text-align:left; }
+  .pay-way.on{ border-color:var(--pine); background:var(--pine-tint); }
+  .pay-way:disabled{ opacity:0.5; cursor:not-allowed; }
+  .pay-way .mark{ width:30px; height:30px; border-radius:9px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:800; color:#3C1E1E; background:#FEE500; }
+  .pay-way .mark.card{ background:var(--pine); color:#fff; }
+  .pay-way .mark.bank{ background:var(--sand); color:var(--pine-deep); }
+  .pay-way .txt{ flex:1; min-width:0; }
+  .pay-way .sub{ display:block; font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .pay-way .tick{ color:var(--pine); font-weight:700; }
+
+  /* 카드사·은행 고르기 */
+  .pay-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:7px; }
+  .pay-grid button{ padding:11px 4px; border:1.5px solid var(--line); border-radius:11px;
+    background:var(--paper); font:inherit; font-size:12.5px; color:var(--ink); cursor:pointer; }
+  .pay-grid button.on{ border-color:var(--pine); background:var(--pine-tint); font-weight:700; }
+
+  .pay-agree{ display:flex; gap:9px; align-items:flex-start; margin-top:14px;
+    font-size:12.5px; color:var(--muted); line-height:1.55; cursor:pointer; }
+  .pay-agree input{ width:17px; height:17px; margin:1px 0 0; flex-shrink:0;
+                    accent-color:var(--pine); }
+  .pay-btn:disabled{ opacity:0.45; cursor:not-allowed; }
+  .pay-sum{ display:flex; justify-content:space-between; align-items:baseline;
+    padding:12px 14px; border-radius:12px; background:var(--bg);
+    border:1px solid var(--line); margin-top:14px; font-size:13.5px; }
+  .pay-sum b{ font-size:17px; }
+  .pay-back{ background:none; border:none; padding:0; font:inherit; font-size:12.5px;
+    color:var(--pine-deep); cursor:pointer; text-decoration:underline;
+    text-underline-offset:3px; margin-top:14px; }
+
   /* 네 버튼을 같은 크기·같은 모양으로 (I2). 2×2 로 놓고 칸을 똑같이 나눈다.
      이름을 .reco-actions 로 둔 것은 기록 화면의 .rec-actions 와 겹치지 않게 하려는 것이다. */
   .reco-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
@@ -2233,6 +2271,8 @@ async function saveProfile(){
 /* 저장된 값을 화면에 되돌린다. 없으면 첫 점검부터. */
 function applyProfile(saved){
   if (saved) Object.assign(state, saved);
+  // 결제만 끝나고 못 올린 충전이 있으면 여기서 반영한다 (J2)
+  setTimeout(applyPendingCredit, 0);
   state.programStart = saved?.programStart ?? null;
   state.routineLog = Array.isArray(saved?.routineLog) ? saved.routineLog : [];
   state.sports = Array.isArray(saved?.sports) ? saved.sports : [];
@@ -4583,32 +4623,138 @@ function renderCredit(){
     : '';
 }
 
-/* 결제창 — 카드 정보를 묻지 않는다. 금액만 고르고 모의 승인한다. */
-function openPaySheet(){
+/* ---------------------------------------------------------------------------
+   결제창 (J2)
+
+   **카드번호·CVC·유효기간·계좌번호를 이 앱에서 받지 않는다.** 실제 서비스에서
+   그건 PG사 결제창이 받아야 하고(PCI-DSS), 우리가 받으면 그 자체가 사고다.
+   그래서 수단 고르기·카드사/은행 고르기·약관 동의·결제까지 흐름은 그대로 두되,
+   실제 정보 입력은 각 결제창으로 넘긴다.
+
+   카카오페이만 실제로 붙어 있다(서버에 키가 있을 때). 나머지는 PG 계약 전이라
+   승인 자리를 비워 두고 모의로 넘어간다 — 화면에 그대로 적는다.
+   --------------------------------------------------------------------------- */
+let payWay = null;          // 'kakao' | 'card' | 'bank'
+let payIssuer = null;       // 고른 카드사·은행
+let payAgree = false;
+let payInfo = null;         // /pay/methods 응답
+let paying = false;
+
+const PAY_WAYS = {
+  kakao: { 이름: '카카오페이', mark: 'pay', 표시: 'K' },
+  card:  { 이름: '신용·체크카드', mark: 'card', 표시: '카드' },
+  bank:  { 이름: '계좌이체', mark: 'bank', 표시: '은행' },
+};
+
+async function openPaySheet(){
   payPick = PAY_PACKS[0];
-  openSheet('이용권 충전', paySheetHtml());
+  payWay = null; payIssuer = null; payAgree = false; paying = false;
+  openSheet('이용권 충전', '<div class="pay-note">결제 수단을 불러오는 중이에요…</div>');
+  try { payInfo = await API.payMethods(); } catch (e) { payInfo = null; }
+  paintPaySheet();
+}
+
+function paintPaySheet(){
+  const body = $('sheetBody');
+  if (body) body.innerHTML = paySheetHtml();
 }
 
 function paySheetHtml(){
+  return payWay ? payWayHtml() : payAmountHtml();
+}
+
+/* 1단계 — 얼마를 충전할지, 어떻게 낼지 */
+function payAmountHtml(){
   const 목록 = PAY_PACKS.map(v => `
     <button type="button" class="${v === payPick ? 'on' : ''}" onclick="pickPay(${v})">
       <span>AI 추천 ${v / AI_PRICE}회</span><b>${won(v)}</b>
     </button>`).join('');
+  const 카카오됨 = !!payInfo?.kakao?.쓸수있음;
+  const 수단 = Object.entries(PAY_WAYS).map(([k, w]) => {
+    const 잠김 = k === 'kakao' && !카카오됨;
+    const 아래 = k === 'kakao'
+      ? (카카오됨 ? (payInfo?.kakao?.테스트 ? '테스트 가맹점 — 실제로 돈이 빠지지 않아요'
+                                          : '카카오페이로 바로 결제')
+                  : '관리자가 키를 등록하면 켜져요')
+      : 'PG 계약 전이라 승인은 모의로 처리돼요';
+    return `<button type="button" class="pay-way" ${잠김 ? 'disabled' : ''}
+              data-way="${k}" onclick="pickPayWay('${k}')">
+        <span class="mark ${w.mark}">${w.표시}</span>
+        <span class="txt">${w.이름}<span class="sub">${아래}</span></span>
+      </button>`;
+  }).join('');
   return `
+    <div class="pay-step">얼마나 충전할까요</div>
     <div class="pay-pick">${목록}</div>
-    <div class="pay-warn">시연용 모의 결제입니다. 카드 정보를 받지 않고 실제로 돈이
-      빠져나가지 않아요. 실제 결제를 붙이려면 사업자 등록과 PG 계약이 필요합니다.</div>
-    <button type="button" class="pay-btn" onclick="confirmPay()">${won(payPick)} 결제하기</button>
+    <div class="pay-step">어떻게 결제할까요</div>
+    <div class="pay-ways">${수단}</div>
     <div class="pay-note">충전한 이용권은 AI 추천에만 쓰입니다. 무료 추천은 언제나 그대로예요.</div>`;
 }
 
-function pickPay(v){
-  payPick = v;
-  $('sheetBody').innerHTML = paySheetHtml();
+/* 2단계 — 고른 수단의 자세한 화면 */
+function payWayHtml(){
+  const w = PAY_WAYS[payWay];
+  const 목록 = payWay === 'card' ? (payInfo?.카드 || [])
+             : payWay === 'bank' ? (payInfo?.은행 || []) : [];
+  const 고르기 = 목록.length ? `
+    <div class="pay-step">${payWay === 'card' ? '카드사' : '은행'}를 고르세요</div>
+    <div class="pay-grid">${목록.map(n => `
+      <button type="button" class="${n === payIssuer ? 'on' : ''}"
+              onclick="pickPayIssuer('${n}')">${n}</button>`).join('')}</div>` : '';
+
+  const 안내 = payWay === 'kakao'
+    ? `<div class="pay-warn">${payInfo?.kakao?.테스트
+        ? '카카오페이 <b>테스트 가맹점</b>으로 결제합니다. 결제창은 진짜지만 실제로 돈이 빠지지 않아요.'
+        : '카카오페이 결제창으로 넘어갑니다. <b>실제로 결제됩니다.</b>'}</div>`
+    : `<div class="pay-warn">${payWay === 'card' ? '카드' : '계좌'} 정보는 이 앱이 받지
+        않습니다 — 실제 서비스에서는 PG사 결제창이 받습니다. 아직 PG 계약 전이라
+        <b>승인은 모의로 처리</b>되고 실제로 돈이 빠지지 않아요.</div>`;
+
+  const 준비됨 = payAgree && (payWay === 'kakao' || !!payIssuer);
+  const 버튼글 = payWay === 'kakao' ? '카카오페이로 결제'
+    : payWay === 'card' ? `${payIssuer || '카드'} 등록하고 결제`
+    : `${payIssuer || '계좌'} 등록하고 결제`;
+
+  return `
+    <div class="pay-sum"><span>${w.이름} · AI 추천 ${payPick / AI_PRICE}회</span><b>${won(payPick)}</b></div>
+    ${고르기}
+    ${안내}
+    <label class="pay-agree">
+      <input type="checkbox" ${payAgree ? 'checked' : ''} onchange="setPayAgree(this.checked)" />
+      <span>결제 진행에 동의합니다. 이용권은 AI 추천에만 쓰이며, 사용한 만큼 차감됩니다.</span>
+    </label>
+    <button type="button" class="pay-btn" ${준비됨 ? '' : 'disabled'}
+            onclick="startPay()">${버튼글}</button>
+    <button type="button" class="pay-back" onclick="payGoBack()">← 금액·수단 다시 고르기</button>`;
 }
 
-async function confirmPay(){
-  const 금액 = payPick;
+function pickPay(v){ payPick = v; paintPaySheet(); }
+function pickPayWay(k){ payWay = k; payIssuer = null; payAgree = false; paintPaySheet(); }
+function pickPayIssuer(n){ payIssuer = n; paintPaySheet(); }
+function setPayAgree(on){ payAgree = !!on; paintPaySheet(); }
+function payGoBack(){ payWay = null; payIssuer = null; payAgree = false; paintPaySheet(); }
+
+/* 결제 시작 — 카카오페이는 진짜 결제창으로 보내고, 나머지는 모의 승인한다. */
+async function startPay(){
+  if (paying) return;
+  paying = true;
+  if (payWay === 'kakao') {
+    try {
+      const r = await API.payReady({ amount: payPick });
+      location.href = r.redirect;          // 카카오 결제창으로
+      return;
+    } catch (e) {
+      paying = false;
+      alert('카카오페이 결제를 시작하지 못했어요. 다른 수단을 골라 주세요.');
+      return;
+    }
+  }
+  await addCredit(payPick);                // 모의 승인 (PG 계약 전)
+  paying = false;
+}
+
+/* 충전을 실제로 반영한다. 카카오페이는 서버가 확인해 준 금액으로만 부른다. */
+async function addCredit(금액){
   state.credit = (state.credit || 0) + 금액;
   if (!Array.isArray(state.creditLog)) state.creditLog = [];
   state.creditLog.push({ date: todayIso(), 종류: '충전', 금액, 잔액: state.credit });
@@ -4617,6 +4763,52 @@ async function confirmPay(){
   renderCredit();
   renderAcctCredit();
   if (document.querySelector('.screen.active')?.id === 's12') paintRecoMode();
+}
+
+/* 카카오에서 돌아왔을 때 (?pay=ok&order=...).
+   금액은 화면이 아니라 **서버가 승인한 값**을 쓴다. 서버가 확인해 주지 않으면
+   한 푼도 올리지 않는다. */
+async function handlePayReturn(){
+  const q = new URLSearchParams(location.search);
+  const 결과 = q.get('pay');
+  if (!결과) return;
+  const order = q.get('order');
+  history.replaceState(null, '', location.pathname);
+
+  if (결과 === 'cancel') { alert('결제를 취소했어요.'); return; }
+  if (결과 !== 'ok' || !order) { alert('결제가 완료되지 않았어요. 다시 시도해 주세요.'); return; }
+  try {
+    const r = await API.payResult(order);
+    if (!(r?.paid && r.amount > 0)) return;
+    // 결제창을 다녀오면 페이지가 새로 뜬다. 손님은 이때 아직 프로필을 안 골랐을 수
+    // 있는데, 그대로 올리면 저장될 곳이 없어 돈만 나가고 사라진다.
+    if (state.user) {
+      await addCredit(r.amount);
+      alert(`${won(r.amount)} 충전됐어요.`);
+    } else {
+      stashCredit(r.amount);
+      alert(`${won(r.amount)} 결제됐어요. 프로필을 고르면 바로 반영할게요.`);
+    }
+  } catch (e) {
+    alert('결제 확인에 실패했어요. 충전되지 않았다면 다시 시도해 주세요.');
+  }
+}
+
+/* 아직 반영 못 한 충전을 프로필이 정해질 때까지 들고 있는 자리 (J2).
+   결제는 이미 끝났으므로 잃어버리면 안 된다. */
+const PENDING_CREDIT = 'quadriga.pendingCredit';
+
+function stashCredit(금액){
+  try { localStorage.setItem(PENDING_CREDIT, String(금액)); } catch (e) {}
+}
+
+async function applyPendingCredit(){
+  let 금액 = 0;
+  try { 금액 = Number(localStorage.getItem(PENDING_CREDIT)) || 0; } catch (e) {}
+  if (!금액 || !state.user) return;
+  try { localStorage.removeItem(PENDING_CREDIT); } catch (e) {}
+  await addCredit(금액);
+  alert(`${won(금액)} 충전됐어요.`);
 }
 
 /* 추천 방식 고르기 */
@@ -4673,6 +4865,10 @@ function paintRecoMode(){
   } catch (e) {}
 
   paintGauges({ animate: true });
+
+  // 카카오페이에서 돌아왔으면 여기서 반영한다 (J2).
+  // 프로필을 다 불러온 뒤여야 잔액이 어긋나지 않는다.
+  await handlePayReturn();
 
   const h = await API.health();
   if (!h) setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');

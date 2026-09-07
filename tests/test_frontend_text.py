@@ -506,8 +506,9 @@ def test_이용권_줄을_누르면_충전창이_열린다():
 
 
 def test_충전하면_패널_줄도_갱신한다():
+    # J2 에서 confirmPay 가 addCredit 으로 바뀌었다 — 충전을 반영하는 자리는 여기 하나다
     html = _index()
-    본문 = html.split("async function confirmPay()")[1].split("\n}")[0]
+    본문 = html.split("async function addCredit(금액)")[1].split("\n}")[0]
     assert "renderAcctCredit()" in 본문
 
 
@@ -588,4 +589,96 @@ def test_점검_기록은_버튼과_체크박스가_안_겹친다():
     assert '<label class="rec-pick-main">' in 점검        # 고르는 부분만 label
     # 버튼은 label 밖에 있어야 한다
     assert 점검.index("</label>") < 점검.index("moreToggle(")
+
+
+# ---------- J2. 결제창 · 카카오페이 ----------
+
+def test_결제_수단_세_가지가_있다():
+    html = _index()
+    assert "const PAY_WAYS = {" in html
+    본문 = html.split("const PAY_WAYS = {")[1].split("};")[0]
+    for k in ("kakao:", "card:", "bank:"):
+        assert k in 본문, k
+    assert "카카오페이" in 본문 and "신용·체크카드" in 본문 and "계좌이체" in 본문
+
+
+def test_카드사와_은행은_서버가_준_목록을_쓴다():
+    """화면에 박아 두면 늘리거나 줄일 때 배포를 다시 해야 한다."""
+    html = _index()
+    본문 = html.split("function payWayHtml()")[1].split("function pickPay(v)")[0]
+    assert "payInfo?.카드" in 본문 and "payInfo?.은행" in 본문
+
+
+def test_동의_전에는_결제_버튼이_잠긴다():
+    html = _index()
+    본문 = html.split("function payWayHtml()")[1].split("function pickPay(v)")[0]
+    assert "const 준비됨 = payAgree &&" in 본문
+    # 카드·계좌는 발급사를 골라야 한다
+    assert "payWay === 'kakao' || !!payIssuer" in 본문
+    assert "${준비됨 ? '' : 'disabled'}" in 본문
+
+
+def test_키가_없으면_카카오페이_버튼이_잠긴다():
+    html = _index()
+    본문 = html.split("function payAmountHtml()")[1].split("\n}")[0]
+    assert "payInfo?.kakao?.쓸수있음" in 본문
+    assert "관리자가 키를 등록하면 켜져요" in 본문
+
+
+def test_테스트_가맹점인지_화면에_적는다():
+    """실제로 돈이 빠지는지 아닌지를 사용자가 눌러 보기 전에 알아야 한다."""
+    html = _index()
+    assert "payInfo?.kakao?.테스트" in html
+    assert "실제로 돈이 빠지지 않아요" in html
+    assert "실제로 결제됩니다" in html
+
+
+def test_카카오페이만_진짜_결제창으로_보낸다():
+    html = _index()
+    본문 = html.split("async function startPay()")[1].split("\n}")[0]
+    assert "if (payWay === 'kakao')" in 본문
+    assert "API.payReady({ amount: payPick })" in 본문
+    assert "location.href = r.redirect" in 본문
+    assert "await addCredit(payPick);" in 본문        # 나머지는 모의 승인
+
+
+def test_충전_금액은_서버가_확인해_준_값을_쓴다():
+    """화면이 고른 숫자를 그대로 올리면 조작할 수 있다."""
+    html = _index()
+    본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
+    assert "API.payResult(order)" in 본문
+    assert "addCredit(r.amount)" in 본문
+    assert "addCredit(payPick)" not in 본문
+
+
+def test_결제만_되고_프로필이_없으면_들고_있는다():
+    """결제창을 다녀오면 페이지가 새로 뜬다. 손님은 그때 프로필이 없다."""
+    html = _index()
+    본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
+    assert "if (state.user) {" in 본문
+    assert "stashCredit(r.amount)" in 본문
+    assert "function stashCredit(금액)" in html
+    assert "async function applyPendingCredit()" in html
+    # 프로필이 정해지는 모든 길에서 확인해야 한다
+    적용 = html.split("function applyProfile(saved)")[1].split("\n}")[0]
+    assert "applyPendingCredit" in 적용
+    # 한 번 반영하면 지운다 (두 번 충전되지 않게)
+    보관 = html.split("async function applyPendingCredit()")[1].split("\n}")[0]
+    assert "removeItem(PENDING_CREDIT)" in 보관
+
+
+def test_돌아온_뒤_주소창을_치운다():
+    """?pay=ok 가 남으면 새로고침할 때마다 또 확인하러 간다."""
+    html = _index()
+    본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
+    assert "history.replaceState" in 본문
+
+
+def test_시작하면_결제_수단을_불러온다():
+    html = _index()
+    본문 = html.split("async function openPaySheet()")[1].split("\n}")[0]
+    assert "API.payMethods()" in 본문
+    assert "catch" in 본문                      # 못 불러와도 창은 떠야 한다
+    시작 = html.split("(async function init()")[1]
+    assert "await handlePayReturn();" in 시작
 

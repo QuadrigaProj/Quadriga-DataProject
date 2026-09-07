@@ -39,6 +39,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import recommend as rc
     from backend import ai_recommend as air
     from backend import route
+    from backend import kakaopay as kp
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -56,6 +57,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
     import route                            # noqa: E402
+    import kakaopay as kp                   # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -923,6 +925,113 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
         raise HTTPException(400, str(e))
     out["종목"] = sp.resolve(out["유형"]["추천종목"])   # 화면이 이름·아이콘을 바로 그리게
     return out
+
+
+# ---------- 14. 이용권 결제 ----------
+#
+# 카드번호·CVC·계좌번호는 이 서버가 받지 않는다. 받으면 안 된다.
+# 실제 서비스에서 그건 PG사 결제창이 받는다(PCI-DSS). 우리는 금액과
+# 주문번호만 다루고, 승인 결과도 PG가 알려준 금액을 그대로 믿는다.
+
+PAY_PACKS = (1000, 3000, 5000)          # 화면과 같은 충전 단위(원)
+
+# 준비한 결제를 승인까지 들고 있는 자리. 프로세스가 하나라는 가정이다.
+# 서버를 여러 개 띄우면 DB(또는 Redis)로 옮겨야 한다.
+_PENDING: dict[str, dict] = {}
+_PAID: dict[str, dict] = {}
+_KEEP = 500                              # 오래된 것부터 버린다
+
+
+def _remember(store: dict, key: str, value: dict) -> None:
+    store[key] = value
+    while len(store) > _KEEP:
+        store.pop(next(iter(store)))
+
+
+@app.get("/pay/methods")
+def get_pay_methods() -> dict:
+    """화면이 그릴 결제 수단. 카카오페이만 실제로 붙어 있다."""
+    return {
+        "packs": list(PAY_PACKS),
+        "kakao": {"쓸수있음": kp.available(), "테스트": kp.is_test()},
+        "카드": CARD_ISSUERS,
+        "은행": BANKS,
+    }
+
+
+CARD_ISSUERS = ["KB국민", "신한", "삼성", "현대", "롯데", "하나", "BC", "NH농협", "우리"]
+BANKS = ["KB국민", "신한", "우리", "하나", "NH농협", "IBK기업", "카카오뱅크", "토스뱅크"]
+
+
+class PayReadyIn(BaseModel):
+    amount: int = Field(..., description="충전 금액(원)")
+
+
+@app.post("/pay/kakao/ready")
+async def post_pay_ready(body: PayReadyIn, request: Request,
+                         quadriga_session: str | None = Cookie(None)) -> dict:
+    """카카오페이 결제 준비 → 결제창 주소를 돌려준다."""
+    if body.amount not in PAY_PACKS:
+        raise HTTPException(400, "고를 수 없는 금액입니다.")
+    if not kp.available():
+        raise HTTPException(503, "카카오페이가 아직 설정되지 않았습니다.")
+
+    order = kp.new_order_id()
+    # 로그인했으면 그 사용자, 아니면 손님. 카카오에는 이 문자열만 나간다.
+    누구 = auth.user_for_token(quadriga_session)
+    user = f"u{누구['id']}" if 누구 else "guest"
+    out = await kp.ready(
+        amount=body.amount, order_id=order, user_id=user,
+        approval_url=public_url(request, f"/pay/kakao/approve?order={order}"),
+        cancel_url=public_url(request, f"/pay/kakao/cancel?order={order}"),
+        fail_url=public_url(request, f"/pay/kakao/fail?order={order}"),
+    )
+    if not out:
+        raise HTTPException(502, "카카오페이 결제 준비에 실패했습니다.")
+
+    _remember(_PENDING, order, {"tid": out["tid"], "user": user, "amount": body.amount})
+    return {"order": order, "redirect": out["redirect_mobile"]}
+
+
+@app.get("/pay/kakao/approve")
+async def get_pay_approve(order: str, pg_token: str = "") -> RedirectResponse:
+    """카카오가 사용자를 여기로 돌려보낸다. 여기서 승인해야 돈이 빠진다."""
+    pend = _PENDING.pop(order, None)
+    if not pend or not pg_token:
+        return RedirectResponse("/?pay=fail")
+
+    ok = await kp.approve(tid=pend["tid"], pg_token=pg_token,
+                          order_id=order, user_id=pend["user"])
+    if not ok:
+        return RedirectResponse("/?pay=fail")
+
+    # 금액은 카카오가 알려준 값을 쓴다 — 화면이 보낸 숫자를 믿지 않는다
+    _remember(_PAID, order, {"amount": ok["amount"], "aid": ok.get("aid")})
+    return RedirectResponse(f"/?pay=ok&order={order}")
+
+
+@app.get("/pay/kakao/cancel")
+def get_pay_cancel(order: str) -> RedirectResponse:
+    _PENDING.pop(order, None)
+    return RedirectResponse("/?pay=cancel")
+
+
+@app.get("/pay/kakao/fail")
+def get_pay_fail(order: str) -> RedirectResponse:
+    _PENDING.pop(order, None)
+    return RedirectResponse("/?pay=fail")
+
+
+@app.get("/pay/result/{order}")
+def get_pay_result(order: str) -> dict:
+    """화면이 충전을 반영하기 전에 서버에 한 번 더 묻는다.
+
+    한 주문은 한 번만 통한다 — 새로고침으로 두 번 충전되지 않게 꺼내 버린다.
+    """
+    done = _PAID.pop(order, None)
+    if not done:
+        raise HTTPException(404, "승인된 결제가 아닙니다.")
+    return {"paid": True, "amount": done["amount"]}
 
 
 # ---------- 13. 운동 기록 반영 체력나이 ----------

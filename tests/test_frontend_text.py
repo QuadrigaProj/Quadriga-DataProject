@@ -380,6 +380,20 @@ def test_점검기록_삭제는_직접적은운동이_남아있으면_막힌다(
     assert "직접 적은 운동에서 먼저 삭제를 진행해주세요" in body
 
 
+def test_점검기록_삭제_안내는_닫을수있는_모달로_보인다():
+    html = _index()
+    assert 'id="noticeModal"' in html
+    assert 'onclick="closeNoticeModal()"' in html
+    assert "openNoticeModal('직접 적은 운동에서 먼저 삭제를 진행해주세요')" in html
+
+
+def test_커뮤니티_작성과_채팅방_생성은_플러스_버튼으로_연다():
+    html = _index()
+    assert 'onclick="openPostComposer()"' in html
+    assert 'onclick="openRoomComposer()"' in html
+    assert 'id="postComposer"' in html and 'id="roomComposer"' in html
+
+
 # ---------- G2 변화추이 기간 직접 입력 ----------
 
 def test_전체_버튼이_직접_입력으로_바뀌었다():

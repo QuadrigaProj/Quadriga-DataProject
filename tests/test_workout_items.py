@@ -56,11 +56,31 @@ def test_운동에_따라_입력칸이_다르다():
     assert "거리" in by["run"]["입력"]
 
 
-def test_그림_파일이_실제로_있다():
-    """G4: 명칭 앞에 붙일 단색 그림. 루틴 픽토그램 6종을 함께 쓴다."""
+def test_종목마다_자세_그림이_있다():
+    """G4·H7: 명칭 앞 단색 그림. 기구가 아니라 사람이 그 동작을 하는 모습이다."""
+    art = (ROOT / "frontend" / "js" / "move-art.js").read_text(encoding="utf-8")
     for x in wi.catalog()["종목"]:
-        svg = ROOT / "frontend" / "img" / "moves" / f"{x['그림']}.svg"
-        assert svg.exists(), f"{x['이름']} → {svg.name} 없음"
+        assert f'id="pose-{x["id"]}"' in art, f'{x["이름"]} 자세 그림 없음'
+
+
+def test_종목마다_요인이_있다():
+    """H7: 무엇을 늘리는 운동인지 아이콘으로 보여주려면 요인이 있어야 한다."""
+    d = wi.catalog()
+    요인 = set(d["요인"])
+    assert 요인 == {"유연성", "근력", "심폐지구력", "근지구력"}
+    art = (ROOT / "frontend" / "js" / "move-art.js").read_text(encoding="utf-8")
+    for f in 요인:
+        assert f'id="factor-{f}"' in art, f"{f} 아이콘 없음"
+    for x in d["종목"]:
+        assert x["요인"] in 요인, x["이름"]
+
+
+def test_푸시업은_아령이_아니라_사람이다():
+    """H7 원문: 푸시업은 사람이 직접 하는 것이므로 사람 자세여야 한다."""
+    art = (ROOT / "frontend" / "js" / "move-art.js").read_text(encoding="utf-8")
+    본문 = art.split('id="pose-pushup"')[1].split("</symbol>")[0]
+    assert "<circle" in 본문        # 머리
+    assert 본문.count("<path") >= 3  # 몸·팔·바닥
 
 
 def test_화면에_당일_기록_작성이_붙어_있다():
@@ -105,3 +125,13 @@ def test_기록_작성은_다른_날짜도_받는다():
     assert "logTargetDate || todayIso()" in save
     render = html.split("async function renderDailyLog()")[1].split("\n}")[0]
     assert "logTargetDate || todayIso()" in render
+
+
+def test_요인_아이콘이_프로필_차트에도_붙는다():
+    """H7: 사용자가 아이콘 뜻을 알 수 있게 차트 항목 글자 앞에 한 번씩 보여준다."""
+    html = client.get("/").text
+    assert 'src="js/move-art.js"' in html
+    assert "MOVE_ART.install();" in html
+    assert "MOVE_ART.factor(k, 'axis-icon')" in html      # 차트 항목 앞
+    assert "MOVE_ART.factor(x.요인)" in html               # 기록 작성 화면
+    assert "MOVE_ART.pose(x.id)" in html

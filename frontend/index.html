@@ -1007,6 +1007,45 @@
   }
   .move-gif-fallback img{ width:72px; height:72px; }
   .move-gif-fallback code{ font-size:12px; color:var(--pine-deep); word-break:break-all; }
+  /* ===================== SCREEN 13 : 커뮤니티 ===================== */
+  .comm-compose{ margin-top:16px; border:1px solid var(--line); border-radius:var(--radius-lg); padding:14px; background:var(--paper); }
+  .comm-compose textarea{ width:100%; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-family:inherit; font-size:14.5px; resize:vertical; box-sizing:border-box; }
+  .comm-compose-row{ display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .comm-compose-row input[type=text]{ flex:1; min-width:140px; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-family:inherit; font-size:14px; }
+  .comm-attach{ border:1.5px dashed var(--line); border-radius:12px; padding:8px 12px; font-size:13px; cursor:pointer; color:var(--muted); }
+  .comm-share-btn{ border:1.5px solid var(--line); background:#fff; border-radius:12px; padding:8px 12px; font-size:13px; font-family:inherit; cursor:pointer; }
+  .comm-post-btn{ padding:9px 16px; font-size:14px; margin:0; }
+  .comm-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .comm-media img, .comm-media video{ width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); }
+  .post-card{ border:1px solid var(--line); border-radius:var(--radius-lg); padding:14px; margin-top:12px; background:var(--paper); }
+  .post-top{ display:flex; justify-content:space-between; align-items:baseline; }
+  .post-author{ font-weight:700; font-size:14px; }
+  .post-time{ font-size:11.5px; color:var(--muted); }
+  .post-body{ font-size:14.5px; line-height:1.55; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+  .post-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .post-media img, .post-media video{ max-width:100%; max-height:280px; border-radius:12px; border:1px solid var(--line); }
+  .post-record{ margin-top:8px; background:var(--pine-tint); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--pine-deep); }
+  .react-bar{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  .react-chip{ border:1.5px solid var(--line); background:#fff; border-radius:999px; padding:4px 10px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .react-chip.on{ border-color:var(--pine); background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
+  .post-actions{ display:flex; gap:14px; margin-top:8px; font-size:12.5px; color:var(--muted); }
+  .post-actions button{ background:none; border:none; color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; padding:0; }
+  .comment{ border-top:1px solid var(--line); padding:8px 0 0; margin-top:8px; font-size:13px; }
+  .comment-author{ font-weight:700; }
+  .comment-row{ display:flex; gap:6px; margin-top:8px; }
+  .comment-row input{ flex:1; border:1.5px solid var(--line); border-radius:10px; padding:8px 10px; font-family:inherit; font-size:13px; }
+  .room-card{ border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .room-card .rc-name{ font-weight:700; font-size:14px; }
+  .room-card .rc-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .room-card button{ border:none; background:var(--pine); color:#fff; border-radius:10px; padding:7px 12px; font-size:13px; font-family:inherit; cursor:pointer; white-space:nowrap; }
+  .chat-head{ display:flex; align-items:center; gap:10px; margin-top:14px; font-weight:700; }
+  .chat-back{ border:1.5px solid var(--line); background:#fff; border-radius:10px; padding:5px 10px; font-size:13px; font-family:inherit; cursor:pointer; }
+  .chat-msgs{ border:1px solid var(--line); border-radius:14px; padding:12px; margin-top:10px; height:340px; overflow-y:auto; background:var(--paper); }
+  .chat-msg{ margin-top:8px; font-size:13.5px; }
+  .chat-msg .cm-who{ font-size:11px; color:var(--muted); }
+  .chat-msg .cm-body{ display:inline-block; background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 10px; margin-top:2px; max-width:80%; word-break:break-word; }
+  .chat-msg.mine{ text-align:right; }
+  .chat-msg.mine .cm-body{ background:var(--pine-tint); border-color:var(--pine-tint); }
 </style>
 </head>
 <body>
@@ -1733,6 +1772,62 @@
     </div>
     <div class="footer-area">
       <button class="btn btn-primary" onclick="goTo('s3')">확인</button>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 13 : 커뮤니티 ============ -->
+  <section class="screen" id="s13">
+    <div class="content">
+      <h1 class="title">커뮤니티</h1>
+      <p class="sub">같이 운동하는 사람들과 경험을 나눠요.</p>
+
+      <div class="seg" id="commTab" style="margin-top:14px;">
+        <button type="button" class="on" data-c="feed" onclick="commTab('feed')">피드</button>
+        <button type="button" data-c="chat" onclick="commTab('chat')">운동 모임</button>
+      </div>
+
+      <div id="commGate" class="more-card" hidden>
+        커뮤니티는 로그인한 회원만 이용할 수 있어요.
+        <button class="btn btn-primary" style="margin-top:10px;" onclick="goTo('s0')">로그인하기</button>
+      </div>
+
+      <!-- 피드 -->
+      <div id="commFeed" hidden>
+        <div class="comm-compose">
+          <textarea id="postBody" rows="2" placeholder="오늘 운동은 어땠나요? 사진·영상도 올릴 수 있어요."></textarea>
+          <div id="postPreview" class="comm-media"></div>
+          <div class="comm-compose-row">
+            <label class="comm-attach">＋ 사진·영상
+              <input type="file" id="postFile" accept="image/*,video/*" multiple hidden onchange="onPostFiles(event)" />
+            </label>
+            <button class="comm-share-btn" type="button" onclick="shareMyRecord()">📈 내 기록 공유</button>
+            <button class="btn btn-primary comm-post-btn" type="button" onclick="submitPost()">올리기</button>
+          </div>
+        </div>
+        <div id="feedList"></div>
+        <button id="feedMore" class="more-card" hidden onclick="loadFeed(true)">더 보기</button>
+      </div>
+
+      <!-- 운동 모임 채팅 -->
+      <div id="commChat" hidden>
+        <div class="comm-compose-row" style="margin-top:14px;">
+          <input id="roomName" type="text" placeholder="모임 이름 (예: 토요일 한강 러닝)" />
+          <button class="btn btn-primary comm-post-btn" type="button" onclick="createRoom()">모임 만들기</button>
+        </div>
+        <div id="roomList"></div>
+
+        <div id="chatView" hidden>
+          <div class="chat-head">
+            <button type="button" class="chat-back" onclick="closeRoom()">← 목록</button>
+            <span id="chatTitle"></span>
+          </div>
+          <div id="chatMsgs" class="chat-msgs"></div>
+          <div class="comm-compose-row">
+            <input id="chatInput" type="text" placeholder="메시지 입력" onkeydown="if(event.key==='Enter')sendChat()" />
+            <button class="btn btn-primary comm-post-btn" type="button" onclick="sendChat()">보내기</button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -2544,6 +2639,7 @@ function setStatus(msg) {
 
 const MENU_ITEMS = [
   { id: 's3', icon: '🏠', label: '홈' },
+  { id: 's13', icon: '💬', label: '커뮤니티' },
   { id: 's7', icon: '📈', label: '기록' },
   { id: 's9', icon: '📅', label: '달력' },
   { id: 's8', icon: '🎽', label: '운동 고르기' },
@@ -2878,6 +2974,246 @@ function goTo(id){
   if(id === 's10') renderStyleTest();
   if(id === 's11') renderDailyLog();
   if(id === 's12') renderRecommend();
+  if(id === 's13') initCommunity();
+  if(id !== 's13') stopChatPoll();
+}
+
+/* ---------------------------------------------------------------------------
+   커뮤니티 (s13) — 게시글·댓글·이모지 반응·기록 공유·운동 모임 채팅
+   서버 계정(state.account)만 이용 가능. 게스트는 안내만 보여준다.
+   --------------------------------------------------------------------------- */
+const COMM = { tab: 'feed', emojis: ['👍','🔥','💪','👏','🥲','🎉'],
+               media: [], oldest: null, room: null, lastMsgId: 0, poll: null };
+
+function initCommunity(){
+  const ok = !!state.account;
+  $('commGate').hidden = ok;
+  $('commTab').style.display = ok ? '' : 'none';
+  if (!ok) { $('commFeed').hidden = true; $('commChat').hidden = true; return; }
+  API.commMeta().then(m => { if (m && m['이모지']) COMM.emojis = m['이모지']; }).catch(()=>{});
+  commTab(COMM.tab);
+}
+
+function commTab(t){
+  COMM.tab = t;
+  document.querySelectorAll('#commTab button').forEach(b=>b.classList.toggle('on', b.dataset.c===t));
+  $('commFeed').hidden = t !== 'feed';
+  $('commChat').hidden = t !== 'chat';
+  if (t === 'feed') { COMM.oldest = null; loadFeed(false); }
+  else { closeRoom(); loadRooms(); }
+}
+
+/* ---- 피드 ---- */
+function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function ago(sec){
+  const d = Date.now()/1000 - sec;
+  if (d < 60) return '방금';
+  if (d < 3600) return Math.floor(d/60) + '분 전';
+  if (d < 86400) return Math.floor(d/3600) + '시간 전';
+  return Math.floor(d/86400) + '일 전';
+}
+
+async function loadFeed(more){
+  try {
+    const r = await API.commFeed(more ? COMM.oldest : null);
+    const list = $('feedList');
+    if (!more) list.innerHTML = '';
+    (r.posts || []).forEach(p => list.insertAdjacentHTML('beforeend', postCard(p)));
+    if (r.posts && r.posts.length) COMM.oldest = r.posts[r.posts.length - 1].id;
+    $('feedMore').hidden = !(r.posts && r.posts.length >= 20);
+    if (!list.innerHTML) list.innerHTML = '<div class="more-card">아직 글이 없어요. 첫 글을 남겨보세요!</div>';
+  } catch (e) { $('feedList').innerHTML = '<div class="more-card">피드를 불러오지 못했어요.</div>'; }
+}
+
+function mediaHtml(media, cls){
+  return (media || []).map(m => m.type === 'video'
+    ? `<video src="${m.url}" controls class="${cls}"></video>`
+    : `<img src="${m.url}" alt="" class="${cls}" />`).join('');
+}
+
+function reactBar(target_type, id, react){
+  const mine = new Set(react.mine || []);
+  return `<div class="react-bar">` + COMM.emojis.map(e => {
+    const n = (react.counts || {})[e] || 0;
+    return `<button type="button" class="react-chip${mine.has(e)?' on':''}"
+      onclick="doReact('${target_type}',${id},'${e}',this)">${e}${n?' '+n:''}</button>`;
+  }).join('') + `</div>`;
+}
+
+function postCard(p){
+  const rec = p['기록'] ? `<div class="post-record">📈 ${esc(p['기록'].요약 || JSON.stringify(p['기록']))}</div>` : '';
+  return `<div class="post-card" id="post-${p.id}" data-id="${p.id}">
+    <div class="post-top"><span class="post-author">${esc(p['작성자'])}</span>
+      <span class="post-time">${ago(p['작성시각'])}</span></div>
+    ${p['본문'] ? `<div class="post-body">${esc(p['본문'])}</div>` : ''}
+    ${p['미디어'] && p['미디어'].length ? `<div class="post-media">${mediaHtml(p['미디어'],'')}</div>` : ''}
+    ${rec}
+    ${reactBar('post', p.id, p['반응'])}
+    <div class="post-actions">
+      <button onclick="toggleComments(${p.id})">💬 댓글 ${p['댓글수']||0}</button>
+      ${p['내글'] ? `<button onclick="removePost(${p.id})">삭제</button>` : ''}
+    </div>
+    <div class="comment-box" id="cbox-${p.id}" hidden></div>
+  </div>`;
+}
+
+async function doReact(tt, id, emoji, btn){
+  try {
+    const r = await API.commReact(tt, id, emoji);
+    const bar = btn.parentElement;
+    bar.outerHTML = reactBar(tt, id, r['반응']);
+  } catch (e) { showToast(e.message); }
+}
+
+async function toggleComments(id){
+  const box = $('cbox-' + id);
+  if (!box.hidden) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = '불러오는 중…';
+  try {
+    const p = await API.commPostDetail(id);
+    box.innerHTML = (p['댓글'] || []).map(c => `
+      <div class="comment"><span class="comment-author">${esc(c['작성자'])}</span>
+        <span class="post-time"> · ${ago(c['작성시각'])}</span>
+        <div>${esc(c['본문'])}</div>
+        ${reactBar('comment', c.id, c['반응'])}
+      </div>`).join('') + `
+      <div class="comment-row">
+        <input type="text" id="ci-${id}" placeholder="댓글 달기" onkeydown="if(event.key==='Enter')sendComment(${id})" />
+        <button class="comm-post-btn btn btn-primary" onclick="sendComment(${id})">등록</button>
+      </div>`;
+  } catch (e) { box.innerHTML = '댓글을 불러오지 못했어요.'; }
+}
+
+async function sendComment(id){
+  const inp = $('ci-' + id);
+  const body = inp.value.trim();
+  if (!body) return;
+  inp.disabled = true;
+  try {
+    const p = await API.commComment(id, body);
+    $('cbox-' + id).hidden = true;
+    await toggleComments(id);                              // 갱신해서 다시 펼침
+    const btn = document.querySelector(`#post-${id} .post-actions button`);
+    if (btn) btn.textContent = `💬 댓글 ${p['댓글수']}`;
+  } catch (e) { showToast(e.message); inp.disabled = false; }
+}
+
+async function removePost(id){
+  if (!confirm('이 글을 삭제할까요?')) return;
+  try { await API.commPostDelete(id); $('post-' + id).remove(); }
+  catch (e) { showToast(e.message); }
+}
+
+/* ---- 글 작성 ---- */
+function onPostFiles(ev){
+  const files = [...ev.target.files].slice(0, 4);
+  const prev = $('postPreview');
+  files.forEach(f => {
+    if (f.size > 8 * 1024 * 1024) { showToast(`${f.name} 은 8MB를 넘어 건너뛰었어요`); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      COMM.media.push({ url: reader.result, name: f.name });
+      prev.insertAdjacentHTML('beforeend', f.type.startsWith('video')
+        ? `<video src="${reader.result}" muted></video>` : `<img src="${reader.result}" alt="" />`);
+    };
+    reader.readAsDataURL(f);
+  });
+  ev.target.value = '';
+}
+
+async function submitPost(){
+  const body = $('postBody').value.trim();
+  if (!body && !COMM.media.length) { showToast('내용이나 사진을 넣어주세요'); return; }
+  try {
+    await API.commPost({ body, media: COMM.media });
+    $('postBody').value = ''; $('postPreview').innerHTML = ''; COMM.media = [];
+    COMM.oldest = null; await loadFeed(false);
+  } catch (e) { showToast(e.message); }
+}
+
+async function shareMyRecord(){
+  const r = state.result;
+  const days = (state.routineLog || []).length;
+  if (!r && !days) { showToast('공유할 기록이 아직 없어요'); return; }
+  const parts = [];
+  if (r && r['체력나이'] != null) parts.push(`추정 체력나이 ${Math.round(r['체력나이'])}세`);
+  if (days) parts.push(`지금까지 ${days}회 운동 완료`);
+  const 요약 = parts.join(' · ');
+  try {
+    await API.commPost({ kind: 'record', body: $('postBody').value.trim(),
+                         record: { 요약, 운동횟수: days } });
+    $('postBody').value = ''; COMM.oldest = null; await loadFeed(false);
+    showToast('기록을 공유했어요');
+  } catch (e) { showToast(e.message); }
+}
+
+/* ---- 운동 모임 채팅 ---- */
+let ROOMS = [];
+async function loadRooms(){
+  try {
+    const r = await API.commRooms();
+    ROOMS = r.rooms || [];
+    const box = $('roomList');
+    box.innerHTML = ROOMS.map(rm => `
+      <div class="room-card">
+        <div><div class="rc-name">${esc(rm['이름'])}</div>
+          <div class="rc-sub">${esc(rm['주제']||'')} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
+        <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
+      </div>`).join('') || '<div class="more-card">아직 모임이 없어요. 먼저 만들어보세요!</div>';
+    box.querySelectorAll('button[data-room]').forEach(btn => btn.onclick = () => {
+      const id = +btn.dataset.room;
+      const rm = ROOMS.find(x => x.id === id);
+      if (btn.dataset.joined === '1') openRoom(id, rm ? rm['이름'] : '모임');
+      else joinRoom(id);
+    });
+  } catch (e) { $('roomList').innerHTML = '<div class="more-card">모임을 불러오지 못했어요.</div>'; }
+}
+
+async function createRoom(){
+  const name = $('roomName').value.trim();
+  if (!name) { showToast('모임 이름을 입력해주세요'); return; }
+  try { await API.commRoomNew(name, ''); $('roomName').value = ''; loadRooms(); }
+  catch (e) { showToast(e.message); }
+}
+async function joinRoom(id){ try { await API.commRoomJoin(id); loadRooms(); } catch (e) { showToast(e.message); } }
+
+async function openRoom(id, name){
+  COMM.room = id; COMM.lastMsgId = 0;
+  $('roomList').hidden = true; $('chatView').hidden = false;
+  $('chatTitle').textContent = name || '모임';
+  $('chatMsgs').innerHTML = '';
+  await pollChat();
+  COMM.poll = setInterval(pollChat, 4000);
+}
+function closeRoom(){
+  stopChatPoll();
+  $('chatView').hidden = true; $('roomList').hidden = false; COMM.room = null;
+}
+function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
+
+async function pollChat(){
+  if (!COMM.room) return;
+  try {
+    const r = await API.commMessages(COMM.room, COMM.lastMsgId || undefined);
+    const box = $('chatMsgs');
+    (r.messages || []).forEach(m => {
+      COMM.lastMsgId = Math.max(COMM.lastMsgId, m.id);
+      box.insertAdjacentHTML('beforeend',
+        `<div class="chat-msg${m['내글']?' mine':''}"><div class="cm-who">${esc(m['작성자'])}</div>
+         <div class="cm-body">${esc(m['본문'])}</div></div>`);
+    });
+    if (r.messages && r.messages.length) box.scrollTop = box.scrollHeight;
+  } catch (e) { /* 폴링은 조용히 넘어간다 */ }
+}
+
+async function sendChat(){
+  const inp = $('chatInput');
+  const body = inp.value.trim();
+  if (!body || !COMM.room) return;
+  inp.value = '';
+  try { await API.commSend(COMM.room, body); await pollChat(); }
+  catch (e) { showToast(e.message); inp.value = body; }
 }
 
 /* ---- 화면 1 : 기본 정보 ---- */

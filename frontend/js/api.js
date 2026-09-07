@@ -83,5 +83,21 @@ const API = (() => {
     }),
     myMeasurements: () => call('/me/measurements'),
     pushMeasurement: (b) => post('/me/measurements', b),
+
+    // --- 커뮤니티 ---
+    commMeta: () => call('/community/meta'),
+    commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),
+    commPost: (b) => post('/community/posts', b),
+    commPostDetail: (id) => call('/community/posts/' + id),
+    commPostDelete: (id) => call('/community/posts/' + id, { method: 'DELETE' }),
+    commComment: (id, body) => post('/community/posts/' + id + '/comments', { body }),
+    commReact: (target_type, target_id, emoji) =>
+      post('/community/reactions', { target_type, target_id, emoji }),
+    commRooms: () => call('/community/rooms'),
+    commRoomNew: (name, topic) => post('/community/rooms', { name, topic }),
+    commRoomJoin: (id) => post('/community/rooms/' + id + '/join', {}),
+    commRoomLeave: (id) => post('/community/rooms/' + id + '/leave', {}),
+    commMessages: (id, after) => call('/community/rooms/' + id + '/messages' + (after ? '?after=' + after : '')),
+    commSend: (id, body) => post('/community/rooms/' + id + '/messages', { body }),
   };
 })();

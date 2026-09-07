@@ -40,6 +40,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import ai_recommend as air
     from backend import route
     from backend import kakaopay as kp
+    from backend import community
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -58,12 +59,14 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import prescription as pr               # noqa: E402
     import route                            # noqa: E402
     import kakaopay as kp                   # noqa: E402
+    import community                        # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """배포 직후 첫 요청에서 테이블이 없어 500 이 나지 않도록 미리 만든다."""
     try:
         auth.init_db()
+        community.init_db()
     except Exception as e:                       # DB 가 아직 안 붙어도 서버는 뜬다
         print(f"[warn] DB 초기화 실패: {type(e).__name__}")
     yield
@@ -85,6 +88,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(community.router)     # 커뮤니티(게시글·댓글·반응·채팅)
 
 PROVIDER_CONSOLE = {
     "google": "https://console.cloud.google.com/apis/credentials",

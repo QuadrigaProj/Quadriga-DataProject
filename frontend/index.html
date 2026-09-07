@@ -321,13 +321,12 @@
   .player-name{ font-size:20px; font-weight:800; }
   .player-set{ font-size:14.5px; color:var(--muted); margin-top:4px; }
 
-  /* 오늘의 컨디션 — 부담 부위 + 몸 무거운 날을 한 줄에서 함께 고른다 */
+  /* 오늘의 컨디션 — "몸이 무거운 날" 토글 하나만 둔다 (C9) */
   .cond-row{ display:flex; gap:8px; padding:16px 22px 0; flex-wrap:wrap; }
   .cond-btn{
     border:1.5px solid var(--line); border-radius:20px; padding:8px 13px; font-size:13.5px;
     background:#fff; cursor:pointer; font-family:inherit; color:var(--ink); white-space:nowrap;
   }
-  .cond-btn.off{ background:var(--clay); color:#fff; border-color:var(--clay); text-decoration:line-through; }
   .cond-btn.heavy.on{ background:var(--amber); color:#fff; border-color:var(--amber); }
   .cond-hint{
     margin:10px 22px 0; font-size:12.5px; color:var(--muted); line-height:1.5;
@@ -1040,12 +1039,9 @@
         <div class="player-set" id="playerSet">2세트 중 1세트 · 10회</div>
       </div>
       <div class="cond-row" id="condRow">
-        <button type="button" class="cond-btn" id="chipKnee" data-part="무릎" onclick="toggleChip('chipKnee')">무릎</button>
-        <button type="button" class="cond-btn" id="chipBack" data-part="허리" onclick="toggleChip('chipBack')">허리</button>
-        <button type="button" class="cond-btn" id="chipShoulder" data-part="어깨" onclick="toggleChip('chipShoulder')">어깨</button>
-        <button type="button" class="cond-btn heavy" id="heavyBtn" onclick="toggleHeavy()">몸이 무거운 날</button>
+        <button type="button" class="cond-btn heavy" id="heavyBtn" aria-pressed="false" onclick="toggleHeavy()">몸이 무거운 날</button>
       </div>
-      <div class="cond-hint" id="condHint">아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.</div>
+      <div class="cond-hint" id="condHint">아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요. 몸이 무거운 날엔 위 버튼을 눌러주세요.</div>
       <div class="sport-applied" id="sportApplied" style="display:none;"></div>
       <div class="steps-dots" id="stepsDots">
         <div class="d on"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div>
@@ -2520,7 +2516,6 @@ async function loadRoutine(){
     const r = await API.programRoutine({
       age_gbn: pg, purpose,
       day: programDay(), week: programWeek(),
-      exclude_parts: excludedParts().join(','),
       heavy: heavyOn,
       fitness_age: state.result?.체력나이,
       real_age: state.age,
@@ -2545,7 +2540,7 @@ async function loadRoutine(){
 }
 
 /* ---- 화면 4 : 루틴 플레이어 ----
-   몸 무거운 날·제외 부위는 서버(/program/routine)가 steps 와 강도에 이미 반영해 준다.
+   몸 무거운 날은 서버(/program/routine?heavy=true)가 steps 와 강도에 이미 반영해 준다.
    오프라인 폴백일 때만 본운동 앞 2개로 클라이언트에서 줄인다. */
 let currentStep = 0;
 function resetRoutine(){ currentStep = 0; renderStep(); renderSportApplied(); }
@@ -2565,8 +2560,6 @@ function renderSportApplied(){
   else if (반영.length) 말 += '관련된 동작을 앞으로 옮겼어요.';
   else 말 += '오늘 루틴이 이미 잘 맞아서 그대로 갑니다.';
 
-  const 부위 = m?.조심할부위 || [];
-  if (부위.length) 말 += `<br/>이 종목들이 자주 무리를 주는 <b>${부위.join('·')}</b> 이(가) 아프면 위 버튼을 눌러주세요.`;
   box.innerHTML = 말;
   box.style.display = 'block';
 }
@@ -2690,12 +2683,10 @@ function toggleTimer(id){
   else startTimer(id, timerSecondsOf(id));
 }
 
-/* ---- 화면 4 : 부담 부위 · 컨디션 ----
-   무릎·허리·어깨·"몸이 무거운 날" 을 한 줄에서 함께 켠다.
-   버튼마다 어떤 효과가 있는지 아래 안내줄(condHint)에 바로 보여준다. */
-function excludedParts(){
-  return [...document.querySelectorAll('#condRow .cond-btn[data-part].off')].map(c=>c.dataset.part);
-}
+/* ---- 화면 4 : 오늘 컨디션 ----
+   선택지는 "몸이 무거운 날" 토글 하나뿐이다(C9). 아무것도 안 누르면 오늘의 원래 루틴.
+   켜면 서버(/program/routine?heavy=true)가 본운동 2개 · 1세트 · 시간 절반으로 돌려준다.
+   효과는 아래 안내줄(condHint)에 바로 보여준다. */
 
 function showToast(msg){
   const toast = $('toast');
@@ -2704,39 +2695,18 @@ function showToast(msg){
   setTimeout(()=>toast.classList.remove('show'), 1800);
 }
 
-/* 지금 켜져 있는 버튼들의 효과를 한 줄로 정리해서 보여준다. */
+/* "몸이 무거운 날" 토글 상태에 맞는 안내 한 줄. 기본 문구는 마크업(#condHint)의 초기 문구와 같아야 한다. */
 function updateCondHint(){
-  const parts = excludedParts();
-  const lines = [];
-  if (parts.length) lines.push(`${parts.join('·')}에 부담되는 동작을 루틴에서 빼요.`);
-  if (heavyOn)      lines.push('본운동을 2개로 줄이고, 세트는 1세트·시간은 절반으로 안내해요.');
-  $('condHint').textContent = lines.length
-    ? lines.join(' ')
-    : '아픈 부위나 오늘 컨디션을 누르면 루틴이 바로 바뀌어요.';
-}
-
-async function toggleChip(id){
-  $(id).classList.toggle("off");
-
-  const exclude = excludedParts();
-  updateCondHint();
-
-  try {
-    await loadRoutine();
-    currentStep = 0;
-    renderStep();
-    showToast(exclude.length
-      ? `${exclude.join("·")} 부위에 부담이 가는 영상을 제외했어요.`
-      : "부위 제한을 해제했어요.");
-  } catch (e) {
-    showToast("루틴을 다시 불러오지 못했어요.");
-  }
+  $('condHint').textContent = heavyOn
+    ? '본운동을 2개로 줄이고, 세트는 1세트·시간은 절반으로 안내해요.'
+    : '아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요. 몸이 무거운 날엔 위 버튼을 눌러주세요.';
 }
 
 let heavyOn = false;
 async function toggleHeavy(){
   heavyOn = !heavyOn;
   $('heavyBtn').classList.toggle('on', heavyOn);
+  $('heavyBtn').setAttribute('aria-pressed', String(heavyOn));
   $('heavyBtn').textContent = heavyOn ? '가볍게 진행 중' : '몸이 무거운 날';
   updateCondHint();
   showToast(heavyOn ? '오늘은 가볍게 — 본운동 2개 · 1세트 · 시간 절반' : '원래 강도로 되돌렸어요');

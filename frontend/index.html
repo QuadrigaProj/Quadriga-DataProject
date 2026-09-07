@@ -482,6 +482,22 @@
   .more-body{ margin-top:14px; }
   .more-body .measure-name{ font-size:14.5px; }
 
+  /* ===================== SCREEN 12 : 루틴 추천 (G7) ===================== */
+  .rec-card{ margin-top:18px; border:1px solid var(--line); border-radius:var(--radius-lg);
+             background:var(--paper); padding:20px; }
+  .rec-rank{ font-size:12.5px; color:var(--muted); }
+  .rec-purpose{ display:inline-block; margin-top:8px; padding:4px 10px; border-radius:999px;
+                background:var(--pine-tint); color:var(--pine-deep);
+                font-size:12.5px; font-weight:700; }
+  .rec-title{ font-size:22px; font-weight:700; letter-spacing:-0.02em; margin-top:10px; }
+  .rec-meta{ font-size:13px; color:var(--muted); margin-top:6px; }
+  .rec-why{ margin:16px 0 0; padding:14px 0 0; border-top:1px solid var(--line); }
+  .rec-why li{ font-size:14px; line-height:1.7; margin-left:18px; }
+  .rec-why-head{ font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:8px; }
+  .rec-care{ font-size:12.5px; color:var(--clay); margin-top:12px; }
+  .rec-actions{ display:flex; gap:8px; margin-top:18px; }
+  .rec-actions .btn{ margin:0; min-height:52px; font-size:15px; }
+
   /* ===================== SCREEN 11 : 당일 기록 작성 (G3·G4) ===================== */
   .wlog-group{ margin-top:22px; }
   .wlog-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:6px; }
@@ -1471,6 +1487,15 @@
     </div>
   </section>
 
+  <!-- ============ SCREEN 12 : 루틴 추천 ============ -->
+  <section class="screen" id="s12">
+    <div class="content">
+      <h1 class="title">지금 하기 좋은<br/>루틴을 골라봤어요</h1>
+      <p class="sub" id="recoSub">점검 결과와 고른 것들을 보고 추천합니다.</p>
+      <div id="recoBody"></div>
+    </div>
+  </section>
+
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
   <section class="screen" id="s6">
     <div class="content">
@@ -2271,6 +2296,7 @@ const MENU_ITEMS = [
   { id: 's7', icon: '📈', label: '기록' },
   { id: 's9', icon: '📅', label: '달력' },
   { id: 's8', icon: '🎽', label: '운동 고르기' },
+  { id: 's12', icon: '✨', label: '루틴 추천' },
   { id: 's5', icon: '👤', label: '프로필' },
 ];
 
@@ -2543,6 +2569,7 @@ function goTo(id){
   if(id === 's9') renderCalendar();
   if(id === 's10') renderStyleTest();
   if(id === 's11') renderDailyLog();
+  if(id === 's12') renderRecommend();
 }
 
 /* ---- 화면 1 : 기본 정보 ---- */
@@ -3990,6 +4017,101 @@ function renderManualRecords(){
 
 /* 화면에 붙이는 단위 — /workout-items 의 단위표와 같다(오프라인 대비 사본). */
 const WLOG_UNIT = { 세트: '세트', 횟수: '회', 무게: 'kg', 시간: '분', 거리: 'km' };
+
+/* ---------------------------------------------------------------------------
+   루틴 추천 (G7) — 점검 결과·스타일 테스트·고른 종목·목표를 서버에 넘기면
+   250개 고정 루틴에 점수를 매겨 순위를 돌려준다. 루틴을 새로 만들지 않는다.
+   마음에 안 들면 '다음 추천' 으로 다음 순위를 본다.
+   --------------------------------------------------------------------------- */
+let recoList = [];
+let recoAt = 0;
+let recoCare = [];
+
+/* 체력나이 항목별에서 뒤처지는 요인 — 값이 큰(늙은) 쪽이 약점이다.
+   성장기는 방향이 반대라 작은 쪽을 고른다. 체성분은 U자형이라 뺀다. */
+function weakFactors(){
+  const 항목 = state.result?.항목별 || {};
+  const 쌍 = Object.entries(항목).filter(([k, v]) => k !== '체성분' && Number.isFinite(v));
+  if (쌍.length < 2) return 쌍.map(([k]) => k);
+  쌍.sort((a, b) => (isGrowth() ? a[1] - b[1] : b[1] - a[1]));
+  return 쌍.slice(0, 2).map(([k]) => k);
+}
+
+async function renderRecommend(){
+  const box = $('recoBody');
+  const pg = programAgeGroup(state.age);
+  if (!pg) {
+    box.innerHTML = '<div class="rec-empty">먼저 첫 점검에서 나이를 넣어주세요.</div>';
+    return;
+  }
+  box.innerHTML = '<div class="rec-empty">추천을 고르는 중이에요…</div>';
+  const 약점 = weakFactors();
+  const 목표격차 = (state.result?.체력나이 != null && state.targetAge != null)
+    ? Math.max(0, state.result.체력나이 - state.targetAge) : null;
+  try {
+    const r = await API.recommendRoutines({
+      age_gbn: pg,
+      weak: 약점.join(','),
+      style_purpose: state.styleTest?.result?.추천목적 || null,
+      sports: (state.sports || []).join(','),
+      target_gap: 목표격차,
+      limit: 5,
+    });
+    recoList = r.추천 || [];
+    recoCare = r.조심할부위 || [];
+    recoAt = 0;
+  } catch (e) {
+    box.innerHTML = '<div class="rec-empty">추천을 불러오지 못했어요.<br/>잠시 뒤 다시 시도해주세요.</div>';
+    return;
+  }
+  $('recoSub').textContent = 약점.length
+    ? `뒤처지는 ${약점.join(' · ')}을(를) 먼저 봤어요.`
+    : '점검 결과와 고른 것들을 보고 추천합니다.';
+  paintRecommend();
+}
+
+function paintRecommend(){
+  const box = $('recoBody');
+  if (!recoList.length) {
+    box.innerHTML = '<div class="rec-empty">추천할 루틴을 찾지 못했어요.</div>';
+    return;
+  }
+  const x = recoList[recoAt];
+  const 마지막 = recoAt >= recoList.length - 1;
+  box.innerHTML = `
+    <div class="rec-card">
+      <div class="rec-rank">추천 ${x.순위} / ${recoList.length}</div>
+      <div class="rec-purpose">${x.표시목적 || x.목적}</div>
+      <div class="rec-title">${x.루틴명}</div>
+      <div class="rec-meta">동작 ${x.동작수}개 · ${(x.체력요인 || []).slice(0, 3).join(' · ')}</div>
+      <div class="rec-why">
+        <div class="rec-why-head">왜 이걸 골랐나요</div>
+        <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
+      </div>
+      ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
+      <div class="rec-actions">
+        <button class="btn btn-ghost" onclick="nextRecommend()" ${마지막 ? 'disabled' : ''}>
+          ${마지막 ? '마지막 추천이에요' : '다음 추천'}</button>
+        <button class="btn btn-primary" onclick="useRecommend()">이 루틴으로 시작</button>
+      </div>
+    </div>`;
+}
+
+function nextRecommend(){
+  if (recoAt < recoList.length - 1) { recoAt++; paintRecommend(); }
+}
+
+/* 고른 추천의 목적을 그대로 적용한다. 홈의 오늘 루틴이 그 목적으로 바뀐다. */
+async function useRecommend(){
+  const x = recoList[recoAt];
+  if (!x) return;
+  const key = Object.keys(PURPOSE_TO_KO).find(k => PURPOSE_TO_KO[k] === x.목적);
+  if (key) {
+    state.purpose = key;
+    await saveProfile();
+  }
+  goTo('s3');
+}
 
 /* ---- 시작 ---- */
 (async function init(){

@@ -541,6 +541,77 @@ def change_room_password(user_id: int, room_id: int, password: str) -> None:
                     (salt, password_hash, room_id))
 
 
+def room_members(me: int, room_id: int) -> dict:
+    """단체 채팅방 멤버 목록 (L6).
+
+    멤버만 볼 수 있다. 보이는 것은 닉네임과 아이디뿐이다.
+    """
+    with auth.db() as con:
+        room = con.execute("SELECT * FROM chat_rooms WHERE id=?", (room_id,)).fetchone()
+        if not room:
+            raise HTTPException(404, "모임을 찾을 수 없어요.")
+        if not _is_member(con, room_id, me):
+            raise HTTPException(403, "참여한 사람만 멤버를 볼 수 있어요.")
+        rows = con.execute(
+            "SELECT user_id FROM chat_members WHERE room_id=? ORDER BY joined_at, user_id",
+            (room_id,)).fetchall()
+        방장 = room["created_by"]
+        멤버 = []
+        for r in rows:
+            u = _public_user(con, r["user_id"])
+            u["방장"] = r["user_id"] == 방장
+            u["나"] = r["user_id"] == me
+            u["친구"] = are_friends(con, me, r["user_id"])
+            멤버.append(u)
+    return {"이름": room["name"], "종류": room["room_type"],
+            "내가방장": 방장 == me, "인원": len(멤버), "멤버": 멤버}
+
+
+def kick_member(me: int, room_id: int, handle: str) -> dict:
+    """방장이 멤버를 내보낸다 (L6). 방장 자신은 못 내보낸다 — 나가기를 쓴다."""
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    with auth.db() as con:
+        room = con.execute("SELECT * FROM chat_rooms WHERE id=?", (room_id,)).fetchone()
+        if not room:
+            raise HTTPException(404, "모임을 찾을 수 없어요.")
+        if room["created_by"] != me:
+            raise HTTPException(403, "방장만 멤버를 내보낼 수 있어요.")
+        if room["room_type"] != "group":
+            raise HTTPException(400, "단체 채팅방에서만 할 수 있어요.")
+        if target["user_id"] == me:
+            raise HTTPException(400, "방장은 내보낼 수 없어요. 나가기를 눌러 주세요.")
+        if not _is_member(con, room_id, target["user_id"]):
+            raise HTTPException(404, "그 사람은 이 모임에 없어요.")
+        con.execute("DELETE FROM chat_members WHERE room_id=? AND user_id=?",
+                    (room_id, target["user_id"]))
+    return room_members(me, room_id)
+
+
+def invite_member(me: int, room_id: int, handle: str) -> dict:
+    """멤버가 사람을 초대한다 (L6).
+
+    초대는 비밀번호를 건너뛴다 — 그래서 **멤버만** 부를 수 있게 한다.
+    """
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    with auth.db() as con:
+        room = con.execute("SELECT * FROM chat_rooms WHERE id=?", (room_id,)).fetchone()
+        if not room:
+            raise HTTPException(404, "모임을 찾을 수 없어요.")
+        if room["room_type"] != "group":
+            raise HTTPException(400, "단체 채팅방에서만 할 수 있어요.")
+        if not _is_member(con, room_id, me):
+            raise HTTPException(403, "참여한 사람만 초대할 수 있어요.")
+        if _is_member(con, room_id, target["user_id"]):
+            raise HTTPException(400, "이미 참여 중인 사람이에요.")
+        con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
+                    (room_id, target["user_id"], int(time.time())))
+    return room_members(me, room_id)
+
+
 def leave_room(user_id: int, room_id: int) -> None:
     with auth.db() as con:
         con.execute("DELETE FROM chat_members WHERE room_id=? AND user_id=?", (room_id, user_id))
@@ -709,6 +780,23 @@ def room_password(room_id: int, body: RoomPasswordIn,
                   quadriga_session: str | None = Cookie(None)) -> dict:
     change_room_password(_uid(quadriga_session), room_id, body.password)
     return {"ok": True}
+
+
+@router.get("/rooms/{room_id}/members")
+def room_member_list(room_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    return room_members(_uid(quadriga_session), room_id)
+
+
+@router.post("/rooms/{room_id}/invite")
+def room_invite(room_id: int, body: HandleIn,
+                quadriga_session: str | None = Cookie(None)) -> dict:
+    return invite_member(_uid(quadriga_session), room_id, body.handle)
+
+
+@router.post("/rooms/{room_id}/kick")
+def room_kick(room_id: int, body: HandleIn,
+              quadriga_session: str | None = Cookie(None)) -> dict:
+    return kick_member(_uid(quadriga_session), room_id, body.handle)
 
 
 @router.post("/rooms/{room_id}/leave")

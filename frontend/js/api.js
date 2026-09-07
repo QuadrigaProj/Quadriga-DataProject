@@ -105,6 +105,10 @@ const API = (() => {
     commRooms: () => call('/community/rooms'),
     commRoomNew: (body) => post('/community/rooms', body),
     commRoomJoin: (id, password) => post('/community/rooms/' + id + '/join', { password }),
+    // 단체 채팅방 멤버 관리 (L6). 초대·내보내기 모두 아이디로 한다.
+    commRoomMembers: (id) => call('/community/rooms/' + id + '/members'),
+    commRoomInvite: (id, handle) => post('/community/rooms/' + id + '/invite', { handle }),
+    commRoomKick: (id, handle) => post('/community/rooms/' + id + '/kick', { handle }),
     commRoomLeave: (id) => post('/community/rooms/' + id + '/leave', {}),
     commRoomPassword: (id, password) => call('/community/rooms/' + id + '/password', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),

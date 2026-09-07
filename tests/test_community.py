@@ -395,3 +395,120 @@ def test_채팅_열기도_로그인이_필요하다():
     c = TestClient(app)
     assert c.post("/community/direct", json={"handle": "abcdef"}).status_code == 401
 
+
+# ---------- L5·L6. 단체 채팅방 멤버 관리 ----------
+
+def _방(a):
+    return a.post("/community/rooms", json={"name": "토요 러닝"}).json()["id"]
+
+
+def test_멤버_목록에_인원수와_방장이_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = _방(a)
+    a.post(f"/community/rooms/{rid}/invite", json={"handle": hb})
+    m = a.get(f"/community/rooms/{rid}/members").json()
+    assert m["인원"] == 2 and m["내가방장"] is True
+    assert [u["닉네임"] for u in m["멤버"]] == ["가", "나"]
+    assert m["멤버"][0]["방장"] is True and m["멤버"][1]["방장"] is False
+    assert m["멤버"][0]["나"] is True
+
+
+def test_멤버_목록도_닉네임과_아이디뿐이다():
+    a = _login(app, "a@x.com", "가")
+    m = a.get(f"/community/rooms/{_방(a)}/members").json()
+    assert set(m["멤버"][0]) == {"닉네임", "아이디", "방장", "나", "친구"}
+    assert "a@x.com" not in a.get(f"/community/rooms/{_방(a)}/members").text
+
+
+def test_멤버가_아니면_목록을_못_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    assert b.get(f"/community/rooms/{_방(a)}/members").status_code == 403
+
+
+def test_방장만_내보낼_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    hc = c.get("/community/me/handle").json()["아이디"]
+    rid = _방(a)
+    a.post(f"/community/rooms/{rid}/invite", json={"handle": hb})
+    a.post(f"/community/rooms/{rid}/invite", json={"handle": hc})
+    # 멤버는 못 내보낸다
+    assert b.post(f"/community/rooms/{rid}/kick", json={"handle": hc}).status_code == 403
+    m = a.post(f"/community/rooms/{rid}/kick", json={"handle": hc}).json()
+    assert m["인원"] == 2 and "다" not in [u["닉네임"] for u in m["멤버"]]
+    # 나간 사람은 목록도 못 본다
+    assert c.get(f"/community/rooms/{rid}/members").status_code == 403
+
+
+def test_방장은_자기를_못_내보낸다():
+    """방을 없앨 방법이 사라진다 — 나가기를 쓰게 한다."""
+    a = _login(app, "a@x.com", "가")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    rid = _방(a)
+    assert a.post(f"/community/rooms/{rid}/kick", json={"handle": ha}).status_code == 400
+
+
+def test_멤버가_아니면_초대할_수_없다():
+    """초대는 비밀번호를 건너뛴다 — 아무나 부를 수 있으면 비공개가 무너진다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    hc = c.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/rooms",
+                 json={"name": "비밀", "is_private": True, "password": "0417"}).json()["id"]
+    assert b.post(f"/community/rooms/{rid}/invite", json={"handle": hc}).status_code == 403
+    assert c.get(f"/community/rooms/{rid}/members").status_code == 403
+
+
+def test_초대는_비밀번호_없이_들어가게_한다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/rooms",
+                 json={"name": "비밀", "is_private": True, "password": "0417"}).json()["id"]
+    a.post(f"/community/rooms/{rid}/invite", json={"handle": hb})
+    assert b.get(f"/community/rooms/{rid}/members").json()["인원"] == 2
+
+
+def test_이미_있는_사람은_또_초대되지_않는다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = _방(a)
+    a.post(f"/community/rooms/{rid}/invite", json={"handle": hb})
+    assert a.post(f"/community/rooms/{rid}/invite", json={"handle": hb}).status_code == 400
+    assert a.get(f"/community/rooms/{rid}/members").json()["인원"] == 2
+
+
+def test_개인_채팅방에서는_멤버_관리를_안_한다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    hc = c.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    assert a.post(f"/community/rooms/{rid}/invite", json={"handle": hc}).status_code == 400
+    assert a.post(f"/community/rooms/{rid}/kick", json={"handle": hb}).status_code == 400
+
+
+def test_나가면_목록에서_빠진다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = _방(a)
+    a.post(f"/community/rooms/{rid}/invite", json={"handle": hb})
+    b.post(f"/community/rooms/{rid}/leave", json={})
+    assert a.get(f"/community/rooms/{rid}/members").json()["인원"] == 1
+
+
+def test_멤버_관리도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.get("/community/rooms/1/members").status_code == 401
+    assert c.post("/community/rooms/1/invite", json={"handle": "abcdef"}).status_code == 401
+    assert c.post("/community/rooms/1/kick", json={"handle": "abcdef"}).status_code == 401
+

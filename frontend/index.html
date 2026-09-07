@@ -1032,6 +1032,32 @@
   .friend-head{ font-size:12.5px; font-weight:700; color:var(--muted);
     margin:18px 2px 4px; }
 
+  /* 단체 채팅방 멤버 창 (L5·L6) */
+  .chat-menu{ margin-left:auto; background:none; border:1px solid var(--line);
+    border-radius:10px; padding:4px 9px; font:inherit; font-size:15px;
+    color:var(--pine-deep); cursor:pointer; line-height:1.2; }
+  .chat-menu:hover{ border-color:var(--pine); background:var(--pine-tint); }
+  .member-count{ font-size:12.5px; color:var(--muted); margin:2px 0 8px; }
+  .member-row{ display:flex; align-items:center; gap:10px; padding:11px 2px;
+    border-bottom:1px solid var(--line); }
+  .member-row:last-child{ border-bottom:none; }
+  .member-row .who{ flex:1; min-width:0; }
+  .member-row .nm{ font-size:14.5px; }
+  .member-row .hd{ font-size:12px; color:var(--muted); margin-top:2px;
+    font-variant-numeric:tabular-nums; }
+  .member-tag{ font-size:11px; font-weight:700; color:var(--pine-deep);
+    background:var(--pine-tint); border-radius:999px; padding:2px 8px; }
+  .member-row button{ flex-shrink:0; background:var(--paper); color:var(--clay);
+    border:1px solid var(--line); border-radius:999px; padding:6px 12px;
+    font:inherit; font-size:12.5px; cursor:pointer; }
+  .member-row button:hover{ border-color:var(--clay); }
+  .member-invite{ margin-top:18px; padding-top:4px; border-top:1px solid var(--line); }
+  .member-foot{ display:flex; justify-content:flex-end; margin-top:18px; }
+  .member-leave{ background:var(--paper); color:var(--clay);
+    border:1.5px solid var(--line); border-radius:12px; padding:10px 18px;
+    font:inherit; font-size:14px; cursor:pointer; }
+  .member-leave:hover{ border-color:var(--clay); }
+
   /* ===================== SCREEN 13 : 커뮤니티 ===================== */
   .comm-compose{ margin-top:16px; border:1px solid var(--line); border-radius:var(--radius-lg); padding:14px; background:var(--paper); }
   .comm-compose textarea{ width:100%; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-family:inherit; font-size:14.5px; resize:vertical; box-sizing:border-box; }
@@ -1874,6 +1900,8 @@
           <div class="chat-head">
             <button type="button" class="chat-back" onclick="closeRoom()">← 목록</button>
             <span id="chatTitle"></span>
+            <button type="button" class="chat-menu" id="chatMenuBtn" hidden
+                    title="멤버" aria-label="멤버 목록" onclick="openRoomMembers()">☰</button>
           </div>
           <div id="chatMsgs" class="chat-msgs"></div>
           <div class="comm-compose-row">
@@ -1911,6 +1939,29 @@
         <input id="roomPassword" type="password" inputmode="numeric" pattern="[0-9]*"
                autocomplete="off" maxlength="12" placeholder="예: 0417" /></label>
       <button class="btn btn-primary comm-post-btn" type="button" onclick="createRoom()">단체 채팅방 만들기</button>
+    </section>
+  </div>
+
+  <div class="comm-modal-backdrop" id="roomMembers" hidden>
+    <section class="comm-modal" role="dialog" aria-modal="true" aria-labelledby="roomMembersTitle">
+      <div class="comm-modal-head">
+        <h2 id="roomMembersTitle">멤버</h2>
+        <button type="button" class="comm-modal-close" onclick="closeRoomMembers()" aria-label="닫기">×</button>
+      </div>
+      <div id="memberList"></div>
+      <div class="member-invite">
+        <div class="friend-head" style="margin-top:0;">친구 초대</div>
+        <div id="memberFriends"></div>
+        <div class="comm-compose-row">
+          <input id="inviteQuery" type="text" placeholder="아이디로 초대"
+                 autocapitalize="off" spellcheck="false"
+                 onkeydown="if(event.key==='Enter')inviteByHandle()" />
+          <button class="btn btn-primary comm-post-btn" type="button" onclick="inviteByHandle()">초대</button>
+        </div>
+      </div>
+      <div class="member-foot">
+        <button type="button" class="member-leave" onclick="leaveFromMembers()">나가기</button>
+      </div>
     </section>
   </div>
 
@@ -3401,12 +3452,109 @@ async function openRoom(id, name){
   $('roomList').hidden = true; $('chatView').hidden = false;
   $('chatTitle').textContent = name || '모임';
   $('chatMsgs').innerHTML = '';
+  // 목록 버튼은 단체 채팅방에만 (L5). 개인 채팅에는 관리할 멤버가 없다.
+  const rm = ROOMS.find(x => x.id === id);
+  $('chatMenuBtn').hidden = !!rm && rm['종류'] === 'direct';
   await pollChat();
   COMM.poll = setInterval(pollChat, 4000);
 }
 function closeRoom(){
   stopChatPoll();
+  closeRoomMembers();
   $('chatView').hidden = true; $('roomList').hidden = false; COMM.room = null;
+}
+
+/* ---- 단체 채팅방 멤버 창 (L5·L6) ----
+   멤버 확인 · 인원수 · (방장) 내보내기 · 친구 초대 · 나가기.
+   보이는 건 닉네임과 아이디뿐이다 — 서로의 프로필은 볼 수 없다. */
+let MEMBERS = null;
+
+async function openRoomMembers(){
+  if (!COMM.room) return;
+  $('roomMembers').hidden = false;
+  $('memberList').innerHTML = '<div class="more-card">불러오는 중…</div>';
+  $('memberFriends').innerHTML = '';
+  $('inviteQuery').value = '';
+  await loadRoomMembers();
+}
+
+function closeRoomMembers(){ const b = $('roomMembers'); if (b) b.hidden = true; }
+
+async function loadRoomMembers(){
+  try {
+    MEMBERS = await API.commRoomMembers(COMM.room);
+  } catch (e) {
+    $('memberList').innerHTML = '<div class="more-card">멤버를 불러오지 못했어요.</div>';
+    return;
+  }
+  $('roomMembersTitle').textContent = MEMBERS['이름'] || '멤버';
+  const 방장 = MEMBERS['내가방장'];
+  $('memberList').innerHTML =
+    `<div class="member-count">멤버 ${MEMBERS['인원']}명</div>`
+    + (MEMBERS['멤버'] || []).map(u => `
+      <div class="member-row">
+        <div class="who"><div class="nm">${esc(u['닉네임'])}
+          ${u['방장'] ? '<span class="member-tag">방장</span>' : ''}
+          ${u['나'] ? '<span class="member-tag">나</span>' : ''}</div>
+          <div class="hd">@${esc(u['아이디'])}</div></div>
+        ${방장 && !u['나'] ? `<button type="button" data-kick="${esc(u['아이디'])}"
+            data-name="${esc(u['닉네임'])}">내보내기</button>` : ''}
+      </div>`).join('');
+
+  $('memberList').querySelectorAll('[data-kick]').forEach(b => b.onclick = async () => {
+    if (!confirm(`${b.dataset.name} 님을 내보낼까요?`)) return;
+    b.disabled = true;
+    try { await API.commRoomKick(COMM.room, b.dataset.kick); await loadRoomMembers(); loadRooms(); }
+    catch (e) { b.disabled = false; showToast(e.message); }
+  });
+
+  await renderInviteFriends();
+}
+
+/* 상호 친구는 아이디를 몰라도 바로 초대한다.
+   친구가 아닌 사람은 아래 칸에 아이디를 넣어 초대한다. */
+async function renderInviteFriends(){
+  const box = $('memberFriends');
+  if (!box) return;
+  let 친구 = [];
+  try { 친구 = (await API.commFriends())['친구'] || []; } catch (e) {}
+  const 이미 = new Set((MEMBERS?.['멤버'] || []).map(u => u['아이디']));
+  const 남은 = 친구.filter(u => !이미.has(u['아이디']));
+  box.innerHTML = 남은.length
+    ? 남은.map(u => `
+      <div class="member-row">
+        <div class="who"><div class="nm">${esc(u['닉네임'])}</div>
+          <div class="hd">@${esc(u['아이디'])}</div></div>
+        <button type="button" data-invite="${esc(u['아이디'])}">초대</button>
+      </div>`).join('')
+    : '<div class="friend-note" style="margin:0 2px 10px;">초대할 친구가 없어요. 아이디로 초대해 보세요.</div>';
+  box.querySelectorAll('[data-invite]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await API.commRoomInvite(COMM.room, b.dataset.invite); await loadRoomMembers(); loadRooms(); }
+    catch (e) { b.disabled = false; showToast(e.message); }
+  });
+}
+
+async function inviteByHandle(){
+  const h = ($('inviteQuery').value || '').trim().toLowerCase();
+  if (!h) return;
+  try {
+    await API.commRoomInvite(COMM.room, h);
+    $('inviteQuery').value = '';
+    await loadRoomMembers();
+    loadRooms();
+  } catch (e) { showToast(e.message); }
+}
+
+async function leaveFromMembers(){
+  if (!COMM.room) return;
+  if (!confirm('이 채팅방에서 나갈까요?')) return;
+  try {
+    await API.commRoomLeave(COMM.room);
+    closeRoomMembers();
+    closeRoom();
+    loadRooms();
+  } catch (e) { showToast(e.message); }
 }
 function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
 

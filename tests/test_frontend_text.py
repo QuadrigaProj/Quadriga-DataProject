@@ -1066,3 +1066,65 @@ def test_친구와_찾은_사람에게_채팅_버튼이_붙는다():
     배선 = html.split("function wireFriendButtons()")[1].split("\n}")[0]
     assert "openDirect(b.dataset.dm)" in 배선
 
+
+# ---------- L5·L6. 목록 버튼 · 멤버 관리 ----------
+
+def test_단체_채팅방에만_목록_버튼이_있다():
+    html = _index()
+    assert 'id="chatMenuBtn"' in html
+    assert 'onclick="openRoomMembers()"' in html
+    본문 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
+    assert "rm['종류'] === 'direct'" in 본문       # 개인 채팅에는 안 보인다
+
+
+def test_멤버_창에_요청한_것들이_다_있다():
+    html = _index()
+    창 = html.split('id="roomMembers"')[1].split("</section>")[0]
+    assert 'id="memberList"' in 창              # 멤버 확인
+    assert 'id="memberFriends"' in 창           # 친구 초대
+    assert 'id="inviteQuery"' in 창             # 아이디로 초대
+    assert "leaveFromMembers()" in 창           # 나가기
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "멤버 ${MEMBERS['인원']}명" in 본문     # 상단에 인원수
+
+
+def test_방장만_내보내기_버튼을_본다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "방장 && !u['나']" in 본문
+    assert "data-kick=" in 본문
+    assert "API.commRoomKick" in 본문
+
+
+def test_내보내기와_나가기는_한_번_묻는다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "confirm(" in 본문
+    나가기 = html.split("async function leaveFromMembers()")[1].split("\n}")[0]
+    assert "confirm(" in 나가기
+    assert "API.commRoomLeave" in 나가기
+
+
+def test_친구는_바로_초대하고_아니면_아이디로_초대한다():
+    html = _index()
+    친구 = html.split("async function renderInviteFriends()")[1].split("\n}")[0]
+    assert "API.commFriends()" in 친구
+    assert "이미.has(u['아이디'])" in 친구        # 이미 들어온 친구는 빼고
+    assert "data-invite=" in 친구
+    아이디 = html.split("async function inviteByHandle()")[1].split("\n}")[0]
+    assert "API.commRoomInvite(COMM.room, h)" in 아이디
+
+
+def test_멤버_창도_닉네임과_아이디만_그린다():
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "esc(u['닉네임'])" in 본문 and "esc(u['아이디'])" in 본문
+    for 금지 in ("체력나이", "email", "measureLog"):
+        assert 금지 not in 본문, 금지
+
+
+def test_방을_닫으면_멤버_창도_닫는다():
+    html = _index()
+    본문 = html.split("function closeRoom()")[1].split("\n}")[0]
+    assert "closeRoomMembers()" in 본문
+

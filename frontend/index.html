@@ -326,24 +326,34 @@
   .rec-item{
     display:flex; align-items:center; gap:12px; padding:12px 2px;
     border-bottom:1px solid var(--line); font-size:14px;
+    flex-wrap:wrap;          /* 상세가 줄 아래로 통째로 내려간다 (J4) */
   }
   .rec-item:last-child{ border-bottom:none; }
   .rec-date{ font-size:12.5px; color:var(--muted); width:74px; flex-shrink:0;
              font-variant-numeric:tabular-nums; }
   .rec-name{ flex:1; min-width:0; }
   .rec-check{ color:var(--pine); font-weight:700; }
-  /* 운동 기록 자세히 보기 (H8) */
-  .rec-more{ margin-top:5px; background:none; border:none; padding:0;
-             font:inherit; font-size:12.5px; color:var(--pine-deep);
-             text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
-  .rec-detail{ margin-top:8px; padding:10px 12px; border-radius:10px;
+  /* 운동 기록 자세히 보기 (H8 → J4: 날짜별 줄 오른쪽으로) */
+  .rec-more{ margin-left:auto; flex-shrink:0;
+             background:none; border:1px solid var(--line); border-radius:999px;
+             padding:5px 11px; font:inherit; font-size:12px; color:var(--pine-deep);
+             cursor:pointer; white-space:nowrap; }
+  .rec-more:hover{ border-color:var(--pine); background:var(--pine-tint); }
+  .rec-more[aria-expanded="true"]{ background:var(--pine-tint); border-color:var(--pine); }
+  .rec-detail{ flex-basis:100%; margin-top:8px; padding:10px 12px; border-radius:10px;
                background:var(--bg); border:1px solid var(--line); }
   .rec-detail-row{ display:flex; gap:10px; font-size:12.5px; line-height:1.6; }
   .rec-detail-row + .rec-detail-row{ margin-top:4px; }
   .rec-detail-row b{ color:var(--muted); font-weight:700; flex-shrink:0; width:48px; }
+  /* 종목명은 48px 을 넘는다 — 그 줄만 넓게 (J4) */
+  .rec-detail-row.wide b{ width:auto; min-width:76px; max-width:45%; }
   .rec-detail-row span{ color:var(--ink); min-width:0; }
   /* 점검 기록 고르기·지우기 (G1) */
-  .rec-pick{ cursor:pointer; }
+  .rec-pick{ cursor:default; }
+  /* label 안에 버튼을 두면 버튼을 눌러도 체크박스가 켜진다.
+     고르는 부분만 label 로 감싸고 '자세히 보기' 는 그 밖에 둔다 (J4). */
+  .rec-pick-main{ display:flex; align-items:center; gap:12px; flex:1; min-width:0;
+                  cursor:pointer; }
   .rec-pick input{ width:17px; height:17px; margin:0 10px 0 0; flex-shrink:0;
                    accent-color:var(--pine); }
   .rec-way{ font-size:12px; color:var(--muted); flex-shrink:0; }
@@ -2532,18 +2542,12 @@ async function renderRecords(){
   }
 
   $('recList').innerHTML = log.length
-    ? log.slice(0, 30).map(e => {
-        const 상세 = Array.isArray(e.steps) && e.steps.length;
-        return `<div class="rec-item">
+    ? log.slice(0, 30).map(e => `<div class="rec-item">
         <div class="rec-date">${fmtDate(e.date)}</div>
-        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}
-          ${상세 ? `<button type="button" class="rec-more" aria-expanded="false"
-                  onclick="toggleRecDetail(this)">자세히 보기</button>
-          <div class="rec-detail" hidden>${routineDetailHtml(e)}</div>` : ''}
-        </div>
+        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
         <div class="rec-check">✓</div>
-      </div>`;
-      }).join('')
+        ${moreToggle(routineDetailHtml(e))}
+      </div>`).join('')
     : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
 
@@ -2573,8 +2577,18 @@ function routineDetailHtml(e){
     ? `<div class="rec-detail-row"><b>강도</b><span>${강도}</span></div>` : '');
 }
 
+/* 목록 한 줄 오른쪽에 붙이는 '자세히 보기' 토글 (J4).
+   보여 줄 내용이 없으면 버튼 자체를 만들지 않는다. */
+function moreToggle(html){
+  if (!html) return '';
+  return `<button type="button" class="rec-more" aria-expanded="false"
+            onclick="toggleRecDetail(this)">자세히 보기</button>
+          <div class="rec-detail" hidden>${html}</div>`;
+}
+
 function toggleRecDetail(btn){
-  const panel = btn.nextElementSibling;
+  // 버튼과 상세가 붙어 있지 않아도 찾도록 한 줄 안에서 고른다 (J4)
+  const panel = btn.closest('.rec-item')?.querySelector('.rec-detail');
   if (!panel) return;
   const 펼침 = panel.hidden;
   panel.hidden = !펼침;
@@ -2599,13 +2613,15 @@ function renderMeasureRecords(){
   measurePicked = new Set([...measurePicked].filter(i => i < list.length));
   const rows = list.map((m, i) => ({ m, i })).sort((a, b) => (a.m.date < b.m.date ? 1 : -1));
   $('recMeasures').innerHTML = rows.map(({ m, i }) => `
-        <label class="rec-item rec-pick">
-          <input type="checkbox" ${measurePicked.has(i) ? 'checked' : ''}
-                 onchange="pickMeasure(${i}, this.checked)" />
-          <div class="rec-date">${fmtDate(m.date)}</div>
-          <div class="rec-name">체력나이 ${Math.round(m.체력나이)}세</div>
-          <div class="rec-way">${MEASURE_WAY[m.method] || ''}</div>
-        </label>`).join('');
+        <div class="rec-item rec-pick">
+          <label class="rec-pick-main">
+            <input type="checkbox" ${measurePicked.has(i) ? 'checked' : ''}
+                   onchange="pickMeasure(${i}, this.checked)" />
+            <div class="rec-date">${fmtDate(m.date)}</div>
+            <div class="rec-name">체력나이 ${Math.round(m.체력나이)}세</div>
+          </label>
+          ${moreToggle(measureDetailHtml(m))}
+        </div>`).join('');
   paintMeasureDeleteBtn();
 }
 
@@ -3739,7 +3755,8 @@ function allRoutineLog(){
   // 직접 적은 운동도 '운동한 날' 이다 (G3). 날짜 Set 으로 세므로 루틴과 겹쳐도 두 번 세지 않는다.
   const manual = (state.workoutLog || [])
     .filter(w => w && w.date && (w.items || []).length)
-    .map(w => ({ date: w.date, name: manualLogName(w), done: true, 직접: true }));
+    // items 를 함께 넘긴다 — 달력에서 '자세히 보기' 로 펼친다 (J5)
+    .map(w => ({ date: w.date, name: manualLogName(w), done: true, 직접: true, items: w.items }));
   return [...past, ...(state.routineLog || []), ...manual];
 }
 
@@ -3851,9 +3868,11 @@ function renderCalDay(){
   $('calDayHead').textContent = `${fmtDate(key)} 기록`;
   const rows = [];
   done.forEach(e => rows.push(`<div class="rec-item"><div class="rec-date">운동</div>
-      <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div><div class="rec-check">✓</div></div>`));
+      <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div><div class="rec-check">✓</div>
+      ${moreToggle(e.직접 ? manualDetailHtml(e) : routineDetailHtml(e))}</div>`));
   meas.forEach(p => rows.push(`<div class="rec-item"><div class="rec-date">측정</div>
-      <div class="rec-name">체력나이 ${Math.round(p.체력나이)}세</div></div>`));
+      <div class="rec-name">체력나이 ${Math.round(p.체력나이)}세</div>
+      ${moreToggle(measureDetailHtml(p))}</div>`));
   $('calDayDetail').innerHTML = rows.length ? rows.join('')
     : '<div class="rec-empty">이날은 기록이 없어요.</div>';
 
@@ -4324,10 +4343,31 @@ function renderManualRecords(){
   $('recManual').innerHTML = log.slice(0, 20).map(w => `
         <div class="rec-item">
           <div class="rec-date">${fmtDate(w.date)}</div>
-          <div class="rec-name">${manualLogName(w)}
-            <div class="wlog-count">${w.items.map(x => `${x.이름} ${Object.entries(x.값).map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ')}`).join(' / ')}</div>
-          </div>
+          <div class="rec-name">${manualLogName(w)}</div>
+          ${moreToggle(manualDetailHtml(w))}
         </div>`).join('');
+}
+
+/* 직접 적은 운동 한 날의 상세 — 종목마다 적은 값을 그대로 (J4) */
+function manualDetailHtml(w){
+  return (w.items || []).map(x => {
+    const 값 = Object.entries(x.값 || {})
+      .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
+    return `<div class="rec-detail-row wide"><b>${x.이름}</b><span>${값}</span></div>`;
+  }).join('');
+}
+
+/* 측정한 날의 상세 — 항목별 환산나이와 편차 (J5) */
+function measureDetailHtml(p){
+  const rows = Object.entries(p.항목별 || {})
+    .map(([k, v]) => `<div class="rec-detail-row wide"><b>${k}</b><span>${Math.round(v)}세</span></div>`)
+    .join('');
+  const ci = p.신뢰구간 != null
+    ? `<div class="rec-detail-row wide"><b>편차</b><span>±${p.신뢰구간}세</span></div>` : '';
+  // 측정 방식은 줄이 좁아 상세로 내렸다 (J4)
+  const way = MEASURE_WAY[p.method]
+    ? `<div class="rec-detail-row wide"><b>방식</b><span>${MEASURE_WAY[p.method]}</span></div>` : '';
+  return rows + ci + way;
 }
 
 /* 화면에 붙이는 단위 — /workout-items 의 단위표와 같다(오프라인 대비 사본). */

@@ -77,3 +77,31 @@ def test_직접_적은_운동도_운동한_날로_센다():
     html = client.get("/").text
     body = html.split("function allRoutineLog()")[1].split("\n}")[0]
     assert "state.workoutLog" in body
+
+
+# ---------- H6 달력 날짜별 버튼 ----------
+
+def test_달력에_날짜별_버튼자리가_있다():
+    html = client.get("/").text
+    assert 'id="calDayActions"' in html
+    assert "function editCalDayLog()" in html
+    assert "async function deleteCalDayLog()" in html
+    for label in ("기록 수정", "기록 삭제", "기록 작성"):
+        assert label in html, label
+
+
+def test_버튼은_직접_적은_기록에만_붙는다():
+    """루틴 완료 기록은 사용자가 쓴 것이 아니라 수정·삭제 대상이 아니다."""
+    html = client.get("/").text
+    body = html.split("function renderCalDay()")[1].split("\n}")[0]
+    assert "state.workoutLog" in body
+    assert "todayIso()" in body          # 미래 날짜에는 버튼을 달지 않는다
+
+
+def test_기록_작성은_다른_날짜도_받는다():
+    html = client.get("/").text
+    assert "let logTargetDate" in html
+    save = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "logTargetDate || todayIso()" in save
+    render = html.split("async function renderDailyLog()")[1].split("\n}")[0]
+    assert "logTargetDate || todayIso()" in render

@@ -1772,6 +1772,7 @@ function appendMeasureLog(){
 function commitResult(){
   if (!state.result) return;
   if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+  state.activityAge = null;       // 새로 쟀으니 추정치는 버린다 (I3)
   appendMeasureLog();
   saveProfile();
   paintGauges();
@@ -1894,7 +1895,7 @@ function targetAge(){
 }
 
 function gaugeData(){
-  return { age: state.age, fitnessAge: state.result?.체력나이, targetAge: targetAge() };
+  return { age: state.age, fitnessAge: displayAge(), targetAge: targetAge() };
 }
 
 function paintGauges({ animate = false } = {}){
@@ -1905,7 +1906,7 @@ function paintGauges({ animate = false } = {}){
 
   const r = state.result;
   if ($('gaugeNow')) {
-    $('gaugeNow').textContent = r ? Math.round(r.체력나이) : '—';
+    $('gaugeNow').textContent = displayAge() != null ? Math.round(displayAge()) : '—';
     $('gaugeGoal').textContent = targetAge() ? `만 ${targetAge()}세` : '—';
     $('gaugeReal').textContent = state.age ? `만 ${state.age}세` : '—';
   }
@@ -2151,6 +2152,7 @@ function snapshot(){
     programStart: state.programStart, routineLog: state.routineLog,
     sports: state.sports, sportsDone: state.sportsDone,
     history: state.history, measureLog: state.measureLog, workoutLog: state.workoutLog,
+    activityAge: state.activityAge,
     commute: state.commute,
     styleTest: state.styleTest,
     updated: new Date().toISOString().slice(0, 10),
@@ -2189,6 +2191,7 @@ function applyProfile(saved){
   state.history = Array.isArray(saved?.history) ? saved.history : [];
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
+  state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
   state.credit = Number.isFinite(saved?.credit) ? saved.credit : 0;
   state.creditLog = Array.isArray(saved?.creditLog) ? saved.creditLog : [];
   state.gripKg = saved?.gripKg ?? null;
@@ -3515,8 +3518,12 @@ function renderProfile(){
   renderCredit();
   const r = state.result;
   if (!r) return;
-  $('profileAge').textContent = Math.round(r.체력나이);
-  $('profileSub').textContent = `체력나이 · 만 ${state.age}세 기준`;
+  $('profileAge').textContent = Math.round(displayAge());
+  // 운동을 반영한 값이면 측정값과 다르다는 걸 숨기지 않는다 (I3)
+  const 반영 = state.activityAge;
+  $('profileSub').textContent = 반영
+    ? `운동 ${반영.일수}일 반영 ${반영.체력나이 < 반영.기준나이 ? '−' : '+'}${반영.당김}세 · 마지막 측정 ${Math.round(반영.기준나이)}세`
+    : `체력나이 · 만 ${state.age}세 기준`;
 
   const peers = r.또래비교 || {};
   // 잰 항목만 그리면 무엇을 안 쟀는지 모른다. 자리는 늘 같은 순서로 두고,
@@ -4190,7 +4197,7 @@ function collectLogItem(id){
 function collectLogItems(){
   if (!workoutCatalog) return [];
   return workoutCatalog.종목
-    .map(x => ({ id: x.id, 이름: x.이름, 값: collectLogItem(x.id) }))
+    .map(x => ({ id: x.id, 이름: x.이름, 요인: x.요인 || null, 값: collectLogItem(x.id) }))
     .filter(x => x.값);
 }
 
@@ -4202,6 +4209,55 @@ function paintLogSaveBtn(){
   btn.textContent = n ? `${n}종목 저장` : '적은 종목이 없어요';
 }
 
+/* 최근 28일 동안 각 체력요인을 운동한 '날 수'. 같은 날 같은 요인은 한 번만 센다. */
+const ACTIVITY_WINDOW = 28;
+function activityCounts(){
+  const 기준 = new Date(Date.now() - (ACTIVITY_WINDOW - 1) * 86400000).toISOString().slice(0, 10);
+  const 날별 = new Map();
+  (state.workoutLog || []).forEach(w => {
+    if (!w.date || w.date < 기준) return;
+    const set = 날별.get(w.date) || new Set();
+    (w.items || []).forEach(x => { if (x.요인) set.add(x.요인); });
+    날별.set(w.date, set);
+  });
+  const 셈 = {};
+  날별.forEach(set => set.forEach(f => { 셈[f] = (셈[f] || 0) + 1; }));
+  return 셈;
+}
+
+/* 반영에 쓰인 서로 다른 날의 수 — 문구에 쓴다. */
+function 활동일수(활동){
+  return Math.max(0, ...Object.values(활동 || {}).map(Number).filter(Number.isFinite));
+}
+
+/* 운동 기록을 체력나이에 반영한다 (I3).
+
+   운동만으로 체력나이를 다시 '산출' 할 근거는 없다. 그래서 마지막 측정을
+   기준으로 두고, 그 측정의 편차 안에서만 움직인다. 다시 재면 진짜 값으로 덮인다.
+   실패하면 조용히 아무것도 안 한 상태로 둔다 — 측정값은 그대로 남는다. */
+async function refreshActivityAge(){
+  const r = state.result;
+  if (!r || !r.항목별 || !state.ageGbn) { state.activityAge = null; return; }
+  const 활동 = activityCounts();
+  if (!Object.keys(활동).length) { state.activityAge = null; return; }
+  try {
+    const out = await API.activityAge({
+      age_gbn: state.ageGbn, age: state.age ?? null,
+      항목별: r.항목별, 신뢰구간: r.신뢰구간 ?? null, 활동,
+    });
+    state.activityAge = (out && out.체력나이 != null && (out.당김 || 0) > 0)
+      ? { ...out, 일수: 활동일수(활동),
+          기준일: state.measureLog?.[state.measureLog.length - 1]?.date || null } : null;
+  } catch (e) {
+    state.activityAge = null;
+  }
+}
+
+/* 화면에 보여줄 체력나이 — 운동이 반영됐으면 그 값, 아니면 마지막 측정값. */
+function displayAge(){
+  return state.activityAge?.체력나이 ?? state.result?.체력나이;
+}
+
 /* 하루에 하나. 같은 날 다시 저장하면 덮어쓴다. */
 async function saveDailyLog(){
   const items = collectLogItems();
@@ -4210,7 +4266,9 @@ async function saveDailyLog(){
   if (!Array.isArray(state.workoutLog)) state.workoutLog = [];
   state.workoutLog = state.workoutLog.filter(w => w.date !== 날);
   state.workoutLog.push({ date: 날, items });
+  await refreshActivityAge();     // 기록을 더했으니 체력나이도 다시 본다 (I3)
   await saveProfile();
+  paintGauges();
   // 달력에서 들어왔으면 달력으로 돌려보낸다
   const 돌아갈곳 = logTargetDate && logTargetDate !== todayIso() ? 's9' : 's7';
   logTargetDate = null;

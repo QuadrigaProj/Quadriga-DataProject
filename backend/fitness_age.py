@@ -254,6 +254,65 @@ def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
     return out
 
 
+# 운동 기록 반영 (I3)
+#
+# 운동을 했다고 체력나이를 다시 "산출" 할 근거는 공개 데이터에 없다.
+# 그래서 마지막 측정을 기준으로 두고, 운동한 날 수만큼 체력나이를 조금씩
+# 당기되 **그 측정의 편차(신뢰구간) 안에서만** 움직인다.
+#   - 항목별 환산나이는 측정값 그대로 둔다 (측정한 적 없는 값을 만들지 않는다)
+#   - 측정으로 확인되지 않은 변화를 사실처럼 말하지 않는다
+#   - 다시 재면 진짜 값으로 덮인다
+ACTIVITY_STEP = 0.2          # 그 요인을 운동한 하루당 당기는 폭(세)
+
+
+def activity_adjusted(항목별: dict, 신뢰구간, 활동: dict,
+                      age_gbn: str, age=None) -> dict:
+    """마지막 측정 + 최근 운동 기록 → 반영된 추정 체력나이.
+
+    활동은 {요인: 그 요인을 운동한 날 수}. 항목별에 없는 요인은 무시한다.
+
+    한 요인의 폭은 편차를 넘지 않고, 그 폭은 항목 수로 나눠 체력나이에 실린다
+    (체력나이가 항목별 평균이므로 한 항목이 통째로 끌고 가지 않는다).
+    다 합쳐도 편차를 넘지 않는다.
+    """
+    base = aggregate_age(항목별 or {}, age_gbn, age)
+    if base["체력나이"] is None:
+        return base
+
+    ci = float(신뢰구간) if 신뢰구간 is not None else float(base["신뢰구간"] or 0)
+    ci = max(0.0, ci)
+    n = max(len(항목별), 1)
+
+    반영: dict[str, float] = {}
+    총 = 0.0
+    for 요인, 일수 in (활동 or {}).items():
+        if 요인 not in 항목별:
+            continue
+        try:
+            cnt = int(일수)
+        except (TypeError, ValueError):
+            continue
+        폭 = min(cnt * ACTIVITY_STEP, ci)
+        if 폭 <= 0:
+            continue
+        반영[요인] = round(폭, 2)
+        총 += 폭
+
+    # 요인별 상한이 이미 있으니 총합도 편차를 못 넘지만, 규칙이 바뀌어도
+    # 편차 밖으로 나가지 않게 한 번 더 막는다.
+    당김 = min(총 / n, ci)
+    # 성장기는 방향이 반대다 — 숫자가 오를수록 좋다
+    나이 = base["체력나이"] + 당김 if age_gbn == GROWTH else base["체력나이"] - 당김
+
+    out = dict(base)
+    out["체력나이"] = round(나이, 1)
+    out["기준나이"] = base["체력나이"]      # 운동 반영 전 — 어느 쪽으로 움직였는지 이걸로 판단한다
+    out["활동반영"] = 반영
+    out["당김"] = round(당김, 1)
+    out["한도"] = round(ci, 1)
+    return out
+
+
 def weakest_link(result: dict) -> dict | None:
     """어느 항목을 고치면 체력나이가 가장 많이 내려가는지 계산한다.
 

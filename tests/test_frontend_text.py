@@ -430,3 +430,50 @@ def test_안_잰_항목은_해당사항_모름이다():
 def test_잰_항목만_그리던_옛_코드가_없다():
     html = _index()
     assert "Object.entries(r.항목별).map(([k,v],i,arr)" not in html
+
+
+# ---------- I3. 운동 기록 반영 체력나이 ----------
+
+def test_기록을_저장하면_체력나이를_다시_본다():
+    """saveDailyLog 안에서 refreshActivityAge 를 부르고 게이지를 다시 칠해야 한다."""
+    html = _index()
+    본문 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "refreshActivityAge()" in 본문
+    assert "paintGauges()" in 본문
+
+
+def test_기록에_요인을_함께_남긴다():
+    # 요인이 없으면 나중에 카탈로그 없이 셀 수 없다
+    html = _index()
+    본문 = html.split("function collectLogItems()")[1].split("\n}")[0]
+    assert "요인: x.요인" in 본문
+
+
+def test_체력나이_표시는_반영값을_먼저_본다():
+    html = _index()
+    assert "function displayAge()" in html
+    본문 = html.split("function displayAge()")[1].split("\n}")[0]
+    assert "state.activityAge?.체력나이" in 본문
+    assert "state.result?.체력나이" in 본문
+    # 게이지가 옛 경로를 그대로 쓰면 화면이 안 바뀐다
+    assert "fitnessAge: displayAge()" in html
+
+
+def test_다시_재면_추정치를_버린다():
+    html = _index()
+    본문 = html.split("function commitResult()")[1].split("\n}")[0]
+    assert "state.activityAge = null" in 본문
+
+
+def test_반영값도_저장하고_되돌린다():
+    html = _index()
+    assert "activityAge: state.activityAge," in html            # snapshot
+    assert "state.activityAge = (saved?.activityAge" in html    # applyProfile
+
+
+def test_서버가_실패하면_조용히_측정값으로_남는다():
+    html = _index()
+    본문 = html.split("async function refreshActivityAge()")[1].split("\n}\n")[0]
+    assert "catch" in 본문
+    assert "state.activityAge = null" in 본문
+

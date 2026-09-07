@@ -111,3 +111,66 @@ def test_엔드포인트가_AI를_쓴다(monkeypatch):
 
 def test_모델은_opus5다():
     assert air.MODEL == "claude-opus-5"
+
+
+# ---------- I1 추천 2방식과 이용권 ----------
+
+def _html():
+    return client.get("/").text
+
+
+def test_추천_방식이_둘이다():
+    html = _html()
+    assert 'data-mode="free"' in html and 'data-mode="ai"' in html
+    assert "무료 추천" in html and "AI 추천" in html
+    assert "function setRecoMode(mode)" in html
+
+
+def test_한_번에_백원이다():
+    html = _html()
+    assert "const AI_PRICE = 100;" in html
+    assert "1회 100원" in html
+
+
+def test_미리_충전해_둘_수_있다():
+    """I1: 프로필에서 잔액·결제 여부를 보고 미리 채워둔다."""
+    html = _html()
+    assert 'id="creditCard"' in html
+    assert 'id="creditAmt"' in html and 'id="creditTimes"' in html
+    assert "이용권 충전하기" in html
+    assert "function renderCredit()" in html
+    assert "const PAY_PACKS = [1000, 3000, 5000];" in html
+    assert "credit: 0," in html and "creditLog: []," in html
+
+
+def test_결제창은_카드정보를_묻지_않는다():
+    """실제 PG 계약 전이라 모의 승인이다. 카드 번호를 받는 화면을 만들지 않는다."""
+    html = _html()
+    body = html.split("function paySheetHtml()")[1].split("\n}")[0]
+    assert "시연용 모의 결제입니다" in body
+    assert "<input" not in body
+    for 금지 in ("카드번호", "card-number", "cvc", "유효기간"):
+        assert 금지 not in html, 금지
+
+
+def test_AI가_실제로_다듬었을_때만_값을_받는다():
+    """폴백(출처='점수')이면 차감하지 않는다 — 안 쓴 것에 돈을 받지 않는다."""
+    html = _html()
+    body = html.split("async function renderRecommend()")[1].split("\nfunction paintRecommend")[0]
+    assert "if (ai쓰기 && recoBy === 'ai')" in body
+    assert "state.credit = Math.max(0, (state.credit || 0) - AI_PRICE);" in body
+    assert "종류: '사용'" in body
+
+
+def test_잔액이_모자라면_무료로_돌아간다():
+    html = _html()
+    body = html.split("async function renderRecommend()")[1].split("\nfunction paintRecommend")[0]
+    assert "(state.credit || 0) < AI_PRICE" in body
+    assert "이용권이 모자라요" in body
+
+
+def test_키가_없으면_AI방식이_잠긴다():
+    html = _html()
+    body = html.split("function paintRecoMode()")[1].split("\n}")[0]
+    assert "ai.disabled = !recoAiReady;" in body
+    assert "관리자가 키를 등록하면 켜져요" in body

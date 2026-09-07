@@ -1,0 +1,79 @@
+"""당일 기록 작성 종목 (G3·G4).
+
+화면은 /workout-items 를 받아 그대로 그린다. 여기서는 데이터의 앞뒤가 맞는지와
+화면이 그 데이터를 쓰는 구조인지를 본다.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from backend.main import app  # noqa: E402
+from backend import workout_items as wi  # noqa: E402
+
+client = TestClient(app)
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_종목_목록이_나온다():
+    r = client.get("/workout-items")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["분류"] and d["종목"] and d["단위"]
+    assert len(d["종목"]) >= 20
+
+
+def test_모든_종목이_분류에_속한다():
+    d = wi.catalog()
+    분류 = set(d["분류"])
+    for x in d["종목"]:
+        assert x["분류"] in 분류, x["이름"]
+
+
+def test_아이디는_겹치지_않는다():
+    ids = [x["id"] for x in wi.catalog()["종목"]]
+    assert len(ids) == len(set(ids))
+
+
+def test_종목마다_입력칸이_있고_단위가_정의돼_있다():
+    """G4: 명칭 우측에 횟수·무게·세트 같은 단위 칸이 붙는다."""
+    d = wi.catalog()
+    단위 = set(d["단위"])
+    for x in d["종목"]:
+        assert x["입력"], x["이름"]
+        for k in x["입력"]:
+            assert k in 단위, f"{x['이름']} 의 {k} 에 단위가 없다"
+
+
+def test_운동에_따라_입력칸이_다르다():
+    """무게를 쓰는 기구 운동과 안 쓰는 맨몸 운동이 함께 있어야 요구가 충족된다."""
+    by = {x["id"]: x for x in wi.catalog()["종목"]}
+    assert "무게" in by["bench-press"]["입력"]
+    assert "무게" not in by["squat"]["입력"]
+    assert "거리" in by["run"]["입력"]
+
+
+def test_그림_파일이_실제로_있다():
+    """G4: 명칭 앞에 붙일 단색 그림. 루틴 픽토그램 6종을 함께 쓴다."""
+    for x in wi.catalog()["종목"]:
+        svg = ROOT / "frontend" / "img" / "moves" / f"{x['그림']}.svg"
+        assert svg.exists(), f"{x['이름']} → {svg.name} 없음"
+
+
+def test_화면에_당일_기록_작성이_붙어_있다():
+    html = client.get("/").text
+    assert "당일 기록 작성" in html
+    assert 'id="s11"' in html
+    assert "async function renderDailyLog()" in html
+    assert "async function saveDailyLog()" in html
+    assert "API.workoutItems()" in html
+
+
+def test_직접_적은_운동도_운동한_날로_센다():
+    """달력·변화추이가 읽는 allRoutineLog 에 들어가야 한다."""
+    html = client.get("/").text
+    body = html.split("function allRoutineLog()")[1].split("\n}")[0]
+    assert "state.workoutLog" in body

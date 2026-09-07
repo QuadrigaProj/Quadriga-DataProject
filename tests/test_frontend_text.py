@@ -478,3 +478,50 @@ def test_서버가_실패하면_조용히_측정값으로_남는다():
     assert "catch" in 본문
     assert "state.activityAge = null" in 본문
 
+
+# ---------- J1·J3. 계정 패널 이용권 · 아바타 두 곳 ----------
+
+def test_계정_패널에_이용권_줄이_있다():
+    html = _index()
+    assert 'id="acctPay"' in html
+    assert "function renderAcctCredit()" in html
+    본문 = html.split("function renderAcctCredit()")[1].split("\n}")[0]
+    assert "AI 추천 이용권" in 본문
+    # 결제 여부와 남은 금액을 둘 다 적어야 한다
+    assert "충전됨" in 본문 and "충전 안 함" in 본문
+    assert "won(원)" in 본문
+
+
+def test_패널을_열_때마다_이용권을_다시_그린다():
+    html = _index()
+    본문 = html.split("function renderAccount()")[1].split("\n}")[0]
+    assert "renderAcctCredit()" in 본문
+
+
+def test_이용권_줄을_누르면_충전창이_열린다():
+    html = _index()
+    assert 'onclick="payFromAccount(event)"' in html
+    본문 = html.split("function payFromAccount(ev)")[1].split("\n}")[0]
+    assert "openPaySheet()" in 본문
+
+
+def test_충전하면_패널_줄도_갱신한다():
+    html = _index()
+    본문 = html.split("async function confirmPay()")[1].split("\n}")[0]
+    assert "renderAcctCredit()" in 본문
+
+
+def test_아바타_두_곳_모두_프로필로_간다():
+    """J3: 헤더 아바타(한 번 더 누르기)와 패널 안 큰 아바타가 같은 길을 쓴다."""
+    html = _index()
+    # 패널 아바타는 span 이 아니라 button 이어야 키보드로도 눌린다
+    머리 = html.split('id="acctAvatarBig"')[0]
+    assert 머리.rstrip().endswith('<button type="button" class="acct-avatar big"')
+    assert 'onclick="goProfile()"' in html
+    assert "function goProfile(ev)" in html
+    본문 = html.split("function goProfile(ev)")[1].split("\n}")[0]
+    assert "goTo('s5')" in 본문
+    # 헤더 아바타도 같은 함수를 쓴다 (두 곳이 갈라지지 않게)
+    토글 = html.split("function toggleAccount(ev)")[1].split("\n}")[0]
+    assert "goProfile()" in 토글
+

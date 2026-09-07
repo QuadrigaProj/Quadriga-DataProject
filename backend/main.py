@@ -34,6 +34,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import routine_player as rp
     from backend import routines as rt, bodycomp as bc, hometest as ht, geo
     from backend import sports as sp
+    from backend import style_test as st
     from backend import route
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
@@ -44,6 +45,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import hometest as ht                   # noqa: E402
     import geo                              # noqa: E402
     import sports as sp                     # noqa: E402
+    import style_test as st                 # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -871,6 +873,36 @@ def post_my_measurement(payload: dict,
     user = _require_user(quadriga_session)
     auth.save_measurement(user["id"], payload)
     return {"ok": True}
+
+
+# ---------- 10. 운동 스타일 테스트 ----------
+# 좋아하는 운동·투자하고 싶은 시간이 아직 뚜렷하지 않을 때 쓰는 짧은 테스트(F1).
+# 문항·유형·채점 기준은 전부 data/sample/style_test.json 에 있고 서버는 채점만 한다.
+
+class StyleAnswersIn(BaseModel):
+    answers: list = Field(..., description="문항 순서대로 고른 선택지 번호(0부터)")
+
+
+@app.get("/style-test")
+def get_style_test() -> dict:
+    """운동 스타일 테스트 문항과 결과 유형 목록. 선택지 점수·가중치는 주지 않는다."""
+    try:
+        return {"문항": st.questions(), "유형": st.result_types()}
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.post("/style-test/result")
+def post_style_test_result(body: StyleAnswersIn) -> dict:
+    """답 목록 → 스타일 유형 + 추천 목적·종목·하루 투자 분. 잘못된 답은 400."""
+    try:
+        out = st.score(body.answers)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    out["종목"] = sp.resolve(out["유형"]["추천종목"])   # 화면이 이름·아이콘을 바로 그리게
+    return out
 
 
 # ---------- 약관 · 개인정보처리방침 ----------

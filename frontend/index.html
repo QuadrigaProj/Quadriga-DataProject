@@ -1019,6 +1019,7 @@
           <div class="check-mark"></div>
         </button>
       </div>
+      <div class="review-link" style="margin:18px 0 0;"><button type="button" onclick="openStyleTest('s2')">뭘 골라야 할지 모르겠어요 → 운동 스타일 테스트</button></div>
     </div>
     <div class="footer-area">
       <button class="btn btn-primary" id="nextBtn2" disabled onclick="goTo('s3')">다음</button>
@@ -1199,6 +1200,7 @@
         <div class="sport-why" id="sportWhy"></div>
         <button class="btn btn-line" onclick="editSports()">선택 변경</button>
       </div>
+      <div class="review-link" style="margin:18px 0 0;"><button type="button" onclick="openStyleTest('s8')">뭘 골라야 할지 모르겠어요 → 운동 스타일 테스트</button></div>
     </div>
 
     <div class="sport-actions" id="sportActions">
@@ -1283,6 +1285,38 @@
     <div class="tabbar" data-tabbar></div>
   </section>
 
+  <!-- ============ SCREEN 10 : 운동 스타일 테스트 (F1) ============ -->
+  <section class="screen" id="s10">
+    <div class="steps-dots" id="styleDots"></div>
+    <div class="content">
+      <div id="styleQuiz">
+        <h1 class="title" id="styleQ">운동 스타일 테스트</h1>
+        <p class="sub" id="styleQNo"></p>
+        <div class="purpose-grid" id="styleChoices"></div>
+      </div>
+
+      <div id="styleResult" style="display:none;">
+        <h1 class="title" id="styleName">—</h1>
+        <p class="sub" id="styleDesc"></p>
+        <div class="program-card">
+          <div class="prescribe-label">추천 목적</div>
+          <div class="prescribe-text" id="stylePurpose">—</div>
+          <div class="program-note" id="styleMinutes"></div>
+        </div>
+        <div class="program-card">
+          <div class="prescribe-label">추천 종목</div>
+          <div class="sport-grid" id="styleSports" style="margin-top:12px;"></div>
+          <button type="button" class="btn btn-line" id="styleSportBtn" onclick="styleAddSports()">이 종목 담기</button>
+        </div>
+        <div class="review-link" style="margin:18px 0 0;"><button type="button" onclick="restartStyleTest()">다시 해볼래요</button></div>
+      </div>
+    </div>
+    <div class="footer-area" style="display:flex; flex-direction:column; gap:10px;">
+      <button class="btn btn-primary" id="styleStartBtn" style="display:none;" onclick="styleStartPurpose()">이 목적으로 시작</button>
+      <button class="btn btn-ghost" id="styleBackBtn" onclick="styleBack()">돌아가기</button>
+    </div>
+  </section>
+
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
   <section class="screen" id="s6">
     <div class="content">
@@ -1363,6 +1397,7 @@ const state = {
   history: [],         // F3/F4: 재측정으로 닫힌 지난 기간들 [{start, end, routineLog:[…], result:{…}, first:{…}}]
   measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 결과가 나올 때마다 append (같은 날 여러 번 재면 모두 남긴다)
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
+  styleTest: null,     // F1: {answers:[…], result:{…}, date}
 };
 
 const PURPOSE_LABEL = {
@@ -1817,6 +1852,7 @@ function snapshot(){
     sports: state.sports, sportsDone: state.sportsDone,
     history: state.history, measureLog: state.measureLog,
     commute: state.commute,
+    styleTest: state.styleTest,
     updated: new Date().toISOString().slice(0, 10),
   };
 }
@@ -1861,6 +1897,7 @@ function applyProfile(saved){
   }
   state.commute = (saved?.commute && saved.commute.from && saved.commute.to)
     ? { from: String(saved.commute.from), to: String(saved.commute.to) } : null;
+  state.styleTest = (saved?.styleTest && typeof saved.styleTest === 'object' && saved.styleTest.result) ? saved.styleTest : null;
   selectMethod(saved?.method === 'inbody' ? 'inbody' : 'home');   // 저장된 'self'(또는 없음)는 home 으로 이관
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
@@ -1978,6 +2015,7 @@ async function doDelete(){
   state.history = [];
   state.measureLog = [];
   state.commute = null;
+  state.styleTest = null;
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -2001,6 +2039,7 @@ async function logout(){
   state.sports = [];
   state.sportsDone = false;
   state.commute = null;
+  state.styleTest = null;
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -2032,6 +2071,7 @@ async function resetSettings(){
   state.history = [];
   state.measureLog = [];
   state.commute = null;
+  state.styleTest = null;
   state.flexibility = null;
   $('flexInput').value = '';
   $('authEmail').value = '';
@@ -2263,6 +2303,7 @@ function goTo(id){
   if(id === 's8') renderSports();
   if(id === 's6') renderRecheck();
   if(id === 's9') renderCalendar();
+  if(id === 's10') renderStyleTest();
 }
 
 /* ---- 화면 1 : 기본 정보 ---- */
@@ -3298,6 +3339,158 @@ function renderTrend(){
   const spanDays = trendDays || (Math.round((Date.parse(today) - Date.parse(a.date)) / 86400000) + 1);
   const perWeek = (workoutDays.size / Math.max(1, spanDays / 7)).toFixed(1);
   $('trendNote').textContent = `${fmtDate(a.date)} → ${fmtDate(b.date)} · ${msg} ${label} 운동 ${workoutDays.size}회(주 평균 ${perWeek}회).`;
+}
+
+/* ---- 화면 10 : 운동 스타일 테스트 (F1) ----
+   문항·유형·채점은 서버(/style-test, /style-test/result)가 갖고, 여기서는 그리기만 한다.
+   한 문항씩 진행하고 위 진행 점(styleDots)으로 어디까지 왔는지 보여준다.
+   결과는 state.styleTest 에 저장해 다음에 링크를 누르면 결과부터 보여준다. */
+let styleQs = null;          // GET /style-test 문항 캐시 [{id, 질문, 선택지:[글…]}]
+let styleFrom = 's2';        // 돌아갈 화면 (s2 목적 선택 | s8 운동 고르기)
+let styleIdx = 0;            // 현재 문항 번호(0부터)
+let styleAnswers = [];       // 고른 선택지 번호
+let styleView = 'quiz';      // 'quiz' | 'result'
+
+/* s2·s8 하단 링크가 부른다. 지난 결과가 있으면 결과부터, 없으면 1번 문항부터. */
+function openStyleTest(from){
+  styleFrom = from || 's2';
+  if (state.styleTest?.result) {
+    styleView = 'result';
+    styleAnswers = Array.isArray(state.styleTest.answers) ? [...state.styleTest.answers] : [];
+  } else {
+    styleView = 'quiz'; styleIdx = 0; styleAnswers = [];
+  }
+  goTo('s10');
+}
+
+async function loadStyleQuestions(){
+  if (styleQs) return styleQs;
+  const r = await API.styleTest();
+  styleQs = r.문항 || [];
+  return styleQs;
+}
+
+function restartStyleTest(){
+  styleView = 'quiz'; styleIdx = 0; styleAnswers = [];
+  renderStyleTest();
+}
+
+/* goTo('s10') 이 부른다. */
+async function renderStyleTest(){
+  if (styleView === 'result' && state.styleTest?.result) { renderStyleResult(state.styleTest.result); return; }
+  try { await loadStyleQuestions(); }
+  catch (e) {
+    $('styleQuiz').style.display = 'block';
+    $('styleResult').style.display = 'none';
+    $('styleQ').textContent = '문항을 불러오지 못했어요';
+    $('styleQNo').textContent = e.message;
+    $('styleChoices').innerHTML = '';
+    return;
+  }
+  renderStyleQuestion();
+}
+
+function renderStyleQuestion(){
+  const qs = styleQs || [];
+  if (!qs.length) return;
+  if (styleIdx > qs.length - 1) styleIdx = qs.length - 1;
+  const q = qs[styleIdx];
+  $('styleQuiz').style.display = 'block';
+  $('styleResult').style.display = 'none';
+  $('styleStartBtn').style.display = 'none';
+  const back = $('styleBackBtn');
+  back.style.display = 'flex';
+  back.textContent = styleIdx === 0 ? '돌아가기' : '이전 문항';
+  $('styleDots').innerHTML = qs.map((_, i) => `<div class="d${i <= styleIdx ? ' on' : ''}"></div>`).join('');
+  $('styleQNo').textContent = `${styleIdx + 1} / ${qs.length}`;
+  $('styleQ').textContent = q.질문;
+  const picked = styleAnswers[styleIdx];
+  $('styleChoices').innerHTML = q.선택지.map((c, i) => `
+    <button type="button" class="purpose-card${picked === i ? ' selected' : ''}" onclick="styleAnswer(${i})">
+      <div><div class="purpose-title">${c}</div></div>
+      <div class="check-mark"></div>
+    </button>`).join('');
+}
+
+function styleBack(){
+  if (styleView === 'result' || styleIdx === 0) { goTo(styleFrom); return; }
+  styleIdx--;
+  renderStyleQuestion();
+}
+
+async function styleAnswer(i){
+  styleAnswers[styleIdx] = i;
+  if (styleIdx < (styleQs || []).length - 1) { styleIdx++; renderStyleQuestion(); return; }
+  await submitStyleTest();
+}
+
+async function submitStyleTest(){
+  $('styleQ').textContent = '결과를 계산하고 있어요…';
+  $('styleChoices').innerHTML = '';
+  try {
+    const r = await API.styleTestResult(styleAnswers.slice(0, (styleQs || []).length));
+    state.styleTest = { answers: r.답변, result: r, date: new Date().toISOString().slice(0, 10) };
+    saveProfile();
+    styleView = 'result';
+    renderStyleResult(r);
+  } catch (e) {
+    $('styleQ').textContent = '결과를 받지 못했어요';
+    $('styleQNo').textContent = e.message;
+    $('styleChoices').innerHTML =
+      `<button type="button" class="purpose-card" onclick="submitStyleTest()"><div><div class="purpose-title">다시 시도</div></div></button>`;
+  }
+}
+
+function renderStyleResult(r){
+  const t = r.유형 || {};
+  $('styleQuiz').style.display = 'none';
+  $('styleResult').style.display = 'block';
+  $('styleStartBtn').style.display = t.목적키 ? 'flex' : 'none';
+  const back = $('styleBackBtn');
+  back.style.display = 'flex';
+  back.textContent = '돌아가기';
+  $('styleDots').innerHTML = (r.답변 || []).map(() => '<div class="d on"></div>').join('');
+  $('styleName').textContent = t.이름 || '';
+  $('styleDesc').textContent = t.설명 || '';
+  $('stylePurpose').textContent = t.추천목적 || '';
+  $('styleMinutes').textContent = t.하루투자분 ? `하루 ${t.하루투자분}분이면 충분해요.` : '';
+  renderStyleSports(r);
+}
+
+/* 추천 종목 3개를 기존 종목 카드(.sport-card)로 그린다. 이미 담긴 종목은 .on. */
+function renderStyleSports(r){
+  const list = r.종목 || [];
+  const have = new Set(state.sports || []);
+  $('styleSports').innerHTML = list.map(s => `
+    <button type="button" class="sport-card${have.has(s.id) ? ' on' : ''}" data-sport="${s.id}" onclick="styleToggleSport('${s.id}')">
+      <span class="sport-icon">${s.아이콘}</span>
+      <span class="sport-name">${s.이름}</span>
+      <span class="sport-check"></span>
+    </button>`).join('');
+  const all = list.length > 0 && list.every(s => have.has(s.id));
+  $('styleSportBtn').textContent = all ? '담았어요 · 운동 고르기 보기' : '이 종목 담기';
+}
+
+/* 카드 하나 토글. toggleSport 는 DOM 에서 첫 번째 .sport-card 만 바꾸므로(s8 그리드가 먼저) 여기 카드는 다시 그린다. */
+function styleToggleSport(id){
+  toggleSport(id);
+  renderStyleSports(state.styleTest?.result || {});
+}
+
+/* "이 종목 담기": 아직 안 담긴 추천 종목을 전부 toggleSport 로 담는다. 다 담겨 있으면 운동 고르기로. */
+function styleAddSports(){
+  const list = (state.styleTest?.result?.종목) || [];
+  const have = new Set(state.sports || []);
+  if (list.length && list.every(s => have.has(s.id))) { goTo('s8'); return; }
+  list.forEach(s => { if (!have.has(s.id)) toggleSport(s.id); });
+  renderStyleSports(state.styleTest?.result || {});
+}
+
+/* "이 목적으로 시작": 기존 selectPurpose 로 목적을 고르고 목적 선택 화면으로. */
+function styleStartPurpose(){
+  const key = state.styleTest?.result?.유형?.목적키;
+  if (key) selectPurpose(key);
+  goTo('s2');
 }
 
 /* ---- 시작 ---- */

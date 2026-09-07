@@ -714,6 +714,7 @@
     background:var(--amber-tint); color:var(--clay); font-size:12.5px;
     padding:8px 14px; text-align:center; border-bottom:1px solid var(--line);
   }
+  .axis-none{ font-size:13px; color:var(--muted); }
   .axis-val{
     font-size:13px; color:var(--muted); margin-left:auto; margin-right:10px;
     font-variant-numeric:tabular-nums;
@@ -3359,6 +3360,17 @@ async function toggleHeavy(){
 }
 
 /* ---- 화면 5 : 프로필 ---- */
+/* 프로필 차트의 줄 순서 (H5) — 유연성 · 근력 · 근지구력 · 심폐지구력 · 체성분.
+   잰 적 없어도 자리는 남긴다. 그 밖에 잰 항목(성장기 순발력 등)은 체성분 앞에 끼운다. */
+const AXIS_ORDER = ['유연성', '근력', '근지구력', '심폐지구력', '체성분'];
+
+function axisOrder(항목별){
+  const 잰것 = Object.keys(항목별 || {});
+  const 나머지 = 잰것.filter(k => !AXIS_ORDER.includes(k));
+  const 앞 = AXIS_ORDER.slice(0, -1);      // 체성분을 뺀 나머지
+  return [...앞, ...나머지, '체성분'];
+}
+
 function renderProfile(){
   const r = state.result;
   if (!r) return;
@@ -3366,16 +3378,26 @@ function renderProfile(){
   $('profileSub').textContent = `체력나이 · 만 ${state.age}세 기준`;
 
   const peers = r.또래비교 || {};
-  $('axisRows').innerHTML = Object.entries(r.항목별).map(([k,v],i,arr)=>{
+  // 잰 항목만 그리면 무엇을 안 쟀는지 모른다. 자리는 늘 같은 순서로 두고,
+  // 잰 적 없는 항목은 별 대신 '해당사항 모름' 으로 표시한다 (H5).
+  const 순서 = axisOrder(r.항목별);
+  $('axisRows').innerHTML = 순서.map((k, i, arr) => {
+    const v = r.항목별?.[k];
     const pr = peers[k];
-    // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
-    const 값 = (k === '체성분' && pr)
-      ? `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`
-      : `${v}세 수준`;
-    const 오른쪽 = (k === '체성분' && pr)
-      ? `<div class="stars" style="font-size:13px;color:var(--muted)">${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}</div>`
-      : `<div class="stars">${starStr(starCount(v))}</div>`;
-    return `<div class="axis-row"${i===arr.length-1?' style="border-bottom:none;"':''}>
+    const 잰것 = Number.isFinite(v);
+    let 값, 오른쪽;
+    if (!잰것) {
+      값 = '아직 재지 않았어요';
+      오른쪽 = '<div class="axis-none">해당사항 모름</div>';
+    } else if (k === '체성분' && pr) {
+      // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
+      값 = `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`;
+      오른쪽 = `<div class="stars" style="font-size:13px;color:var(--muted)">${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}</div>`;
+    } else {
+      값 = `${v}세 수준`;
+      오른쪽 = `<div class="stars">${starStr(starCount(v))}</div>`;
+    }
+    return `<div class="axis-row"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
       <div class="axis-name">${k}</div>
       <div class="axis-val">${값}</div>
       ${오른쪽}

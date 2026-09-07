@@ -408,3 +408,25 @@ def test_선택값을_서버로_보낸다():
     body = html.split("function measurement()")[1].split("\n}")[0]
     assert "grip_kg: state.gripKg" in body
     assert "endurance: state.endurance" in body
+
+
+# ---------- H5 프로필 차트 항목 ----------
+
+def test_차트_순서가_고정이다():
+    """유연성 · 근력 · 근지구력 · 심폐지구력 · 체성분 — 안 잰 항목도 자리를 지킨다."""
+    html = _index()
+    assert "const AXIS_ORDER = ['유연성', '근력', '근지구력', '심폐지구력', '체성분'];" in html
+    assert "function axisOrder(항목별)" in html
+
+
+def test_안_잰_항목은_해당사항_모름이다():
+    html = _index()
+    assert "해당사항 모름" in html
+    body = html.split("const 순서 = axisOrder(r.항목별);")[1].split("}).join('');")[0]
+    assert "const 잰것 = Number.isFinite(v);" in body
+    assert "axis-none" in body          # 별 대신 안내 문구
+
+
+def test_잰_항목만_그리던_옛_코드가_없다():
+    html = _index()
+    assert "Object.entries(r.항목별).map(([k,v],i,arr)" not in html

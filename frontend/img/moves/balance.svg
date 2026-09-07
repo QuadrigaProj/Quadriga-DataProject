@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="평형성">
+  <title>평형성</title>
+  <circle cx="32" cy="12" r="5"/>
+  <path d="M32 17 V36"/>
+  <path d="M14 27 L32 22 L50 27"/>
+  <path d="M32 36 L27 56"/>
+  <path d="M32 36 L46 44"/>
+  <path d="M18 58 H38"/>
+</svg>

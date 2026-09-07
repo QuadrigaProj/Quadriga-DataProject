@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="근력">
+  <title>근력</title>
+  <path d="M18 32 H46"/>
+  <rect x="10" y="20" width="8" height="24" rx="2"/>
+  <rect x="46" y="20" width="8" height="24" rx="2"/>
+  <path d="M6 26 V38 M58 26 V38"/>
+</svg>

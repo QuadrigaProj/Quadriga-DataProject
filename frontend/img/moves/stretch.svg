@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="스트레칭">
+  <title>스트레칭</title>
+  <circle cx="40" cy="22" r="5"/>
+  <path d="M20 46 L36 28"/>
+  <path d="M36 28 L52 40"/>
+  <path d="M20 46 H54 V38"/>
+  <path d="M8 54 H56"/>
+</svg>

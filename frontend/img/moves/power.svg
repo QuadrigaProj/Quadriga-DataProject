@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="순발력">
+  <title>순발력</title>
+  <circle cx="32" cy="11" r="5"/>
+  <path d="M32 16 V33"/>
+  <path d="M32 22 L19 11 M32 22 L45 11"/>
+  <path d="M32 33 L22 44 L27 53"/>
+  <path d="M32 33 L42 44 L37 53"/>
+  <path d="M12 58 H52"/>
+  <path d="M12 46 L8 42 M52 46 L56 42"/>
+</svg>

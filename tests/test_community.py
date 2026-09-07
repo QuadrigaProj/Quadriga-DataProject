@@ -142,3 +142,42 @@ def test_방_목록_참여여부():
     rooms = b.get("/community/rooms").json()["rooms"]
     assert rooms[0]["이름"] == "축구 모임"
     assert rooms[0]["참여중"] is False and rooms[0]["인원"] == 1
+
+
+def test_비공개_단체방은_비밀번호를_검증하고_목록에_표시한다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={
+        "name": "비밀 러닝", "room_type": "group", "is_private": True, "password": "run1234",
+    }).json()["id"]
+    room = b.get("/community/rooms").json()["rooms"][0]
+    assert room["종류"] == "group" and room["비공개"] is True
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "wrong"}).status_code == 403
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "run1234"}).status_code == 200
+    with auth.db() as con:
+        saved = con.execute("SELECT password_hash FROM chat_rooms WHERE id=?", (rid,)).fetchone()
+    assert saved["password_hash"] != "run1234"
+
+
+def test_방장만_비공개방_비밀번호를_바꾼다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={
+        "name": "비밀 모임", "is_private": True, "password": "old1234",
+    }).json()["id"]
+    assert b.put(f"/community/rooms/{rid}/password", json={"password": "new1234"}).status_code == 403
+    assert a.put(f"/community/rooms/{rid}/password", json={"password": "new1234"}).status_code == 200
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "old1234"}).status_code == 403
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "new1234"}).status_code == 200
+
+
+def test_개인_채팅방은_상대만_참여자로_추가한다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    rid = a.post("/community/rooms", json={
+        "name": "가와 나", "room_type": "direct", "member_email": "b@x.com",
+    }).json()["id"]
+    room = b.get("/community/rooms").json()["rooms"][0]
+    assert room["종류"] == "direct" and room["참여중"] is True and room["인원"] == 2
+    assert c.post(f"/community/rooms/{rid}/join", json={}).status_code == 403

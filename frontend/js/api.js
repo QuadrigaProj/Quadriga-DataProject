@@ -94,9 +94,12 @@ const API = (() => {
     commReact: (target_type, target_id, emoji) =>
       post('/community/reactions', { target_type, target_id, emoji }),
     commRooms: () => call('/community/rooms'),
-    commRoomNew: (name, topic) => post('/community/rooms', { name, topic }),
-    commRoomJoin: (id) => post('/community/rooms/' + id + '/join', {}),
+    commRoomNew: (body) => post('/community/rooms', body),
+    commRoomJoin: (id, password) => post('/community/rooms/' + id + '/join', { password }),
     commRoomLeave: (id) => post('/community/rooms/' + id + '/leave', {}),
+    commRoomPassword: (id, password) => call('/community/rooms/' + id + '/password', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
+    }),
     commMessages: (id, after) => call('/community/rooms/' + id + '/messages' + (after ? '?after=' + after : '')),
     commSend: (id, body) => post('/community/rooms/' + id + '/messages', { body }),
   };

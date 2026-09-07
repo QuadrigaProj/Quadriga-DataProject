@@ -1037,7 +1037,9 @@
   .room-card{ border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .room-card .rc-name{ font-weight:700; font-size:14px; }
   .room-card .rc-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .room-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
   .room-card button{ border:none; background:var(--pine); color:#fff; border-radius:10px; padding:7px 12px; font-size:13px; font-family:inherit; cursor:pointer; white-space:nowrap; }
+  .room-card .room-password-btn{ background:var(--paper); border:1px solid var(--line); color:var(--pine-deep); }
   .chat-head{ display:flex; align-items:center; gap:10px; margin-top:14px; font-weight:700; }
   .chat-back{ border:1.5px solid var(--line); background:#fff; border-radius:10px; padding:5px 10px; font-size:13px; font-family:inherit; cursor:pointer; }
   .chat-msgs{ border:1px solid var(--line); border-radius:14px; padding:12px; margin-top:10px; height:340px; overflow-y:auto; background:var(--paper); }
@@ -1046,6 +1048,19 @@
   .chat-msg .cm-body{ display:inline-block; background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 10px; margin-top:2px; max-width:80%; word-break:break-word; }
   .chat-msg.mine{ text-align:right; }
   .chat-msg.mine .cm-body{ background:var(--pine-tint); border-color:var(--pine-tint); }
+  .comm-list-head{ display:flex; align-items:center; justify-content:space-between; margin-top:16px; font-weight:700; }
+  .comm-add{ width:36px; height:36px; border:0; border-radius:50%; background:var(--pine); color:#fff; font:inherit; font-size:24px; line-height:1; cursor:pointer; }
+  .comm-modal-backdrop, .notice-backdrop{ position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:22px; background:rgba(32,38,31,.42); }
+  .comm-modal, .notice-modal{ width:min(100%, 420px); position:relative; padding:18px; border-radius:18px; background:var(--paper); box-shadow:0 16px 40px rgba(32,38,31,.2); }
+  .comm-modal-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  .comm-modal-head h2{ margin:0; font-size:17px; }
+  .comm-modal-close{ border:0; border-radius:50%; width:32px; height:32px; background:var(--pine-tint); color:var(--pine-deep); font-size:24px; line-height:1; cursor:pointer; }
+  .comm-modal textarea{ width:100%; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; resize:vertical; }
+  .comm-field{ display:block; margin:12px 0; font-size:13px; color:var(--muted); }
+  .comm-field input, .comm-field select{ display:block; width:100%; margin-top:5px; padding:10px 12px; border:1.5px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); font:inherit; }
+  .notice-modal{ text-align:center; padding:28px 42px 24px; }
+  .notice-modal .comm-modal-close{ position:absolute; top:12px; right:12px; }
+  .notice-modal p{ margin:0; font-size:15px; font-weight:600; line-height:1.55; }
 </style>
 </head>
 <body>
@@ -1798,27 +1813,14 @@
 
       <!-- 피드 -->
       <div id="commFeed" hidden>
-        <div class="comm-compose">
-          <textarea id="postBody" rows="2" placeholder="오늘 운동은 어땠나요? 사진·영상도 올릴 수 있어요."></textarea>
-          <div id="postPreview" class="comm-media"></div>
-          <div class="comm-compose-row">
-            <label class="comm-attach">＋ 사진·영상
-              <input type="file" id="postFile" accept="image/*,video/*" multiple hidden onchange="onPostFiles(event)" />
-            </label>
-            <button class="comm-share-btn" type="button" onclick="shareMyRecord()">📈 내 기록 공유</button>
-            <button class="btn btn-primary comm-post-btn" type="button" onclick="submitPost()">올리기</button>
-          </div>
-        </div>
+        <div class="comm-list-head"><span>게시글</span><button type="button" class="comm-add" onclick="openPostComposer()" aria-label="게시글 작성">＋</button></div>
         <div id="feedList"></div>
         <button id="feedMore" class="more-card" hidden onclick="loadFeed(true)">더 보기</button>
       </div>
 
       <!-- 운동 모임 채팅 -->
       <div id="commChat" hidden>
-        <div class="comm-compose-row" style="margin-top:14px;">
-          <input id="roomName" type="text" placeholder="모임 이름 (예: 토요일 한강 러닝)" />
-          <button class="btn btn-primary comm-post-btn" type="button" onclick="createRoom()">모임 만들기</button>
-        </div>
+        <div class="comm-list-head"><span>채팅방</span><button type="button" class="comm-add" onclick="openRoomComposer()" aria-label="채팅방 만들기">＋</button></div>
         <div id="roomList"></div>
 
         <div id="chatView" hidden>
@@ -1835,6 +1837,40 @@
       </div>
     </div>
   </section>
+
+  <div class="comm-modal-backdrop" id="postComposer" hidden>
+    <section class="comm-modal" role="dialog" aria-modal="true" aria-labelledby="postComposerTitle">
+      <div class="comm-modal-head"><h2 id="postComposerTitle">게시글 작성</h2><button type="button" class="comm-modal-close" onclick="closePostComposer()" aria-label="닫기">×</button></div>
+      <textarea id="postBody" rows="4" placeholder="오늘 운동은 어땠나요? 사진·영상도 올릴 수 있어요."></textarea>
+      <div id="postPreview" class="comm-media"></div>
+      <div class="comm-compose-row">
+        <label class="comm-attach">＋ 사진·영상
+          <input type="file" id="postFile" accept="image/*,video/*" multiple hidden onchange="onPostFiles(event)" />
+        </label>
+        <button class="comm-share-btn" type="button" onclick="shareMyRecord()">📈 내 기록 공유</button>
+        <button class="btn btn-primary comm-post-btn" type="button" onclick="submitPost()">올리기</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="comm-modal-backdrop" id="roomComposer" hidden>
+    <section class="comm-modal" role="dialog" aria-modal="true" aria-labelledby="roomComposerTitle">
+      <div class="comm-modal-head"><h2 id="roomComposerTitle">채팅방 만들기</h2><button type="button" class="comm-modal-close" onclick="closeRoomComposer()" aria-label="닫기">×</button></div>
+      <label class="comm-field">방 이름<input id="roomName" type="text" placeholder="예: 토요일 한강 러닝" /></label>
+      <label class="comm-field">채팅 종류<select id="roomType" onchange="syncRoomFields()"><option value="group">단체 채팅</option><option value="direct">개인 채팅</option></select></label>
+      <label class="comm-field" id="roomPrivacyField">공개 설정<select id="roomPrivacy" onchange="syncRoomFields()"><option value="public">공개</option><option value="private">비공개</option></select></label>
+      <label class="comm-field" id="roomPasswordField" hidden>비밀번호<input id="roomPassword" type="password" minlength="4" placeholder="4자 이상" /></label>
+      <label class="comm-field" id="roomMemberField" hidden>상대 이메일<input id="roomMemberEmail" type="email" placeholder="가입한 이메일 주소" /></label>
+      <button class="btn btn-primary comm-post-btn" type="button" onclick="createRoom()">채팅방 만들기</button>
+    </section>
+  </div>
+
+  <div class="notice-backdrop" id="noticeModal" hidden>
+    <section class="notice-modal" role="dialog" aria-modal="true" aria-labelledby="noticeMessage">
+      <button type="button" class="comm-modal-close" onclick="closeNoticeModal()" aria-label="닫기">×</button>
+      <p id="noticeMessage"></p>
+    </section>
+  </div>
 
   <!-- 시트(모달): 화면 위에 잠깐 띄우는 공용 컴포넌트. 지금은 측정 동작 GIF 안내(C6)에 쓰고
        달력·스타일 테스트·루틴 픽토그램(9·11·12번)도 openSheet(title, html) 로 재사용한다. -->
@@ -3133,7 +3169,7 @@ async function submitPost(){
   try {
     await API.commPost({ body, media: COMM.media });
     $('postBody').value = ''; $('postPreview').innerHTML = ''; COMM.media = [];
-    COMM.oldest = null; await loadFeed(false);
+    closePostComposer(); COMM.oldest = null; await loadFeed(false);
   } catch (e) { showToast(e.message); }
 }
 
@@ -3148,10 +3184,28 @@ async function shareMyRecord(){
   try {
     await API.commPost({ kind: 'record', body: $('postBody').value.trim(),
                          record: { 요약, 운동횟수: days } });
-    $('postBody').value = ''; COMM.oldest = null; await loadFeed(false);
+    $('postBody').value = ''; closePostComposer(); COMM.oldest = null; await loadFeed(false);
     showToast('기록을 공유했어요');
   } catch (e) { showToast(e.message); }
 }
+
+function openPostComposer(){ $('postComposer').hidden = false; $('postBody').focus(); }
+function closePostComposer(){ $('postComposer').hidden = true; }
+function openRoomComposer(){ $('roomComposer').hidden = false; syncRoomFields(); $('roomName').focus(); }
+function closeRoomComposer(){ $('roomComposer').hidden = true; }
+function syncRoomFields(){
+  const direct = $('roomType').value === 'direct';
+  const privateRoom = $('roomPrivacy').value === 'private';
+  $('roomPrivacyField').hidden = direct;
+  $('roomPasswordField').hidden = direct || !privateRoom;
+  $('roomMemberField').hidden = !direct;
+}
+
+function openNoticeModal(message){
+  $('noticeMessage').textContent = message;
+  $('noticeModal').hidden = false;
+}
+function closeNoticeModal(){ $('noticeModal').hidden = true; }
 
 /* ---- 운동 모임 채팅 ---- */
 let ROOMS = [];
@@ -3160,28 +3214,59 @@ async function loadRooms(){
     const r = await API.commRooms();
     ROOMS = r.rooms || [];
     const box = $('roomList');
-    box.innerHTML = ROOMS.map(rm => `
+    box.innerHTML = ROOMS.map(rm => {
+      const privateMark = rm['비공개'] ? ' 🔒' : '';
+      const kind = rm['종류'] === 'direct' ? '개인 채팅' : (rm['비공개'] ? '비공개 단체 채팅' : '공개 단체 채팅');
+      return `
       <div class="room-card">
-        <div><div class="rc-name">${esc(rm['이름'])}</div>
-          <div class="rc-sub">${esc(rm['주제']||'')} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
-        <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
-      </div>`).join('') || '<div class="more-card">아직 모임이 없어요. 먼저 만들어보세요!</div>';
+        <div><div class="rc-name">${esc(rm['이름'])}${privateMark}</div>
+          <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
+        <div class="room-actions">
+          ${rm['방장'] && rm['비공개'] ? `<button class="room-password-btn" data-password-room="${rm.id}">비밀번호 변경</button>` : ''}
+          <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
+        </div>
+      </div>`;
+    }).join('') || '<div class="more-card">아직 채팅방이 없어요. 먼저 만들어보세요!</div>';
     box.querySelectorAll('button[data-room]').forEach(btn => btn.onclick = () => {
       const id = +btn.dataset.room;
       const rm = ROOMS.find(x => x.id === id);
       if (btn.dataset.joined === '1') openRoom(id, rm ? rm['이름'] : '모임');
       else joinRoom(id);
     });
+    box.querySelectorAll('button[data-password-room]').forEach(btn => btn.onclick = () => changeRoomPassword(+btn.dataset.passwordRoom));
   } catch (e) { $('roomList').innerHTML = '<div class="more-card">모임을 불러오지 못했어요.</div>'; }
 }
 
 async function createRoom(){
   const name = $('roomName').value.trim();
-  if (!name) { showToast('모임 이름을 입력해주세요'); return; }
-  try { await API.commRoomNew(name, ''); $('roomName').value = ''; loadRooms(); }
+  const room_type = $('roomType').value;
+  const is_private = room_type === 'group' && $('roomPrivacy').value === 'private';
+  const password = $('roomPassword').value;
+  const member_email = $('roomMemberEmail').value.trim();
+  if (!name) { showToast('방 이름을 입력해주세요'); return; }
+  if (is_private && password.length < 4) { showToast('비공개 방 비밀번호는 4자 이상 입력해주세요'); return; }
+  if (room_type === 'direct' && !member_email) { showToast('개인 채팅 상대의 이메일을 입력해주세요'); return; }
+  try {
+    await API.commRoomNew({ name, topic: '', room_type, is_private, password: is_private ? password : null,
+                            member_email: room_type === 'direct' ? member_email : null });
+    $('roomName').value = ''; $('roomPassword').value = ''; $('roomMemberEmail').value = '';
+    closeRoomComposer(); loadRooms();
+  }
   catch (e) { showToast(e.message); }
 }
-async function joinRoom(id){ try { await API.commRoomJoin(id); loadRooms(); } catch (e) { showToast(e.message); } }
+async function joinRoom(id){
+  const room = ROOMS.find(x => x.id === id);
+  const password = room && room['비공개'] ? prompt('이 비공개 채팅방의 비밀번호를 입력해주세요.') : null;
+  if (room && room['비공개'] && password === null) return;
+  try { await API.commRoomJoin(id, password); loadRooms(); } catch (e) { showToast(e.message); }
+}
+async function changeRoomPassword(id){
+  const password = prompt('새 비밀번호를 4자 이상 입력해주세요.');
+  if (password === null) return;
+  if (password.length < 4) { showToast('새 비밀번호는 4자 이상 입력해주세요'); return; }
+  try { await API.commRoomPassword(id, password); showToast('비밀번호를 변경했어요'); }
+  catch (e) { showToast(e.message); }
+}
 
 async function openRoom(id, name){
   COMM.room = id; COMM.lastMsgId = 0;
@@ -4948,8 +5033,7 @@ async function deleteSelectedMeasures(){
     .filter(w => (w.items || []).length || Object.keys(w.요약 || {}).length)
     .map(w => w.date));
   if (선택된날짜.some(d => 직접적은날짜.has(d))) {
-    const note = $('recDeleteNote');
-    if (note) note.textContent = '직접 적은 운동에서 먼저 삭제를 진행해주세요';
+    openNoticeModal('직접 적은 운동에서 먼저 삭제를 진행해주세요');
     return;
   }
   if (!confirm(`점검 기록 ${n}개를 지울까요?

@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -130,8 +131,28 @@ def test_화면에_네_버튼이_순서대로_있다():
     html = client.get("/").text
     # 기록 화면에도 같은 이름의 .rec-actions 가 있어 추천 카드 쪽으로 좁힌다
     card = html.split("function paintRecommend()")[1]
-    actions = card.split('<div class="rec-actions">')[1].split("</div>")[0]
+    actions = card.split('<div class="reco-actions">')[1].split("</div>")[0]
     자리 = [actions.find(t) for t in
            ("이전 루틴", "더 쉬운 루틴", "더 어려운 루틴", "이 루틴으로 시작")]
     assert all(i >= 0 for i in 자리), 자리
     assert 자리 == sorted(자리), "버튼 순서가 요구와 다르다"
+
+
+def test_네_버튼이_같은_크기_같은_모양이다():
+    """I2: 넷 다 .reco-btn 한 클래스만 쓴다 — 폭·높이·모서리가 같아진다."""
+    html = client.get("/").text
+    card = html.split("function paintRecommend()")[1]
+    actions = card.split('<div class="reco-actions">')[1].split("</div>")[0]
+    btns = re.findall(r'class="([^"]*reco-btn[^"]*)"', actions)
+    assert len(btns) == 4, btns
+    # 색만 다르고(마지막 go) 크기·모양을 정하는 클래스는 하나뿐이다
+    assert {c.replace(" go", "").strip() for c in btns} == {"reco-btn"}
+    assert "wide" not in actions            # 한 칸을 통째로 먹던 버튼이 없다
+    assert "btn-primary" not in actions and "btn-ghost" not in actions
+
+
+def test_기록_화면_버튼과_이름이_겹치지_않는다():
+    """전에는 .rec-actions 를 두 화면이 함께 써서 나중 정의가 앞을 덮었다."""
+    html = client.get("/").text
+    assert html.count(".reco-actions{") == 1
+    assert html.count(".rec-actions{") == 1

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="호흡·이완">
+  <title>호흡·이완</title>
+  <circle cx="32" cy="15" r="5"/>
+  <path d="M32 20 V38"/>
+  <path d="M32 26 L19 40 M32 26 L45 40"/>
+  <path d="M14 48 C19 40 28 38 32 42 C36 38 45 40 50 48"/>
+  <path d="M12 52 H52"/>
+  <path d="M8 12 C10 9 14 9 16 12 M8 19 C10 16 14 16 16 19"/>
+</svg>

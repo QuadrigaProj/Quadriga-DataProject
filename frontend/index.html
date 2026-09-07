@@ -360,6 +360,18 @@
   .player-name{ font-size:20px; font-weight:800; }
   .player-set{ font-size:14.5px; color:var(--muted); margin-top:4px; }
 
+  /* F5 동작 범주 픽토그램 — 이름 앞 작은 버튼, 누르면 시트(4번 C6)에 크게 */
+  .player-name-row{ display:flex; align-items:center; gap:10px; }
+  .player-name-row .player-name{ flex:1; min-width:0; }
+  .move-picto{
+    width:40px; height:40px; padding:5px; flex-shrink:0; cursor:pointer;
+    background:var(--pine-tint); border:1.5px solid var(--line); border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .move-picto img{ width:100%; height:100%; display:block; }
+  .move-sheet-picto{ width:140px; height:140px; display:block; margin:4px auto 8px; }
+  .move-sheet-cat{ text-align:center; font-size:13px; color:var(--muted); margin-bottom:14px; }
+
   /* 오늘의 컨디션 — "몸이 무거운 날" 토글 하나만 둔다 (C9) */
   .cond-row{ display:flex; gap:8px; padding:16px 22px 0; flex-wrap:wrap; }
   .cond-btn{
@@ -1081,7 +1093,12 @@
         <div class="play">▶</div>
       </div>
       <div class="player-meta">
-        <div class="player-name" id="playerName">의자에 앉았다 일어서기</div>
+        <div class="player-name-row">
+          <button type="button" class="move-picto" id="playerPicto" onclick="openMovePicto()" aria-label="동작 그림 크게 보기">
+            <img id="playerPictoImg" src="/img/moves/strength.svg" alt=""/>
+          </button>
+          <div class="player-name" id="playerName">의자에 앉았다 일어서기</div>
+        </div>
         <div class="player-set" id="playerSet">2세트 중 1세트 · 10회</div>
       </div>
       <div class="cond-row" id="condRow">
@@ -2808,6 +2825,64 @@ async function loadRoutine(){
 let currentStep = 0;
 function resetRoutine(){ currentStep = 0; renderStep(); renderSportApplied(); }
 
+/* ---- F5 : 동작 범주 픽토그램 ----
+   동작 126개마다 그림을 두지 않고 6개 범주로 묶는다(conventions 3절).
+   4번(C6)의 MOVE_MEDIA 와 같은 모양 { svg, gif, 이름 }. GIF 파일은 아직 없다 —
+   시트에서 placeholder 로 안내하고, 파일만 넣으면 바로 보인다. */
+const MOVE_CATEGORY_MEDIA = {
+  stretch:  { svg: '/img/moves/stretch.svg',  gif: '/img/moves/stretch.gif',  이름: '스트레칭·유연성' },
+  strength: { svg: '/img/moves/strength.svg', gif: '/img/moves/strength.gif', 이름: '근력·근지구력' },
+  cardio:   { svg: '/img/moves/cardio.svg',   gif: '/img/moves/cardio.gif',   이름: '심폐지구력' },
+  balance:  { svg: '/img/moves/balance.svg',  gif: '/img/moves/balance.gif',  이름: '평형성·협응력' },
+  power:    { svg: '/img/moves/power.svg',    gif: '/img/moves/power.gif',    이름: '순발력·민첩성' },
+  breath:   { svg: '/img/moves/breath.svg',   gif: '/img/moves/breath.gif',   이름: '호흡·이완' },
+};
+
+/* 단계 → 체력요인 문자열 부분일치 → 기본 strength 순서로 범주를 고른다.
+   체력요인은 loadRoutine 이 '·' 로 이어 붙인 문자열('근력·근지구력(상체)·협응력')이라
+   '·' 로 나눠 앞에 적힌 요인부터 본다. */
+function moveCategory(step){
+  if (!step) return 'strength';
+  if (step.단계 === '준비운동' || step.단계 === '정리운동') return 'stretch';
+  const tokens = String(step.체력요인 || '').split('·');
+  for (const t of tokens) {
+    if (/호흡|이완/.test(t))            return 'breath';
+    if (/심폐/.test(t))                 return 'cardio';
+    if (/순발|민첩/.test(t))            return 'power';
+    if (/평형|협응/.test(t))            return 'balance';
+    if (/근력|근지구력|코어/.test(t))    return 'strength';
+    if (/유연/.test(t))                 return 'stretch';
+  }
+  return 'strength';
+}
+
+/* 현재 동작의 범주 픽토그램을 이름 앞 버튼에 넣는다. renderStep 이 부른다. */
+function renderStepPicto(step){
+  const img = $('playerPictoImg');
+  if (!img) return;
+  const m = MOVE_CATEGORY_MEDIA[moveCategory(step)];
+  img.src = m.svg;
+  img.alt = m.이름;
+  $('playerPicto').title = `${m.이름} — 동작 그림 크게 보기`;
+}
+
+/* 픽토그램 클릭 → 4번(C6)의 시트에 크게 + 범주 GIF. GIF 파일이 없으면 4번과 같은 placeholder. */
+function openMovePicto(){
+  const step = activeRoutine()[currentStep];
+  if (!step) return;
+  const m = MOVE_CATEGORY_MEDIA[moveCategory(step)];
+  openSheet(step.운동명, `
+    <img class="move-sheet-picto" src="${m.svg}" alt="${m.이름}"/>
+    <div class="move-sheet-cat">${m.이름}</div>
+    <img class="move-gif" src="${m.gif}" alt="${step.운동명} 동작 GIF"
+         onerror="this.hidden = true; this.nextElementSibling.hidden = false;" />
+    <div class="move-gif-fallback" hidden>
+      <img src="${m.svg}" alt="" />
+      <div>동작 GIF 준비 중 — <code>frontend${m.gif}</code> 에 파일을 넣으면 바로 보여요</div>
+    </div>
+  `);
+}
+
 /* 고른 종목이 오늘 루틴에 어떻게 반영됐는지 한 줄로 알려준다. */
 function renderSportApplied(){
   const box = $('sportApplied');
@@ -2841,6 +2916,7 @@ function renderStep(){
   const it = state.intensity || { 세트: 2, 반복: 10, 시간초: 30 };
   $('playerTag').textContent = (currentStep+1)+' / '+list.length;
   $('playerName').textContent = step.운동명;
+  renderStepPicto(step);
   if (step.단계 === '본운동') {
     const amount = step.유형 === '시간'
       ? `${it.시간초 ?? 30}초`

@@ -673,7 +673,9 @@
     display:flex; align-items:center; justify-content:center;
     font-size:14px; font-weight:700; letter-spacing:0;
   }
-  .acct-avatar.big{ width:44px; height:44px; font-size:17px; }
+  .acct-avatar.big{ width:44px; height:44px; font-size:17px;
+    border:none; padding:0; font-family:inherit; cursor:pointer; }
+  .acct-avatar.big:hover{ box-shadow:0 0 0 3px var(--pine-tint); }
   .acct-btn[aria-expanded="true"] .acct-avatar{ box-shadow:0 0 0 3px var(--pine-tint); }
 
   .acct-panel{
@@ -694,6 +696,14 @@
   .acct-row dt{ color:var(--muted); flex-shrink:0; }
   .acct-row dd{ margin:0; text-align:right; font-weight:600; }
   .acct-empty{ font-size:12.5px; color:var(--muted); line-height:1.6; }
+  /* 이용권 줄은 눌러서 바로 충전할 수 있게 한 칸 띄우고 강조한다 */
+  .acct-pay{ display:block; width:100%; margin-top:12px; padding:10px 12px;
+    background:var(--pine-tint); border:1px solid var(--line); border-radius:12px;
+    font-family:inherit; font-size:12.5px; color:var(--ink); text-align:left; cursor:pointer; }
+  .acct-pay:hover{ border-color:var(--pine); }
+  .acct-pay .k{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .acct-pay .k b{ font-size:14px; }
+  .acct-pay .s{ color:var(--muted); margin-top:2px; }
   .acct-more{ font-size:11.5px; color:var(--muted); margin-top:12px; text-align:center;
               line-height:1.5; }
   .acct-logout{
@@ -943,13 +953,15 @@
 
     <div class="acct-panel" id="acctPanel" role="dialog" aria-label="내 계정">
       <div class="acct-head">
-        <span class="acct-avatar big" id="acctAvatarBig">·</span>
+        <button type="button" class="acct-avatar big" id="acctAvatarBig"
+                title="프로필 열기" onclick="goProfile()">·</button>
         <div>
           <div class="acct-name" id="acctName">—</div>
           <div class="acct-via" id="acctVia">—</div>
         </div>
       </div>
       <dl class="acct-rows" id="acctRows"></dl>
+      <button type="button" class="acct-pay" id="acctPay" onclick="payFromAccount(event)"></button>
       <button class="acct-upgrade" id="acctUpgrade" style="display:none;"
               onclick="upgradeFromGuest()">계정 만들고 기록 지키기</button>
       <div class="acct-more">한 번 더 누르면 프로필에서 수정할 수 있어요</div>
@@ -1827,8 +1839,7 @@ function toggleAccount(ev){
   const panel = $('acctPanel');
   // 열려 있는데 또 누르면 = 프로필 페이지로 넘어간다
   if (panel.classList.contains('open')) {
-    closeAccount();
-    if (state.user) goTo('s5');
+    goProfile();
     return;
   }
   closeMenu();
@@ -1875,10 +1886,38 @@ function renderAccount(){
   $('acctUpgrade').style.display = local ? 'block' : 'none';
   $('acctLogout').textContent = local ? '나가기' : '로그아웃';
 
+  renderAcctCredit();
+
   $('acctRows').innerHTML = rows.length
     ? rows.map(([k, v]) =>
         `<div class="acct-row"><dt>${k}</dt><dd>${v}</dd></div>`).join('')
     : '<div class="acct-empty">아직 입력한 정보가 없어요.<br/>첫 점검을 마치면 여기에 표시됩니다.</div>';
+}
+
+/* 계정 패널의 이용권 줄 (J1).
+   프로필까지 안 들어가도 결제 여부와 남은 금액을 여기서 바로 본다. */
+function renderAcctCredit(){
+  const box = $('acctPay');
+  if (!box) return;
+  const 원 = state.credit || 0;
+  const 횟수 = creditTimes();
+  box.innerHTML = `
+    <span class="k"><span>AI 추천 이용권</span><b>${won(원)}</b></span>
+    <span class="s">${원 ? `충전됨 · ${횟수}회 남음` : '충전 안 함 · 무료 추천은 그대로'}</span>`;
+}
+
+/* 계정 패널에서 프로필 화면으로 (J3 — 헤더 아바타·패널 아바타 둘 다 이 길로 온다) */
+function goProfile(ev){
+  if (ev) ev.stopPropagation();
+  closeAccount();
+  if (state.user) goTo('s5');
+}
+
+/* 패널에서 바로 충전창 열기 */
+function payFromAccount(ev){
+  if (ev) ev.stopPropagation();
+  closeAccount();
+  openPaySheet();
 }
 
 /* ---------------------------------------------------------------------------
@@ -4536,6 +4575,7 @@ async function confirmPay(){
   await saveProfile();
   closeSheet();
   renderCredit();
+  renderAcctCredit();
   if (document.querySelector('.screen.active')?.id === 's12') paintRecoMode();
 }
 

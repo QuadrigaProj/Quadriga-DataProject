@@ -176,6 +176,7 @@
   /* ===================== SCREEN 3 : 홈 ===================== */
   .topbar{ display:flex; align-items:center; justify-content:space-between; padding:22px 22px 0; }
   .greet-eyebrow{ font-size:13.5px; color:var(--muted); }
+  .peer-emph{ font-size:17px; font-weight:800; color:var(--amber); }
   .greet-title{ font-size:19px; font-weight:700; margin-top:2px; }
   .dday-pill{
     background:var(--pine-tint); color:var(--pine-deep); font-size:13px; font-weight:700;
@@ -1555,9 +1556,9 @@
       <div class="rec-block" id="recAgeBlock" style="display:none;">
         <div class="rec-head">체력나이 변화</div>
         <div class="rec-age-row">
-          <div><div class="rec-age-num" id="recFirstAge">—</div><div class="rec-cap">첫 점검</div></div>
+          <div><div class="rec-age-num" id="recFirstAge">—</div><div class="rec-cap">초기 체력 나이</div></div>
           <div class="rec-arrow" id="recDelta">→</div>
-          <div><div class="rec-age-num" id="recNowAge">—</div><div class="rec-cap">지금</div></div>
+          <div><div class="rec-age-num" id="recNowAge">—</div><div class="rec-cap">현재 체력 나이</div></div>
         </div>
         <div class="rec-note" id="recAgeNote"></div>
       </div>
@@ -3197,7 +3198,7 @@ function renderResult(){
   $('nextBtn1').style.display = 'block';
   $('calcBtn').style.display = 'none';
   $('greetName').textContent = state.user ? `${state.user} 님` : '반가워요';
-  $('greetSub').textContent = peerAgeText(age - state.age);
+  $('greetSub').innerHTML = peerAgeText(age - state.age);
 }
 
 /* A4: (체력나이 − 실제 나이) 를 또래 기준으로 읽어준다. 계산값은 그대로, 표현만 바꾼다.
@@ -3206,12 +3207,12 @@ function renderResult(){
 function peerAgeText(diff){
   const n = Math.abs(diff);
   if (isGrowth()) {
-    if (diff > 0) return `발달 수준이 또래 중앙값보다 ${n}세 앞서요.`;
-    if (diff < 0) return `발달 수준이 또래 중앙값보다 ${n}세 뒤처져요.`;
+    if (diff > 0) return `발달 수준이 또래 중앙값보다<br/><span class="peer-emph">${n}세 앞서요.</span>`;
+    if (diff < 0) return `발달 수준이 또래 중앙값보다<br/><span class="peer-emph">${n}세 뒤처져요.</span>`;
     return '발달 수준이 또래 중앙값과 비슷해요.';
   }
-  if (diff > 0) return `신체 나이가 또래 중앙값보다 ${n}세 높게 나왔어요.`;
-  if (diff < 0) return `신체 나이가 또래 중앙값보다 ${n}세 낮게 나왔어요.`;
+  if (diff > 0) return `신체 나이가 또래 중앙값보다<br/><span class="peer-emph">${n}세 높게</span> 나왔어요.`;
+  if (diff < 0) return `신체 나이가 또래 중앙값보다<br/><span class="peer-emph">${n}세 낮게</span> 나왔어요.`;
   return '신체 나이가 또래 중앙값과 비슷해요.';
 }
 

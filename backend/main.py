@@ -36,6 +36,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import sports as sp
     from backend import style_test as st
     from backend import workout_items as wi
+    from backend import recommend as rc
     from backend import route
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
@@ -48,6 +49,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import sports as sp                     # noqa: E402
     import style_test as st                 # noqa: E402
     import workout_items as wi              # noqa: E402
+    import recommend as rc                  # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -919,6 +921,31 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
         raise HTTPException(400, str(e))
     out["종목"] = sp.resolve(out["유형"]["추천종목"])   # 화면이 이름·아이콘을 바로 그리게
     return out
+
+
+# ---------- 12. 루틴 추천 ----------
+
+@app.get("/recommend/routines")
+def get_recommend_routines(
+    age_gbn: ProgramAge,
+    weak: str | None = Query(None, description="쉼표 구분. 체력나이에서 뒤처지는 요인"),
+    style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
+    sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
+    target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
+    limit: int = Query(5, ge=1, le=20),
+) -> dict:
+    """사용자 데이터로 250개 고정 루틴에 점수를 매겨 순위를 낸다.
+
+    루틴을 새로 만들지 않는다. 이미 있는 것 중에서 고르고 왜 골랐는지를 함께 낸다.
+    아무 정보가 없어도 안전한 기본 순위를 돌려준다.
+    """
+    parts = [w.strip() for w in (weak or "").split(",") if w.strip()]
+    picked = [s.strip() for s in (sports or "").split(",") if s.strip()]
+    try:
+        return rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
+                           sports=picked, target_gap=target_gap, limit=limit)
+    except (KeyError, FileNotFoundError) as e:
+        raise HTTPException(404, str(e))
 
 
 # ---------- 11. 당일 기록 종목 ----------

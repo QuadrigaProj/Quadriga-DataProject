@@ -58,6 +58,7 @@ const API = (() => {
     centers: (q) => call('/centers?' + qs(q)),
     sports: () => call('/sports'),
     workoutItems: () => call('/workout-items'),
+    recommendRoutines: (q) => call('/recommend/routines?' + qs(q)),
     sportsSummary: (ids) => call('/sports/summary?' + qs({ ids: (ids || []).join(',') })),
     styleTest: () => call('/style-test'),
     styleTestResult: (answers) => post('/style-test/result', { answers }),

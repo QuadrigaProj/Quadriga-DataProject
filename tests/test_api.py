@@ -155,6 +155,28 @@ def test_daily_강도는_4주마다_올라간다():
     assert client.get("/daily", params={"days_since_start": 40}).json()["강도"]["세트"] == 3
 
 
+def test_daily_일상처방은_경과일마다_순환한다():
+    p = {"age_gbn": "성인", "purpose": "다이어트"}
+    d0 = client.get("/daily", params={**p, "days_since_start": 0}).json()
+    d1 = client.get("/daily", params={**p, "days_since_start": 1}).json()
+    d30 = client.get("/daily", params={**p, "days_since_start": 30}).json()
+    assert d0["일상처방"]["문구"] != d1["일상처방"]["문구"]     # 매일 바뀐다
+    assert d0["일상처방"]["문구"] == d30["일상처방"]["문구"]    # 30일 주기로 되돌아온다
+    assert d0["일상처방"]["총일수"] == 30
+
+
+def test_daily_age_purpose_없으면_일상처방_생략():
+    assert "일상처방" not in client.get("/daily").json()
+
+
+def test_daily_어르신_수험생은_기초체력_문구로_대체():
+    노인 = client.get("/daily", params={
+        "age_gbn": "어르신", "purpose": "수험생 체력 증진", "days_since_start": 0}).json()
+    기초 = client.get("/daily", params={
+        "age_gbn": "어르신", "purpose": "기초 체력 증진", "days_since_start": 0}).json()
+    assert 노인["일상처방"]["문구"] == 기초["일상처방"]["문구"]
+
+
 # ---------- 동영상 ----------
 
 def test_videos_요인_부분일치():

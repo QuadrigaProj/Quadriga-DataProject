@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:                                        # 저장소 루트에서 실행할 때
     from backend import auth, daily, fitness_age as fa, prescription as pr, paths
+    from backend import daily_prescription as dp
     from backend import routine_player as rp
     from backend import routines as rt, bodycomp as bc, hometest as ht, geo
     from backend import sports as sp
@@ -44,6 +45,7 @@ try:                                        # 저장소 루트에서 실행할 �
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
+    import daily_prescription as dp         # noqa: E402
     import routine_player as rp             # noqa: E402
     import routines as rt                   # noqa: E402
     import bodycomp as bc                   # noqa: E402
@@ -335,16 +337,27 @@ def get_daily(
     strength_stars: int = Query(3, ge=1, le=5, description="근력 별점 1~5"),
     walk_minutes: float | None = Query(None, ge=0, description="목적지까지 도보 분"),
     days_since_start: int = Query(0, ge=0, description="시작 후 경과일"),
+    age_gbn: str | None = Query(None, description="연령대 — 오늘의 일상 처방 문구 선택용"),
+    purpose: str | None = Query(None, description="목적 — 오늘의 일상 처방 문구 선택용"),
 ) -> dict:
     """운동 시간을 따로 내지 않아도 되는 일상 제안 (화면 3).
 
     교통 데이터는 쓰지 않는다. 사용자가 알려준 값만으로 판단한다.
+    age_gbn·purpose 를 주면 연령대·목적별 일상 처방 문구가 경과일마다 순환한다.
     """
-    return {
+    out = {
         "계단": daily.stairs(strength_stars),
         "도보": daily.walk(walk_minutes),
         "강도": daily.intensity(days_since_start),
     }
+    if age_gbn and purpose:
+        try:
+            today = dp.tip(age_gbn, purpose, days_since_start)
+            if today:
+                out["일상처방"] = today
+        except FileNotFoundError:
+            pass                            # 문구 데이터가 없으면 계단·도보만 보여준다
+    return out
 
 
 # ---------- 6. 동영상 ----------

@@ -286,3 +286,42 @@ def test_지난_점검_결과_링크는_남아_있다():
     assert "지난 점검 결과 미리 보기" in html
     assert "첫 점검 이후, 이렇게 바뀌었어요" in html
     assert 'id="cmpAfterLabel"' in html
+
+
+# ---------- G5 목록(좌상단 드로어) ----------
+
+def test_하단_탭바가_사라졌다():
+    """G5: 아래쪽 다섯 버튼을 좌상단 목록 버튼으로 옮겼다."""
+    html = _index()
+    for gone in ('class="tabbar"', "data-tabbar", "renderTabbar", "const TABS =",
+                 "tab-icon", "tab-label"):
+        assert gone not in html, gone
+
+
+def test_목록_버튼과_패널이_있다():
+    html = _index()
+    assert 'id="menuBtn"' in html
+    assert 'onclick="toggleMenu(event)"' in html
+    assert 'aria-label="목록"' in html
+    assert 'id="menuPanel"' in html
+    assert "function renderMenu(activeId)" in html
+    assert "function toggleMenu(ev)" in html
+    assert "function closeMenu()" in html
+
+
+def test_목록_항목_다섯개가_그대로다():
+    """홈·기록·달력·운동 고르기·프로필 — 위치만 옮기고 항목은 그대로."""
+    html = _index()
+    assert "const MENU_ITEMS = [" in html
+    block = html.split("const MENU_ITEMS = [")[1].split("];")[0]
+    for sid, label in (("s3", "홈"), ("s7", "기록"), ("s9", "달력"),
+                       ("s8", "운동 고르기"), ("s5", "프로필")):
+        assert f"id: '{sid}'" in block, sid
+        assert f"'{label}'" in block, label
+
+
+def test_화면을_옮기면_목록이_닫힌다():
+    html = _index()
+    goto = html.split("function goTo(id){")[1].split("\n}")[0]
+    assert "renderMenu(id);" in goto
+    assert "closeMenu();" in goto

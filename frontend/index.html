@@ -180,7 +180,9 @@
   .dday-pill{
     background:var(--pine-tint); color:var(--pine-deep); font-size:13px; font-weight:700;
     padding:8px 12px; border-radius:20px; white-space:nowrap;
+    border:none; font-family:inherit; cursor:pointer;
   }
+  .dday-pill:active{ opacity:.85; }
 
   .hero-btn{
     margin:22px 22px 0; border:none; border-radius:24px; background:var(--pine);
@@ -788,7 +790,7 @@
     <div class="dots"><div class="dot done"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="content">
       <h1 class="title" id="s1Title">집에서 잴 수 있는 것만<br/>측정할게요</h1>
-      <p class="sub" id="s1Sub">정확한 값이 아니어도 괜찮아요. 3개월마다 다시 잴 수 있어요.</p>
+      <p class="sub" id="s1Sub">정확한 값이 아니어도 괜찮아요. 언제든 다시 잴 수 있어요.</p>
 
       <div class="seg" id="methodSeg" style="margin-top:14px;">
         <button type="button" class="on" data-m="home" onclick="selectMethod('home')">홈 체력측정</button>
@@ -942,7 +944,7 @@
     </div>
     <div class="footer-area">
       <button class="btn btn-primary" id="calcBtn" onclick="calcAge()">체력나이 계산하기</button>
-      <button class="btn btn-primary" id="nextBtn1" style="display:none; margin-top:10px;" onclick="goTo('s2')">다음</button>
+      <button class="btn btn-primary" id="nextBtn1" style="display:none; margin-top:10px;" onclick="goTo(state.purpose ? 's3' : 's2')">다음</button>
     </div>
   </section>
 
@@ -993,7 +995,7 @@
         <div class="greet-eyebrow" id="greetSub">오늘도 좋은 하루예요</div>
         <div class="greet-title" id="greetName">반가워요</div>
       </div>
-      <div class="dday-pill" id="ddayPill">재점검까지 D-90</div>
+      <button type="button" class="dday-pill" id="ddayPill" onclick="remeasure()">재측정하기</button>
     </div>
 
     <div class="gauge-card">
@@ -1201,17 +1203,17 @@
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
   <section class="screen" id="s6">
     <div class="content">
-      <h1 class="title">지난 3개월, 이렇게 바뀌었어요</h1>
+      <h1 class="title">첫 점검 이후, 이렇게 바뀌었어요</h1>
 
       <div class="compare-wrap">
         <div class="compare-block">
           <div class="compare-num before"><span class="num" id="cmpBefore">—</span></div>
-          <div class="compare-label" id="cmpBeforeLabel">지난 점검</div>
+          <div class="compare-label" id="cmpBeforeLabel">첫 점검</div>
         </div>
         <div class="compare-arrow">→</div>
         <div class="compare-block">
           <div class="compare-num after"><span class="num" id="cmpAfter">—</span></div>
-          <div class="compare-label">오늘</div>
+          <div class="compare-label" id="cmpAfterLabel">최근 측정</div>
         </div>
       </div>
       <div class="diff-pill" id="diffPill">—</div>
@@ -1271,10 +1273,12 @@ const state = {
   routine: [],         // 오늘의 루틴 steps
   routineMeta: null,   // /program/routine 응답(강도·루틴번호 등)
   intensity: null,     // 강도
-  programStart: null,  // 3개월 프로그램 시작일 (ISO yyyy-mm-dd)
+  programStart: null,  // 이번 기간 시작일 — 첫 점검일 또는 마지막 재측정일 (ISO yyyy-mm-dd)
   routineLog: [],      // [{date, no, done}]
   sports: [],          // 배우고 싶은 운동 종목 id 목록
   sportsDone: false,   // 선택을 끝냈는지 (끝냈으면 요약 화면을 먼저 보여준다)
+  history: [],         // F3/F4: 재측정으로 닫힌 지난 기간들 [{start, end, routineLog:[…], result:{…}, first:{…}}]
+  measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 결과가 나올 때마다 append (같은 날 여러 번 재면 모두 남긴다)
 };
 
 const PURPOSE_LABEL = {
@@ -1320,6 +1324,71 @@ function programDay() {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 function programWeek() { return Math.min(13, Math.floor(programDay() / 7) + 1); }
+
+/* ---------------------------------------------------------------------------
+   기간(period) — 첫 점검(또는 마지막 재측정)부터 다음 재측정까지.
+   홈의 "재측정하기" 를 누르면 지금 기간을 history 로 넘기고 새 기간을 연다 (F3/F4).
+   --------------------------------------------------------------------------- */
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/* 지금 기간을 history 에 보관하고 운동 기록을 비운다.
+   state.first 는 그대로 둔다 — 최초 점검과의 비교는 계속 의미가 있다. */
+function archivePeriod(){
+  const today = todayIso();
+  if (state.programStart || (state.routineLog || []).length) {
+    if (!Array.isArray(state.history)) state.history = [];
+    state.history.push({
+      start: state.programStart, end: today,
+      routineLog: state.routineLog || [],
+      result: state.result, first: state.first,
+    });
+  }
+  state.routineLog = [];
+  state.programStart = today;
+}
+
+/* 측정 결과 한 줄을 이력에 보탠다 (변화추이용). */
+function appendMeasureLog(){
+  const r = state.result;
+  if (!r || r.체력나이 == null) return;
+  if (!Array.isArray(state.measureLog)) state.measureLog = [];
+  state.measureLog.push({
+    date: todayIso(), 체력나이: r.체력나이, 신뢰구간: r.신뢰구간 ?? null,
+    항목별: { ...(r.항목별 || {}) }, method: state.method,
+  });
+}
+
+/* 새 측정 결과가 state.result 에 들어온 직후 한 번 호출한다.
+   최초 점검은 first 로 남기고, 이력에 보태고, 저장하고, 게이지까지 바로 반영한다. */
+function commitResult(){
+  if (!state.result) return;
+  if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
+  appendMeasureLog();
+  saveProfile();
+  paintGauges();
+}
+
+/* 재측정을 위해 화면 1을 입력 전 상태로 되돌린다.
+   나이·성별·키·몸무게는 그대로 두고 기록 칸만 비운다. 결과 블록은 숨기고 계산 버튼을 다시 보인다.
+   홈 체력등급(homeGradeBlock·state.home)과 카드 타이머도 처음 상태로 되돌린다. */
+function resetMeasureForm(){
+  ['flexInput', 'strengthInput', 'jumpInput', 'kneePushupInput', 'highKneeInput',
+   'waistInput', 'smmInput', 'bfpInput', 'tbwInput'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+  ['resultBlock', 'peerBlock', 'genericResult', 'homeGradeBlock', 'nextBtn1'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
+  const calc = $('calcBtn');
+  if (calc) calc.style.display = 'block';
+  state.home = null;
+  resetAllTimers();
+}
+
+/* 홈의 "재측정하기" 버튼. 지금 기간을 보관하고 화면 1로 가서 새 기록을 입력받는다. */
+function remeasure(){
+  archivePeriod();
+  saveProfile();
+  resetMeasureForm();
+  goTo('s1');
+}
 
 function $(id) { return document.getElementById(id); }
 
@@ -1662,6 +1731,7 @@ function snapshot(){
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
     sports: state.sports, sportsDone: state.sportsDone,
+    history: state.history, measureLog: state.measureLog,
     updated: new Date().toISOString().slice(0, 10),
   };
 }
@@ -1695,6 +1765,15 @@ function applyProfile(saved){
   state.routineLog = Array.isArray(saved?.routineLog) ? saved.routineLog : [];
   state.sports = Array.isArray(saved?.sports) ? saved.sports : [];
   state.sportsDone = !!saved?.sportsDone && state.sports.length > 0;
+  state.history = Array.isArray(saved?.history) ? saved.history : [];
+  state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
+  // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
+  if (!state.measureLog.length && state.first?.결과?.체력나이 != null) {
+    const f = state.first.결과;
+    state.measureLog.push({ date: state.programStart || saved?.updated || todayIso(),
+                            체력나이: f.체력나이, 신뢰구간: f.신뢰구간 ?? null,
+                            항목별: { ...(f.항목별 || {}) }, method: saved?.method || null });
+  }
   selectMethod(saved?.method === 'inbody' ? 'inbody' : 'home');   // 저장된 'self'(또는 없음)는 home 으로 이관
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
@@ -1806,6 +1885,8 @@ async function doDelete(){
   state.result = null;
   state.first = null;
   state.purpose = null;
+  state.history = [];
+  state.measureLog = [];
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -1824,6 +1905,8 @@ async function logout(){
   state.purpose = null;
   state.programStart = null;
   state.routineLog = [];
+  state.history = [];
+  state.measureLog = [];
   state.sports = [];
   state.sportsDone = false;
   $('authEmail').value = '';
@@ -1854,6 +1937,8 @@ async function resetSettings(){
   state.purpose = null;
   state.programStart = null;
   state.routineLog = [];
+  state.history = [];
+  state.measureLog = [];
   state.flexibility = null;
   $('flexInput').value = '';
   $('authEmail').value = '';
@@ -1927,7 +2012,7 @@ async function renderRecords(){
     const d = now - first;
     $('recDelta').textContent = Math.abs(d) < 0.5 ? '→' : (d < 0 ? '↓' : '↑');
     $('recAgeNote').textContent = Math.abs(d) < 0.5
-      ? '첫 점검과 큰 차이가 없어요. 3개월 뒤 다시 재보면 흐름이 보입니다.'
+      ? '첫 점검과 큰 차이가 없어요. 꾸준히 하고 다시 재보면 흐름이 보입니다.'
       : (d < 0 ? `첫 점검보다 ${Math.abs(d).toFixed(1)}세 젊어졌어요.`
                : `첫 점검보다 ${d.toFixed(1)}세 올라갔어요. 측정 편차일 수 있으니 다시 재보세요.`);
   } else {
@@ -2227,9 +2312,8 @@ async function calcAge(){
       // 1) 체력나이·또래비교 — 유연성·근력·키·몸무게로 /fitness-age (계산 로직은 백엔드 그대로)
       state.result = await API.fitnessAge(measurement());
       setStatus('');
-      // (F3 훅 자리 1/2 — state.result 가 새로 들어온 직후. 아래 first 보존·saveProfile 두 줄이 대상)
-      if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
-      saveProfile();
+      // F3 훅 1/2 — state.result 가 새로 들어온 직후 정확히 1회 (first 보존·measureLog·저장·게이지)
+      commitResult();
       renderResult();
       // 2) 홈 체력등급 — 점프·무릎 푸시업·하이니로 /hometest. 실패해도 위 결과는 그대로 둔다.
       await loadHomeGrades();
@@ -2237,9 +2321,8 @@ async function calcAge(){
   } catch (e) {
     if (m === 'home') { state.result = offlineAge(); API.offline = true;
       setStatus('서버에 연결되지 않아 예시 값으로 표시하고 있어요');
-      // (F3 훅 자리 2/2 — 오프라인 예시 결과. 아래 first 보존·saveProfile 이 대상)
-      if (!state.first) state.first = { 측정: measurement(), 결과: state.result };
-      saveProfile(); renderResult();
+      // F3 훅 2/2 — 오프라인 예시 결과도 같은 훅 1회
+      commitResult(); renderResult();
       $('homeGradeBlock').style.display = 'none';
     } else { alert('계산에 실패했어요: ' + e.message); }
   }
@@ -2483,7 +2566,7 @@ const starStr = (n) => '★'.repeat(n) + '☆'.repeat(5-n);
 
 async function loadHome(){
   if (!state.result) return;
-  // 3개월 프로그램 시작일을 아직 안 잡았으면 오늘로 잡는다
+  // 기간 시작일을 아직 안 잡았으면 오늘로 잡는다 (재측정하면 archivePeriod 가 다시 잡는다)
   if (!state.programStart) { state.programStart = new Date().toISOString().slice(0,10); saveProfile(); }
 
   const stars = starCount(state.result.항목별.근력 ?? state.result.체력나이);
@@ -2504,8 +2587,6 @@ async function loadHome(){
     $('heroTitle').textContent = '오늘의 루틴';
     $('heroMeta').textContent = state.routine.length ? `${state.routine.length}가지 동작` : '루틴을 불러오지 못했어요';
   }
-  const dd = 90 - programDay();
-  $('ddayPill').textContent = dd > 0 ? `재점검까지 D-${dd}` : '재점검할 때가 됐어요';
 }
 
 async function loadRoutine(){
@@ -2607,7 +2688,7 @@ function logRoutineDone(){
     state.routineLog.push({ date: today, no, done: true,
                            name: state.routineMeta?.루틴명 || null });
     saveProfile();
-    showToast(`오늘 루틴 완료 · 이번 3개월 ${state.routineLog.length}회`);
+    showToast(`오늘 루틴 완료 · 지난 측정 이후 ${state.routineLog.length}회`);
   }
 }
 
@@ -2760,6 +2841,11 @@ async function renderRecheck(){
 
   $('cmpBefore').textContent = Math.round(before);
   $('cmpAfter').textContent  = Math.round(after);
+  // 언제 잰 값인지 — 측정 이력이 있으면 날짜를 붙인다 (첫 점검 vs 최근 측정)
+  const log = [...(state.measureLog || [])].sort((x, y) => (x.date < y.date ? -1 : 1));
+  const firstAt = log[0]?.date, lastAt = log[log.length - 1]?.date;
+  $('cmpBeforeLabel').textContent = firstAt ? `첫 점검 · ${fmtDate(firstAt)}` : '첫 점검';
+  if ($('cmpAfterLabel')) $('cmpAfterLabel').textContent = lastAt ? `최근 측정 · ${fmtDate(lastAt)}` : '최근 측정';
   const d = +(after - before).toFixed(1);
   try {
     const rc = await API.recheck(state.first.측정, measurement());

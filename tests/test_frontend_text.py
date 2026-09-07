@@ -250,3 +250,39 @@ def test_컨디션_선택지는_몸이_무거운_날_하나만():
     assert "toggleHeavy()" in html
     assert "heavy: heavyOn" in html
     assert "아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요" in html
+
+
+# ---------- F3 신체나이 재측정 (즉시) ----------
+
+def test_홈에_재측정하기_버튼이_있다():
+    """F3: 홈 우상단 D-day 필이 항상 누를 수 있는 「재측정하기」 버튼이 됐다."""
+    html = _index()
+    assert 'id="ddayPill"' in html
+    assert 'onclick="remeasure()"' in html
+    assert "재측정하기" in html
+
+
+def test_3개월_뒤_재점검_문구가_사라졌다():
+    """3개월 뒤 재점검을 전제한 문구는 전부 없다 (A2 의 '3개월간 맞춤 운동을 진행한 뒤' 권장 문구는 s5 에 남는다)."""
+    html = _index()
+    for gone in ("재점검까지 D-", "재점검할 때가 됐어요", "이번 3개월",
+                 "3개월마다 다시 잴 수 있어요", "지난 3개월, 이렇게 바뀌었어요",
+                 "3개월 뒤 다시 재보면"):
+        assert gone not in html, gone
+
+
+def test_기간_보관과_측정_이력이_저장된다():
+    """archivePeriod/commitResult 가 있고 snapshot 이 history·measureLog 를 같이 저장한다."""
+    html = _index()
+    assert "function archivePeriod(" in html
+    assert "function commitResult(" in html
+    assert "history: state.history" in html
+    assert "measureLog: state.measureLog" in html
+
+
+def test_지난_점검_결과_링크는_남아_있다():
+    """s6 는 '첫 점검 vs 최근 측정' 비교로 남고 홈의 미리 보기 링크도 그대로다."""
+    html = _index()
+    assert "지난 점검 결과 미리 보기" in html
+    assert "첫 점검 이후, 이렇게 바뀌었어요" in html
+    assert 'id="cmpAfterLabel"' in html

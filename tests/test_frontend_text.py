@@ -525,3 +525,67 @@ def test_아바타_두_곳_모두_프로필로_간다():
     토글 = html.split("function toggleAccount(ev)")[1].split("\n}")[0]
     assert "goProfile()" in 토글
 
+
+# ---------- J4·J5. 자세히 보기 — 목록 오른쪽 · 세 목록 모두 ----------
+
+def test_자세히_보기는_공통_함수로_만든다():
+    """목록마다 따로 쓰면 한 곳만 고쳐지고 나머지가 남는다."""
+    html = _index()
+    assert "function moreToggle(html)" in html
+    본문 = html.split("function moreToggle(html)")[1].split("\n}")[0]
+    assert "rec-more" in 본문 and "rec-detail" in 본문
+    assert "if (!html) return ''" in 본문          # 보여줄 게 없으면 버튼도 없다
+
+
+def test_버튼은_줄_오른쪽에_붙는다():
+    html = _index()
+    css = html.split(".rec-more{")[1].split("}")[0]
+    assert "margin-left:auto" in css               # 오른쪽 끝으로 민다
+    # 상세는 줄 아래 한 칸 전체를 쓴다
+    assert "flex-wrap:wrap" in html.split(".rec-item{")[1].split("}")[0]
+    assert "flex-basis:100%" in html.split(".rec-detail{")[1].split("}")[0]
+
+
+def test_토글은_줄_안에서_상세를_찾는다():
+    """버튼 바로 옆에 상세가 없어도(가운데 ✓ 가 끼어도) 동작해야 한다."""
+    html = _index()
+    본문 = html.split("function toggleRecDetail(btn)")[1].split("\n}")[0]
+    assert "closest('.rec-item')" in 본문
+    assert "querySelector('.rec-detail')" in 본문
+    assert "nextElementSibling" not in 본문
+
+
+def test_세_목록_모두_자세히_보기가_있다():
+    html = _index()
+    루틴 = html.split("$('recList').innerHTML")[1].split("renderMeasureRecords()")[0]
+    assert "moreToggle(routineDetailHtml(e))" in 루틴
+    직접 = html.split("$('recManual').innerHTML")[1].split("\n}")[0]
+    assert "moreToggle(manualDetailHtml(w))" in 직접
+    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
+    assert "moreToggle(measureDetailHtml(m))" in 점검
+
+
+def test_달력_아래_목록도_같다():
+    """J5: 달력에서 고른 날의 운동·측정 줄에도 같은 버튼이 붙는다."""
+    html = _index()
+    본문 = html.split("function renderCalDay()")[1].split("\n}")[0]
+    assert "moreToggle(e.직접 ? manualDetailHtml(e) : routineDetailHtml(e))" in 본문
+    assert "moreToggle(measureDetailHtml(p))" in 본문
+
+
+def test_달력이_직접기록의_종목을_받는다():
+    """items 를 안 넘기면 달력에서 펼칠 내용이 비어 버튼이 사라진다."""
+    html = _index()
+    본문 = html.split("function allRoutineLog()")[1].split("\n}")[0]
+    assert "items: w.items" in 본문
+
+
+def test_점검_기록은_버튼과_체크박스가_안_겹친다():
+    """label 안에 button 을 두면 버튼을 눌러도 체크박스가 켜진다."""
+    html = _index()
+    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
+    assert '<div class="rec-item rec-pick">' in 점검      # label 이 아니다
+    assert '<label class="rec-pick-main">' in 점검        # 고르는 부분만 label
+    # 버튼은 label 밖에 있어야 한다
+    assert 점검.index("</label>") < 점검.index("moreToggle(")
+

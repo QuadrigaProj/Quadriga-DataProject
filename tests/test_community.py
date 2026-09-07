@@ -181,3 +181,136 @@ def test_개인_채팅방은_상대만_참여자로_추가한다():
     room = b.get("/community/rooms").json()["rooms"][0]
     assert room["종류"] == "direct" and room["참여중"] is True and room["인원"] == 2
     assert c.post(f"/community/rooms/{rid}/join", json={}).status_code == 403
+
+
+# ---------- 앱 내 아이디 ----------
+
+def test_내_아이디가_생긴다():
+    a = _login(app, "a@x.com", "가")
+    me = a.get("/community/me/handle").json()
+    assert me["닉네임"] == "가"
+    assert me["아이디"] and len(me["아이디"]) == community.HANDLE_LEN
+    # 여러 번 물어도 같은 아이디다
+    assert a.get("/community/me/handle").json()["아이디"] == me["아이디"]
+
+
+def test_아이디는_서로_다르다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    assert a.get("/community/me/handle").json()["아이디"] \
+        != b.get("/community/me/handle").json()["아이디"]
+
+
+def test_아이디에_이름이_들어가지_않는다():
+    """이름에서 아이디를 만들면 본명이 새어 나간다."""
+    a = _login(app, "hong@x.com", "홍길동")
+    h = a.get("/community/me/handle").json()["아이디"]
+    assert "hong" not in h
+    assert set(h) <= set(community.HANDLE_ALPHABET)
+
+
+def test_아이디로_사람을_찾는다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    h = b.get("/community/me/handle").json()["아이디"]
+    found = a.get(f"/community/users/{h}").json()
+    assert found["닉네임"] == "나" and found["아이디"] == h
+    assert found["관계"] == "없음"
+
+
+def test_찾은_사람의_정보는_닉네임과_아이디뿐이다():
+    """체력나이·측정 기록·이메일이 새어 나가면 안 된다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    h = b.get("/community/me/handle").json()["아이디"]
+    found = a.get(f"/community/users/{h}").json()
+    assert set(found) == {"닉네임", "아이디", "관계"}
+    본문 = a.get(f"/community/users/{h}").text
+    assert "b@x.com" not in 본문
+
+
+def test_없는_아이디는_404():
+    a = _login(app, "a@x.com", "가")
+    assert a.get("/community/users/zzzzzz").status_code == 404
+
+
+def test_이상한_아이디도_404로_끝난다():
+    a = _login(app, "a@x.com", "가")
+    for 나쁜 in ("", "  ", "a", "한글아이디", "a" * 40, "../etc", "%25"):
+        assert a.get(f"/community/users/{나쁜}").status_code in (404, 405, 422)
+
+
+def test_아이디_조회도_로그인이_필요하다():
+    """로그인 없이 찾게 두면 아이디를 훑어 회원 목록을 만들 수 있다."""
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    assert TestClient(app).get(f"/community/users/{h}").status_code == 401
+
+
+# ---------- 상호 친구 ----------
+
+def test_한쪽만_신청하면_아직_친구가_아니다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    r = a.post("/community/friends", json={"handle": hb}).json()
+    assert r["상태"] == "보냄"
+    assert a.get("/community/friends").json()["보낸신청"][0]["닉네임"] == "나"
+    assert b.get("/community/friends").json()["받은신청"][0]["닉네임"] == "가"
+    assert a.get("/community/friends").json()["친구"] == []
+
+
+def test_양쪽이_신청하면_친구가_된다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/friends", json={"handle": hb})
+    r = b.post("/community/friends", json={"handle": ha}).json()
+    assert r["상태"] == "친구"
+    for c, 상대 in ((a, "나"), (b, "가")):
+        목록 = c.get("/community/friends").json()
+        assert [x["닉네임"] for x in 목록["친구"]] == [상대]
+        assert 목록["보낸신청"] == [] and 목록["받은신청"] == []
+
+
+def test_같은_사람에게_두_번_신청해도_한_번이다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/friends", json={"handle": hb})
+    a.post("/community/friends", json={"handle": hb})
+    assert len(a.get("/community/friends").json()["보낸신청"]) == 1
+
+
+def test_나_자신과는_친구가_안_된다():
+    a = _login(app, "a@x.com", "가")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    assert a.post("/community/friends", json={"handle": ha}).status_code == 400
+    assert a.get(f"/community/users/{ha}").json()["관계"] == "나"
+
+
+def test_친구를_끊으면_내가_건_줄만_사라진다():
+    """상대가 건 신청은 상대 것이다 — 내가 지울 수 없다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/friends", json={"handle": hb})
+    b.post("/community/friends", json={"handle": ha})
+    assert a.delete(f"/community/friends/{hb}").json()["상태"] == "받음"
+    assert a.get("/community/friends").json()["친구"] == []
+    # 상대에게는 아직 '보냄' 이 남아 있다
+    assert [x["닉네임"] for x in b.get("/community/friends").json()["보낸신청"]] == ["가"]
+
+
+def test_없는_아이디로_친구_신청하면_404():
+    a = _login(app, "a@x.com", "가")
+    assert a.post("/community/friends", json={"handle": "zzzzzz"}).status_code == 404
+
+
+def test_친구_기능도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.get("/community/friends").status_code == 401
+    assert c.post("/community/friends", json={"handle": "abcdef"}).status_code == 401
+

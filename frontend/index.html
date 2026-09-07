@@ -311,6 +311,38 @@
     line-height:1.7; text-align:center;
   }
 
+  /* ===================== SCREEN 9 : 달력 · 변화추이 ===================== */
+  .cal-head{ display:flex; align-items:center; justify-content:space-between; margin-top:18px; }
+  .cal-month{ font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .cal-nav{ width:36px; height:36px; border-radius:12px; border:1.5px solid var(--line); background:var(--paper);
+            color:var(--ink); font-size:20px; line-height:1; font-family:inherit; cursor:pointer; }
+  .cal-week{ display:grid; grid-template-columns:repeat(7,1fr); margin-top:12px;
+             font-size:11.5px; color:var(--muted); text-align:center; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-top:6px; }
+  .cal-day{
+    position:relative; aspect-ratio:1; border:none; background:none; border-radius:12px;
+    font-family:inherit; font-size:14px; color:var(--ink); cursor:pointer; padding:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    font-variant-numeric:tabular-nums;
+  }
+  .cal-day.blank{ visibility:hidden; }
+  .cal-day.done{ background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
+  .cal-day.today{ box-shadow:inset 0 0 0 1.5px var(--pine); }
+  .cal-day.sel{ background:var(--pine); color:#fff; }
+  .cal-day.future{ color:var(--muted); opacity:0.5; }
+  .cal-dot{ width:5px; height:5px; border-radius:50%; background:transparent; }
+  .cal-day.done .cal-dot{ background:var(--pine); }
+  .cal-day.measure .cal-dot{ background:var(--amber); }
+  .cal-day.sel .cal-dot{ background:#fff; }
+  .cal-legend{ display:flex; align-items:center; gap:6px; margin-top:10px; font-size:11.5px; color:var(--muted); }
+  .cal-legend .cal-dot{ display:inline-block; margin-left:8px; }
+  .cal-legend .cal-dot.done{ background:var(--pine); }
+  .cal-legend .cal-dot.measure{ background:var(--amber); }
+  .seg.trend-seg button{ padding:9px 0; font-size:13.5px; }   /* .seg button(뒤에 선언) 보다 우선하도록 클래스 둘 */
+  .trend-chart{ margin-top:14px; border:1px solid var(--line); border-radius:16px; padding:12px 10px 8px; background:var(--bg); }
+  .trend-chart svg{ display:block; width:100%; height:auto; }
+  .trend-empty{ font-size:13px; color:var(--muted); text-align:center; padding:18px 0; line-height:1.7; }
+
   /* ===================== SCREEN 4 : 루틴 플레이어 ===================== */
   .player-video{
     margin:0 22px; margin-top:18px; aspect-ratio:4/3; border-radius:18px; background:linear-gradient(160deg,#2C4B3E,#1F3830);
@@ -1200,6 +1232,46 @@
     <div class="tabbar" data-tabbar></div>
   </section>
 
+  <!-- ============ SCREEN 9 : 달력 · 변화추이 ============ -->
+  <section class="screen" id="s9">
+    <div class="content">
+      <h1 class="title">달력으로 보는<br/>운동 기록</h1>
+
+      <div class="cal-head">
+        <button type="button" class="cal-nav" onclick="moveCalMonth(-1)" aria-label="이전 달">‹</button>
+        <div class="cal-month" id="calMonth">—</div>
+        <button type="button" class="cal-nav" onclick="moveCalMonth(1)" aria-label="다음 달">›</button>
+      </div>
+      <div class="cal-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend"><span class="cal-dot done"></span>운동한 날 <span class="cal-dot measure"></span>측정한 날</div>
+
+      <div class="rec-block">
+        <div class="rec-head" id="calDayHead">날짜를 누르면 그날 기록이 보여요</div>
+        <div id="calDayDetail"></div>
+      </div>
+
+      <div class="rec-block">
+        <div class="rec-head">변화추이</div>
+        <div class="seg trend-seg" id="trendSeg">
+          <button type="button" data-days="7" onclick="setTrendPeriod(7)">7일</button>
+          <button type="button" class="on" data-days="30" onclick="setTrendPeriod(30)">30일</button>
+          <button type="button" data-days="90" onclick="setTrendPeriod(90)">90일</button>
+          <button type="button" data-days="0" onclick="setTrendPeriod(0)">전체</button>
+        </div>
+        <div class="rec-stats">
+          <div class="rec-stat"><div class="rec-num" id="trendCount">—</div><div class="rec-cap">운동 횟수</div></div>
+          <div class="rec-stat"><div class="rec-num" id="trendStreak">—</div><div class="rec-cap">연속</div></div>
+          <div class="rec-stat"><div class="rec-num" id="trendDelta">—</div><div class="rec-cap">체력나이 변화</div></div>
+        </div>
+        <div class="trend-chart" id="trendChart"></div>
+        <div class="rec-note" id="trendNote"></div>
+      </div>
+    </div>
+
+    <div class="tabbar" data-tabbar></div>
+  </section>
+
   <!-- ============ SCREEN 6 : 분기 점검 ============ -->
   <section class="screen" id="s6">
     <div class="content">
@@ -1961,6 +2033,7 @@ function setStatus(msg) {
 const TABS = [
   { id: 's3', icon: '🏠', label: '홈' },
   { id: 's7', icon: '📈', label: '기록' },
+  { id: 's9', icon: '📅', label: '달력' },
   { id: 's8', icon: '🎽', label: '운동 고르기' },
   { id: 's5', icon: '👤', label: '프로필' },
 ];
@@ -2003,7 +2076,7 @@ async function renderRecords(){
   $('recStreak').textContent = st ? `${st}일` : '—';
 
   // 체력나이 변화 — 첫 점검이 있어야 비교가 성립한다
-  const first = state.first?.체력나이 ?? null;
+  const first = state.first?.결과?.체력나이 ?? null;
   const now = state.result?.체력나이 ?? null;
   if (first !== null && now !== null) {
     $('recAgeBlock').style.display = 'block';
@@ -2168,6 +2241,7 @@ function goTo(id){
   if(id === 's7') renderRecords();
   if(id === 's8') renderSports();
   if(id === 's6') renderRecheck();
+  if(id === 's9') renderCalendar();
 }
 
 /* ---- 화면 1 : 기본 정보 ---- */
@@ -2943,6 +3017,212 @@ function openMoveSheet(slug){
     </div>
     <button type="button" class="btn btn-primary" style="margin-top:16px;" onclick="closeSheet()">닫고 측정하기</button>
   `);
+}
+
+/* ---------------------------------------------------------------------------
+   화면 9 : 달력 · 변화추이 (F4)
+   - 달력: 지난 기간(state.history[*].routineLog)과 현재 기간(state.routineLog)의
+     운동한 날을 한 달 그리드로 보여주고, 날짜를 누르면 그날 기록을 아래에 펼친다.
+   - 변화추이: state.measureLog(+계정이면 /me/measurements 지난 스냅샷)의 체력나이를
+     기간(7/30/90/전체)으로 걸러 인라인 SVG 선 그래프와 해석 문구를 그린다.
+   측정 시점은 F3 의 commitResult → appendMeasureLog 가 남긴 것을 읽기만 한다 (여기서 쓰지 않는다).
+   날짜 키는 routineLog·streakDays·todayIso 와 같은 toISOString 기준(UTC 날짜)을 쓴다.
+   --------------------------------------------------------------------------- */
+const isoDay = (d) => d.toISOString().slice(0, 10);   // 임의의 Date 용 — 오늘은 todayIso()
+const pad2 = (n) => String(n).padStart(2, '0');
+let calYm = null;            // 달력에 보이는 달 { y, m(0~11) }
+let calSelected = null;      // 선택한 날짜 'yyyy-mm-dd'
+let trendDays = 30;          // 변화추이 기간(일). 0 = 전체
+let serverPoints = [];       // 계정의 서버 스냅샷에서 뽑은 측정 시점 (달력을 열 때마다 새로 받는다)
+
+/* 지난 기간 + 현재 기간의 루틴 기록 전부 */
+function allRoutineLog(){
+  const past = (state.history || []).flatMap(h => Array.isArray(h.routineLog) ? h.routineLog : []);
+  return [...past, ...(state.routineLog || [])];
+}
+
+/* 측정 시점 목록(날짜 오름차순, 날짜당 하나 — 같은 날 여러 번 쟀으면 마지막 값).
+   덮어쓰기 순서: 서버 스냅샷 < first/result 보강(measureLog 가 비었을 때만) < measureLog */
+function measurePoints(){
+  const byDate = new Map();
+  const put = (p) => { if (p && p.date && p.체력나이 != null) byDate.set(p.date, p); };
+  serverPoints.forEach(put);
+  const log = Array.isArray(state.measureLog) ? state.measureLog : [];
+  if (!log.length) {
+    // measureLog 가 생기기 전에 측정한 사용자를 위한 보강 — 날짜는 기간 시작일로 근사한다
+    const firstDate = (state.history || [])[0]?.start || state.programStart;
+    const f = state.first?.결과;
+    if (f?.체력나이 != null && firstDate)
+      put({ date: firstDate, 체력나이: f.체력나이, 신뢰구간: f.신뢰구간 ?? null, 항목별: f.항목별 || {} });
+    const r = state.result;
+    if (r?.체력나이 != null && state.programStart)
+      put({ date: state.programStart, 체력나이: r.체력나이, 신뢰구간: r.신뢰구간 ?? null, 항목별: r.항목별 || {} });
+  }
+  log.forEach(put);
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/* 계정이면 서버에 남은 지난 스냅샷에서도 측정 시점을 뽑는다.
+   스냅샷은 저장할 때마다 쌓이므로(루틴 완료 등) 체력나이가 바뀐 행만 측정으로 본다. */
+async function loadServerPoints(){
+  serverPoints = [];
+  if (!state.account) return;
+  try {
+    const r = await API.myMeasurements();
+    const rows = (r.기록 || []).filter(m => m.result?.체력나이 != null && m.updated).reverse(); // 오래된 것부터
+    let last = null;
+    rows.forEach(m => {
+      const v = m.result.체력나이;
+      if (last !== null && Math.abs(v - last) < 0.05) return;
+      last = v;
+      serverPoints.push({ date: m.updated, 체력나이: v, 신뢰구간: m.result.신뢰구간 ?? null, 항목별: m.result.항목별 || {} });
+    });
+  } catch (e) { serverPoints = []; }
+}
+
+async function renderCalendar(){
+  const today = todayIso();
+  if (!calYm) { const [y, m] = today.split('-').map(Number); calYm = { y, m: m - 1 }; }
+  if (!calSelected) calSelected = today;
+  if (!state.account) serverPoints = [];               // 게스트는 서버 시점을 쓰지 않는다 (로그아웃 뒤 남은 것 정리)
+  renderCalGrid(); renderCalDay(); renderTrend();     // 서버 없이도 먼저 그린다
+  const had = serverPoints.length;
+  await loadServerPoints();
+  if (had || serverPoints.length) { renderCalGrid(); renderCalDay(); renderTrend(); }
+}
+
+function moveCalMonth(delta){
+  let { y, m } = calYm;
+  m += delta;
+  if (m < 0) { m = 11; y -= 1; }
+  if (m > 11) { m = 0; y += 1; }
+  calYm = { y, m };
+  renderCalGrid();
+}
+
+function renderCalGrid(){
+  const { y, m } = calYm;
+  const today = todayIso();
+  const doneDays = new Set(allRoutineLog().map(e => e.date));
+  const measDays = new Set(measurePoints().map(p => p.date));
+  $('calMonth').textContent = `${y}년 ${m + 1}월`;
+  const firstDow = new Date(Date.UTC(y, m, 1)).getUTCDay();
+  const nDays = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push('<div class="cal-day blank"></div>');
+  for (let d = 1; d <= nDays; d++) {
+    const key = `${y}-${pad2(m + 1)}-${pad2(d)}`;
+    const cls = ['cal-day'];
+    if (doneDays.has(key)) cls.push('done');
+    if (measDays.has(key)) cls.push('measure');
+    if (key === today) cls.push('today');
+    if (key === calSelected) cls.push('sel');
+    if (key > today) cls.push('future');
+    cells.push(`<button type="button" class="${cls.join(' ')}" onclick="selectCalDay('${key}')" aria-label="${m + 1}월 ${d}일">
+        <span>${d}</span><span class="cal-dot"></span></button>`);
+  }
+  $('calGrid').innerHTML = cells.join('');
+}
+
+function selectCalDay(key){ calSelected = key; renderCalGrid(); renderCalDay(); }
+
+/* 선택한 날의 기록 — 루틴명과, 측정이 있었으면 체력나이 */
+function renderCalDay(){
+  const key = calSelected;
+  const done = allRoutineLog().filter(e => e.date === key);
+  const meas = measurePoints().filter(p => p.date === key);
+  $('calDayHead').textContent = `${fmtDate(key)} 기록`;
+  const rows = [];
+  done.forEach(e => rows.push(`<div class="rec-item"><div class="rec-date">운동</div>
+      <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div><div class="rec-check">✓</div></div>`));
+  meas.forEach(p => rows.push(`<div class="rec-item"><div class="rec-date">측정</div>
+      <div class="rec-name">체력나이 ${Math.round(p.체력나이)}세</div></div>`));
+  $('calDayDetail').innerHTML = rows.length ? rows.join('')
+    : '<div class="rec-empty">이날은 기록이 없어요.</div>';
+}
+
+function setTrendPeriod(days){
+  trendDays = days;
+  document.querySelectorAll('#trendSeg button').forEach(b => b.classList.toggle('on', Number(b.dataset.days) === days));
+  renderTrend();
+}
+
+/* 체력나이 선 그래프 — 라이브러리 없이 인라인 SVG. 색은 style 속성으로 CSS 변수를 쓴다. */
+function trendSvg(pts){
+  const W = 340, H = 150, L = 34, R = 14, T = 18, B = 26;
+  const ys = pts.map(p => p.체력나이);
+  let lo = Math.floor(Math.min(...ys)) - 2, hi = Math.ceil(Math.max(...ys)) + 2;
+  if (hi - lo < 6) { const mid = (hi + lo) / 2; lo = Math.floor(mid - 3); hi = Math.ceil(mid + 3); }
+  const t0 = Date.parse(pts[0].date), t1 = Date.parse(pts[pts.length - 1].date);
+  const x = (d) => t1 === t0 ? L + (W - L - R) / 2 : L + (Date.parse(d) - t0) / (t1 - t0) * (W - L - R);
+  const y = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
+  const f = (n) => n.toFixed(1);
+  const grid = [lo, (lo + hi) / 2, hi].map(v =>
+    `<line x1="${L}" x2="${W - R}" y1="${f(y(v))}" y2="${f(y(v))}" style="stroke:var(--line)" stroke-width="1"/>` +
+    `<text x="${L - 6}" y="${f(y(v) + 3.5)}" font-size="10" text-anchor="end" style="fill:var(--muted)">${Math.round(v)}</text>`).join('');
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${f(x(p.date))},${f(y(p.체력나이))}`).join(' ');
+  const dots = pts.map(p =>
+    `<circle cx="${f(x(p.date))}" cy="${f(y(p.체력나이))}" r="4" style="fill:var(--pine);stroke:var(--paper)" stroke-width="2"/>`).join('');
+  const a = pts[0], b = pts[pts.length - 1];
+  const dateLabel = (p, anchor) =>
+    `<text x="${f(x(p.date))}" y="${H - 8}" font-size="10" text-anchor="${anchor}" style="fill:var(--muted)">${fmtDate(p.date)}</text>`;
+  const valLabel = (p, anchor) =>
+    `<text x="${f(x(p.date))}" y="${f(y(p.체력나이) - 9)}" font-size="11" font-weight="700" text-anchor="${anchor}" style="fill:var(--pine-deep)">${Math.round(p.체력나이)}세</text>`;
+  const labels = pts.length > 1
+    ? dateLabel(a, 'start') + dateLabel(b, 'end') + valLabel(a, 'start') + valLabel(b, 'end')
+    : dateLabel(a, 'middle') + valLabel(a, 'middle');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="체력나이 변화 그래프">${grid}
+    <path d="${path}" fill="none" style="stroke:var(--pine)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${labels}</svg>`;
+}
+
+/* 변화추이 — 기간 안의 측정 시점으로 체력나이 변화량을 계산하고,
+   /recheck 와 같은 식(두 측정 편차의 제곱합 제곱근)으로 유의미한 변화인지 판단한다. */
+function renderTrend(){
+  const today = todayIso();
+  const from = trendDays ? isoDay(new Date(Date.now() - (trendDays - 1) * 86400000)) : null;
+  const inRange = (d) => (!from || d >= from) && d <= today;
+  const log = allRoutineLog();
+  const workoutDays = new Set(log.filter(e => inRange(e.date)).map(e => e.date));
+  const pts = measurePoints().filter(p => inRange(p.date));
+  const label = trendDays ? `최근 ${trendDays}일` : '전체 기간';
+
+  $('trendCount').textContent = `${workoutDays.size}회`;
+  const st = streakDays(log);
+  $('trendStreak').textContent = st ? `${st}일` : '—';
+
+  if (!pts.length) {
+    $('trendDelta').textContent = '—';
+    $('trendChart').innerHTML = `<div class="trend-empty">${label}에는 측정 기록이 없어요.<br/>재측정하면 체력나이 흐름이 여기에 그려져요.</div>`;
+    $('trendNote').textContent = workoutDays.size ? `${label} 운동 ${workoutDays.size}회.` : '';
+    return;
+  }
+  $('trendChart').innerHTML = trendSvg(pts);
+  if (pts.length < 2) {
+    $('trendDelta').textContent = `${Math.round(pts[0].체력나이)}세`;
+    $('trendNote').textContent =
+      `${label}에는 측정이 한 번(${fmtDate(pts[0].date)} · ${Math.round(pts[0].체력나이)}세)뿐이라 변화를 비교할 수 없어요. 기간을 넓히거나 재측정해보세요.`
+      + (workoutDays.size ? ` 운동은 ${workoutDays.size}회 했어요.` : '');
+    return;
+  }
+  const a = pts[0], b = pts[pts.length - 1];
+  const delta = +(b.체력나이 - a.체력나이).toFixed(1);
+  const ciA = a.신뢰구간 ?? state.result?.신뢰구간 ?? 0;
+  const ciB = b.신뢰구간 ?? state.result?.신뢰구간 ?? 0;
+  const noise = +Math.sqrt(ciA * ciA + ciB * ciB).toFixed(1);   // 문턱으로만 쓰고 숫자는 문구에 내지 않는다 (A1 취지)
+  const better = isGrowth() ? delta > 0 : delta < 0;   // 성장기는 숫자가 오르는 게 좋다
+  $('trendDelta').textContent = delta === 0 ? '변화 없음' : `${delta > 0 ? '+' : ''}${delta}세`;
+  let msg;
+  if (delta === 0) msg = '체력나이에 변화가 없어요.';
+  else if (Math.abs(delta) <= noise)
+    msg = `체력나이가 ${Math.abs(delta)}세 움직였지만 측정 편차 안이라 아직 변화라고 보긴 일러요.`;
+  else if (isGrowth())
+    msg = `발달 수준이 ${Math.abs(delta)}세 ${better ? '앞당겨졌어요' : '뒤처졌어요'}. 측정 편차보다 커서 의미 있는 변화예요.`;
+  else
+    msg = `체력나이가 ${Math.abs(delta)}세 ${better ? '어려졌어요' : '늘었어요'}. 측정 편차보다 커서 의미 있는 변화예요.`;
+  const spanDays = trendDays || (Math.round((Date.parse(today) - Date.parse(a.date)) / 86400000) + 1);
+  const perWeek = (workoutDays.size / Math.max(1, spanDays / 7)).toFixed(1);
+  $('trendNote').textContent = `${fmtDate(a.date)} → ${fmtDate(b.date)} · ${msg} ${label} 운동 ${workoutDays.size}회(주 평균 ${perWeek}회).`;
 }
 
 /* ---- 시작 ---- */

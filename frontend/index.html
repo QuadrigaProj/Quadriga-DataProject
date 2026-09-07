@@ -221,12 +221,34 @@
   .review-link{ margin:14px 22px 0; text-align:center; }
   .review-link button{ background:none; border:none; color:var(--muted); font-size:13.5px; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
 
-  .tabbar{ display:flex; border-top:1px solid var(--line); background:var(--paper); }
-  .tab{ flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; padding:12px 0 14px; background:none; border:none; cursor:pointer; font-family:inherit; }
-  .tab-icon{ font-size:20px; }
-  .tab-label{ font-size:12px; color:var(--muted); font-weight:600; }
-  .tab.active .tab-label{ color:var(--pine-deep); }
-  .tab.active .tab-icon{ filter:none; }
+  /* 목록 — 하단 탭 대신 좌상단 버튼을 눌러 여는 드롭다운.
+     계정 패널(.acct-panel)과 같은 구조·같은 여닫기 방식이고 좌우만 반대다. */
+  .menu-btn{
+    display:flex; align-items:center; justify-content:center;
+    width:38px; height:38px; flex-shrink:0;
+    background:none; border:none; padding:0; margin:0;
+    color:var(--ink); cursor:pointer; border-radius:10px;
+  }
+  .menu-btn:hover{ background:var(--bg); }
+  /* 가운데 막대 하나에 그림자로 위아래 두 줄을 더해 세 줄 아이콘을 만든다 */
+  .menu-btn i{ display:block; width:18px; height:2px; border-radius:2px;
+               background:currentColor; box-shadow:0 -6px 0 currentColor, 0 6px 0 currentColor; }
+  .menu-panel{
+    display:none; position:absolute; top:calc(100% + 8px); left:12px;
+    width:216px; background:var(--paper);
+    border:1px solid var(--line); border-radius:16px;
+    box-shadow:0 10px 30px rgba(32,38,31,0.13);
+    padding:8px; z-index:45;
+  }
+  .menu-panel.open{ display:block; }
+  .menu-item{
+    display:flex; align-items:center; gap:10px; width:100%;
+    padding:11px 12px; background:none; border:none; border-radius:11px;
+    font:inherit; font-size:15px; color:var(--ink); text-align:left; cursor:pointer;
+  }
+  .menu-item:hover{ background:var(--bg); }
+  .menu-item.active{ background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
+  .menu-icon{ font-size:18px; width:22px; text-align:center; }
 
   /* ===================== SCREEN 8 : 운동 고르기 ===================== */
   .sport-group{ margin-top:22px; }
@@ -745,6 +767,12 @@
 
   <!-- ============ 상단 바 (로그인 후 모든 화면) ============ -->
   <header class="appbar" id="appbar">
+    <button class="menu-btn" id="menuBtn" type="button" aria-label="목록" title="목록"
+            aria-expanded="false" aria-haspopup="true" aria-controls="menuPanel"
+            onclick="toggleMenu(event)"><i></i></button>
+
+    <nav class="menu-panel" id="menuPanel" aria-label="화면 목록"></nav>
+
     <button class="brand" onclick="goHome()" title="메인 화면으로">
       <span class="brand-mark" id="barGauge"></span>
       <img class="brand-word" src="/img/wordmark-fitage.svg" alt="Fitage" />
@@ -1082,7 +1110,6 @@
 
     <div style="flex:1;"></div>
 
-    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 4 : 루틴 플레이어 ============ -->
@@ -1199,7 +1226,6 @@
     </div>
     <div class="reset-row"><button onclick="resetSettings()">설정 초기화</button></div>
 
-    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 8 : 운동 고르기 ============ -->
@@ -1224,7 +1250,6 @@
       <button class="btn btn-primary" id="sportConfirm" onclick="confirmSports()">선택 완료</button>
     </div>
 
-    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 7 : 운동 기록 ============ -->
@@ -1259,7 +1284,6 @@
       </div>
     </div>
 
-    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 9 : 달력 · 변화추이 ============ -->
@@ -1299,7 +1323,6 @@
       </div>
     </div>
 
-    <div class="tabbar" data-tabbar></div>
   </section>
 
   <!-- ============ SCREEN 10 : 운동 스타일 테스트 (F1) ============ -->
@@ -1557,6 +1580,7 @@ function toggleAccount(ev){
     if (state.user) goTo('s5');
     return;
   }
+  closeMenu();
   renderAccount();
   panel.classList.add('open');
   $('acctBtn').setAttribute('aria-expanded', 'true');
@@ -1573,8 +1597,15 @@ function closeAccount(){
 document.addEventListener('click', (e) => {
   const panel = $('acctPanel');
   if (panel && panel.classList.contains('open') && !panel.contains(e.target)) closeAccount();
+  const menu = $('menuPanel'), btn = $('menuBtn');
+  if (menu && menu.classList.contains('open')
+      && !menu.contains(e.target) && !(btn && btn.contains(e.target))) closeMenu();
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAccount(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  closeAccount();
+  closeMenu();
+});
 
 function renderAccount(){
   const initial = (state.user || '·').trim().charAt(0) || '·';
@@ -1746,7 +1777,7 @@ function syncAppbar(screenId){
   const show = screenId !== 's0' && !!state.user;
   bar.classList.toggle('on', show);
   if (show) $('acctAvatar').textContent = (state.user || '·').trim().charAt(0) || '·';
-  else closeAccount();
+  else { closeAccount(); closeMenu(); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -2108,7 +2139,7 @@ function setStatus(msg) {
    하단 탭바 — 한 곳에서 그린다. 화면마다 복사해 두면 탭이 늘 때마다 어긋난다.
    --------------------------------------------------------------------------- */
 
-const TABS = [
+const MENU_ITEMS = [
   { id: 's3', icon: '🏠', label: '홈' },
   { id: 's7', icon: '📈', label: '기록' },
   { id: 's9', icon: '📅', label: '달력' },
@@ -2116,12 +2147,31 @@ const TABS = [
   { id: 's5', icon: '👤', label: '프로필' },
 ];
 
-function renderTabbar(activeId){
-  const html = TABS.map(t =>
-    `<button class="tab${t.id === activeId ? ' active' : ''}" onclick="goTo('${t.id}')">
-       <div class="tab-icon">${t.icon}</div><div class="tab-label">${t.label}</div>
+function renderMenu(activeId){
+  const panel = $('menuPanel');
+  if (!panel) return;
+  panel.innerHTML = MENU_ITEMS.map(t =>
+    `<button type="button" class="menu-item${t.id === activeId ? ' active' : ''}" onclick="goTo('${t.id}')">
+       <span class="menu-icon">${t.icon}</span><span>${t.label}</span>
      </button>`).join('');
-  document.querySelectorAll('[data-tabbar]').forEach(el => { el.innerHTML = html; });
+}
+
+/* 목록 열고 닫기 — 계정 패널과 한 번에 하나만 열린다. */
+function toggleMenu(ev){
+  if (ev) ev.stopPropagation();
+  const panel = $('menuPanel');
+  if (!panel) return;
+  const open = !panel.classList.contains('open');
+  closeAccount();
+  panel.classList.toggle('open', open);
+  $('menuBtn').setAttribute('aria-expanded', String(open));
+}
+
+function closeMenu(){
+  const panel = $('menuPanel');
+  if (!panel) return;
+  panel.classList.remove('open');
+  $('menuBtn').setAttribute('aria-expanded', 'false');
 }
 
 /* ---------------------------------------------------------------------------
@@ -2306,9 +2356,10 @@ function editSports(){
 function goTo(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
-  renderTabbar(id);
+  renderMenu(id);
   syncAppbar(id);
   closeAccount();
+  closeMenu();
   document.querySelector('.device').scrollTop = 0;
   const content = $(id).querySelector('.content');
   if(content) content.scrollTop = 0;

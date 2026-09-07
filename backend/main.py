@@ -1071,10 +1071,15 @@ def get_pay_result(order: str) -> dict:
 class ActivityIn(BaseModel):
     age_gbn: AgeGroup
     age: float | None = Field(None, ge=5, le=110)
+    sex: Sex | None = None
     항목별: dict[str, float] = Field(..., description="마지막 측정의 항목별 환산나이. 그대로 돌려준다")
     신뢰구간: float | None = Field(None, ge=0, description="그 측정의 편차. 반영 한도가 된다")
     활동: dict[str, int] = Field(default_factory=dict,
                                 description="{요인: 그 요인을 운동한 날 수}")
+    # 그날 잰 몸 상태가 있으면 체성분만 실제 값으로 갈아 끼운다 (K1·K2)
+    키: float | None = Field(None, ge=80, le=250)
+    몸무게: float | None = Field(None, ge=20, le=300)
+    체지방률: float | None = Field(None, ge=1, le=70)
 
 
 @app.post("/fitness-age/activity")
@@ -1086,10 +1091,45 @@ def post_activity_age(body: ActivityIn) -> dict:
     """
     if not body.항목별:
         raise HTTPException(400, "마지막 측정 결과가 필요합니다.")
+    return _activity_one(body)
+
+
+def _activity_one(body: "ActivityIn") -> dict:
+    _load()
+    체성분 = None
+    if _dist is not None and body.sex and (body.체지방률 is not None or (body.키 and body.몸무게)):
+        체성분 = fa.body_part(_dist, body.age_gbn, body.sex,
+                            키=body.키, 몸무게=body.몸무게, 체지방률=body.체지방률)
     out = fa.activity_adjusted(body.항목별, body.신뢰구간, body.활동,
-                               body.age_gbn, body.age)
+                               body.age_gbn, body.age, 체성분)
     if out["체력나이"] is None:
         raise HTTPException(422, "반영할 수 있는 항목이 없습니다.")
+    return out
+
+
+class ActivityDayIn(ActivityIn):
+    date: str = Field(..., description="이 결과를 붙일 날짜 (YYYY-MM-DD)")
+
+
+@app.post("/fitness-age/activity/days")
+def post_activity_days(body: list[ActivityDayIn]) -> list[dict]:
+    """여러 날을 한 번에 (K1).
+
+    날짜마다 따로 부르면 기록이 쌓일수록 요청이 늘어난다.
+    계산할 수 없는 날은 결과에서 빼고, 부르는 쪽이 date 로 짝을 맞춘다.
+    """
+    if len(body) > 400:
+        raise HTTPException(400, "한 번에 400일까지만 됩니다.")
+    out = []
+    for one in body:
+        if not one.항목별:
+            continue
+        try:
+            r = _activity_one(one)
+        except HTTPException:
+            continue
+        r["date"] = one.date
+        out.append(r)
     return out
 
 

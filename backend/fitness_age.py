@@ -33,10 +33,17 @@ MIN_BANDS = 3
 #   성장기 제자리멀리뛰기 (item_f022) — 11~18세는 윗몸일으키기 데이터가 없다.
 #          줄자만 있으면 집에서 잴 수 있어 자가 측정 전제와도 맞는다.
 POWER_ITEM = {
-    "어르신": ("근력", "의자앉았다일어서기"),
+    "어르신": ("근지구력", "의자앉았다일어서기"),
     "성장기": ("순발력", "제자리멀리뛰기"),
 }
-DEFAULT_POWER = ("근력", "교차윗몸일으키기")
+DEFAULT_POWER = ("근지구력", "교차윗몸일으키기")
+
+# 선택 입력 — 잰 사람만 넣는다 (G6). 넣지 않으면 지금까지와 똑같이 동작한다.
+#   근력      상대악력 = 악력(kg) / 몸무게(kg) * 100. 세 연령군 모두 분포가 있다.
+#   심폐지구력 성인은 왕복오래달리기, 어르신은 2분제자리걷기.
+#             성장기는 공개 분포에 심폐 항목이 없어 산출하지 않는다.
+GRIP_ITEM = "상대악력"
+CARDIO_ITEM = {"성인": "왕복오래달리기", "어르신": "2분제자리걷기"}
 
 # 성장기는 나이가 많을수록 기록이 좋아진다. 성인·어르신과 방향이 반대라
 # "체력나이가 높다 = 나쁘다" 가 성립하지 않는다. 화면에서는 발달 수준으로 읽는다.
@@ -141,7 +148,7 @@ def aggregate_age(parts: dict[str, float], age_gbn: str, age=None) -> dict:
 
 
 def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
-                body_fat=None, age=None) -> dict:
+                body_fat=None, grip=None, endurance=None, age=None) -> dict:
     """자가 측정 항목 → 체력나이. 없는 항목은 평균에서 제외한다."""
     parts: dict[str, float] = {}
 
@@ -155,6 +162,17 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
         a = convert_age(d, age_gbn, sex, item, strength)
         if a is not None:
             parts[label] = a
+
+    if grip is not None:
+        a = convert_age(d, age_gbn, sex, GRIP_ITEM, grip)
+        if a is not None:
+            parts["근력"] = a
+
+    cardio = CARDIO_ITEM.get(age_gbn)
+    if endurance is not None and cardio:
+        a = convert_age(d, age_gbn, sex, cardio, endurance)
+        if a is not None:
+            parts["심폐지구력"] = a
 
     if bmi is not None:
         a = u_shaped_age(d, age_gbn, sex, "BMI", bmi)
@@ -203,7 +221,8 @@ def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,
 
 
 def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
-                flexibility=None, strength=None, bmi=None) -> dict:
+                flexibility=None, strength=None, bmi=None,
+                grip=None, endurance=None) -> dict:
     """측정한 항목별로 또래 비교를 붙인다."""
     out = {}
     if flexibility is not None:
@@ -215,6 +234,15 @@ def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
         r = peer_stats(d, age_gbn, sex, age, item, strength)
         if r:
             out[label] = r
+    if grip is not None:
+        r = peer_stats(d, age_gbn, sex, age, GRIP_ITEM, grip)
+        if r:
+            out["근력"] = r
+    cardio = CARDIO_ITEM.get(age_gbn)
+    if endurance is not None and cardio:
+        r = peer_stats(d, age_gbn, sex, age, cardio, endurance)
+        if r:
+            out["심폐지구력"] = r
     if bmi is not None:
         # BMI 는 U자형이라 "상위 몇 %" 가 성립하지 않는다.
         # 백분위 없이 또래 중앙값과의 차이만 준다.

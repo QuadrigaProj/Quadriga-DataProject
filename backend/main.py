@@ -143,6 +143,12 @@ class MeasureIn(BaseModel):
     height_cm: float | None = Field(None, gt=0)
     weight_kg: float | None = Field(None, gt=0)
     bmi: float | None = Field(None, gt=0, description="직접 주거나 키·몸무게로 계산")
+    grip_kg: float | None = Field(None, gt=0,
+                                  description="악력 (kg). 몸무게와 함께 주면 상대악력으로 근력을 낸다")
+    endurance: float | None = Field(
+        None, ge=0,
+        description="심폐지구력: 성인=왕복오래달리기(회), 어르신=2분제자리걷기(회). "
+                    "성장기는 공개 분포가 없어 계산하지 않는다")
 
 
 class MeasureOut(BaseModel):
@@ -170,13 +176,19 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
     if bmi is None and body.height_cm and body.weight_kg:
         bmi = body.weight_kg / (body.height_cm / 100) ** 2
 
-    if body.flexibility is None and body.strength is None and bmi is None:
+    # 악력은 몸무게로 나눠 상대악력(%)으로 바꿔야 분포와 견줄 수 있다
+    grip = None
+    if body.grip_kg is not None and body.weight_kg:
+        grip = body.grip_kg / body.weight_kg * 100
+
+    if (body.flexibility is None and body.strength is None and bmi is None
+            and grip is None and body.endurance is None):
         raise HTTPException(400, "측정값을 최소 하나는 보내주세요.")
 
     result = fa.fitness_age(
         _dist, body.age_gbn, body.sex,
         flexibility=body.flexibility, strength=body.strength, bmi=bmi,
-        age=body.age,
+        grip=grip, endurance=body.endurance, age=body.age,
     )
     if result["체력나이"] is None:
         raise HTTPException(422, "해당 연령군·성별의 분포가 부족해 산출할 수 없습니다.")
@@ -185,7 +197,7 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
     if body.age is not None:
         peers = fa.peer_report(_dist, body.age_gbn, body.sex, body.age,
                                flexibility=body.flexibility, strength=body.strength,
-                               bmi=bmi)
+                               bmi=bmi, grip=grip, endurance=body.endurance)
 
     약점 = fa.weakest_link(result)
 

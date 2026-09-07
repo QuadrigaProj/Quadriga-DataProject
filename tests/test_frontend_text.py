@@ -381,3 +381,30 @@ def test_기간_이름이_단위를_살린다():
     assert "const label = trendLabel;" in html
     body = html.split("function applyTrendCustom()")[1].split("\n}")[0]
     assert "trendLabel = `최근 ${n}${unit}`;" in body
+
+
+# ---------- G6 체력나이 항목 확대 ----------
+
+def test_선택_측정_입력칸이_있다():
+    html = _index()
+    assert 'id="moreCard"' in html
+    assert 'id="gripInput"' in html
+    assert 'id="enduranceInput"' in html
+    assert "function toggleMoreMeasure()" in html
+    assert "function syncMoreMeasure()" in html
+
+
+def test_심폐_항목은_연령군마다_다르다():
+    html = _index()
+    assert "'성인':   { 이름: '왕복오래달리기'" in html
+    assert "'어르신': { 이름: '2분제자리걷기'" in html
+    # 성장기는 CARDIO_LABEL 에 없다 → syncMoreMeasure 가 칸을 숨긴다
+    body = html.split("function syncMoreMeasure()")[1].split("\n}")[0]
+    assert "row.hidden = !c;" in body
+
+
+def test_선택값을_서버로_보낸다():
+    html = _index()
+    body = html.split("function measurement()")[1].split("\n}")[0]
+    assert "grip_kg: state.gripKg" in body
+    assert "endurance: state.endurance" in body

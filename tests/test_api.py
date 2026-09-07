@@ -64,7 +64,8 @@ def test_fitness_age_성인():
     b = client.post("/fitness-age", json=ADULT).json()
     assert 10 < b["체력나이"] < 100
     assert b["신뢰구간"] > 0
-    assert {"유연성", "근력", "체성분"} <= set(b["항목별"])
+    # 교차윗몸일으키기는 근력이 아니라 근지구력이다 (G6 에서 라벨 정정)
+    assert {"유연성", "근지구력", "체성분"} <= set(b["항목별"])
     assert b["약점"]["약점"] in b["항목별"]
 
 
@@ -206,7 +207,7 @@ def test_또래백분위():
     b = client.post("/fitness-age", json={
         "age_gbn": "성인", "sex": "M", "age": 45,
         "flexibility": 8, "strength": 25, "bmi": 24.2}).json()
-    p = b["또래비교"]["근력"]
+    p = b["또래비교"]["근지구력"]
     assert 0 <= p["백분위"] <= 100
     assert p["표본수"] > 30
     assert "백분위" not in b["또래비교"]["체성분"]     # BMI 는 U자형이라 백분위를 내지 않는다
@@ -632,3 +633,49 @@ def test_별명을_바꿔도_기록은_그대로다():
     기록 = c.get("/me/measurements").json()
     assert 기록["이름"] == "새이름"
     assert 기록["기록"][0]["targetAge"] == 36
+
+
+# ---------- G6 체력나이 항목 확대 ----------
+
+@needs_data
+def test_선택입력을_주면_근력과_심폐지구력이_늘어난다():
+    """악력·왕복오래달리기를 잰 사람만 넣는다. 안 넣으면 지금까지와 같다."""
+    기본 = client.post("/fitness-age", json=ADULT).json()
+    더함 = client.post("/fitness-age",
+                     json={**ADULT, "grip_kg": 42, "endurance": 60}).json()
+    assert "근력" not in 기본["항목별"]
+    assert "심폐지구력" not in 기본["항목별"]
+    assert {"근력", "심폐지구력"} <= set(더함["항목별"])
+    # 원래 항목의 값은 그대로 — 더하기만 한다
+    for k in ("유연성", "근지구력", "체성분"):
+        assert 더함["항목별"][k] == 기본["항목별"][k]
+
+
+@needs_data
+def test_악력은_몸무게로_나눠_상대악력으로_본다():
+    """같은 악력이라도 몸무게가 무거우면 상대악력이 낮다."""
+    가벼움 = client.post("/fitness-age", json={
+        **ADULT, "weight_kg": 60, "grip_kg": 40}).json()["항목별"]["근력"]
+    무거움 = client.post("/fitness-age", json={
+        **ADULT, "weight_kg": 95, "grip_kg": 40}).json()["항목별"]["근력"]
+    assert 가벼움 != 무거움
+
+
+@needs_data
+def test_성장기는_심폐지구력을_내지_않는다():
+    """공개 분포에 성장기 심폐 항목이 없다. 없는 값을 지어내지 않는다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성장기", "sex": "F", "age": 15, "flexibility": 10,
+        "strength": 150, "height_cm": 160, "weight_kg": 50,
+        "grip_kg": 25, "endurance": 40}).json()
+    assert "심폐지구력" not in b["항목별"]
+    assert "근력" in b["항목별"]          # 상대악력은 성장기에도 분포가 있다
+
+
+@needs_data
+def test_선택입력만_보내도_계산된다():
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 30,
+        "weight_kg": 74, "grip_kg": 42}).json()
+    assert b["체력나이"] is not None
+    assert set(b["항목별"]) == {"근력"}

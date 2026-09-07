@@ -100,6 +100,8 @@ const API = (() => {
     commFriendAdd: (handle) => post('/community/friends', { handle }),
     commFriendRemove: (handle) => call('/community/friends/' + encodeURIComponent(handle),
                                        { method: 'DELETE' }),
+    // 개인 채팅은 상대 아이디로만 연다 — 방 만들기로는 못 만든다 (L1)
+    commDirect: (handle) => post('/community/direct', { handle }),
     commRooms: () => call('/community/rooms'),
     commRoomNew: (body) => post('/community/rooms', body),
     commRoomJoin: (id, password) => post('/community/rooms/' + id + '/join', { password }),

@@ -1902,13 +1902,15 @@
 
   <div class="comm-modal-backdrop" id="roomComposer" hidden>
     <section class="comm-modal" role="dialog" aria-modal="true" aria-labelledby="roomComposerTitle">
-      <div class="comm-modal-head"><h2 id="roomComposerTitle">채팅방 만들기</h2><button type="button" class="comm-modal-close" onclick="closeRoomComposer()" aria-label="닫기">×</button></div>
+      <div class="comm-modal-head"><h2 id="roomComposerTitle">단체 채팅방 만들기</h2><button type="button" class="comm-modal-close" onclick="closeRoomComposer()" aria-label="닫기">×</button></div>
+      <p class="comm-note">만들 수 있는 건 <b>단체 채팅방</b>이에요.
+        개인 채팅은 상대 프로필에서 <b>채팅 보내기</b>를 누르면 열립니다.</p>
       <label class="comm-field">방 이름<input id="roomName" type="text" placeholder="예: 토요일 한강 러닝" /></label>
-      <label class="comm-field">채팅 종류<select id="roomType" onchange="syncRoomFields()"><option value="group">단체 채팅</option><option value="direct">개인 채팅</option></select></label>
       <label class="comm-field" id="roomPrivacyField">공개 설정<select id="roomPrivacy" onchange="syncRoomFields()"><option value="public">공개</option><option value="private">비공개</option></select></label>
-      <label class="comm-field" id="roomPasswordField" hidden>비밀번호<input id="roomPassword" type="password" minlength="4" placeholder="4자 이상" /></label>
-      <label class="comm-field" id="roomMemberField" hidden>상대 이메일<input id="roomMemberEmail" type="email" placeholder="가입한 이메일 주소" /></label>
-      <button class="btn btn-primary comm-post-btn" type="button" onclick="createRoom()">채팅방 만들기</button>
+      <label class="comm-field" id="roomPasswordField" hidden>비밀번호 (숫자 4~12자리)
+        <input id="roomPassword" type="password" inputmode="numeric" pattern="[0-9]*"
+               autocomplete="off" maxlength="12" placeholder="예: 0417" /></label>
+      <button class="btn btn-primary comm-post-btn" type="button" onclick="createRoom()">단체 채팅방 만들기</button>
     </section>
   </div>
 
@@ -3109,6 +3111,8 @@ function friendGroup(제목, 목록, 버튼){
       <div class="friend-card">
         <div class="who"><div class="nm">${esc(u['닉네임'])}</div>
           <div class="hd">@${esc(u['아이디'])}</div></div>
+        ${제목 === '친구' ? `<button type="button" class="ghost"
+                data-dm="${esc(u['아이디'])}">채팅</button>` : ''}
         <button type="button" class="${취소류 ? 'ghost' : ''}"
                 data-fr="${버튼 === '수락' ? 'add' : 'del'}"
                 data-handle="${esc(u['아이디'])}">${버튼}</button>
@@ -3116,6 +3120,7 @@ function friendGroup(제목, 목록, 버튼){
 }
 
 function wireFriendButtons(){
+  document.querySelectorAll('[data-dm]').forEach(b => b.onclick = () => openDirect(b.dataset.dm));
   document.querySelectorAll('[data-fr]').forEach(b => b.onclick = async () => {
     b.disabled = true;
     try {
@@ -3141,6 +3146,8 @@ async function findFriend(){
       <div class="friend-card">
         <div class="who"><div class="nm">${esc(u['닉네임'])}</div>
           <div class="hd">@${esc(u['아이디'])}</div></div>
+        ${관계 === '나' ? '' : `<button type="button" class="ghost"
+                data-dm="${esc(u['아이디'])}">채팅 보내기</button>`}
         <button type="button" ${누를수있음 ? '' : 'disabled'} class="${누를수있음 ? '' : 'ghost'}"
                 data-fr="add" data-handle="${esc(u['아이디'])}">${FRIEND_LABEL[관계] || 관계}</button>
       </div>`;
@@ -3306,11 +3313,8 @@ function closePostComposer(){ $('postComposer').hidden = true; }
 function openRoomComposer(){ $('roomComposer').hidden = false; syncRoomFields(); $('roomName').focus(); }
 function closeRoomComposer(){ $('roomComposer').hidden = true; }
 function syncRoomFields(){
-  const direct = $('roomType').value === 'direct';
-  const privateRoom = $('roomPrivacy').value === 'private';
-  $('roomPrivacyField').hidden = direct;
-  $('roomPasswordField').hidden = direct || !privateRoom;
-  $('roomMemberField').hidden = !direct;
+  // 만들 수 있는 건 단체 채팅방뿐이다 (L2). 개인 채팅은 openDirect() 로만 열린다.
+  $('roomPasswordField').hidden = $('roomPrivacy').value !== 'private';
 }
 
 function openNoticeModal(message){
@@ -3349,22 +3353,34 @@ async function loadRooms(){
   } catch (e) { $('roomList').innerHTML = '<div class="more-card">모임을 불러오지 못했어요.</div>'; }
 }
 
+const ROOM_PIN_RE = /^[0-9]{4,12}$/;      // 서버(community.ROOM_PIN_RE)와 같아야 한다
+
 async function createRoom(){
   const name = $('roomName').value.trim();
-  const room_type = $('roomType').value;
-  const is_private = room_type === 'group' && $('roomPrivacy').value === 'private';
+  const is_private = $('roomPrivacy').value === 'private';
   const password = $('roomPassword').value;
-  const member_email = $('roomMemberEmail').value.trim();
   if (!name) { showToast('방 이름을 입력해주세요'); return; }
-  if (is_private && password.length < 4) { showToast('비공개 방 비밀번호는 4자 이상 입력해주세요'); return; }
-  if (room_type === 'direct' && !member_email) { showToast('개인 채팅 상대의 이메일을 입력해주세요'); return; }
+  if (is_private && !ROOM_PIN_RE.test(password)) {
+    showToast('비공개 방 비밀번호는 숫자 4~12자리로 정해주세요'); return;
+  }
   try {
-    await API.commRoomNew({ name, topic: '', room_type, is_private, password: is_private ? password : null,
-                            member_email: room_type === 'direct' ? member_email : null });
-    $('roomName').value = ''; $('roomPassword').value = ''; $('roomMemberEmail').value = '';
+    await API.commRoomNew({ name, topic: '', is_private, password: is_private ? password : null });
+    $('roomName').value = ''; $('roomPassword').value = '';
     closeRoomComposer(); loadRooms();
   }
   catch (e) { showToast(e.message); }
+}
+
+/* 상대 아이디로 1:1 채팅을 연다 (L1).
+   이미 있으면 그 방을 다시 쓴다 — 같은 사람과 방이 여러 개 생기지 않는다. */
+async function openDirect(handle){
+  if (!handle) return;
+  try {
+    const r = await API.commDirect(handle);
+    commTab('chat');
+    await loadRooms();
+    openRoom(r.room_id, r['상대'] ? r['상대']['닉네임'] : '개인 채팅');
+  } catch (e) { showToast(e.message); }
 }
 async function joinRoom(id){
   const room = ROOMS.find(x => x.id === id);

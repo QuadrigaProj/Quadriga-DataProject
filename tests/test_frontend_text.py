@@ -1016,3 +1016,53 @@ def test_아이디를_그대로_넣지_않고_이스케이프한다():
     찾기 = html.split("async function findFriend()")[1].split("\n}")[0]
     assert "esc(u['닉네임'])" in 찾기 and "esc(u['아이디'])" in 찾기
 
+
+# ---------- L1·L2. 개인 채팅 생성 경로 · 방 만들기 규칙 ----------
+
+def test_방_만들기에_개인채팅_선택지가_없다():
+    """개인 채팅은 사용자가 만들지 않는다 — 상대 프로필에서 열린다."""
+    html = _index()
+    assert 'id="roomType"' not in html
+    assert 'id="roomMemberEmail"' not in html
+    assert "단체 채팅방 만들기" in html
+    assert "개인 채팅은 상대 프로필에서" in html
+
+
+def test_비공개_방_비밀번호는_숫자만_받는다():
+    html = _index()
+    assert "const ROOM_PIN_RE = /^[0-9]{4,12}$/;" in html      # 서버와 같은 규칙
+    비번칸 = html.split('id="roomPassword"')[1].split(">")[0]
+    assert 'inputmode="numeric"' in 비번칸
+    assert 'maxlength="12"' in 비번칸
+    본문 = html.split("async function createRoom()")[1].split("\n}")[0]
+    assert "ROOM_PIN_RE.test(password)" in 본문
+    assert "room_type" not in 본문 and "member_email" not in 본문
+
+
+def test_공개_비공개만_고른다():
+    html = _index()
+    본문 = html.split("function syncRoomFields()")[1].split("\n}")[0]
+    assert "$('roomPrivacy').value !== 'private'" in 본문
+    assert "roomType" not in 본문
+
+
+def test_채팅_보내기로_개인방을_연다():
+    html = _index()
+    assert "async function openDirect(handle)" in html
+    본문 = html.split("async function openDirect(handle)")[1].split("\n}")[0]
+    assert "API.commDirect(handle)" in 본문
+    assert "openRoom(r.room_id" in 본문
+    assert "commTab('chat')" in 본문
+
+
+def test_친구와_찾은_사람에게_채팅_버튼이_붙는다():
+    html = _index()
+    묶음 = html.split("function friendGroup(제목, 목록, 버튼)")[1].split("\n}")[0]
+    assert "data-dm=" in 묶음
+    assert "제목 === '친구'" in 묶음            # 친구에게만
+    찾기 = html.split("async function findFriend()")[1].split("\n}")[0]
+    assert "data-dm=" in 찾기
+    assert "관계 === '나'" in 찾기               # 나 자신에게는 안 뜬다
+    배선 = html.split("function wireFriendButtons()")[1].split("\n}")[0]
+    assert "openDirect(b.dataset.dm)" in 배선
+

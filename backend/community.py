@@ -406,10 +406,36 @@ def list_rooms(me: int) -> list[dict]:
             " (SELECT COUNT(*) FROM chat_messages g WHERE g.room_id=r.id) AS 메시지수,"
             " (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?) AS 참여"
             " FROM chat_rooms r ORDER BY r.id DESC", (me,)).fetchall()
-    return [{"id": r["id"], "이름": r["name"], "주제": r["topic"],
-             "종류": r["room_type"], "비공개": bool(r["is_private"]),
-             "방장": r["created_by"] == me, "인원": r["인원"],
-             "메시지수": r["메시지수"], "참여중": bool(r["참여"])} for r in rows]
+    out = []
+    with auth.db() as con:
+        for r in rows:
+            방 = {"id": r["id"], "이름": r["name"], "주제": r["topic"],
+                 "종류": r["room_type"], "비공개": bool(r["is_private"]),
+                 "방장": r["created_by"] == me, "인원": r["인원"],
+                 "메시지수": r["메시지수"], "참여중": bool(r["참여"])}
+            if r["room_type"] == "direct":
+                # 개인 채팅은 방 이름이 아니라 상대 이름으로 보여 준다
+                상대 = con.execute(
+                    "SELECT user_id FROM chat_members WHERE room_id=? AND user_id<>?",
+                    (r["id"], me)).fetchone()
+                if 상대:
+                    방["상대"] = _public_user(con, 상대["user_id"])
+                    방["이름"] = 방["상대"]["닉네임"]
+            out.append(방)
+    return out
+
+
+# 비공개 방 비밀번호는 숫자만 받는다(요청 사항). 사람들이 다른 서비스에서 쓰는
+# 비밀번호를 그대로 넣지 않게 하는 효과도 있다.
+# \d 는 전각 숫자(１２３４)까지 받는다. 키패드로 칠 수 있는 숫자만 받는다.
+ROOM_PIN_RE = re.compile(r"^[0-9]{4,12}$")
+
+
+def _check_pin(password: str | None) -> str:
+    pin = (password or "").strip()
+    if not ROOM_PIN_RE.match(pin):
+        raise HTTPException(400, "비공개 방 비밀번호는 숫자 4~12자리로 정해 주세요.")
+    return pin
 
 
 def _password_values(password: str) -> tuple[str, str]:
@@ -418,41 +444,65 @@ def _password_values(password: str) -> tuple[str, str]:
     return salt.hex(), password_hash.hex()
 
 
-def create_room(user_id: int, name: str, topic: str = "", *, room_type: str = "group",
-                is_private: bool = False, password: str | None = None,
-                member_email: str | None = None) -> int:
+def create_room(user_id: int, name: str, topic: str = "", *,
+                is_private: bool = False, password: str | None = None) -> int:
+    """사용자가 만드는 것은 **단체 채팅방뿐**이다 (L2).
+
+    개인 채팅방은 만들지 않는다 — 상대 프로필에서 '채팅 보내기' 를 누를 때
+    open_direct() 가 만든다. 방 만들기 화면에서 상대를 지정하게 두면
+    아무나 대화를 열 수 있고, 이메일로 상대를 찾게 되어 가입 여부까지 샌다.
+    """
     name = (name or "").strip()
     if not name:
         raise HTTPException(400, "모임 이름을 입력해 주세요.")
-    if room_type not in ("group", "direct"):
-        raise HTTPException(400, "채팅방 종류를 확인해 주세요.")
-    if room_type == "direct":
-        is_private = False
-        if not member_email:
-            raise HTTPException(400, "개인 채팅 상대의 이메일을 입력해 주세요.")
-    if is_private and len(password or "") < 4:
-        raise HTTPException(400, "비공개 방 비밀번호는 4자 이상으로 입력해 주세요.")
-    salt, password_hash = _password_values(password) if is_private else (None, None)
+    salt, password_hash = (None, None)
+    if is_private:
+        salt, password_hash = _password_values(_check_pin(password))
     with auth.db() as con:
-        member_id = None
-        if room_type == "direct":
-            member = con.execute("SELECT id FROM users WHERE email=?", (member_email.strip().lower(),)).fetchone()
-            if not member:
-                raise HTTPException(404, "해당 이메일의 회원을 찾을 수 없어요.")
-            member_id = member["id"]
-            if member_id == user_id:
-                raise HTTPException(400, "나 자신과의 개인 채팅은 만들 수 없어요.")
         rid = con.insert_id(
             "INSERT INTO chat_rooms (name, topic, room_type, is_private, password_salt, password_hash, created_by, created_at)"
             " VALUES (?,?,?,?,?,?,?,?)",
-            (name[:80], (topic or "").strip()[:200], room_type, int(is_private), salt,
+            (name[:80], (topic or "").strip()[:200], "group", int(is_private), salt,
              password_hash, user_id, int(time.time())))
         con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
                     (rid, user_id, int(time.time())))
-        if member_id:
-            con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
-                        (rid, member_id, int(time.time())))
     return rid
+
+
+def open_direct(me: int, handle: str) -> dict:
+    """상대와의 1:1 방을 연다. 이미 있으면 그 방을 그대로 쓴다 (L1).
+
+    아이디로만 연다 — 이메일을 받으면 그 주소의 가입 여부가 새어 나간다.
+    """
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    other = target["user_id"]
+    if other == me:
+        raise HTTPException(400, "나 자신과는 채팅할 수 없어요.")
+
+    with auth.db() as con:
+        기존 = con.execute(
+            "SELECT r.id FROM chat_rooms r"
+            " WHERE r.room_type='direct'"
+            "   AND EXISTS (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
+            "   AND EXISTS (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
+            "   AND (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id)=2"
+            " ORDER BY r.id LIMIT 1", (me, other)).fetchone()
+        if 기존:
+            return {"room_id": 기존["id"], "새로": False,
+                    "상대": _public_user(con, other)}
+
+        now = int(time.time())
+        rid = con.insert_id(
+            "INSERT INTO chat_rooms (name, topic, room_type, is_private,"
+            " password_salt, password_hash, created_by, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            ("개인 채팅", "", "direct", 0, None, None, me, now))
+        for u in (me, other):
+            con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
+                        (rid, u, now))
+        return {"room_id": rid, "새로": True, "상대": _public_user(con, other)}
 
 
 def join_room(user_id: int, room_id: int, password: str | None = None) -> None:
@@ -478,9 +528,7 @@ def join_room(user_id: int, room_id: int, password: str | None = None) -> None:
 
 
 def change_room_password(user_id: int, room_id: int, password: str) -> None:
-    if len(password or "") < 4:
-        raise HTTPException(400, "새 비밀번호는 4자 이상으로 입력해 주세요.")
-    salt, password_hash = _password_values(password)
+    salt, password_hash = _password_values(_check_pin(password))
     with auth.db() as con:
         room = con.execute("SELECT * FROM chat_rooms WHERE id=?", (room_id,)).fetchone()
         if not room:
@@ -559,12 +607,11 @@ class ReactionIn(BaseModel):
 
 
 class RoomIn(BaseModel):
+    """사용자가 만드는 것은 단체 채팅방뿐이다. 상대를 지정하는 자리가 없다 (L2)."""
     name: str = Field(..., max_length=80)
     topic: str = Field("", max_length=200)
-    room_type: str = Field("group", pattern="^(group|direct)$")
     is_private: bool = False
-    password: str | None = Field(None, max_length=128)
-    member_email: str | None = Field(None, max_length=320)
+    password: str | None = Field(None, max_length=12)
 
 
 class HandleIn(BaseModel):
@@ -636,10 +683,17 @@ def rooms(quadriga_session: str | None = Cookie(None)) -> dict:
 @router.post("/rooms")
 def room_new(body: RoomIn, quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
-    rid = create_room(me, body.name, body.topic, room_type=body.room_type,
-                      is_private=body.is_private, password=body.password,
-                      member_email=body.member_email)
+    rid = create_room(me, body.name, body.topic,
+                      is_private=body.is_private, password=body.password)
     return {"id": rid, "rooms": list_rooms(me)}
+
+
+@router.post("/direct")
+def direct_open(body: HandleIn, quadriga_session: str | None = Cookie(None)) -> dict:
+    """상대 프로필의 '채팅 보내기' — 1:1 방을 열거나 이미 있으면 그 방을 준다 (L1)."""
+    me = _uid(quadriga_session)
+    out = open_direct(me, body.handle)
+    return {**out, "rooms": list_rooms(me)}
 
 
 @router.post("/rooms/{room_id}/join")

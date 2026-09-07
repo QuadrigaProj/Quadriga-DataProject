@@ -1116,7 +1116,7 @@
         <div class="prescribe-label">더 정확한 체력 측정을 원한다면?</div>
         <div class="program-note">가까운 국민체력100 체력인증센터에서 무료로 정밀 측정을 받을 수 있어요.</div>
         <div class="center-row">
-          <input id="centerRegion" type="text" placeholder="지하철역 또는 지역명 (예: 성신여대입구역)" />
+          <input id="centerRegion" type="text" placeholder="지역명 (예: 성북구)" />
           <button onclick="searchCenters()">검색</button>
         </div>
         <div id="centerList"></div>
@@ -2260,12 +2260,15 @@ async function searchCenters(){
   try {
     const res = await fetch('/centers?region=' + encodeURIComponent(region) + '&limit=3', { credentials:'same-origin' });
     const r = await res.json();
-    if (r.지역인식실패) { box.innerHTML = '<div class="center-item">지역을 못 찾았어요. 구 이름이나 역 이름으로 다시 입력해 주세요.</div>'; return; }
-    box.innerHTML = (r.items || []).map(c =>
+    if (r.지역인식실패) { box.innerHTML = '<div class="center-item">지역을 못 찾았어요. 구 이름으로 다시 입력해 주세요. (예: 성북구)</div>'; return; }
+    // 매칭방식 '주소' = 입력한 구가 센터 주소에 그대로 있음 / '거리' = 주소 일치가 없어 가까운 순 (안내를 먼저 보여준다)
+    const note = `<div class="center-item" style="color:var(--muted)">${r.안내}</div>`;
+    const list = (r.items || []).map(c =>
       `<div class="center-item"><b>${c.fcltyNm || c.name || '체력인증센터'}</b><br/>
-        ${c.addr || ''} · 직선거리 ${c.거리km ?? '?'}km<br/>
+        ${c.addr || ''}${c.거리km != null ? ' · 직선거리 ' + c.거리km + 'km' : ''}<br/>
         ${c.telno ? c.telno + ' · ' : ''}<a href="${c.예약}" target="_blank" rel="noreferrer">공식 예약하기 →</a></div>`
-    ).join('') + `<div class="center-item" style="color:var(--muted)">${r.안내}</div>`;
+    ).join('');
+    box.innerHTML = r.매칭방식 === '거리' ? note + list : list + note;
   } catch (e) {
     box.innerHTML = '<div class="center-item">센터 정보를 불러오지 못했어요.</div>';
   }

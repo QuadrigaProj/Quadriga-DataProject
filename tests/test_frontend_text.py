@@ -208,3 +208,22 @@ def test_체력나이_제목은_남아_있다():
     assert 'id="s1Title"' in html
     assert 'id="ageResult"' in html
     assert 'id="peerRank"' in html
+
+
+# ---------- C7 센터 검색 (구 단위) ----------
+
+def test_센터_검색창은_구_단위_placeholder():
+    assert 'placeholder="지역명 (예: 성북구)"' in _index()
+
+
+def test_지하철역_문구는_사라졌다():
+    html = _index()
+    assert "지하철역" not in html
+    assert "성신여대입구역" not in html
+    assert "역 이름으로" not in html
+
+
+def test_센터_검색은_매칭방식으로_안내_위치를_정한다():
+    html = _index()
+    assert "r.매칭방식 === '거리'" in html
+    assert "구 이름으로 다시 입력해 주세요" in html

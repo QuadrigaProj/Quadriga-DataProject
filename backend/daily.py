@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import re
 from math import asin, cos, radians, sin, sqrt
 
 try:
@@ -86,8 +87,48 @@ def _km(lat1, lon1, lat2, lon2) -> float:
     return 2 * r * asin(sqrt(a))
 
 
-def centers(lat: float | None = None, lon: float | None = None, limit: int = 5) -> list[dict]:
+def _addr_has(addr: str, cand: str) -> bool:
+    """주소 문자열에 cand 가 있는지. 구 이름("…구")은 낱말 단위로만 인정한다.
+
+    부분 문자열로 대조하면 "동구" 가 "남동구" 에, "서구" 가 "강서구" 에 걸려 다른 구를
+    '주소 일치' 로 보여주게 된다(C7 "입력한 구와 일치" 위반). 그래서 "…구" 로 끝나는 후보는
+    공백으로 나뉜 낱말과 통째로 맞아야 하고(정규식 단어 경계), 그 밖("서울"·"수원시")은
+    종전처럼 부분 문자열로 대조한다.
+    """
+    if cand.endswith("구"):
+        return re.search(rf"(^|\s){re.escape(cand)}(\s|$)", addr) is not None
+    return cand in addr
+
+
+def centers_by_addr(query: str) -> list[dict]:
+    """주소(addr) 필드에 query 가 들어 있는 센터만 돌려준다.
+
+    구 단위 검색(C7)용. "성북구" 처럼 구 이름은 주소의 낱말과 통째로 대조하고(동구 ≠ 남동구),
+    공백이 섞인 입력("서울 양천구")은 전체 문자열이 안 맞으면 마지막 낱말("양천구")로 한 번 더
+    대조한다. 한 글자("구")는 거의 모든 주소에 걸리므로 대조하지 않는다. 없으면 빈 리스트.
+    """
+    q = (query or "").strip()
+    if len(q) < 2:
+        return []
     items = load_json("centers.json").get("items", [])
+    candidates = [q] + ([q.split()[-1]] if " " in q else [])
+    for cand in candidates:
+        if len(cand) < 2:
+            continue
+        hit = [c for c in items if _addr_has(str(c.get("addr", "")), cand)]
+        if hit:
+            return hit
+    return []
+
+
+def centers(lat: float | None = None, lon: float | None = None, limit: int = 5,
+            items: list[dict] | None = None) -> list[dict]:
+    """센터 목록. items 를 주면(주소로 미리 거른 목록) 그 안에서만 고른다.
+
+    좌표가 있으면 직선거리(거리km)를 붙여 가까운 순으로 정렬하고, 없으면 파일 순서 그대로.
+    """
+    if items is None:
+        items = load_json("centers.json").get("items", [])
     if lat is not None and lon is not None:
         items = sorted(
             ({**c, "거리km": round(_km(lat, lon, c["la"], c["lo"]), 1)} for c in items),

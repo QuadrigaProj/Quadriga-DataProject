@@ -1326,7 +1326,7 @@
       </div>
 
       <div class="program-card">
-        <div class="program-note" style="margin-top:0;">3개월간 맞춤 운동을 진행한 뒤, 다시 측정해 달라진 체력을 확인해보세요.</div>
+        <div class="program-note" style="margin-top:0;">맞춤 운동을 진행하다가, 원할 때 다시 측정해 달라진 체력을 확인해보세요.</div>
       </div>
 
       <div class="program-card">
@@ -2915,7 +2915,7 @@ function renderResult(){
   const focus = r.집중개선영역 || [];
   const fa = $('focusArea');
   if (focus.length) {
-    fa.innerHTML = `<b>집중 개선 영역: ${focus.join(' · ')}</b><br/>3개월 프로그램이 이 항목 중심으로 구성됩니다.`;
+    fa.innerHTML = `<b>집중 개선 영역: ${focus.join(' · ')}</b><br/>앞으로의 루틴이 이 항목 중심으로 구성됩니다.`;
     fa.style.display = 'block';
   } else {
     fa.style.display = 'none';
@@ -3428,7 +3428,7 @@ function renderProfile(){
   const target = focus.length ? focus.join(' · ') : (r.약점 ? r.약점.약점 : '');
   if (target) {
     $('weakText').textContent = `집중 개선 영역: ${target}`;
-    $('weakArrow').textContent = '3개월 프로그램이 이 항목 중심으로 구성됩니다.';
+    $('weakArrow').textContent = '앞으로의 루틴이 이 항목 중심으로 구성됩니다.';
   } else {
     $('weakText').textContent = '측정 항목이 하나뿐이라 비교가 어려워요.';
     $('weakArrow').textContent = '';

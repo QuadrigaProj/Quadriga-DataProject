@@ -224,6 +224,75 @@ def test_고도는_100점_이하로_샘플링():
     assert len(s) == 100 and s[0] == pts[0] and s[-1] == pts[-1]
 
 
+# ---------- 파싱 실패 → None (응답 모양이 가정과 다를 때) ----------
+
+def test_경로_응답_모양이_다르면_None(monkeypatch):
+    """필드명은 devtalk 공지 기준(미검증). 모양이 다르면 예외(→400/500) 대신 None → advise 가 추정 폴백."""
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "test-key")
+    props = {"totalDistance": 1000, "totalTime": 600}
+
+    def route_with(points):
+        return {"properties": props, "legs": [{"steps": [{"path": {"points": points}}]}]}
+
+    for payload in (
+        {"status": "OK", "route": route_with([{"x": 127.0, "y": 37.5}])},          # points 가 {x, y} 객체
+        {"status": "OK", "route": route_with([[127.0, 37.5, 0.0]])},               # points 가 3원소
+        {"status": "OK", "route": [route_with([[127.0, 37.5]])]},                  # route 가 리스트
+        {"status": "OK", "route": {"properties": props, "legs": {"steps": []}}},   # legs 가 dict
+        ["status", "OK"],                                                           # 응답 자체가 리스트
+    ):
+        monkeypatch.setattr(route, "_get_json", _async(payload))
+        assert asyncio.run(route.kakao_walk(SEONGBUK, GANGNAM)) is None, payload
+
+
+def test_장소검색_응답_모양이_다르면_None(monkeypatch):
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "test-key")
+    for payload in (
+        [{"x": "127.0", "y": "37.5"}],                  # 응답 자체가 리스트
+        {"documents": [["127.0", "37.5"]]},             # 문서가 배열
+        {"documents": [{"x": "경도", "y": "위도"}]},     # 좌표가 숫자가 아님
+    ):
+        monkeypatch.setattr(route, "_get_json", _async(payload))
+        assert asyncio.run(route.geocode_text("강남역")) is None, payload
+
+
+def test_고도_응답_모양이_다르면_None(monkeypatch):
+    pts = [(37.0, 127.0), (37.1, 127.0)]
+    for payload in (["elevation"], {"elevation": [10, None]}, {"elevation": ["a", "b"]}):
+        monkeypatch.setattr(route, "_get_json", _async(payload))
+        assert asyncio.run(route.elevation_gain(pts)) is None, payload
+
+
+def test_응답_모양이_달라도_추정으로_폴백한다(monkeypatch):
+    """리뷰 재현: 키가 있고 카카오·Open-Meteo 응답 모양이 전부 가정과 다르면 400/500 이 아니라 200 추정."""
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "test-key")
+
+    async def odd_shapes(url, params, headers=None):
+        if url == route.KAKAO_KEYWORD_URL:
+            return [{"x": "127.0", "y": "37.5"}]                    # 리스트 → geo.geocode 로
+        if url == route.KAKAO_WALK_URL:
+            return {"status": "OK", "route": {"properties": {"totalDistance": 1, "totalTime": 60},
+                    "legs": [{"steps": [{"path": {"points": [{"x": 127.0, "y": 37.5}]}}]}]}}
+        return ["elevation"]
+
+    monkeypatch.setattr(route, "_get_json", odd_shapes)
+    r = _advice()
+    assert r.status_code == 200
+    j = r.json()
+    assert j["출처"] == "추정" and j["오르막m"] is None
+
+
+def test_전용_예외만_404_400_으로_바꾼다(monkeypatch):
+    """파싱에서 샌 KeyError(⊂LookupError)·ValueError 가 404/400 으로 둔갑해 내부 오류 문자열이 보이지 않게."""
+    for exc in (KeyError("y"), ValueError("could not convert string to float: 'y'")):
+        async def broken(*a, **k):
+            raise exc
+
+        monkeypatch.setattr(route, "advise", broken)
+        with pytest.raises(type(exc)):
+            _advice()
+
+
 # ---------- 프론트 문자열 회귀 ----------
 
 def test_홈_카드에_출발지_목적지_입력이_있다():

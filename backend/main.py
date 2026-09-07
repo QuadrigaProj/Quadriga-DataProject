@@ -585,11 +585,13 @@ async def get_route_advice(
     카카오 REST 키(KAKAO_CLIENT_ID)가 없거나 호출이 실패하면 geo.geocode + 직선거리 추정으로
     폴백한다(출처: "추정"). 지역을 못 찾으면 404, 출발·목적지가 같으면 400.
     """
+    # route 의 전용 예외만 상태코드로 바꾼다. 부모 클래스(LookupError·ValueError)를 잡으면 파싱 중 난
+    # KeyError·IndexError·float() 실패까지 404/400 으로 둔갑해 내부 오류 문자열이 화면에 그대로 보인다.
     try:
         return await route.advise(from_, to, strength_stars)
-    except LookupError as e:
+    except route.PlaceNotFoundError as e:
         raise HTTPException(404, str(e))
-    except ValueError as e:
+    except route.SamePointError as e:
         raise HTTPException(400, str(e))
 
 

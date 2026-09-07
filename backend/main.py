@@ -925,6 +925,33 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
     return out
 
 
+# ---------- 13. 운동 기록 반영 체력나이 ----------
+
+class ActivityIn(BaseModel):
+    age_gbn: AgeGroup
+    age: float | None = Field(None, ge=5, le=110)
+    항목별: dict[str, float] = Field(..., description="마지막 측정의 항목별 환산나이. 그대로 돌려준다")
+    신뢰구간: float | None = Field(None, ge=0, description="그 측정의 편차. 반영 한도가 된다")
+    활동: dict[str, int] = Field(default_factory=dict,
+                                description="{요인: 그 요인을 운동한 날 수}")
+
+
+@app.post("/fitness-age/activity")
+def post_activity_age(body: ActivityIn) -> dict:
+    """마지막 측정 + 최근 운동 기록 → 반영된 추정 체력나이 (I3).
+
+    운동만으로 체력나이를 새로 산출할 근거는 없다. 그래서 측정값을 기준으로
+    두고 측정 편차 안에서만 움직인다. 다시 재면 진짜 값으로 덮인다.
+    """
+    if not body.항목별:
+        raise HTTPException(400, "마지막 측정 결과가 필요합니다.")
+    out = fa.activity_adjusted(body.항목별, body.신뢰구간, body.활동,
+                               body.age_gbn, body.age)
+    if out["체력나이"] is None:
+        raise HTTPException(422, "반영할 수 있는 항목이 없습니다.")
+    return out
+
+
 # ---------- 12. 루틴 추천 ----------
 
 @app.get("/recommend/routines")

@@ -265,8 +265,27 @@ def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
 ACTIVITY_STEP = 0.2          # 그 요인을 운동한 하루당 당기는 폭(세)
 
 
+def body_part(d, age_gbn: str, sex: str, *, 키=None, 몸무게=None, 체지방률=None):
+    """그날 잰 몸무게·체지방률 → 체성분 환산나이 (K1).
+
+    이건 추정이 아니라 **그날 실제로 잰 값**이라 그대로 항목별에 넣는다.
+    체지방률이 있으면 그쪽이 더 직접적이라 우선한다.
+    """
+    if 체지방률 is not None:
+        a = convert_age(d, age_gbn, sex, "체지방률", 체지방률)
+        if a is not None:
+            return a
+    if 키 and 몸무게:
+        h = float(키) / 100
+        if h > 0:
+            a = u_shaped_age(d, age_gbn, sex, "BMI", float(몸무게) / (h * h))
+            if a is not None:
+                return a
+    return None
+
+
 def activity_adjusted(항목별: dict, 신뢰구간, 활동: dict,
-                      age_gbn: str, age=None) -> dict:
+                      age_gbn: str, age=None, 체성분=None) -> dict:
     """마지막 측정 + 최근 운동 기록 → 반영된 추정 체력나이.
 
     활동은 {요인: 그 요인을 운동한 날 수}. 항목별에 없는 요인은 무시한다.
@@ -274,8 +293,17 @@ def activity_adjusted(항목별: dict, 신뢰구간, 활동: dict,
     한 요인의 폭은 편차를 넘지 않고, 그 폭은 항목 수로 나눠 체력나이에 실린다
     (체력나이가 항목별 평균이므로 한 항목이 통째로 끌고 가지 않는다).
     다 합쳐도 편차를 넘지 않는다.
+
+    체성분이 들어오면(그날 몸무게·체지방률을 쟀으면) 그 항목만 **실제 값**으로
+    갈아 끼운다. 추정이 아니라 잰 값이라 편차 제한을 걸지 않는다.
     """
-    base = aggregate_age(항목별 or {}, age_gbn, age)
+    항목별 = dict(항목별 or {})
+    잰것 = None
+    if 체성분 is not None:
+        잰것 = round(float(체성분), 1)
+        항목별["체성분"] = 잰것
+
+    base = aggregate_age(항목별, age_gbn, age)
     if base["체력나이"] is None:
         return base
 
@@ -310,6 +338,8 @@ def activity_adjusted(항목별: dict, 신뢰구간, 활동: dict,
     out["활동반영"] = 반영
     out["당김"] = round(당김, 1)
     out["한도"] = round(ci, 1)
+    if 잰것 is not None:
+        out["잰체성분"] = 잰것        # 이 항목은 추정이 아니라 그날 잰 값이다
     return out
 
 

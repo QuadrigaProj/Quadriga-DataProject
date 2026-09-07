@@ -347,6 +347,12 @@
   .rec-detail-row b{ color:var(--muted); font-weight:700; flex-shrink:0; width:48px; }
   /* 종목명은 48px 을 넘는다 — 그 줄만 넓게 (J4) */
   .rec-detail-row.wide b{ width:auto; min-width:76px; max-width:45%; }
+  /* 그날 뽑은 체력나이 (K1) — 측정값이 아니라는 걸 꼬리말로 적는다 */
+  .rec-detail-row.day-age{ padding-bottom:6px; margin-bottom:4px;
+                           border-bottom:1px solid var(--line); }
+  .rec-detail-row.day-age span{ font-weight:700; }
+  .rec-detail-row.day-age small{ display:block; font-weight:400; font-size:11.5px;
+                                 color:var(--muted); margin-top:2px; }
   .rec-detail-row span{ color:var(--ink); min-width:0; }
   /* 점검 기록 고르기·지우기 (G1) */
   .rec-pick{ cursor:default; }
@@ -2629,6 +2635,19 @@ async function renderRecords(){
 
   renderMeasureRecords();
   renderManualRecords();
+  // 예전에 적어 둔 날에는 체력나이가 없다. 한 번에 채우고 다시 그린다 (K1)
+  backfillLogAges().then(ok => { if (ok) renderManualRecords(); });
+}
+
+/* 비어 있는 날만 채운다. 채운 게 있으면 true. */
+async function backfillLogAges(){
+  const 빈날 = (state.workoutLog || []).filter(w => w && w.date && !w.체력나이).length;
+  if (!빈날) return false;
+  await refreshLogAges();
+  const 남은 = (state.workoutLog || []).filter(w => w && w.date && !w.체력나이).length;
+  if (남은 === 빈날) return false;
+  await saveProfile();
+  return true;
 }
 
 /* 운동한 날 한 줄의 '자세히 보기' — 그날 한 동작을 단계별로, 강도까지 펼친다 (H8).
@@ -3936,16 +3955,21 @@ function renderCalGrid(){
 
 function selectCalDay(key){ calSelected = key; renderCalGrid(); renderCalDay(); }
 
+/* 그 날짜의 직접 기록 원본 — 달력 줄에는 체력나이가 안 실려 있어서 여기서 찾는다 (K1) */
+function logAt(날){ return (state.workoutLog || []).find(w => w.date === 날) || null; }
+
 /* 선택한 날의 기록 — 루틴명과, 측정이 있었으면 체력나이 */
 function renderCalDay(){
   const key = calSelected;
+  // 예전 기록에는 체력나이가 없다. 채우고 나면 그 날짜만 다시 그린다 (K1)
+  backfillLogAges().then(ok => { if (ok && calSelected === key) renderCalDay(); });
   const done = allRoutineLog().filter(e => e.date === key);
   const meas = measurePoints().filter(p => p.date === key);
   $('calDayHead').textContent = `${fmtDate(key)} 기록`;
   const rows = [];
   done.forEach(e => rows.push(`<div class="rec-item"><div class="rec-date">운동</div>
       <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div><div class="rec-check">✓</div>
-      ${moreToggle(e.직접 ? manualDetailHtml(e) : routineDetailHtml(e))}</div>`));
+      ${moreToggle(e.직접 ? manualDetailHtml(logAt(e.date) || e) : routineDetailHtml(e))}</div>`));
   meas.forEach(p => rows.push(`<div class="rec-item"><div class="rec-date">측정</div>
       <div class="rec-name">체력나이 ${Math.round(p.체력나이)}세</div>
       ${moreToggle(measureDetailHtml(p))}</div>`));
@@ -3977,7 +4001,11 @@ async function deleteCalDayLog(){
   if (!confirm(`${fmtDate(key)}에 적은 운동 기록을 지울까요?
 되돌릴 수 없어요.`)) return;
   state.workoutLog = (state.workoutLog || []).filter(w => w.date !== key);
+  // 하루가 빠지면 그 뒤 날들의 28일 창도 달라진다 — 전부 다시 센다 (K1)
+  await refreshActivityAge();
+  await refreshLogAges({ 전부: true });
   await saveProfile();
+  paintGauges();
   renderCalendar();
 }
 
@@ -4388,13 +4416,16 @@ function paintLogSaveBtn(){
     : (m ? '몸 상태만 저장' : '적은 것이 없어요');
 }
 
-/* 최근 28일 동안 각 체력요인을 운동한 '날 수'. 같은 날 같은 요인은 한 번만 센다. */
+/* 끝날을 포함한 28일 동안 각 체력요인을 운동한 '날 수'.
+   같은 날 같은 요인은 한 번만 센다. 끝날을 안 주면 오늘까지 (I3). */
 const ACTIVITY_WINDOW = 28;
-function activityCounts(){
-  const 기준 = new Date(Date.now() - (ACTIVITY_WINDOW - 1) * 86400000).toISOString().slice(0, 10);
+function activityCounts(끝날){
+  const 끝 = 끝날 || todayIso();
+  const 시작 = new Date(new Date(끝 + 'T00:00:00').getTime()
+                      - (ACTIVITY_WINDOW - 1) * 86400000).toISOString().slice(0, 10);
   const 날별 = new Map();
   (state.workoutLog || []).forEach(w => {
-    if (!w.date || w.date < 기준) return;
+    if (!w.date || w.date < 시작 || w.date > 끝) return;
     const set = 날별.get(w.date) || new Set();
     (w.items || []).forEach(x => { if (x.요인) set.add(x.요인); });
     날별.set(w.date, set);
@@ -4402,6 +4433,58 @@ function activityCounts(){
   const 셈 = {};
   날별.forEach(set => set.forEach(f => { 셈[f] = (셈[f] || 0) + 1; }));
   return 셈;
+}
+
+/* 그 날짜까지 중 가장 나중에 한 측정 (K1).
+   9월 5일 기록에 9월 20일 측정을 기준으로 쓰면 미래를 갖다 쓰는 셈이다. */
+function measureAtOrBefore(날){
+  const list = (Array.isArray(state.measureLog) ? state.measureLog : [])
+    .filter(m => m && m.date && m.date <= 날 && m.항목별)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (list.length) return list[list.length - 1];
+  // 측정 이력이 없으면 지금 결과라도 쓴다 (예전 저장본)
+  return state.result?.항목별 ? state.result : null;
+}
+
+/* 그날 하루치 요청 몸통 — 그날까지의 측정 + 그날까지의 운동 + 그날 잰 몸 상태 (K1) */
+function activityBodyFor(w){
+  const 기준 = measureAtOrBefore(w.date);
+  if (!기준?.항목별 || !state.ageGbn) return null;
+  const 요약 = w.요약 || {};
+  return {
+    date: w.date,
+    age_gbn: state.ageGbn, age: state.age ?? null, sex: state.sex || null,
+    항목별: 기준.항목별, 신뢰구간: 기준.신뢰구간 ?? null,
+    활동: activityCounts(w.date),
+    키: 요약.키 ?? state.height ?? null,
+    몸무게: 요약.몸무게 ?? null,
+    체지방률: 요약.체지방률 ?? null,
+  };
+}
+
+/* 기록한 날마다 그날 기준 체력나이를 산출해 그 날짜에 저장한다 (K1).
+
+   하루를 고치면 그 뒤 날들의 28일 창도 달라지므로 전부 다시 센다.
+   요청은 한 번이다. 실패하면 있던 값을 그대로 둔다 — 화면이 비지 않는다. */
+async function refreshLogAges({ 전부 = false } = {}){
+  const log = (state.workoutLog || []).filter(w => w && w.date);
+  const 대상 = (전부 ? log : log.filter(w => !w.체력나이)).slice(-400);
+  if (!대상.length) return;
+  const bodies = 대상.map(activityBodyFor).filter(Boolean);
+  if (!bodies.length) return;
+  try {
+    const rows = await API.activityAgeDays(bodies);
+    const byDate = new Map(rows.map(r => [r.date, r]));
+    log.forEach(w => {
+      const r = byDate.get(w.date);
+      if (!r || r.체력나이 == null) return;
+      w.체력나이 = {
+        값: r.체력나이, 기준나이: r.기준나이, 당김: r.당김,
+        일수: 활동일수(activityCounts(w.date)),
+        잰체성분: r.잰체성분 ?? null,
+      };
+    });
+  } catch (e) { /* 있던 값을 그대로 둔다 */ }
 }
 
 /* 반영에 쓰인 서로 다른 날의 수 — 문구에 쓴다. */
@@ -4453,7 +4536,8 @@ async function saveDailyLog(){
     if (요약.키) state.height = 요약.키;
     if (요약.몸무게) state.weight = 요약.몸무게;
   }
-  await refreshActivityAge();     // 기록을 더했으니 체력나이도 다시 본다 (I3)
+  await refreshActivityAge();            // 지금 기준 체력나이 (I3)
+  await refreshLogAges({ 전부: true });   // 날짜별 체력나이 (K1)
   await saveProfile();
   paintGauges();
   // 달력에서 들어왔으면 달력으로 돌려보낸다
@@ -4486,7 +4570,20 @@ function manualDetailHtml(w){
       .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
     return `<div class="rec-detail-row wide"><b>${x.이름}</b><span>${값}</span></div>`;
   }).join('');
-  return 종목 + summaryDetailHtml(w.요약);
+  return dayAgeHtml(w) + 종목 + summaryDetailHtml(w.요약);
+}
+
+/* 그날 기록으로 뽑은 체력나이 (K1).
+   측정이 아니라 그날 기록에서 나온 추정치라고 분명히 적는다. */
+function dayAgeHtml(w){
+  const a = w.체력나이;
+  if (!a || a.값 == null) return '';
+  const 방향 = a.값 < a.기준나이 ? '−' : '+';
+  const 폭 = Math.abs(Math.round((a.값 - a.기준나이) * 10) / 10);
+  const 꼬리 = 폭 ? ` (측정 ${Math.round(a.기준나이)}세에서 ${방향}${폭})` : '';
+  const 잰것 = a.잰체성분 != null ? ' · 체성분은 그날 잰 값' : '';
+  return `<div class="rec-detail-row wide day-age"><b>체력나이</b>
+    <span>${Math.round(a.값 * 10) / 10}세<small>${꼬리}${잰것}</small></span></div>`;
 }
 
 /* 그날 몸 상태를 상세에 붙인다 (K2). 적은 것만 나온다. */

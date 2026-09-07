@@ -570,7 +570,8 @@ def test_달력_아래_목록도_같다():
     """J5: 달력에서 고른 날의 운동·측정 줄에도 같은 버튼이 붙는다."""
     html = _index()
     본문 = html.split("function renderCalDay()")[1].split("\n}")[0]
-    assert "moreToggle(e.직접 ? manualDetailHtml(e) : routineDetailHtml(e))" in 본문
+    # K1 에서 그날 체력나이를 붙이려고 원본 기록(logAt)을 넘기도록 바뀌었다
+    assert "moreToggle(e.직접 ? manualDetailHtml(logAt(e.date) || e) : routineDetailHtml(e))" in 본문
     assert "moreToggle(measureDetailHtml(p))" in 본문
 
 
@@ -816,4 +817,78 @@ def test_내역에_실제로_낸_돈도_남긴다():
     assert "결제: 결제 ?? 금액" in 본문
     내역 = html.split("function renderCredit()")[1].split("\n}")[0]
     assert "e.결제 != null && e.결제 < e.금액" in 내역
+
+
+# ---------- K1. 운동을 기록한 날짜에 체력나이도 저장 ----------
+
+def test_기록한_날마다_체력나이를_저장한다():
+    html = _index()
+    assert "async function refreshLogAges(" in html
+    본문 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
+    assert "API.activityAgeDays(bodies)" in 본문      # 날마다 부르지 않고 한 번에
+    assert "w.체력나이 = {" in 본문
+    저장 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "refreshLogAges({ 전부: true })" in 저장
+
+
+def test_그날까지의_측정만_기준으로_쓴다():
+    """9월 5일 기록에 9월 20일 측정을 쓰면 미래를 갖다 쓰는 셈이다."""
+    html = _index()
+    본문 = html.split("function measureAtOrBefore(날)")[1].split("\n}")[0]
+    assert "m.date <= 날" in 본문
+
+
+def test_그날까지의_운동만_센다():
+    html = _index()
+    본문 = html.split("function activityCounts(끝날)")[1].split("\n}")[0]
+    assert "w.date < 시작 || w.date > 끝" in 본문     # 창 밖과 미래를 뺀다
+    assert "끝날 || todayIso()" in 본문               # 안 주면 오늘까지 (I3 그대로)
+
+
+def test_그날_잰_몸_상태를_함께_보낸다():
+    html = _index()
+    본문 = html.split("function activityBodyFor(w)")[1].split("\n}")[0]
+    for k in ("키:", "몸무게:", "체지방률:", "sex:"):
+        assert k in 본문, k
+    assert "요약.몸무게" in 본문
+
+
+def test_기준이_없으면_만들지_않는다():
+    """측정 전에 적은 날은 비교할 기준이 없다."""
+    html = _index()
+    본문 = html.split("function activityBodyFor(w)")[1].split("\n}")[0]
+    assert "if (!기준?.항목별 || !state.ageGbn) return null;" in 본문
+
+
+def test_예전_기록은_한_번에_채운다():
+    html = _index()
+    assert "async function backfillLogAges()" in html
+    본문 = html.split("async function backfillLogAges()")[1].split("\n}")[0]
+    assert "!w.체력나이" in 본문                       # 빈 날만
+    assert "saveProfile()" in 본문                      # 채웠으면 저장한다
+
+
+def test_지우면_뒤_날들도_다시_센다():
+    """하루가 빠지면 그 뒤 날들의 28일 창이 달라진다."""
+    html = _index()
+    본문 = html.split("async function deleteCalDayLog()")[1].split("\n}")[0]
+    assert "refreshLogAges({ 전부: true })" in 본문
+
+
+def test_그날_체력나이를_상세에_보여준다():
+    html = _index()
+    assert "function dayAgeHtml(w)" in html
+    본문 = html.split("function dayAgeHtml(w)")[1].split("\n}")[0]
+    assert "체력나이" in 본문
+    assert "측정 ${Math.round(a.기준나이)}세에서" in 본문   # 측정값과 비교해서 보여 준다
+    assert "체성분은 그날 잰 값" in 본문
+    상세 = html.split("function manualDetailHtml(w)")[1].split("\n}")[0]
+    assert "dayAgeHtml(w)" in 상세
+
+
+def test_서버가_실패해도_있던_값을_지우지_않는다():
+    html = _index()
+    본문 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
+    assert "catch" in 본문
+    assert "있던 값을 그대로 둔다" in 본문
 

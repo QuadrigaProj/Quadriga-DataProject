@@ -89,3 +89,75 @@ def test_날_수가_이상해도_터지지_않는다(나쁜값):
     out = fa.activity_adjusted(성인["항목별"], 3, {"근지구력": 나쁜값}, "성인", 30)
     assert out["체력나이"] is not None
     assert out["당김"] == 0
+
+
+# ---------- K1. 날짜별 체력나이 · 그날 잰 몸 상태 ----------
+
+def test_그날_잰_몸무게로_체성분을_다시_계산한다():
+    """추정이 아니라 그날 실제로 잰 값이라 편차 제한을 걸지 않는다."""
+    그냥 = 부르기(sex="M", 활동={})
+    무거움 = 부르기(sex="M", 활동={}, 키=176, 몸무게=95)
+    assert "잰체성분" in 무거움 and "잰체성분" not in 그냥
+    assert 무거움["항목별"]["체성분"] == 무거움["잰체성분"]
+    # BMI 30 대는 체성분 환산나이가 올라간다 → 체력나이도 올라간다
+    assert 무거움["체력나이"] > 그냥["체력나이"]
+
+
+def test_체지방률이_있으면_그쪽을_쓴다():
+    """체지방률이 BMI 보다 직접적이다."""
+    bmi만 = 부르기(sex="M", 활동={}, 키=176, 몸무게=95)
+    둘다 = 부르기(sex="M", 활동={}, 키=176, 몸무게=95, 체지방률=12)
+    assert 둘다["잰체성분"] != bmi만["잰체성분"]
+    assert 둘다["체력나이"] < bmi만["체력나이"]      # 체지방률이 낮으니 더 젊다
+
+
+def test_성별이_없으면_몸_상태를_쓰지_않는다():
+    """분포는 성별로 갈린다. 성별 없이 환산하면 근거가 없다."""
+    out = 부르기(활동={}, 키=176, 몸무게=95)      # sex 없음
+    assert "잰체성분" not in out
+    assert out["항목별"]["체성분"] == 25.0
+
+
+def test_말도_안_되는_몸무게는_422로_막는다():
+    r = client.post("/fitness-age/activity",
+                    json={**성인, "sex": "M", "활동": {}, "키": 176, "몸무게": 9999})
+    assert r.status_code == 422
+
+
+# ---------- 여러 날 한 번에 ----------
+
+def 날(date, **덮어쓰기):
+    return {**성인, "sex": "M", "date": date, "활동": {}, **덮어쓰기}
+
+
+def test_여러_날을_한_번에_돌려준다():
+    r = client.post("/fitness-age/activity/days", json=[
+        날("2026-09-01", 활동={"근지구력": 3}),
+        날("2026-09-05", 활동={"근지구력": 10}),
+    ])
+    assert r.status_code == 200
+    rows = r.json()
+    assert [x["date"] for x in rows] == ["2026-09-01", "2026-09-05"]
+    # 더 많이 운동한 날이 더 젊다
+    assert rows[1]["체력나이"] < rows[0]["체력나이"]
+
+
+def test_계산할_수_없는_날은_빼고_돌려준다():
+    """한 날이 잘못됐다고 나머지까지 못 받으면 화면이 통째로 빈다."""
+    r = client.post("/fitness-age/activity/days", json=[
+        날("2026-09-01"),
+        {**날("2026-09-02"), "항목별": {}},      # 기준이 없는 날
+        날("2026-09-03"),
+    ])
+    assert [x["date"] for x in r.json()] == ["2026-09-01", "2026-09-03"]
+
+
+def test_빈_목록도_받는다():
+    assert client.post("/fitness-age/activity/days", json=[]).json() == []
+
+
+def test_너무_많으면_거절한다():
+    r = client.post("/fitness-age/activity/days",
+                    json=[날(f"2026-09-{i:02d}") for i in range(1, 29)] * 15)
+    assert r.status_code == 400
+

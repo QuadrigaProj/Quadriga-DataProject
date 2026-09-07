@@ -495,6 +495,9 @@
   .rec-why li{ font-size:14px; line-height:1.7; margin-left:18px; }
   .rec-why-head{ font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:8px; }
   .rec-care{ font-size:12.5px; color:var(--clay); margin-top:12px; }
+  .rec-word{ font-size:14px; color:var(--pine-deep); background:var(--pine-tint);
+             border-radius:12px; padding:11px 13px; margin-top:14px; line-height:1.6; }
+  .rec-by{ font-size:11.5px; color:var(--muted); margin-top:12px; }
   .rec-actions{ display:flex; gap:8px; margin-top:18px; }
   .rec-actions .btn{ margin:0; min-height:52px; font-size:15px; }
 
@@ -4026,6 +4029,7 @@ const WLOG_UNIT = { 세트: '세트', 횟수: '회', 무게: 'kg', 시간: '분'
 let recoList = [];
 let recoAt = 0;
 let recoCare = [];
+let recoBy = '점수';
 
 /* 체력나이 항목별에서 뒤처지는 요인 — 값이 큰(늙은) 쪽이 약점이다.
    성장기는 방향이 반대라 작은 쪽을 고른다. 체성분은 U자형이라 뺀다. */
@@ -4059,6 +4063,7 @@ async function renderRecommend(){
     });
     recoList = r.추천 || [];
     recoCare = r.조심할부위 || [];
+    recoBy = r.출처 || '점수';
     recoAt = 0;
   } catch (e) {
     box.innerHTML = '<div class="rec-empty">추천을 불러오지 못했어요.<br/>잠시 뒤 다시 시도해주세요.</div>';
@@ -4088,7 +4093,9 @@ function paintRecommend(){
         <div class="rec-why-head">왜 이걸 골랐나요</div>
         <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
       </div>
+      ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
+      <div class="rec-by">${recoBy === 'ai' ? 'AI 가 순서와 설명을 다듬었어요' : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="rec-actions">
         <button class="btn btn-ghost" onclick="nextRecommend()" ${마지막 ? 'disabled' : ''}>
           ${마지막 ? '마지막 추천이에요' : '다음 추천'}</button>

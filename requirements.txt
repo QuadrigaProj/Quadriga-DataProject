@@ -13,5 +13,8 @@ numpy
 # DB — 로컬은 SQLite(표준 라이브러리), 배포는 Postgres
 psycopg[binary]
 
+# AI 루틴 추천 (선택) — ANTHROPIC_API_KEY 가 없으면 부르지 않고 점수만으로 추천합니다
+anthropic
+
 # 테스트
 pytest

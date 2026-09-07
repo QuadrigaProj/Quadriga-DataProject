@@ -60,6 +60,10 @@ const API = (() => {
     workoutItems: () => call('/workout-items'),
     recommendRoutines: (q) => call('/recommend/routines?' + qs(q)),
     activityAge: (b) => post('/fitness-age/activity', b),
+    // 이용권 결제 (J2). 카드번호 같은 건 오가지 않는다 — 금액과 주문번호뿐이다.
+    payMethods: () => call('/pay/methods'),
+    payReady: (b) => post('/pay/kakao/ready', b),
+    payResult: (order) => call('/pay/result/' + encodeURIComponent(order)),
     sportsSummary: (ids) => call('/sports/summary?' + qs({ ids: (ids || []).join(',') })),
     styleTest: () => call('/style-test'),
     styleTestResult: (answers) => post('/style-test/result', { answers }),

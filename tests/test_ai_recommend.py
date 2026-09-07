@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -144,13 +145,36 @@ def test_미리_충전해_둘_수_있다():
 
 
 def test_결제창은_카드정보를_묻지_않는다():
-    """실제 PG 계약 전이라 모의 승인이다. 카드 번호를 받는 화면을 만들지 않는다."""
+    """카드번호·CVC·계좌번호를 받는 입력칸을 만들지 않는다.
+
+    실제 서비스에서 그건 PG사 결제창이 받는다(PCI-DSS). 우리가 받으면 사고다.
+    J2 에서 약관 동의 체크박스가 생겼으므로 "입력칸이 하나도 없다" 가 아니라
+    "카드·계좌를 받는 입력칸이 없다" 로 본다. 설명하는 주석에는 그 낱말이
+    나올 수 있으니, 낱말 검색이 아니라 **input 태그와 placeholder** 를 본다.
+    """
     html = _html()
-    body = html.split("function paySheetHtml()")[1].split("\n}")[0]
-    assert "시연용 모의 결제입니다" in body
-    assert "<input" not in body
-    for 금지 in ("카드번호", "card-number", "cvc", "유효기간"):
-        assert 금지 not in html, 금지
+
+    민감 = ("카드번호", "card-number", "cardnumber", "cvc", "유효기간",
+          "expiry", "계좌번호", "account-number", "accountnumber")
+
+    for tag in re.findall(r"<input[^>]*>", html, re.I):
+        낮 = tag.lower()
+        assert not any(w in 낮 for w in 민감), tag
+        # 카드 입력을 부르는 자동완성도 없어야 한다
+        assert "autocomplete=\"cc-" not in 낮, tag
+
+    for ph in re.findall(r'placeholder="([^"]*)"', html):
+        낮 = ph.lower()
+        assert not any(w in 낮 for w in 민감), ph
+
+    # 결제창 안의 input 은 체크박스(약관 동의)뿐이어야 한다
+    결제창 = html.split("function payWayHtml()")[1].split("function pickPay(v)")[0]
+    타입 = re.findall(r'<input type="([a-z]+)', 결제창)
+    assert 타입 == ["checkbox"], 타입
+
+    # 카드·계좌 정보를 우리가 받지 않는다고 화면에 적어야 한다
+    assert "이 앱이 받지" in 결제창
+    assert "PG사 결제창이 받습니다" in 결제창
 
 
 def test_AI가_실제로_다듬었을_때만_값을_받는다():

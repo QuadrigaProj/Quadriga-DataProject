@@ -145,3 +145,66 @@ def test_타이머가_끝나면_빨간색_클래스가_있다():
     html = _index()
     assert ".timer-time.done{ color:var(--clay); }" in html
     assert "'다시 시작'" in html  # 00:00 뒤 재시작 버튼 문구
+
+
+# ---------- A1~A4·B 결과·프로필 문구 ----------
+
+# 노션이 삭제를 요구한 문구·요소 — 하나라도 남아 있으면 실패
+삭제된_문구 = [
+    '<div class="eyebrow">스포츠 프로필</div>',            # A1
+    "항목 간 편차",                                        # A1 ±N세 표시 전부
+    "공개 데이터로 잴 수 있는 항목만 표시합니다",            # A1
+    '<div class="eyebrow">첫 점검</div>',                  # A1 보조 단계 문구
+    '<div class="eyebrow">목적 선택</div>',
+    '<div class="eyebrow">운동 고르기</div>',
+    '<div class="eyebrow">기록</div>',
+    '<div class="eyebrow">3개월 재점검</div>',
+    "목표 나이를 미리 정하지 않아요",                        # A2
+    '<div class="prescribe-label">지금부터</div>',         # A2
+    "지금 가장 먼저 채우면 좋은 건",                         # A3
+    "또래보다 특히 처지는 건",                               # A3
+    "세 앞서 있어요",                                       # A4
+    "세 젊어요",                                            # A4
+    '<div class="eyebrow">또래와 비교</div>',              # B2
+    'id="ciLow"', 'id="ciMid"', 'id="ciHigh"',            # B2 발달 수준 3숫자
+    'id="ciNote"', 'id="ciCaption"',                      # B2 해석 문구 표시
+    "가장 앞선 항목은",                                     # B2
+    "명 중 약 ${fmtInt(rank)}등",                          # B2 항목별 등수
+    "막대 가운데 선은 또래 중앙값이에요",                     # B2 긴 설명
+    'id="calcTable"',                                     # B2 반복 영역
+    "또래 평균",                                            # B5 — 중앙값 사용이므로 금지
+]
+
+# 교체·추가된 문구 — 하나라도 없으면 실패
+추가된_문구 = [
+    "3개월간 맞춤 운동을 진행한 뒤, 다시 측정해 달라진 체력을 확인해보세요.",   # A2
+    "집중 개선 영역: ${",                                                   # A3 동적
+    "3개월 프로그램이 이 항목 중심으로 구성됩니다.",                            # A3
+    "신체 나이가 또래 중앙값보다 ${n}세 높게 나왔어요.",                        # A4
+    "신체 나이가 또래 중앙값보다 ${n}세 낮게 나왔어요.",                        # A4
+    "또래 중앙값과 비슷해요.",                                               # A4 중립
+    '<div class="eyebrow">당신의 체력나이</div>',                            # B1 유지
+    "국민체력100 데이터 기준 (동일 성별·연령)",                               # B1
+    "내 기록 ${v.내기록}${u} / 또래 중앙값 ${v.또래중앙값}${u}",                # B1/B5
+    'class="peer-badge up"', 'class="peer-badge down"',                    # B3 ▲/▼
+]
+
+
+def test_삭제한_문구가_화면에_없다():
+    html = _index()
+    남은것 = [s for s in 삭제된_문구 if s in html]
+    assert not 남은것, f"삭제 대상 문구가 아직 있다: {남은것}"
+
+
+def test_교체한_문구가_화면에_있다():
+    html = _index()
+    빠진것 = [s for s in 추가된_문구 if s not in html]
+    assert not 빠진것, f"교체 문구가 없다: {빠진것}"
+
+
+def test_체력나이_제목은_남아_있다():
+    """보조 문구만 지우고 주요 제목은 건드리지 않는다 (A1 단서)."""
+    html = _index()
+    assert 'id="s1Title"' in html
+    assert 'id="ageResult"' in html
+    assert 'id="peerRank"' in html

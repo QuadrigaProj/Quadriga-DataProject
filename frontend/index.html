@@ -3317,9 +3317,18 @@ async function loadHome(){
 
   const stars = starCount(state.result.항목별.근력 ?? state.result.체력나이);
   try {
-    const d = await API.daily({ strength_stars: stars, walk_minutes: 12,
-                                days_since_start: programDay() });
-    $('dailyText').innerHTML = d.계단.문구 + (d.도보 ? '<br/>' + d.도보.문구 : '');
+    // age_gbn·purpose 를 넘기면 오늘의 일상 처방 문구가 경과일마다 바뀐다 (day % 30).
+    const d = await API.daily({
+      strength_stars: stars,
+      days_since_start: programDay(),
+      age_gbn: programAgeGroup(state.age),
+      purpose: PURPOSE_TO_KO[state.purpose] || null,
+    });
+    const 줄 = [];
+    if (d.일상처방?.문구) 줄.push(d.일상처방.문구);
+    if (d.계단?.문구) 줄.push(d.계단.문구);
+    if (d.도보?.문구) 줄.push(d.도보.문구);
+    if (줄.length) $('dailyText').innerHTML = 줄.join('<br/>');
   } catch (e) { /* 서버 없으면 기본 문구 유지 */ }
   // F2: 출발지·목적지를 저장해 뒀으면 가는 길 기준 처방으로 dailyText 를 덮어쓴다.
   // 위 /daily 문구 대입(await)이 끝난 뒤에 불리므로 덮어쓰기 순서는 보장된다.

@@ -111,13 +111,14 @@
   .field-unit{ font-size:14px; color:var(--muted); width:32px; text-align:left; }
 
   .timer-box{
-    display:flex; align-items:center; justify-content:space-between;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
     background:var(--pine-tint); border-radius:12px; padding:14px 16px; margin-top:12px;
   }
   .timer-time{ font-size:26px; font-weight:700; color:var(--pine-deep); font-variant-numeric:tabular-nums; }
+  .timer-time.done{ color:var(--clay); }   /* 00:00 에 닿으면 빨간색 — 그 아래로는 내려가지 않는다 */
   .timer-btn{
     border:none; background:var(--pine); color:#fff; padding:10px 18px; border-radius:10px;
-    font-weight:700; font-size:14px; cursor:pointer; font-family:inherit;
+    font-weight:700; font-size:14px; cursor:pointer; font-family:inherit; min-width:88px; white-space:nowrap;
   }
 
   .result-block{
@@ -792,9 +793,9 @@
             <div class="measure-desc" id="strengthDesc">30초 동안 몇 번 반복했는지 세어주세요</div>
           </div>
         </div>
-        <div class="timer-box" id="timerBox">
-          <div class="timer-time" id="timerDisplay">00:30</div>
-          <button class="timer-btn" id="timerBtn" onclick="toggleTimer()">시작</button>
+        <div class="timer-box" id="timerBox" data-timer="situp" data-seconds="30">
+          <div class="timer-time">00:30</div>
+          <button type="button" class="timer-btn" onclick="toggleTimer('situp')">시작</button>
         </div>
         <div class="field-row">
           <input class="field-input" id="strengthInput" type="number" placeholder="예: 25" />
@@ -831,18 +832,21 @@
           <div class="measure-head"><div class="measure-badge">5</div>
             <div><div class="measure-name">30초 제자리 점프</div>
               <div class="measure-desc">두 발 모아 제자리에서 최대한 빠르게</div></div></div>
+          <div class="timer-box" data-timer="jump" data-seconds="30"><div class="timer-time">00:30</div><button type="button" class="timer-btn" onclick="toggleTimer('jump')">시작</button></div>
           <div class="field-row"><input class="field-input" id="jumpInput" type="number" placeholder="예: 45" /><div class="field-unit">회</div></div>
         </div>
         <div class="measure-card">
           <div class="measure-head"><div class="measure-badge">6</div>
             <div><div class="measure-name">30초 무릎 푸시업</div>
               <div class="measure-desc">무릎을 대고 팔굽혀펴기</div></div></div>
+          <div class="timer-box" data-timer="kneePushup" data-seconds="30"><div class="timer-time">00:30</div><button type="button" class="timer-btn" onclick="toggleTimer('kneePushup')">시작</button></div>
           <div class="field-row"><input class="field-input" id="kneePushupInput" type="number" placeholder="예: 12" /><div class="field-unit">회</div></div>
         </div>
         <div class="measure-card">
           <div class="measure-head"><div class="measure-badge">7</div>
             <div><div class="measure-name">2분 제자리 높은 무릎 뛰기</div>
               <div class="measure-desc">한쪽 무릎이 올라올 때마다 1회</div></div></div>
+          <div class="timer-box" data-timer="highKnee" data-seconds="120"><div class="timer-time">02:00</div><button type="button" class="timer-btn" onclick="toggleTimer('highKnee')">시작</button></div>
           <div class="field-row"><input class="field-input" id="highKneeInput" type="number" placeholder="예: 90" /><div class="field-unit">회</div></div>
         </div>
       </div>
@@ -2068,6 +2072,7 @@ function onAgeChange(){
   $('countUnit').textContent = item.unit;
   $('strengthInput').placeholder = '예: ' + item.init;
   $('timerBox').style.display = item.timer ? 'flex' : 'none';
+  if (!item.timer) resetTimer('situp');   // 타이머 없는 항목(성장기 제자리 멀리뛰기)으로 바뀌면 돌던 타이머를 멈추고 되돌린다
 }
 
 function selectSex(sex){
@@ -2140,6 +2145,7 @@ function selectMethod(m){
     const card = el.closest('.measure-card'); if (card) card.hidden = hideFor;
   });
   $('timerBox').hidden = hideFor;
+  resetAllTimers();   // 측정 방식을 바꾸면 돌던 타이머를 모두 멈추고 처음값으로
   const btn = $('calcBtn');
   btn.textContent = m === 'inbody' ? '체성분 분석하기' : '체력나이 계산하기';
   $('s1Title').innerHTML = m === 'inbody' ? 'InBody 결과지를<br/>그대로 입력하세요'
@@ -2584,24 +2590,76 @@ function logRoutineDone(){
   }
 }
 
-/* ---- 화면 1 : 타이머 · 횟수 ---- */
-let timerInterval = null, timerSeconds = 30, timerRunning = false;
-function toggleTimer(){
-  const btn = $('timerBtn');
-  if(timerRunning){
-    clearInterval(timerInterval); timerRunning = false; btn.textContent = '시작';
-    return;
+/* ---- 화면 1 : 타이머 ----
+   카드마다 타이머가 하나씩 있다(윗몸일으키기·30초 점프·30초 무릎 푸시업 = 30초, 2분 높은 무릎 뛰기 = 120초).
+   마크업의 .timer-box[data-timer][data-seconds] 가 곧 목록이고, 함수는 한 세트(startTimer/pauseTimer/resetTimer)다.
+   동시에 하나만 돈다. 00:00 에서 반드시 멈추고(음수 금지) 숫자가 빨갛게 바뀌며, 다시 누르면 처음부터 다시 돈다.
+   남은 시간은 틱 횟수가 아니라 끝나는 시각(endAt)으로 계산해서 화면이 잠깐 멈춰도 어긋나지 않는다. */
+const timerState = { id: null, left: 0, endAt: 0, handle: null };
+
+function timerBoxOf(id){ return document.querySelector('.timer-box[data-timer="' + id + '"]'); }
+function timerSecondsOf(id){
+  const box = timerBoxOf(id);
+  return Math.max(0, parseInt(box ? box.dataset.seconds : '0', 10) || 0);
+}
+function fmtTimer(sec){
+  sec = Math.max(0, Math.floor(sec));
+  return String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+}
+/* 남은 초·버튼 문구를 그리고, 끝났으면 빨간색(.done) */
+function paintTimer(id, left, label, done){
+  const box = timerBoxOf(id); if (!box) return;
+  const time = box.querySelector('.timer-time'), btn = box.querySelector('.timer-btn');
+  if (time) { time.textContent = fmtTimer(left); time.classList.toggle('done', !!done); }
+  if (btn) btn.textContent = label;
+}
+function stopTicking(){ if (timerState.handle) { clearInterval(timerState.handle); timerState.handle = null; } }
+function timerLeftNow(){ return Math.max(0, Math.ceil((timerState.endAt - Date.now()) / 1000)); }
+
+/* 시작(또는 일시정지한 곳부터 재개). 다른 카드 타이머가 돌고 있으면 그건 되돌린다 — 동시에 하나만. */
+function startTimer(id, seconds){
+  if (!timerBoxOf(id)) return;
+  if (timerState.handle && timerState.id === id) return;             // 이미 돌고 있음 — 중복 클릭 무시
+  if (timerState.id && timerState.id !== id) resetTimer(timerState.id);
+  if (timerState.id !== id || timerState.left <= 0) {                // 새로 시작 / 끝난 뒤 다시 시작
+    timerState.id = id;
+    timerState.left = Math.max(0, Math.floor(seconds ?? timerSecondsOf(id)));
   }
-  timerRunning = true; btn.textContent = '일시정지';
-  timerInterval = setInterval(()=>{
-    timerSeconds--;
-    const m = String(Math.floor(timerSeconds/60)).padStart(2,'0');
-    const s = String(timerSeconds%60).padStart(2,'0');
-    $('timerDisplay').textContent = m+':'+s;
-    if(timerSeconds<=0){
-      clearInterval(timerInterval); timerRunning = false; btn.textContent = '완료';
-    }
-  },1000);
+  if (timerState.left <= 0) { finishTimer(id); return; }
+  stopTicking();
+  timerState.endAt = Date.now() + timerState.left * 1000;
+  paintTimer(id, timerState.left, '일시정지', false);
+  timerState.handle = setInterval(tickTimer, 250);
+}
+function tickTimer(){
+  timerState.left = timerLeftNow();
+  if (timerState.left <= 0) { finishTimer(timerState.id); return; }
+  paintTimer(timerState.id, timerState.left, '일시정지', false);
+}
+/* 00:00 — 여기서 멈춘다. 숫자는 빨간색, 버튼은 '다시 시작'. */
+function finishTimer(id){
+  stopTicking();
+  timerState.left = 0;
+  paintTimer(id, 0, '다시 시작', true);
+}
+function pauseTimer(){
+  if (!timerState.handle) return;
+  timerState.left = timerLeftNow();
+  stopTicking();
+  paintTimer(timerState.id, timerState.left, '시작', false);
+}
+/* 처음값으로 되돌린다. 돌고 있던 타이머면 멈춘다. */
+function resetTimer(id){
+  if (timerState.id === id) { stopTicking(); timerState.id = null; timerState.left = 0; timerState.endAt = 0; }
+  paintTimer(id, timerSecondsOf(id), '시작', false);
+}
+function resetAllTimers(){
+  document.querySelectorAll('.timer-box[data-timer]').forEach(b => resetTimer(b.dataset.timer));
+}
+/* 카드의 버튼 하나로 시작 → 일시정지 → (00:00 뒤) 다시 시작 */
+function toggleTimer(id){
+  if (timerState.handle && timerState.id === id) pauseTimer();
+  else startTimer(id, timerSecondsOf(id));
 }
 
 /* ---- 화면 4 : 부담 부위 · 컨디션 ----

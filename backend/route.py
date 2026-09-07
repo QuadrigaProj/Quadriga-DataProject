@@ -4,7 +4,8 @@
 - 좌표: 카카오 로컬 키워드 검색 → 없으면 geo.geocode
 - 경로: 카카오 도보 경로 API → 없으면 직선거리(분속 80m) 추정
 - 오르막: Open-Meteo 고도 API (키 없음, 100점/요청)
-provider 는 키 없음·타임아웃·status≠OK 이면 예외 대신 None 을 돌려주고, advise() 가 폴백한다(500 금지).
+provider 는 키 없음·타임아웃·status≠OK·응답 모양이 가정과 다름(파싱 실패) 이면 예외 대신 None 을 돌려주고,
+advise() 가 폴백한다(500 금지).
 Tmap 보행자 API 는 별도 키가 필요해 이번엔 안 쓴다 — 키가 생기면 kakao_walk 와 같은 반환 모양의 provider 를 추가한다.
 """
 from __future__ import annotations
@@ -33,6 +34,16 @@ SAME_POINT_M = 30                # 이보다 가까우면 같은 곳으로 본�
 STAIR_WORDS = ("계단", "육교", "지하보도", "지하도")
 
 
+# main.py 는 아래 두 예외만 404/400 으로 바꾼다. 부모 클래스(LookupError·ValueError)를 그대로 잡으면
+# 파싱 중 난 KeyError·IndexError·float() 실패까지 사용자 오류로 둔갑해 내부 오류 문자열이 화면에 보인다.
+class PlaceNotFoundError(LookupError):
+    """출발지·목적지 문자열을 좌표로 바꾸지 못함 (→ 404)."""
+
+
+class SamePointError(ValueError):
+    """출발지와 목적지가 같은 지점 (→ 400)."""
+
+
 def _kakao_key() -> str | None:
     """auth.client_config 와 같은 환경변수. REST 키 = 카카오 로그인 client id."""
     return os.getenv("KAKAO_CLIENT_ID") or None
@@ -49,7 +60,8 @@ async def _get_json(url: str, params: dict, headers: dict | None = None) -> dict
             r = await http.get(url, params=params, headers=headers or {})
         if r.status_code != 200:
             return None
-        return r.json()
+        j = r.json()
+        return j if isinstance(j, dict) else None   # 세 API 모두 객체를 돌려준다 — 그 밖은 파싱 대상 아님
     except Exception:                    # 외부 API 실패는 전부 폴백 대상
         return None
 
@@ -63,12 +75,12 @@ async def geocode_text(query: str) -> tuple[float, float] | None:
     if not key or not q:
         return None
     j = await _get_json(KAKAO_KEYWORD_URL, {"query": q, "size": 1}, _kakao_headers(key))
-    docs = (j or {}).get("documents") or []
-    if not docs:
-        return None
     try:
+        docs = (j or {}).get("documents") or []
+        if not docs:
+            return None
         return float(docs[0]["y"]), float(docs[0]["x"])      # y=위도, x=경도
-    except (KeyError, TypeError, ValueError):
+    except Exception:                    # 응답 모양이 가정과 다르면(문서가 dict 가 아님 등) 폴백
         return None
 
 
@@ -88,23 +100,25 @@ async def kakao_walk(start: tuple[float, float], end: tuple[float, float],
     params = {"start_x": start[1], "start_y": start[0], "end_x": end[1], "end_y": end[0],
               "route_mode": route_mode}
     j = await _get_json(KAKAO_WALK_URL, params, _kakao_headers(key))
-    if not j or j.get("status") != "OK":
-        return None
-    r = j.get("route") or ((j.get("routes") or [None])[0]) or {}
-    props = r.get("properties") or {}
-    guidance: list[str] = []
-    points: list[tuple[float, float]] = []
-    for leg in r.get("legs") or []:
-        for step in leg.get("steps") or []:
-            g = (step.get("properties") or {}).get("guidance")
-            if g:
-                guidance.append(str(g))
-            for x, y in ((step.get("path") or {}).get("points") or []):
-                points.append((float(y), float(x)))
+    # 필드명은 실제 응답으로 검증하지 못했다(risks). 모양이 다르면(points 가 객체·3원소, route 가
+    # 리스트, legs 가 dict …) 어떤 예외든 None → advise() 가 직선거리로 추정한다. 400/500 금지.
     try:
+        if not j or j.get("status") != "OK":
+            return None
+        r = j.get("route") or ((j.get("routes") or [None])[0]) or {}
+        props = r.get("properties") or {}
+        guidance: list[str] = []
+        points: list[tuple[float, float]] = []
+        for leg in r.get("legs") or []:
+            for step in leg.get("steps") or []:
+                g = (step.get("properties") or {}).get("guidance")
+                if g:
+                    guidance.append(str(g))
+                for x, y in ((step.get("path") or {}).get("points") or []):
+                    points.append((float(y), float(x)))
         return {"거리m": int(props["totalDistance"]), "시간초": int(props["totalTime"]),
                 "구간안내": guidance, "좌표": points or [start, end]}
-    except (KeyError, TypeError, ValueError):
+    except Exception:                    # 파싱 실패는 전부 폴백 대상
         return None
 
 
@@ -127,14 +141,17 @@ async def elevation_gain(points: list[tuple[float, float]]) -> float | None:
         "latitude": ",".join(f"{p[0]:.5f}" for p in pts),
         "longitude": ",".join(f"{p[1]:.5f}" for p in pts),
     })
-    elev = (j or {}).get("elevation") or []
-    if len(elev) != len(pts):
+    try:
+        elev = (j or {}).get("elevation") or []
+        if len(elev) != len(pts):
+            return None
+        gain = 0.0
+        for a, b in zip(elev, elev[1:]):
+            if b > a:
+                gain += b - a
+        return round(gain, 1)
+    except Exception:                    # 응답이 dict 가 아니거나 고도가 숫자가 아니면 폴백
         return None
-    gain = 0.0
-    for a, b in zip(elev, elev[1:]):
-        if b > a:
-            gain += b - a
-    return round(gain, 1)
 
 
 # ---------- 규칙 (네트워크 없음) ----------
@@ -181,7 +198,7 @@ async def _locate(q: str) -> tuple[float, float]:
     q = (q or "").strip()
     hit = (await geocode_text(q)) or geo.geocode(q)
     if not hit:
-        raise LookupError(f"'{q}' 을(를) 찾지 못했어요. 구 이름이나 역 이름으로 다시 입력해 주세요.")
+        raise PlaceNotFoundError(f"'{q}' 을(를) 찾지 못했어요. 구 이름이나 역 이름으로 다시 입력해 주세요.")
     return hit
 
 
@@ -190,13 +207,13 @@ async def advise(from_: str, to: str, strength_stars: int = 3) -> dict:
 
     반환 키: 출발지, 목적지, 거리m, 시간분, 오르막m(None 가능), 구간안내[], 계단있음,
             추천{유형: 전부걷기|일부걷기|대중교통, 문구}, 출처(kakao|추정), 안내
-    예외: LookupError(지역 못 찾음 → 404), ValueError(같은 지점 → 400)
+    예외: PlaceNotFoundError(지역 못 찾음 → 404), SamePointError(같은 지점 → 400)
     """
     start = await _locate(from_)
     end = await _locate(to)
     dist_line = round(daily._km(start[0], start[1], end[0], end[1]) * 1000)
     if dist_line < SAME_POINT_M:
-        raise ValueError("출발지와 목적지가 같은 곳이에요. 다른 곳을 입력해 주세요.")
+        raise SamePointError("출발지와 목적지가 같은 곳이에요. 다른 곳을 입력해 주세요.")
 
     walk = await kakao_walk(start, end)
     if walk:

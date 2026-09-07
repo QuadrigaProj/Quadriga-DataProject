@@ -53,6 +53,7 @@ const API = (() => {
     programPurposes: (q) => call('/program/purposes?' + qs(q)),
     purposes: () => call('/purposes'),
     daily: (q) => call('/daily?' + qs(q)),
+    routeAdvice: (q) => call('/route/advice?' + qs(q)),   // F2: {from, to, strength_stars}
     videos: (q) => call('/videos?' + qs(q)),
     centers: (q) => call('/centers?' + qs(q)),
     sports: () => call('/sports'),

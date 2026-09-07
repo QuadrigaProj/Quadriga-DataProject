@@ -212,6 +212,11 @@
   }
   .prescribe-label{ font-size:13px; color:var(--muted); }
   .prescribe-text{ font-size:15.5px; font-weight:600; margin-top:6px; line-height:1.5; }
+  .commute-row{ display:flex; gap:8px; margin-top:12px; }
+  .commute-row input{ flex:1; min-width:0; border:1.5px solid var(--line); border-radius:12px; padding:12px; font-size:15px; font-family:inherit; }
+  .commute-row button{ border:none; background:var(--pine); color:#fff; border-radius:12px; padding:0 16px; font-weight:700; font-family:inherit; cursor:pointer; flex-shrink:0; }
+  .commute-row button:disabled{ background:#B9C4BB; cursor:not-allowed; }
+  .prescribe-meta{ font-size:12.5px; color:var(--muted); margin-top:8px; line-height:1.5; }
 
   .review-link{ margin:14px 22px 0; text-align:center; }
   .review-link button{ background:none; border:none; color:var(--muted); font-size:13.5px; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
@@ -1052,6 +1057,12 @@
     <div class="prescribe-card">
       <div class="prescribe-label">오늘의 일상 처방</div>
       <div class="prescribe-text" id="dailyText">계단은 올라갈 때만 이용해보세요.<br/>내려올 땐 엘리베이터가 무릎에 더 안전해요.</div>
+      <div class="commute-row">
+        <input id="commuteFrom" type="text" placeholder="출발지 (예: 성북구)" onkeydown="if(event.key==='Enter')analyzeCommute()" />
+        <input id="commuteTo" type="text" placeholder="목적지 (예: 강남역)" onkeydown="if(event.key==='Enter')analyzeCommute()" />
+        <button id="commuteBtn" onclick="analyzeCommute()">분석</button>
+      </div>
+      <div class="prescribe-meta" id="commuteMeta"></div>
     </div>
 
     <div class="review-link"><button onclick="goTo('s6')">지난 점검 결과 미리 보기</button></div>
@@ -1351,6 +1362,7 @@ const state = {
   sportsDone: false,   // 선택을 끝냈는지 (끝냈으면 요약 화면을 먼저 보여준다)
   history: [],         // F3/F4: 재측정으로 닫힌 지난 기간들 [{start, end, routineLog:[…], result:{…}, first:{…}}]
   measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 결과가 나올 때마다 append (같은 날 여러 번 재면 모두 남긴다)
+  commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
 };
 
 const PURPOSE_LABEL = {
@@ -1804,6 +1816,7 @@ function snapshot(){
     programStart: state.programStart, routineLog: state.routineLog,
     sports: state.sports, sportsDone: state.sportsDone,
     history: state.history, measureLog: state.measureLog,
+    commute: state.commute,
     updated: new Date().toISOString().slice(0, 10),
   };
 }
@@ -1846,6 +1859,8 @@ function applyProfile(saved){
                             체력나이: f.체력나이, 신뢰구간: f.신뢰구간 ?? null,
                             항목별: { ...(f.항목별 || {}) }, method: saved?.method || null });
   }
+  state.commute = (saved?.commute && saved.commute.from && saved.commute.to)
+    ? { from: String(saved.commute.from), to: String(saved.commute.to) } : null;
   selectMethod(saved?.method === 'inbody' ? 'inbody' : 'home');   // 저장된 'self'(또는 없음)는 home 으로 이관
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';
@@ -1853,6 +1868,9 @@ function applyProfile(saved){
   $('strengthInput').value = saved?.strength ?? '';
   $('heightInput').value = saved?.height ?? '';
   $('weightInput').value = saved?.weight ?? '';
+  $('commuteFrom').value = state.commute?.from ?? '';
+  $('commuteTo').value   = state.commute?.to ?? '';
+  $('commuteMeta').textContent = '';
   onAgeChange();
   selectSex(state.sex);
   $('greetName').textContent = `${state.user} 님`;
@@ -1959,6 +1977,7 @@ async function doDelete(){
   state.purpose = null;
   state.history = [];
   state.measureLog = [];
+  state.commute = null;
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -1981,6 +2000,7 @@ async function logout(){
   state.measureLog = [];
   state.sports = [];
   state.sportsDone = false;
+  state.commute = null;
   $('authEmail').value = '';
   $('authPw').value = '';
   renderProfileList();
@@ -2011,6 +2031,7 @@ async function resetSettings(){
   state.routineLog = [];
   state.history = [];
   state.measureLog = [];
+  state.commute = null;
   state.flexibility = null;
   $('flexInput').value = '';
   $('authEmail').value = '';
@@ -2649,6 +2670,10 @@ async function loadHome(){
                                 days_since_start: programDay() });
     $('dailyText').innerHTML = d.계단.문구 + (d.도보 ? '<br/>' + d.도보.문구 : '');
   } catch (e) { /* 서버 없으면 기본 문구 유지 */ }
+  // F2: 출발지·목적지를 저장해 뒀으면 가는 길 기준 처방으로 dailyText 를 덮어쓴다.
+  // 위 /daily 문구 대입(await)이 끝난 뒤에 불리므로 덮어쓰기 순서는 보장된다.
+  // await 하지 않는다 — 외부 API 2번(최대 수 초)을 루틴 로딩이 기다리지 않게. 실패는 renderCommute 가 스스로 처리한다.
+  renderCommute();
 
   await loadRoutine();
   const m = state.routineMeta;
@@ -2660,6 +2685,48 @@ async function loadHome(){
   } else {
     $('heroTitle').textContent = '오늘의 루틴';
     $('heroMeta').textContent = state.routine.length ? `${state.routine.length}가지 동작` : '루틴을 불러오지 못했어요';
+  }
+}
+
+/* ---- 화면 3 : 출발지→목적지 경로 분석 (F2) ---- */
+/* '분석' 버튼. 입력을 state.commute 에 저장하고(다음 방문 때 자동 재분석) 바로 분석한다.
+   #toast 는 s4 안에만 있어 홈에서는 보이지 않으므로, 입력 누락 안내는 commuteMeta 줄에 쓴다. */
+async function analyzeCommute(){
+  const from = $('commuteFrom').value.trim();
+  const to   = $('commuteTo').value.trim();
+  if (!from || !to) { $('commuteMeta').textContent = '출발지와 목적지를 모두 입력해 주세요'; return; }
+  state.commute = { from, to };
+  saveProfile();
+  await renderCommute();
+}
+
+/* state.commute 가 있으면 /route/advice 를 불러 dailyText 를 가는 길 기준 문구로 바꾼다.
+   실패하면 dailyText(기존 /daily 문구)는 그대로 두고 commuteMeta 에만 사유를 적는다. */
+async function renderCommute(){
+  const c = state.commute;
+  const meta = $('commuteMeta'), btn = $('commuteBtn');
+  if (!c) { meta.textContent = ''; return false; }
+  $('commuteFrom').value = c.from;
+  $('commuteTo').value   = c.to;
+  meta.textContent = '가는 길을 분석하는 중…';
+  btn.disabled = true;
+  try {
+    const stars = state.result
+      ? starCount(state.result.항목별.근력 ?? state.result.체력나이) : 3;
+    const r = await API.routeAdvice({ from: c.from, to: c.to, strength_stars: stars });
+    $('dailyText').textContent = r.추천.문구;
+    const dist = r.거리m >= 1000 ? `${(r.거리m / 1000).toFixed(1)}km` : `${r.거리m}m`;
+    const parts = [`${c.from} → ${c.to}`, `약 ${dist}`, `도보 ${r.시간분}분`];
+    if (r.오르막m != null) parts.push(`오르막 ${Math.round(r.오르막m)}m`);
+    if (r.계단있음) parts.push('계단·오르막 구간 있음');
+    if (r.출처 !== 'kakao') parts.push('직선거리 기준 추정');
+    meta.textContent = parts.join(' · ');
+    return true;
+  } catch (e) {
+    meta.textContent = '경로를 분석하지 못했어요: ' + (e.message || '서버 오류');
+    return false;
+  } finally {
+    btn.disabled = false;
   }
 }
 

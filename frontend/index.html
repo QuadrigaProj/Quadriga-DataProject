@@ -5015,8 +5015,10 @@ async function deleteSelectedManual(){
 달력과 변화추이에서도 사라지고, 되돌릴 수 없어요.`)) return;
   state.workoutLog = (state.workoutLog || []).filter((_, i) => !manualPicked.has(i));
   manualPicked.clear();
-  await refreshActivityAge();
+  await refreshActivityAge();            // 지금 기준 체력나이 (I3)
+  await refreshLogAges({ 전부: true });   // 날짜별 체력나이 (K1) — 뒤 날들의 28일 창이 달라진다
   await saveProfile();
+  paintGauges();
   renderRecords();
   const note = $('recManualDeleteNote');
   if (note) note.textContent = `직접 적은 운동 ${n}개를 지웠어요.`;

@@ -929,3 +929,38 @@ def test_서버가_실패해도_있던_값을_지우지_않는다():
     assert "catch" in 본문
     assert "있던 값을 그대로 둔다" in 본문
 
+
+# ---------- 기록 삭제 뒷정리 ----------
+
+def test_삭제_버튼이_부르는_함수가_실제로_있다():
+    """#85 는 버튼만 만들고 함수를 안 만들어서, 누르면 ReferenceError 가 났다.
+
+    onclick 에 적힌 이름은 반드시 정의돼 있어야 한다. 같은 실수를 다음에도 잡는다.
+    """
+    import re as _re
+    html = _index()
+    이름들 = set(_re.findall(r'onclick="([A-Za-z_$][\w$]*)\(', html))
+    assert 이름들, "onclick 을 하나도 못 찾았다 — 정규식을 확인할 것"
+    for f in sorted(이름들):
+        assert f"function {f}(" in html, f"onclick 에 있는 {f} 가 정의돼 있지 않다"
+
+
+def test_삭제_함수가_중복_정의되지_않는다():
+    """#85 에서 deleteSelectedMeasures 가 두 번 선언돼 앞엣것이 죽은 코드가 됐다."""
+    html = _index()
+    for f in ("deleteSelectedMeasures", "deleteSelectedManual",
+              "pickManual", "paintManualDeleteBtn", "renderManualRecords"):
+        assert html.count(f"function {f}(") == 1, f
+
+
+def test_직접기록을_지우면_날짜별_체력나이를_다시_센다():
+    """하루가 빠지면 그 뒤 날들의 28일 창이 달라진다 (K1).
+
+    달력의 deleteCalDayLog 에는 있는 처리가 기록 화면 쪽에는 빠져 있었다.
+    """
+    html = _index()
+    for 함수 in ("async function deleteSelectedManual()", "async function deleteCalDayLog()"):
+        본문 = html.split(함수)[1].split("\n}")[0]
+        assert "refreshLogAges({ 전부: true })" in 본문, 함수
+        assert "refreshActivityAge()" in 본문, 함수
+

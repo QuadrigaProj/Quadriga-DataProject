@@ -5,7 +5,8 @@
 
 지켜야 할 것
   - 키가 없으면 아무것도 부르지 않는다
-  - 승인 금액은 카카오가 알려준 값을 쓴다 (화면이 보낸 숫자를 안 믿는다)
+  - 청구 금액도 올려 줄 이용권도 **서버 표(PAY_PACKS)** 로만 정한다
+  - 카카오가 승인한 금액이 청구액과 다르면 반영하지 않는다
   - 한 주문은 한 번만 반영된다 (새로고침으로 두 번 충전되지 않는다)
   - 카드번호 같은 건 애초에 주고받지 않는다
 """
@@ -54,7 +55,19 @@ def 가짜(응답, 기록=None, status=200):
 def test_키가_없으면_쓸수없다고_알린다():
     d = client.get("/pay/methods").json()
     assert d["kakao"]["쓸수있음"] is False
-    assert d["packs"] == [1000, 3000, 5000]
+
+
+def test_선결제_할인표는_서버가_내려준다():
+    """할인율을 화면에서 계산하면 표시와 청구가 어긋날 수 있다."""
+    packs = client.get("/pay/methods").json()["packs"]
+    표 = {p["이용권"]: (p["결제"], p["할인"]) for p in packs}
+    assert 표 == {
+        100: (100, 0),          # 1회만 결제 — 할인 없음
+        1000: (700, 30),
+        2000: (1300, 35),
+        3000: (1800, 40),
+        5000: (2500, 50),
+    }
 
 
 def test_키가_없으면_준비도_안_한다():
@@ -74,6 +87,8 @@ async def test_모듈이_키_없이_호출되면_None():
 def test_고를_수_없는_금액은_거절한다(키):
     assert client.post("/pay/kakao/ready", json={"amount": 7}).status_code == 400
     assert client.post("/pay/kakao/ready", json={"amount": -3000}).status_code == 400
+    # 할인 후 금액을 이용권 자리에 넣어도 안 통한다 (700원짜리 팩은 없다)
+    assert client.post("/pay/kakao/ready", json={"amount": 700}).status_code == 400
 
 
 def test_준비하면_결제창_주소를_준다(키, monkeypatch):
@@ -90,7 +105,9 @@ def test_준비하면_결제창_주소를_준다(키, monkeypatch):
     보낸것 = 기록[0]
     assert 보낸것["url"].endswith("/online/v1/payment/ready")
     assert 보낸것["headers"]["authorization"] == "SECRET_KEY DEV_TEST_KEY"
-    assert 보낸것["body"]["total_amount"] == 3000
+    # 3,000원 이용권은 40% 할인이라 1,800원을 청구한다
+    assert 보낸것["body"]["total_amount"] == 1800
+    assert d["결제"] == 1800 and d["이용권"] == 3000
     assert 보낸것["body"]["cid"] == "TC0ONETIME"
     # 카드번호 같은 건 애초에 보내지 않는다
     assert not (set(보낸것["body"]) & {"card", "card_number", "cvc", "account"})
@@ -121,30 +138,45 @@ def 준비(monkeypatch):
 def test_승인하면_충전을_반영할_수_있다(키, monkeypatch):
     order = 준비(monkeypatch)
     monkeypatch.setattr(kp.httpx, "AsyncClient",
-                        가짜({"aid": "A1", "amount": {"total": 3000}}))
+                        가짜({"aid": "A1", "amount": {"total": 1800}}))
     r = client.get(f"/pay/kakao/approve?order={order}&pg_token=PG",
                    follow_redirects=False)
     assert r.status_code in (302, 307)
     assert f"pay=ok&order={order}" in r.headers["location"]
 
+    # 1,800원 내고 3,000원짜리 이용권을 받는다
     d = client.get(f"/pay/result/{order}").json()
-    assert d == {"paid": True, "amount": 3000}
+    assert d == {"paid": True, "amount": 3000, "결제": 1800}
 
 
 def test_같은_주문은_두_번_반영되지_않는다(키, monkeypatch):
     order = 준비(monkeypatch)
-    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜({"amount": {"total": 3000}}))
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜({"amount": {"total": 1800}}))
     client.get(f"/pay/kakao/approve?order={order}&pg_token=PG", follow_redirects=False)
     assert client.get(f"/pay/result/{order}").status_code == 200
     assert client.get(f"/pay/result/{order}").status_code == 404      # 새로고침해도 한 번뿐
 
 
-def test_승인_금액은_카카오가_말한_값을_쓴다(키, monkeypatch):
-    """화면이 3000원을 준비했어도 카카오가 1000원이라 하면 1000원이다."""
+@pytest.mark.parametrize("승인액", [100, 1000, 1799, 1801, 3000, 999999])
+def test_청구액과_다르게_승인되면_반영하지_않는다(키, monkeypatch, 승인액):
+    """1,800원을 청구했는데 다른 금액이 승인됐다면 뭔가 잘못된 것이다.
+
+    특히 3,000원(이용권 액면)이 승인돼도 통과시키면 안 된다.
+    """
     order = 준비(monkeypatch)
-    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜({"amount": {"total": 1000}}))
-    client.get(f"/pay/kakao/approve?order={order}&pg_token=PG", follow_redirects=False)
-    assert client.get(f"/pay/result/{order}").json()["amount"] == 1000
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜({"amount": {"total": 승인액}}))
+    r = client.get(f"/pay/kakao/approve?order={order}&pg_token=PG", follow_redirects=False)
+    assert "pay=fail" in r.headers["location"]
+    assert client.get(f"/pay/result/{order}").status_code == 404
+
+
+def test_1회만_결제는_할인이_없다(키, monkeypatch):
+    기록 = []
+    monkeypatch.setattr(kp.httpx, "AsyncClient",
+                        가짜({"tid": "T1", "next_redirect_mobile_url": "https://kakao/mo"}, 기록))
+    d = client.post("/pay/kakao/ready", json={"amount": 100}).json()
+    assert d["결제"] == 100 and d["이용권"] == 100
+    assert 기록[0]["body"]["total_amount"] == 100
 
 
 @pytest.mark.parametrize("응답", [

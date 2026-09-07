@@ -486,9 +486,9 @@ def test_계정_패널에_이용권_줄이_있다():
     assert 'id="acctPay"' in html
     assert "function renderAcctCredit()" in html
     본문 = html.split("function renderAcctCredit()")[1].split("\n}")[0]
-    assert "AI 추천 이용권" in 본문
+    assert "AI 추천 선결제" in 본문
     # 결제 여부와 남은 금액을 둘 다 적어야 한다
-    assert "충전됨" in 본문 and "충전 안 함" in 본문
+    assert "선결제됨" in 본문 and "선결제 안 함" in 본문
     assert "won(원)" in 본문
 
 
@@ -508,7 +508,7 @@ def test_이용권_줄을_누르면_충전창이_열린다():
 def test_충전하면_패널_줄도_갱신한다():
     # J2 에서 confirmPay 가 addCredit 으로 바뀌었다 — 충전을 반영하는 자리는 여기 하나다
     html = _index()
-    본문 = html.split("async function addCredit(금액)")[1].split("\n}")[0]
+    본문 = html.split("async function addCredit(금액, 결제)")[1].split("\n}")[0]
     assert "renderAcctCredit()" in 본문
 
 
@@ -639,7 +639,7 @@ def test_카카오페이만_진짜_결제창으로_보낸다():
     assert "if (payWay === 'kakao')" in 본문
     assert "API.payReady({ amount: payPick })" in 본문
     assert "location.href = r.redirect" in 본문
-    assert "await addCredit(payPick);" in 본문        # 나머지는 모의 승인
+    assert "await addCredit(팩.이용권, 팩.결제);" in 본문   # 나머지는 모의 승인
 
 
 def test_충전_금액은_서버가_확인해_준_값을_쓴다():
@@ -647,7 +647,7 @@ def test_충전_금액은_서버가_확인해_준_값을_쓴다():
     html = _index()
     본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
     assert "API.payResult(order)" in 본문
-    assert "addCredit(r.amount)" in 본문
+    assert "addCredit(r.amount, r.결제)" in 본문
     assert "addCredit(payPick)" not in 본문
 
 
@@ -656,8 +656,8 @@ def test_결제만_되고_프로필이_없으면_들고_있는다():
     html = _index()
     본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
     assert "if (state.user) {" in 본문
-    assert "stashCredit(r.amount)" in 본문
-    assert "function stashCredit(금액)" in html
+    assert "stashCredit(r.amount, r.결제)" in 본문
+    assert "function stashCredit(금액, 결제)" in html
     assert "async function applyPendingCredit()" in html
     # 프로필이 정해지는 모든 길에서 확인해야 한다
     적용 = html.split("function applyProfile(saved)")[1].split("\n}")[0]
@@ -749,4 +749,71 @@ def test_몸_상태만_적은_날도_목록에_나온다():
     assert "Object.keys(w.요약 || {}).length" in 본문
     이름 = html.split("function manualLogName(w)")[1].split("\n}")[0]
     assert "몸 상태 기록" in 이름
+
+
+# ---------- K3. 선결제 할인 · 결제 내역 접기 ----------
+
+def test_선결제_할인표가_서버_표와_같다():
+    """화면 사본이 서버와 어긋나면 표시 금액과 청구 금액이 달라진다."""
+    html = _index()
+    표 = html.split("const PAY_PACKS = [")[1].split("];")[0]
+    for 이용권, 결제, 할인 in [(100, 100, 0), (1000, 700, 30), (2000, 1300, 35),
+                            (3000, 1800, 40), (5000, 2500, 50)]:
+        assert f"이용권: {이용권}," in 표, 이용권
+        assert f"결제: {결제}," in 표, 결제
+        assert f"할인: {할인}" in 표, 할인
+    # 서버가 준 값을 먼저 쓴다
+    본문 = html.split("function payPacks()")[1].split("\n}")[0]
+    assert "payInfo?.packs" in 본문
+
+
+def test_할인율과_원래_금액을_보여준다():
+    html = _index()
+    본문 = html.split("function payAmountHtml()")[1].split("\n}")[0]
+    assert "% 할인" in 본문
+    assert 'class="was"' in 본문                 # 취소선 원가
+    assert "won(p.결제)" in 본문                  # 실제로 내는 돈이 크게
+    assert "won(p.이용권)" in 본문                # 앱에서 쓰는 금액
+    css = html.split(".pay-pick .was{")[1].split("}")[0]
+    assert "line-through" in css
+
+
+def test_1회만_결제는_따로_적는다():
+    html = _index()
+    본문 = html.split("function payAmountHtml()")[1].split("\n}")[0]
+    assert "1회만 결제" in 본문
+    assert "p.이용권 === AI_PRICE" in 본문
+
+
+def test_결제_버튼에_실제_낼_금액이_적힌다():
+    html = _index()
+    본문 = html.split("function payWayHtml()")[1].split("function pickPay(v)")[0]
+    assert "won(팩.결제)" in 본문
+    assert "won(payPick)" not in 본문           # 이용권 액면을 청구액처럼 쓰면 안 된다
+
+
+def test_프로필_문구가_선결제로_바뀌었다():
+    html = _index()
+    assert "AI 추천 선결제" in html
+    assert "선결제하기" in html
+    assert "AI 추천 이용권" not in html
+
+
+def test_결제_내역은_접었다_편다():
+    html = _index()
+    assert 'id="creditLogBtn"' in html
+    assert "결제 내역 조회" in html
+    assert 'id="creditLog" hidden' in html      # 처음엔 접혀 있다
+    본문 = html.split("function toggleCreditLog()")[1].split("\n}")[0]
+    assert "box.hidden = !펼침" in 본문
+    assert "aria-expanded" in 본문
+
+
+def test_내역에_실제로_낸_돈도_남긴다():
+    """이용권 3,000원을 1,800원에 샀다는 걸 나중에도 알아야 한다."""
+    html = _index()
+    본문 = html.split("async function addCredit(금액, 결제)")[1].split("\n}")[0]
+    assert "결제: 결제 ?? 금액" in 본문
+    내역 = html.split("function renderCredit()")[1].split("\n}")[0]
+    assert "e.결제 != null && e.결제 < e.금액" in 내역
 

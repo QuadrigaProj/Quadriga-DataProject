@@ -567,6 +567,21 @@
     background:var(--paper); font:inherit; font-size:15px; color:var(--ink); cursor:pointer; }
   .pay-pick button.on{ border-color:var(--pine); background:var(--pine-tint); }
   .pay-pick b{ font-size:16px; }
+  /* 선결제 할인 (K3) */
+  .pay-pick .left{ display:flex; flex-direction:column; gap:2px; align-items:flex-start; }
+  .pay-pick .sub{ font-size:11.5px; color:var(--muted); }
+  .pay-pick .right{ display:flex; flex-direction:column; gap:1px; align-items:flex-end; }
+  .pay-pick .was{ font-size:11.5px; color:var(--muted); text-decoration:line-through; }
+  .pay-off{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px;
+    background:var(--pine); color:#fff; font-size:11px; font-weight:700;
+    vertical-align:middle; text-decoration:none; }
+  /* 결제 내역 접었다 펴기 (K3) */
+  .pay-logbtn{ width:100%; margin-top:14px; padding:11px 12px;
+    background:var(--paper); border:1px solid var(--line); border-radius:12px;
+    font:inherit; font-size:13px; color:var(--pine-deep); cursor:pointer;
+    display:flex; justify-content:space-between; align-items:center; }
+  .pay-logbtn:hover{ border-color:var(--pine); }
+  .pay-logbtn .arrow{ font-size:11px; color:var(--muted); }
   .pay-warn{ font-size:12.5px; color:var(--clay); background:var(--amber-tint);
              border-radius:12px; padding:11px 13px; margin-top:12px; line-height:1.6; }
 
@@ -1453,14 +1468,17 @@
       </div>
 
       <div class="program-card" id="creditCard">
-        <div class="prescribe-label">AI 추천 이용권</div>
+        <div class="prescribe-label">AI 추천 선결제</div>
         <div class="pay-row">
           <div class="pay-amt" id="creditAmt">0원</div>
           <div class="pay-times" id="creditTimes">AI 추천 0회</div>
         </div>
         <div class="program-note" id="creditState">아직 충전하지 않았어요. 무료 추천은 그대로 쓸 수 있어요.</div>
-        <button type="button" class="pay-btn" onclick="openPaySheet()">이용권 충전하기</button>
-        <div class="pay-log" id="creditLog"></div>
+        <button type="button" class="pay-btn" onclick="openPaySheet()">선결제하기</button>
+        <button type="button" class="pay-logbtn" id="creditLogBtn" aria-expanded="false"
+                onclick="toggleCreditLog()">
+          <span>결제 내역 조회</span><span class="arrow" id="creditLogArrow">▾</span></button>
+        <div class="pay-log" id="creditLog" hidden></div>
       </div>
 
       <div class="program-card">
@@ -1761,7 +1779,7 @@ const state = {
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
-  credit: 0,           // I1: AI 추천 이용권 잔액(원). 미리 충전해 둘 수 있다
+  credit: 0,           // I1·K3: AI 추천 선결제 잔액(원). 미리 결제해 둘 수 있다
   creditLog: [],       // I1: [{date, 종류:'충전'|'사용', 금액, 잔액}]
   gripKg: null,        // G6 선택 입력: 악력(kg) — 몸무게로 나눠 상대악력으로 본다
   endurance: null,     // G6 선택 입력: 심폐지구력(성인 왕복오래달리기 / 어르신 2분제자리걷기)
@@ -1968,8 +1986,8 @@ function renderAcctCredit(){
   const 원 = state.credit || 0;
   const 횟수 = creditTimes();
   box.innerHTML = `
-    <span class="k"><span>AI 추천 이용권</span><b>${won(원)}</b></span>
-    <span class="s">${원 ? `충전됨 · ${횟수}회 남음` : '충전 안 함 · 무료 추천은 그대로'}</span>`;
+    <span class="k"><span>AI 추천 선결제</span><b>${won(원)}</b></span>
+    <span class="s">${원 ? `선결제됨 · ${횟수}회 남음` : '선결제 안 함 · 무료 추천은 그대로'}</span>`;
 }
 
 /* 계정 패널에서 프로필 화면으로 (J3 — 헤더 아바타·패널 아바타 둘 다 이 길로 온다) */
@@ -4668,7 +4686,7 @@ async function useRecommend(){
 }
 
 /* ---------------------------------------------------------------------------
-   AI 추천 이용권 (I1) — 추천을 두 방식으로 나눈다.
+   AI 추천 선결제 (I1·K3) — 추천을 두 방식으로 나눈다.
      무료  가지고 있는 데이터로 점수를 매겨 고른다 (지금까지와 같다)
      유료  거기에 AI 를 한 번 불러 순서와 설명을 다듬는다. 1회 100원
    미리 충전해 두고 쓰며, 잔액과 내역은 프로필에서 본다.
@@ -4678,9 +4696,21 @@ async function useRecommend(){
    흐름만 보여주고 카드 정보를 묻지 않는다.
    --------------------------------------------------------------------------- */
 const AI_PRICE = 100;                       // AI 추천 1회 값(원)
-const PAY_PACKS = [1000, 3000, 5000];       // 충전 단위(원)
+/* 선결제 할인 (K3) — 이용권은 앱 안에서 쓰는 금액, 결제는 실제로 내는 돈.
+   **서버(/pay/methods)가 준 값이 기준이다.** 여기 있는 건 서버를 못 부를 때 쓰는 사본이라
+   백엔드 PAY_PACKS 와 같아야 한다. 실제 청구 금액은 서버가 다시 계산한다. */
+const PAY_PACKS = [
+  { 이용권: 100,  결제: 100,  할인: 0  },     // 1회만 결제 — 할인 없음
+  { 이용권: 1000, 결제: 700,  할인: 30 },
+  { 이용권: 2000, 결제: 1300, 할인: 35 },
+  { 이용권: 3000, 결제: 1800, 할인: 40 },
+  { 이용권: 5000, 결제: 2500, 할인: 50 },
+];
+
+function payPacks(){ return payInfo?.packs?.length ? payInfo.packs : PAY_PACKS; }
+function packFor(이용권){ return payPacks().find(p => p.이용권 === 이용권) || payPacks()[0]; }
 let recoMode = 'free';
-let payPick = PAY_PACKS[0];
+let payPick = 1000;        // 고른 이용권 금액(원)
 
 const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 
@@ -4694,16 +4724,33 @@ function renderCredit(){
   $('creditAmt').textContent = won(state.credit || 0);
   $('creditTimes').textContent = `AI 추천 ${횟수}회`;
   $('creditState').textContent = 횟수
-    ? `충전돼 있어요. AI 추천을 ${횟수}번 더 쓸 수 있습니다.`
-    : '아직 충전하지 않았어요. 무료 추천은 그대로 쓸 수 있어요.';
-  const log = [...(state.creditLog || [])].reverse().slice(0, 5);
+    ? `선결제돼 있어요. AI 추천을 ${횟수}번 더 쓸 수 있습니다.`
+    : '아직 선결제하지 않았어요. 무료 추천은 그대로 쓸 수 있어요.';
+
+  // 내역은 접어 둔다. 누를 때만 편다 (K3)
+  const log = [...(state.creditLog || [])].reverse().slice(0, 20);
   $('creditLog').innerHTML = log.length
     ? log.map(e => `<div class="rec-item">
         <div class="rec-date">${fmtDate(e.date)}</div>
-        <div class="rec-name">${e.종류} ${won(e.금액)}</div>
+        <div class="rec-name">${e.종류} ${won(e.금액)}${
+          e.종류 === '충전' && e.결제 != null && e.결제 < e.금액
+            ? `<span class="pay-off">${won(e.결제)} 결제</span>` : ''}</div>
         <div class="rec-way">남은 ${won(e.잔액)}</div>
       </div>`).join('')
-    : '';
+    : '<div class="rec-empty">아직 결제한 내역이 없어요.</div>';
+  const btn = $('creditLogBtn');
+  if (btn) btn.querySelector('span').textContent = `결제 내역 조회${log.length ? ` (${log.length})` : ''}`;
+}
+
+/* 결제 내역 접었다 펴기 (K3) */
+function toggleCreditLog(){
+  const box = $('creditLog');
+  const btn = $('creditLogBtn');
+  if (!box || !btn) return;
+  const 펼침 = box.hidden;
+  box.hidden = !펼침;
+  btn.setAttribute('aria-expanded', String(펼침));
+  $('creditLogArrow').textContent = 펼침 ? '▴' : '▾';
 }
 
 /* ---------------------------------------------------------------------------
@@ -4732,7 +4779,7 @@ const PAY_WAYS = {
 async function openPaySheet(){
   payPick = PAY_PACKS[0];
   payWay = null; payIssuer = null; payAgree = false; paying = false;
-  openSheet('이용권 충전', '<div class="pay-note">결제 수단을 불러오는 중이에요…</div>');
+  openSheet('AI 추천 선결제', '<div class="pay-note">결제 수단을 불러오는 중이에요…</div>');
   try { payInfo = await API.payMethods(); } catch (e) { payInfo = null; }
   paintPaySheet();
 }
@@ -4748,10 +4795,21 @@ function paySheetHtml(){
 
 /* 1단계 — 얼마를 충전할지, 어떻게 낼지 */
 function payAmountHtml(){
-  const 목록 = PAY_PACKS.map(v => `
-    <button type="button" class="${v === payPick ? 'on' : ''}" onclick="pickPay(${v})">
-      <span>AI 추천 ${v / AI_PRICE}회</span><b>${won(v)}</b>
-    </button>`).join('');
+  const 목록 = payPacks().map(p => {
+    const 한번 = p.이용권 === AI_PRICE;
+    return `
+    <button type="button" class="${p.이용권 === payPick ? 'on' : ''}" onclick="pickPay(${p.이용권})">
+      <span class="left">
+        <span>${한번 ? '1회만 결제' : `AI 추천 ${p.이용권 / AI_PRICE}회`}${
+          p.할인 ? `<span class="pay-off">${p.할인}% 할인</span>` : ''}</span>
+        <span class="sub">${한번 ? '선결제 없이 이번 한 번만' : `앱에서 ${won(p.이용권)}으로 써요`}</span>
+      </span>
+      <span class="right">
+        ${p.할인 ? `<span class="was">${won(p.이용권)}</span>` : ''}
+        <b>${won(p.결제)}</b>
+      </span>
+    </button>`;
+  }).join('');
   const 카카오됨 = !!payInfo?.kakao?.쓸수있음;
   const 수단 = Object.entries(PAY_WAYS).map(([k, w]) => {
     const 잠김 = k === 'kakao' && !카카오됨;
@@ -4767,16 +4825,18 @@ function payAmountHtml(){
       </button>`;
   }).join('');
   return `
-    <div class="pay-step">얼마나 충전할까요</div>
+    <div class="pay-step">얼마나 선결제할까요</div>
     <div class="pay-pick">${목록}</div>
     <div class="pay-step">어떻게 결제할까요</div>
     <div class="pay-ways">${수단}</div>
-    <div class="pay-note">충전한 이용권은 AI 추천에만 쓰입니다. 무료 추천은 언제나 그대로예요.</div>`;
+    <div class="pay-note">선결제한 이용권은 AI 추천에만 쓰입니다(1회 ${won(AI_PRICE)}).
+      미리 많이 낼수록 더 싸게 드려요. 무료 추천은 언제나 그대로예요.</div>`;
 }
 
 /* 2단계 — 고른 수단의 자세한 화면 */
 function payWayHtml(){
   const w = PAY_WAYS[payWay];
+  const 팩 = packFor(payPick);
   const 목록 = payWay === 'card' ? (payInfo?.카드 || [])
              : payWay === 'bank' ? (payInfo?.은행 || []) : [];
   const 고르기 = 목록.length ? `
@@ -4794,12 +4854,17 @@ function payWayHtml(){
         <b>승인은 모의로 처리</b>되고 실제로 돈이 빠지지 않아요.</div>`;
 
   const 준비됨 = payAgree && (payWay === 'kakao' || !!payIssuer);
-  const 버튼글 = payWay === 'kakao' ? '카카오페이로 결제'
-    : payWay === 'card' ? `${payIssuer || '카드'} 등록하고 결제`
-    : `${payIssuer || '계좌'} 등록하고 결제`;
+  const 버튼글 = payWay === 'kakao' ? `카카오페이로 ${won(팩.결제)} 결제`
+    : payWay === 'card' ? `${payIssuer || '카드'} 등록하고 ${won(팩.결제)} 결제`
+    : `${payIssuer || '계좌'} 등록하고 ${won(팩.결제)} 결제`;
 
   return `
-    <div class="pay-sum"><span>${w.이름} · AI 추천 ${payPick / AI_PRICE}회</span><b>${won(payPick)}</b></div>
+    <div class="pay-sum">
+      <span>${w.이름} · ${팩.이용권 === AI_PRICE ? '1회만 결제'
+        : `AI 추천 ${팩.이용권 / AI_PRICE}회`}${
+        팩.할인 ? ` · <b style="font-size:13px;color:var(--pine-deep)">${팩.할인}% 할인</b>` : ''}</span>
+      <b>${won(팩.결제)}</b>
+    </div>
     ${고르기}
     ${안내}
     <label class="pay-agree">
@@ -4832,15 +4897,18 @@ async function startPay(){
       return;
     }
   }
-  await addCredit(payPick);                // 모의 승인 (PG 계약 전)
+  const 팩 = packFor(payPick);
+  await addCredit(팩.이용권, 팩.결제);      // 모의 승인 (PG 계약 전)
   paying = false;
 }
 
-/* 충전을 실제로 반영한다. 카카오페이는 서버가 확인해 준 금액으로만 부른다. */
-async function addCredit(금액){
+/* 충전을 실제로 반영한다. 카카오페이는 서버가 확인해 준 금액으로만 부른다.
+   금액 = 앱에서 쓸 이용권, 결제 = 실제로 낸 돈 (선결제면 더 적다). */
+async function addCredit(금액, 결제){
   state.credit = (state.credit || 0) + 금액;
   if (!Array.isArray(state.creditLog)) state.creditLog = [];
-  state.creditLog.push({ date: todayIso(), 종류: '충전', 금액, 잔액: state.credit });
+  state.creditLog.push({ date: todayIso(), 종류: '충전', 금액,
+                         결제: 결제 ?? 금액, 잔액: state.credit });
   await saveProfile();
   closeSheet();
   renderCredit();
@@ -4866,11 +4934,11 @@ async function handlePayReturn(){
     // 결제창을 다녀오면 페이지가 새로 뜬다. 손님은 이때 아직 프로필을 안 골랐을 수
     // 있는데, 그대로 올리면 저장될 곳이 없어 돈만 나가고 사라진다.
     if (state.user) {
-      await addCredit(r.amount);
-      alert(`${won(r.amount)} 충전됐어요.`);
+      await addCredit(r.amount, r.결제);
+      alert(`${won(r.결제 ?? r.amount)} 결제하고 이용권 ${won(r.amount)} 받았어요.`);
     } else {
-      stashCredit(r.amount);
-      alert(`${won(r.amount)} 결제됐어요. 프로필을 고르면 바로 반영할게요.`);
+      stashCredit(r.amount, r.결제);
+      alert(`${won(r.결제 ?? r.amount)} 결제됐어요. 프로필을 고르면 바로 반영할게요.`);
     }
   } catch (e) {
     alert('결제 확인에 실패했어요. 충전되지 않았다면 다시 시도해 주세요.');
@@ -4881,17 +4949,22 @@ async function handlePayReturn(){
    결제는 이미 끝났으므로 잃어버리면 안 된다. */
 const PENDING_CREDIT = 'quadriga.pendingCredit';
 
-function stashCredit(금액){
-  try { localStorage.setItem(PENDING_CREDIT, String(금액)); } catch (e) {}
+function stashCredit(금액, 결제){
+  try {
+    localStorage.setItem(PENDING_CREDIT, JSON.stringify({ 금액, 결제: 결제 ?? 금액 }));
+  } catch (e) {}
 }
 
 async function applyPendingCredit(){
-  let 금액 = 0;
-  try { 금액 = Number(localStorage.getItem(PENDING_CREDIT)) || 0; } catch (e) {}
+  let 담김 = null;
+  try { 담김 = JSON.parse(localStorage.getItem(PENDING_CREDIT) || 'null'); } catch (e) {}
+  // 예전 저장본은 숫자 하나만 들어 있다
+  if (typeof 담김 === 'number') 담김 = { 금액: 담김, 결제: 담김 };
+  const 금액 = Number(담김?.금액) || 0;
   if (!금액 || !state.user) return;
   try { localStorage.removeItem(PENDING_CREDIT); } catch (e) {}
-  await addCredit(금액);
-  alert(`${won(금액)} 충전됐어요.`);
+  await addCredit(금액, Number(담김?.결제) || 금액);
+  alert(`이용권 ${won(금액)} 받았어요.`);
 }
 
 /* 추천 방식 고르기 */
@@ -4911,7 +4984,7 @@ function paintRecoMode(){
   const 횟수 = creditTimes();
   ai.querySelector('.mode-sub').textContent = !recoAiReady
     ? '관리자가 키를 등록하면 켜져요'
-    : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음` : `1회 ${AI_PRICE}원 · 충전 필요`);
+    : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음` : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 싸요`);
 }
 
 /* ---- 시작 ---- */

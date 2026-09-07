@@ -3,8 +3,11 @@
 index.html 을 "/" 로 받아 문자열만 확인한다. 화면 골격·탭·기간 선택지가 있고,
 기록 화면의 state.first 경로 버그 수정이 되돌아가지 않았는지 잡는 것이 목적이다.
 """
+import inspect
+
 from fastapi.testclient import TestClient
 
+from backend import auth
 from backend.main import app
 
 c = TestClient(app)
@@ -54,3 +57,17 @@ def test_달력은_라이브러리를_쓰지_않는다():
     html = _index()
     for lib in ("chart.js", "fullcalendar", "d3.min", "apexcharts"):
         assert lib not in html.lower()
+
+
+def test_서버_스냅샷_창이_가득_찼으면_첫_행을_측정으로_보지_않는다():
+    """/me/measurements 는 최근 20행뿐이라 창이 가득 찼으면 첫 행의 직전 값을 알 수 없다.
+
+    마지막 측정 뒤 저장(루틴 완료 등)이 20회를 넘은 계정에서 값이 그대로인 첫 저장일이
+    '측정한 날' 로 찍히지 않도록, 프론트의 창 크기 상수가 백엔드 기본 limit 와 같고
+    첫 행을 비교 기준으로만 쓰는 가드가 있어야 한다.
+    """
+    backend_limit = inspect.signature(auth.list_measurements).parameters["limit"].default
+    html = _index()
+    assert f"const SERVER_ROWS_LIMIT = {backend_limit};" in html
+    assert "all.length >= SERVER_ROWS_LIMIT" in html
+    assert "if (first && truncated) return;" in html

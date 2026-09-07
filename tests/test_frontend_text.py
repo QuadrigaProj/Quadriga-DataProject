@@ -357,6 +357,29 @@ def test_삭제는_저장까지_한다():
     assert "renderRecords()" in body
 
 
+def test_직접적은운동_선택_삭제_UI가_있다():
+    """직접 적은 운동도 점검 기록과 같은 방식(체크박스 + 일괄 삭제)으로 지울 수 있다."""
+    html = _index()
+    assert 'id="recManualDeleteBtn"' in html
+    assert 'onclick="deleteSelectedManual()"' in html
+    assert "function renderManualRecords()" in html
+    assert "function pickManual(i, on)" in html
+    assert "async function deleteSelectedManual()" in html
+    body = html.split("async function deleteSelectedManual()")[1].split("\n}")[0]
+    assert "confirm(" in body
+    assert "saveProfile()" in body
+    assert "renderRecords()" in body
+
+
+def test_점검기록_삭제는_직접적은운동이_남아있으면_막힌다():
+    """같은 날짜에 직접 적은 운동이 남아있으면, 그 기록의 기준나이가 참조하고 있을 수
+    있어 점검 기록을 먼저 지우지 못하게 막는다."""
+    html = _index()
+    body = html.split("async function deleteSelectedMeasures()")[1].split("\n}")[0]
+    assert "state.workoutLog" in body
+    assert "직접 적은 운동에서 먼저 삭제를 진행해주세요" in body
+
+
 # ---------- G2 변화추이 기간 직접 입력 ----------
 
 def test_전체_버튼이_직접_입력으로_바뀌었다():

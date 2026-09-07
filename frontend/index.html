@@ -1611,6 +1611,11 @@
       <div class="rec-block" id="recManualBlock" style="display:none;">
         <div class="rec-head">직접 적은 운동</div>
         <div id="recManual"></div>
+        <div class="rec-actions">
+          <button type="button" class="rec-del" id="recManualDeleteBtn" disabled
+                  onclick="deleteSelectedManual()">삭제할 기록을 고르세요</button>
+        </div>
+        <div class="rec-note" id="recManualDeleteNote"></div>
       </div>
 
       <div class="rec-block" id="recMeasureBlock" style="display:none;">
@@ -4893,20 +4898,68 @@ async function saveDailyLog(){
 }
 
 /* 기록 화면의 '직접 적은 운동' — 최근 것부터. */
+let manualPicked = new Set();
+
 function renderManualRecords(){
   const box = $('recManualBlock');
-  // 몸 상태만 적은 날도 보여 준다 (K2)
-  const log = [...(state.workoutLog || [])]
-    .filter(w => (w.items || []).length || Object.keys(w.요약 || {}).length)
-    .sort((a, b) => (a.date < b.date ? 1 : -1));
-  if (!log.length) { box.style.display = 'none'; return; }
+  const note = $('recManualDeleteNote');
+  if (note) note.textContent = '';
+  const all = state.workoutLog || [];
+  const rows = all.map((w, i) => ({ w, i }))
+    .filter(({ w }) => (w.items || []).length || Object.keys(w.요약 || {}).length)
+    .sort((a, b) => (a.w.date < b.w.date ? 1 : -1));
+  manualPicked = new Set([...manualPicked].filter(i => i < all.length));
+  if (!rows.length) { manualPicked.clear(); box.style.display = 'none'; return; }
   box.style.display = 'block';
-  $('recManual').innerHTML = log.slice(0, 20).map(w => `
-        <div class="rec-item">
-          <div class="rec-date">${fmtDate(w.date)}</div>
-          <div class="rec-name">${manualLogName(w)}</div>
+  $('recManual').innerHTML = rows.slice(0, 20).map(({ w, i }) => `
+        <div class="rec-item rec-pick">
+          <label class="rec-pick-main">
+            <input type="checkbox" ${manualPicked.has(i) ? 'checked' : ''}
+                   onchange="pickManual(${i}, this.checked)" />
+            <div class="rec-date">${fmtDate(w.date)}</div>
+            <div class="rec-name">${manualLogName(w)}</div>
+          </label>
           ${moreToggle(manualDetailHtml(w))}
         </div>`).join('');
+  paintManualDeleteBtn();
+}
+
+function pickManual(i, on){
+  if (on) manualPicked.add(i); else manualPicked.delete(i);
+  paintManualDeleteBtn();
+}
+
+function paintManualDeleteBtn(){
+  const btn = $('recManualDeleteBtn');
+  if (!btn) return;
+  const n = manualPicked.size;
+  btn.disabled = !n;
+  btn.textContent = n ? `선택한 ${n}개 삭제` : '삭제할 기록을 고르세요';
+}
+
+/* 고른 기록을 지운다. 되돌릴 수 없어서 한 번 묻는다.
+   단, 같은 날짜에 '직접 적은 운동'이 아직 남아있으면 먼저 지우지 못하게 막는다. */
+async function deleteSelectedMeasures(){
+  const n = measurePicked.size;
+  if (!n) return;
+  const list = state.measureLog || [];
+  const 선택된날짜 = [...measurePicked].map(i => list[i]?.date);
+  const 직접적은날짜 = new Set((state.workoutLog || [])
+    .filter(w => (w.items || []).length || Object.keys(w.요약 || {}).length)
+    .map(w => w.date));
+  if (선택된날짜.some(d => 직접적은날짜.has(d))) {
+    const note = $('recDeleteNote');
+    if (note) note.textContent = '직접 적은 운동에서 먼저 삭제를 진행해주세요';
+    return;
+  }
+  if (!confirm(`점검 기록 ${n}개를 지울까요?
+달력과 변화추이에서도 사라지고, 되돌릴 수 없어요.`)) return;
+  state.measureLog = (state.measureLog || []).filter((_, i) => !measurePicked.has(i));
+  measurePicked.clear();
+  await saveProfile();
+  renderRecords();
+  const note = $('recDeleteNote');
+  if (note) note.textContent = `점검 기록 ${n}개를 지웠어요.`;
 }
 
 /* 직접 적은 운동 한 날의 상세 — 종목마다 적은 값과 그날 몸 상태 (J4·K2) */

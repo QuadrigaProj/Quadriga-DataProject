@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="윗몸일으키기">
+  <title>윗몸일으키기</title>
+  <path d="M6 54h52"/>
+  <path d="M50 54l-8-14-12 14"/>
+  <path d="M30 54L18 34"/>
+  <circle cx="15" cy="27" r="5"/>
+  <path d="M19 36l8-5-6-6"/>
+</svg>

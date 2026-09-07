@@ -58,7 +58,7 @@ Quadriga-DataProject/
 │   ├── terms.html               #   이용약관
 │   ├── js/api.js                #   백엔드 호출 계층
 │   ├── js/gauge.js              #   로고 게이지 렌더링
-│   └── img/                     #   로고 · 워드마크
+│   └── img/                     #   로고 · 워드마크 · moves/ 측정 동작 픽토그램(SVG, GIF 는 같은 경로에 넣으면 됨)
 ├── backend/                     # 서버 (계산 · 데이터 전부)
 │   ├── main.py                  #   FastAPI 엔드포인트 — 화면이 붙는 지점
 │   ├── fitness_age.py           #   체력나이 산출 + 약점 지목

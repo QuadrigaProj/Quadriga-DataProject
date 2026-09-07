@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="2분 제자리 높은 무릎 뛰기">
+  <title>2분 제자리 높은 무릎 뛰기</title>
+  <path d="M8 58h48"/>
+  <circle cx="32" cy="12" r="5"/>
+  <path d="M32 18v18"/>
+  <path d="M32 36v20"/>
+  <path d="M32 36l12-8v12"/>
+  <path d="M32 22l-9 9M32 22l10-5"/>
+</svg>

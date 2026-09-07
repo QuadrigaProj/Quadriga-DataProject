@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="30초 제자리 점프">
+  <title>30초 제자리 점프</title>
+  <path d="M8 58h48"/>
+  <circle cx="32" cy="13" r="5"/>
+  <path d="M32 19v16"/>
+  <path d="M32 24l-10-10M32 24l10-10"/>
+  <path d="M32 35l-7 8v7M32 35l7 8v7"/>
+  <path d="M16 50l-5 3M48 50l5 3"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color:#1F4136" role="img" aria-label="다리를 펴고 앉아 손끝이 닿는 거리">
+  <title>다리를 펴고 앉아 손끝이 닿는 거리</title>
+  <path d="M6 54h52"/>
+  <circle cx="29" cy="22" r="5"/>
+  <path d="M16 52l10-22"/>
+  <path d="M16 52h34v-8"/>
+  <path d="M26 30l22 14"/>
+</svg>

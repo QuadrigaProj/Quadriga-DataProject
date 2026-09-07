@@ -933,7 +933,30 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
 # 실제 서비스에서 그건 PG사 결제창이 받는다(PCI-DSS). 우리는 금액과
 # 주문번호만 다루고, 승인 결과도 PG가 알려준 금액을 그대로 믿는다.
 
-PAY_PACKS = (1000, 3000, 5000)          # 화면과 같은 충전 단위(원)
+# 선결제 할인 (K3).
+#   이용권 = 앱 안에서 쓸 수 있는 금액,  결제 = 실제로 내는 금액
+# 많이 미리 낼수록 더 싸게 준다. 1회만 결제(100원)는 할인이 없다.
+# **이 표가 기준이다.** 화면이 보낸 결제 금액을 믿지 않고, 여기서 다시 계산한다.
+PAY_PACKS = (
+    {"이용권": 100,  "결제": 100},      # 1회만
+    {"이용권": 1000, "결제": 700},      # 30%
+    {"이용권": 2000, "결제": 1300},     # 35%
+    {"이용권": 3000, "결제": 1800},     # 40%
+    {"이용권": 5000, "결제": 2500},     # 50%
+)
+
+
+def pack_for(이용권: int) -> dict | None:
+    for p in PAY_PACKS:
+        if p["이용권"] == 이용권:
+            return p
+    return None
+
+
+def pack_view(p: dict) -> dict:
+    """화면에 줄 모양 — 할인율까지 서버가 계산해서 내려준다."""
+    할인 = round((1 - p["결제"] / p["이용권"]) * 100)
+    return {"이용권": p["이용권"], "결제": p["결제"], "할인": 할인}
 
 # 준비한 결제를 승인까지 들고 있는 자리. 프로세스가 하나라는 가정이다.
 # 서버를 여러 개 띄우면 DB(또는 Redis)로 옮겨야 한다.
@@ -952,7 +975,7 @@ def _remember(store: dict, key: str, value: dict) -> None:
 def get_pay_methods() -> dict:
     """화면이 그릴 결제 수단. 카카오페이만 실제로 붙어 있다."""
     return {
-        "packs": list(PAY_PACKS),
+        "packs": [pack_view(p) for p in PAY_PACKS],
         "kakao": {"쓸수있음": kp.available(), "테스트": kp.is_test()},
         "카드": CARD_ISSUERS,
         "은행": BANKS,
@@ -964,14 +987,15 @@ BANKS = ["KB국민", "신한", "우리", "하나", "NH농협", "IBK기업", "카
 
 
 class PayReadyIn(BaseModel):
-    amount: int = Field(..., description="충전 금액(원)")
+    amount: int = Field(..., description="충전할 이용권 금액(원). 실제 결제액은 서버가 정한다")
 
 
 @app.post("/pay/kakao/ready")
 async def post_pay_ready(body: PayReadyIn, request: Request,
                          quadriga_session: str | None = Cookie(None)) -> dict:
     """카카오페이 결제 준비 → 결제창 주소를 돌려준다."""
-    if body.amount not in PAY_PACKS:
+    pack = pack_for(body.amount)
+    if not pack:
         raise HTTPException(400, "고를 수 없는 금액입니다.")
     if not kp.available():
         raise HTTPException(503, "카카오페이가 아직 설정되지 않았습니다.")
@@ -981,7 +1005,7 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
     누구 = auth.user_for_token(quadriga_session)
     user = f"u{누구['id']}" if 누구 else "guest"
     out = await kp.ready(
-        amount=body.amount, order_id=order, user_id=user,
+        amount=pack["결제"], order_id=order, user_id=user,
         approval_url=public_url(request, f"/pay/kakao/approve?order={order}"),
         cancel_url=public_url(request, f"/pay/kakao/cancel?order={order}"),
         fail_url=public_url(request, f"/pay/kakao/fail?order={order}"),
@@ -989,8 +1013,11 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
     if not out:
         raise HTTPException(502, "카카오페이 결제 준비에 실패했습니다.")
 
-    _remember(_PENDING, order, {"tid": out["tid"], "user": user, "amount": body.amount})
-    return {"order": order, "redirect": out["redirect_mobile"]}
+    _remember(_PENDING, order,
+              {"tid": out["tid"], "user": user,
+               "이용권": pack["이용권"], "결제": pack["결제"]})
+    return {"order": order, "redirect": out["redirect_mobile"],
+            "결제": pack["결제"], "이용권": pack["이용권"]}
 
 
 @app.get("/pay/kakao/approve")
@@ -1005,8 +1032,12 @@ async def get_pay_approve(order: str, pg_token: str = "") -> RedirectResponse:
     if not ok:
         return RedirectResponse("/?pay=fail")
 
-    # 금액은 카카오가 알려준 값을 쓴다 — 화면이 보낸 숫자를 믿지 않는다
-    _remember(_PAID, order, {"amount": ok["amount"], "aid": ok.get("aid")})
+    # 카카오가 실제로 승인한 금액이 우리가 청구한 금액과 다르면 반영하지 않는다.
+    # 그 위에서 올려 줄 이용권은 표에서 다시 찾는다 — 화면이 보낸 숫자를 믿지 않는다.
+    if ok["amount"] != pend["결제"]:
+        return RedirectResponse("/?pay=fail")
+    _remember(_PAID, order, {"amount": pend["이용권"], "결제": pend["결제"],
+                             "aid": ok.get("aid")})
     return RedirectResponse(f"/?pay=ok&order={order}")
 
 
@@ -1031,7 +1062,8 @@ def get_pay_result(order: str) -> dict:
     done = _PAID.pop(order, None)
     if not done:
         raise HTTPException(404, "승인된 결제가 아닙니다.")
-    return {"paid": True, "amount": done["amount"]}
+    # amount 는 올려 줄 이용권, 결제 는 실제로 낸 돈
+    return {"paid": True, "amount": done["amount"], "결제": done["결제"]}
 
 
 # ---------- 13. 운동 기록 반영 체력나이 ----------

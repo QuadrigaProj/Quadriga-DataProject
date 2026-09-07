@@ -138,9 +138,9 @@ def test_미리_충전해_둘_수_있다():
     html = _html()
     assert 'id="creditCard"' in html
     assert 'id="creditAmt"' in html and 'id="creditTimes"' in html
-    assert "이용권 충전하기" in html
+    assert "선결제하기" in html                      # K3 에서 문구가 바뀌었다
     assert "function renderCredit()" in html
-    assert "const PAY_PACKS = [1000, 3000, 5000];" in html
+    assert "{ 이용권: 1000, 결제: 700,  할인: 30 }," in html
     assert "credit: 0," in html and "creditLog: []," in html
 
 

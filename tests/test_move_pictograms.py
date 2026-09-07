@@ -9,7 +9,7 @@ JS 매핑(moveCategory)은 브라우저에서만 돌아가므로 여기서는
     moveCategory({단계:'본운동',   체력요인:'심폐지구력'})          === 'cardio'
     moveCategory({단계:'본운동',   체력요인:'평형성'})              === 'balance'
     moveCategory({단계:'본운동',   체력요인:'민첩성·순발력'})       === 'power'
-    moveCategory({단계:'정리운동', 체력요인:'이완'})                === 'stretch'   # 단계 우선(본운동이면 breath)
+    moveCategory({단계:'정리운동', 체력요인:'이완'})                === 'breath'    # 호흡·이완은 단계보다 우선
     moveCategory({단계:'본운동',   체력요인:'유연성'})              === 'stretch'
     moveCategory({단계:'본운동',   체력요인:'전신'})                === 'strength'  # 기본값
 """
@@ -63,3 +63,6 @@ def test_gif_placeholder_문구가_있다():
     """C6 원문: 저작권 불분명한 파일을 임의로 넣지 않고 placeholder 까지만 구현."""
     html = client.get("/").text
     assert "동작 GIF 준비 중" in html
+    # 4번(측정 카드 시트)에도 같은 문구가 있으므로, 이 PR 고유의 시트 마크업까지 확인해야 변별력이 생긴다
+    assert "move-sheet-picto" in html
+    assert "function openMovePicto()" in html

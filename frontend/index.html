@@ -2843,10 +2843,11 @@ const MOVE_CATEGORY_MEDIA = {
    '·' 로 나눠 앞에 적힌 요인부터 본다. */
 function moveCategory(step){
   if (!step) return 'strength';
-  if (step.단계 === '준비운동' || step.단계 === '정리운동') return 'stretch';
   const tokens = String(step.체력요인 || '').split('·');
+  // 호흡·이완은 단계와 무관하게 breath — 정리운동의 '이완' 동작이 stretch 에 묻히지 않게 한다
+  if (tokens.some(t => /호흡|이완/.test(t))) return 'breath';
+  if (step.단계 === '준비운동' || step.단계 === '정리운동') return 'stretch';
   for (const t of tokens) {
-    if (/호흡|이완/.test(t))            return 'breath';
     if (/심폐/.test(t))                 return 'cardio';
     if (/순발|민첩/.test(t))            return 'power';
     if (/평형|협응/.test(t))            return 'balance';
@@ -2877,7 +2878,6 @@ function openMovePicto(){
     <img class="move-gif" src="${m.gif}" alt="${step.운동명} 동작 GIF"
          onerror="this.hidden = true; this.nextElementSibling.hidden = false;" />
     <div class="move-gif-fallback" hidden>
-      <img src="${m.svg}" alt="" />
       <div>동작 GIF 준비 중 — <code>frontend${m.gif}</code> 에 파일을 넣으면 바로 보여요</div>
     </div>
   `);

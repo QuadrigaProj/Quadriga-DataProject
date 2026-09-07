@@ -58,6 +58,8 @@ const API = (() => {
     centers: (q) => call('/centers?' + qs(q)),
     sports: () => call('/sports'),
     sportsSummary: (ids) => call('/sports/summary?' + qs({ ids: (ids || []).join(',') })),
+    styleTest: () => call('/style-test'),
+    styleTestResult: (answers) => post('/style-test/result', { answers }),
 
     // --- 계정 ---
     providers: () => call('/auth/providers'),

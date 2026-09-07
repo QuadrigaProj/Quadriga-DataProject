@@ -2871,20 +2871,6 @@ function paintMeasureDeleteBtn(){
   btn.textContent = n ? `선택한 ${n}개 삭제` : '삭제할 기록을 고르세요';
 }
 
-/* 고른 기록을 지운다. 되돌릴 수 없어서 한 번 묻는다. */
-async function deleteSelectedMeasures(){
-  const n = measurePicked.size;
-  if (!n) return;
-  if (!confirm(`점검 기록 ${n}개를 지울까요?
-달력과 변화추이에서도 사라지고, 되돌릴 수 없어요.`)) return;
-  state.measureLog = (state.measureLog || []).filter((_, i) => !measurePicked.has(i));
-  measurePicked.clear();
-  await saveProfile();
-  renderRecords();
-  const note = $('recDeleteNote');
-  if (note) note.textContent = `점검 기록 ${n}개를 지웠어요.`;
-}
-
 /* ---------------------------------------------------------------------------
    운동 고르기 — 배우고 싶은 종목을 고른다. 루틴 추천이 이걸 참고한다.
    --------------------------------------------------------------------------- */
@@ -5020,6 +5006,20 @@ function paintManualDeleteBtn(){
   const n = manualPicked.size;
   btn.disabled = !n;
   btn.textContent = n ? `선택한 ${n}개 삭제` : '삭제할 기록을 고르세요';
+}
+
+async function deleteSelectedManual(){
+  const n = manualPicked.size;
+  if (!n) return;
+  if (!confirm(`직접 적은 운동 ${n}개를 지울까요?
+달력과 변화추이에서도 사라지고, 되돌릴 수 없어요.`)) return;
+  state.workoutLog = (state.workoutLog || []).filter((_, i) => !manualPicked.has(i));
+  manualPicked.clear();
+  await refreshActivityAge();
+  await saveProfile();
+  renderRecords();
+  const note = $('recManualDeleteNote');
+  if (note) note.textContent = `직접 적은 운동 ${n}개를 지웠어요.`;
 }
 
 /* 고른 기록을 지운다. 되돌릴 수 없어서 한 번 묻는다.

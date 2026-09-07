@@ -3088,12 +3088,14 @@ async function sendComment(id){
   const inp = $('ci-' + id);
   const body = inp.value.trim();
   if (!body) return;
+  inp.disabled = true;
   try {
-    await API.commComment(id, body);
-    await toggleComments(id); await toggleComments(id);   // 새로고침
+    const p = await API.commComment(id, body);
+    $('cbox-' + id).hidden = true;
+    await toggleComments(id);                              // 갱신해서 다시 펼침
     const btn = document.querySelector(`#post-${id} .post-actions button`);
-    if (btn) btn.textContent = '💬 댓글 갱신됨';
-  } catch (e) { showToast(e.message); }
+    if (btn) btn.textContent = `💬 댓글 ${p['댓글수']}`;
+  } catch (e) { showToast(e.message); inp.disabled = false; }
 }
 
 async function removePost(id){

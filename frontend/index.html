@@ -332,6 +332,16 @@
              font-variant-numeric:tabular-nums; }
   .rec-name{ flex:1; min-width:0; }
   .rec-check{ color:var(--pine); font-weight:700; }
+  /* 운동 기록 자세히 보기 (H8) */
+  .rec-more{ margin-top:5px; background:none; border:none; padding:0;
+             font:inherit; font-size:12.5px; color:var(--pine-deep);
+             text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  .rec-detail{ margin-top:8px; padding:10px 12px; border-radius:10px;
+               background:var(--bg); border:1px solid var(--line); }
+  .rec-detail-row{ display:flex; gap:10px; font-size:12.5px; line-height:1.6; }
+  .rec-detail-row + .rec-detail-row{ margin-top:4px; }
+  .rec-detail-row b{ color:var(--muted); font-weight:700; flex-shrink:0; width:48px; }
+  .rec-detail-row span{ color:var(--ink); min-width:0; }
   /* 점검 기록 고르기·지우기 (G1) */
   .rec-pick{ cursor:pointer; }
   .rec-pick input{ width:17px; height:17px; margin:0 10px 0 0; flex-shrink:0;
@@ -2411,16 +2421,54 @@ async function renderRecords(){
   }
 
   $('recList').innerHTML = log.length
-    ? log.slice(0, 30).map(e => `<div class="rec-item">
+    ? log.slice(0, 30).map(e => {
+        const 상세 = Array.isArray(e.steps) && e.steps.length;
+        return `<div class="rec-item">
         <div class="rec-date">${fmtDate(e.date)}</div>
-        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
+        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}
+          ${상세 ? `<button type="button" class="rec-more" aria-expanded="false"
+                  onclick="toggleRecDetail(this)">자세히 보기</button>
+          <div class="rec-detail" hidden>${routineDetailHtml(e)}</div>` : ''}
+        </div>
         <div class="rec-check">✓</div>
-      </div>`).join('')
+      </div>`;
+      }).join('')
     : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
 
   renderMeasureRecords();
   renderManualRecords();
+}
+
+/* 운동한 날 한 줄의 '자세히 보기' — 그날 한 동작을 단계별로, 강도까지 펼친다 (H8).
+   steps 가 없는 예전 기록은 renderRecords 에서 버튼을 아예 만들지 않는다. */
+function routineDetailHtml(e){
+  const 순서 = ['준비운동', '본운동', '정리운동'];
+  const 묶음 = {};
+  (e.steps || []).forEach(s => {
+    (묶음[s.단계] || (묶음[s.단계] = [])).push(s.운동명);
+  });
+  const 단계행 = 순서
+    .filter(p => 묶음[p]?.length)
+    .map(p => `<div class="rec-detail-row"><b>${p}</b><span>${묶음[p].join(', ')}</span></div>`)
+    .join('');
+  const g = e.강도 || {};
+  const 강도 = [
+    g.반복 != null ? `${g.반복}회${g.세트 != null ? ` × ${g.세트}세트` : ''}` : null,
+    g.시간초 != null ? `시간형 ${g.시간초}초` : null,
+    g.라운드 != null ? `${g.라운드}라운드` : null,
+  ].filter(Boolean).join(' · ');
+  return 단계행 + (강도
+    ? `<div class="rec-detail-row"><b>강도</b><span>${강도}</span></div>` : '');
+}
+
+function toggleRecDetail(btn){
+  const panel = btn.nextElementSibling;
+  if (!panel) return;
+  const 펼침 = panel.hidden;
+  panel.hidden = !펼침;
+  btn.setAttribute('aria-expanded', String(펼침));
+  btn.textContent = 펼침 ? '접기' : '자세히 보기';
 }
 
 /* 점검 기록 (G1) — measureLog 한 줄이 측정 한 번이다.
@@ -3266,8 +3314,13 @@ function logRoutineDone(){
   const today = new Date().toISOString().slice(0,10);
   const no = state.routineMeta?.루틴번호 ?? null;
   if (!state.routineLog.some(e => e.date === today)) {
-    state.routineLog.push({ date: today, no, done: true,
-                           name: state.routineMeta?.루틴명 || null });
+    state.routineLog.push({
+      date: today, no, done: true,
+      name: state.routineMeta?.루틴명 || null,
+      // 자세히 보기용 스냅샷 — 그날 실제로 한 동작과 강도 (H8)
+      steps: activeRoutine().map(s => ({ 단계: s.단계, 운동명: s.운동명 })),
+      강도: state.intensity || null,
+    });
     saveProfile();
     showToast(`오늘 루틴 완료 · 지난 측정 이후 ${state.routineLog.length}회`);
   }

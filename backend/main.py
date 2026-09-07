@@ -37,6 +37,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import style_test as st
     from backend import workout_items as wi
     from backend import recommend as rc
+    from backend import ai_recommend as air
     from backend import route
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
@@ -50,6 +51,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import style_test as st                 # noqa: E402
     import workout_items as wi              # noqa: E402
     import recommend as rc                  # noqa: E402
+    import ai_recommend as air              # noqa: E402
     import fitness_age as fa                # noqa: E402
     import paths                            # noqa: E402
     import prescription as pr               # noqa: E402
@@ -933,6 +935,7 @@ def get_recommend_routines(
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
     limit: int = Query(5, ge=1, le=20),
+    ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
 ) -> dict:
     """사용자 데이터로 250개 고정 루틴에 점수를 매겨 순위를 낸다.
 
@@ -942,10 +945,21 @@ def get_recommend_routines(
     parts = [w.strip() for w in (weak or "").split(",") if w.strip()]
     picked = [s.strip() for s in (sports or "").split(",") if s.strip()]
     try:
-        return rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
-                           sports=picked, target_gap=target_gap, limit=limit)
+        out = rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
+                          sports=picked, target_gap=target_gap, limit=limit)
     except (KeyError, FileNotFoundError) as e:
         raise HTTPException(404, str(e))
+
+    # AI 가 붙어 있으면 같은 후보 안에서 순서와 설명만 다듬는다.
+    # 실패하면 점수 결과를 그대로 쓴다 — 화면이 비지 않는다.
+    out["출처"] = "점수"
+    out["ai가능"] = air.available()
+    if ai and out["ai가능"]:
+        다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn)
+        if 다듬음:
+            out["추천"] = 다듬음
+            out["출처"] = "ai"
+    return out
 
 
 # ---------- 11. 당일 기록 종목 ----------

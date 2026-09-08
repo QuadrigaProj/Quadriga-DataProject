@@ -1296,3 +1296,24 @@ def test_PC_에서는_QR_화면으로_보낸다():
     assert "payRedirect(r)" in 시작
     assert "location.href = r.redirect;" not in 시작
 
+
+def test_id_가_중복되지_않는다():
+    """#99 가 새 topbar 를 더하면서 옛 것을 안 지워 id 가 두 벌이 됐다.
+
+    같은 id 가 둘이면 화면에는 버튼이 둘 보이는데 $() 는 앞엣것만 잡는다.
+    눈으로 보기 전에는 테스트도 못 잡던 종류라 여기서 막는다.
+    """
+    import re as _re
+    from collections import Counter
+    html = _index()
+    ids = _re.findall(r'\sid="([^"]+)"', html)
+    겹침 = {k: v for k, v in Counter(ids).items() if v > 1}
+    assert not 겹침, f"중복된 id: {겹침}"
+
+
+def test_홈에_재측정_버튼이_하나뿐이다():
+    html = _index()
+    홈 = html.split('id="s3"')[1].split("</section>")[0]
+    assert 홈.count('class="dday-pill"') == 1
+    assert 홈.count('class="topbar"') == 1
+

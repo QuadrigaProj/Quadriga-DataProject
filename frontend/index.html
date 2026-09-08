@@ -1096,6 +1096,20 @@
   .comm-compose-row{ display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
   .comm-compose-row input[type=text]{ flex:1; min-width:140px; border:1.5px solid var(--line); border-radius:12px; padding:10px 12px; font-family:inherit; font-size:14px; }
   .comm-attach{ border:1.5px dashed var(--line); border-radius:12px; padding:8px 12px; font-size:13px; cursor:pointer; color:var(--muted); }
+  /* 게시글 작성란 — 모달 팝업 대신 피드 화면 하단에 얇고 넓게 붙여 둔다(항상 보이게).
+     position:fixed는 이 저장소 규약상 금지라 .content(overflow-y:auto)에 대한
+     sticky로 붙인다 — .device 폭 안에 그대로 머무른다. */
+  .post-compose-bar{
+    position:sticky; bottom:0; z-index:5; margin:14px -22px -20px; padding:10px 22px;
+    display:flex; gap:8px; align-items:center; background:var(--paper);
+    border-top:1px solid var(--line);
+  }
+  .post-compose-bar input[type=text]{
+    flex:1; min-width:0; border:1.5px solid var(--line); border-radius:999px;
+    padding:10px 14px; font-family:inherit; font-size:14px; background:var(--bg);
+  }
+  .comm-attach-icon{ font-size:19px; line-height:1; cursor:pointer; padding:4px; flex-shrink:0; }
+  .post-compose-bar .comm-post-btn{ flex-shrink:0; border-radius:999px; padding:10px 16px; }
   .comm-share-btn{ border:1.5px solid var(--line); background:#fff; border-radius:12px; padding:8px 12px; font-size:13px; font-family:inherit; cursor:pointer; }
   .comm-post-btn{ padding:9px 16px; font-size:14px; margin:0; }
   .comm-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
@@ -1843,7 +1857,7 @@
       <p class="sub" id="recoSub">점검 결과와 고른 것들을 보고 추천합니다.</p>
       <div class="reco-mode" id="recoMode">
         <button type="button" class="on" data-mode="free" onclick="setRecoMode('free')">
-          무료 추천<span class="mode-sub">가지고 있는 데이터로</span></button>
+          무료 추천<span class="mode-sub">소유 데이터 기반</span></button>
         <button type="button" data-mode="ai" onclick="setRecoMode('ai')">
           AI 추천<span class="mode-sub">1회 100원</span></button>
       </div>
@@ -1903,9 +1917,21 @@
 
       <!-- 피드 -->
       <div id="commFeed" hidden>
-        <div class="comm-list-head"><span>게시글</span><button type="button" class="comm-add" onclick="openPostComposer()" aria-label="게시글 작성">＋</button></div>
+        <div class="comm-list-head"><span>게시글</span>
+          <button type="button" class="comm-share-btn" onclick="shareMyRecord()">📈 내 기록 공유</button>
+        </div>
         <div id="feedList"></div>
         <button id="feedMore" class="more-card" hidden onclick="loadFeed(true)">더 보기</button>
+
+        <div id="postPreview" class="comm-media"></div>
+        <div class="post-compose-bar">
+          <label class="comm-attach-icon" aria-label="사진·영상 첨부">📷
+            <input type="file" id="postFile" accept="image/*,video/*" multiple hidden onchange="onPostFiles(event)" />
+          </label>
+          <input id="postBody" type="text" placeholder="오늘 운동은 어땠나요?"
+                 onkeydown="if(event.key==='Enter')submitPost()" />
+          <button class="btn btn-primary comm-post-btn" type="button" onclick="submitPost()">게시</button>
+        </div>
       </div>
 
       <!-- 친구 -->
@@ -1958,21 +1984,6 @@
       </div>
     </div>
   </section>
-
-  <div class="comm-modal-backdrop" id="postComposer" hidden>
-    <section class="comm-modal" role="dialog" aria-modal="true" aria-labelledby="postComposerTitle">
-      <div class="comm-modal-head"><h2 id="postComposerTitle">게시글 작성</h2><button type="button" class="comm-modal-close" onclick="closePostComposer()" aria-label="닫기">×</button></div>
-      <textarea id="postBody" rows="4" placeholder="오늘 운동은 어땠나요? 사진·영상도 올릴 수 있어요."></textarea>
-      <div id="postPreview" class="comm-media"></div>
-      <div class="comm-compose-row">
-        <label class="comm-attach">＋ 사진·영상
-          <input type="file" id="postFile" accept="image/*,video/*" multiple hidden onchange="onPostFiles(event)" />
-        </label>
-        <button class="comm-share-btn" type="button" onclick="shareMyRecord()">📈 내 기록 공유</button>
-        <button class="btn btn-primary comm-post-btn" type="button" onclick="submitPost()">올리기</button>
-      </div>
-    </section>
-  </div>
 
   <div class="comm-modal-backdrop" id="roomComposer" hidden>
     <section class="comm-modal" role="dialog" aria-modal="true" aria-labelledby="roomComposerTitle">
@@ -3427,7 +3438,7 @@ async function submitPost(){
   try {
     await API.commPost({ body, media: COMM.media });
     $('postBody').value = ''; $('postPreview').innerHTML = ''; COMM.media = [];
-    closePostComposer(); COMM.oldest = null; await loadFeed(false);
+    COMM.oldest = null; await loadFeed(false);
   } catch (e) { showToast(e.message); }
 }
 
@@ -3442,13 +3453,11 @@ async function shareMyRecord(){
   try {
     await API.commPost({ kind: 'record', body: $('postBody').value.trim(),
                          record: { 요약, 운동횟수: days } });
-    $('postBody').value = ''; closePostComposer(); COMM.oldest = null; await loadFeed(false);
+    $('postBody').value = ''; COMM.oldest = null; await loadFeed(false);
     showToast('기록을 공유했어요');
   } catch (e) { showToast(e.message); }
 }
 
-function openPostComposer(){ $('postComposer').hidden = false; $('postBody').focus(); }
-function closePostComposer(){ $('postComposer').hidden = true; }
 function openRoomComposer(){ $('roomComposer').hidden = false; syncRoomFields(); $('roomName').focus(); }
 function closeRoomComposer(){ $('roomComposer').hidden = true; }
 function syncRoomFields(){
@@ -5603,7 +5612,7 @@ let recoAt = 0;
 let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
-let recoAiReady = false;   // 서버에 키가 있는지 (I1)
+let recoAiReady = null;   // 서버에 키가 있는지 (I1) — null=아직 확인 전, true/false=확인됨
 
 /* 체력나이 항목별에서 뒤처지는 요인 — 값이 큰(늙은) 쪽이 약점이다.
    성장기는 방향이 반대라 작은 쪽을 고른다. 체성분은 U자형이라 뺀다. */
@@ -5617,6 +5626,7 @@ function weakFactors(){
 
 async function renderRecommend(){
   const box = $('recoBody');
+  paintRecoMode();   // 확인 전(null)이면 AI 버튼을 우선 꺼 둔다 — 확인 안 된 채로 눌리는 걸 막는다 (I1)
   const pg = programAgeGroup(state.age);
   if (!pg) {
     box.innerHTML = '<div class="rec-empty">먼저 첫 점검에서 나이를 넣어주세요.</div>';
@@ -6063,7 +6073,12 @@ async function applyPendingCredit(){
 
 /* 추천 방식 고르기 */
 function setRecoMode(mode){
-  if (mode === 'ai' && !recoAiReady) return;
+  if (mode === 'ai' && recoAiReady !== true) {
+    // 예전엔 여기서 조용히 아무 일도 안 해서, 확인이 끝나기 전에 누르면
+    // "눌러도 반응이 없다"는 문제로 보였다 (버튼 자체는 비활성화 전이라 눌렸다).
+    showToast(recoAiReady === null ? 'AI 추천을 쓸 수 있는지 확인하는 중이에요' : 'AI 추천은 지금 쓸 수 없어요');
+    return;
+  }
   recoMode = mode;
   paintRecoMode();
   renderRecommend();
@@ -6074,11 +6089,13 @@ function paintRecoMode(){
     b.classList.toggle('on', b.dataset.mode === recoMode));
   const ai = document.querySelector('#recoMode button[data-mode="ai"]');
   if (!ai) return;
-  ai.disabled = !recoAiReady;
+  ai.disabled = recoAiReady !== true;
   const 횟수 = creditTimes();
-  ai.querySelector('.mode-sub').textContent = !recoAiReady
-    ? '관리자가 키를 등록하면 켜져요'
-    : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음` : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 싸요`);
+  ai.querySelector('.mode-sub').textContent = recoAiReady === null
+    ? '확인하는 중…'
+    : !recoAiReady
+      ? '관리자가 키를 등록하면 켜져요'
+      : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음` : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 싸요`);
 }
 
 /* ---- 시작 ---- */

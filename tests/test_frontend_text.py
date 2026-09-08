@@ -390,11 +390,24 @@ def test_점검기록_삭제_안내는_닫을수있는_모달로_보인다():
     assert "openNoticeModal('직접 적은 운동에서 먼저 삭제를 진행해주세요')" in html
 
 
-def test_커뮤니티_작성과_채팅방_생성은_플러스_버튼으로_연다():
+def test_채팅방_생성은_플러스_버튼으로_연다():
     html = _index()
-    assert 'onclick="openPostComposer()"' in html
     assert 'onclick="openRoomComposer()"' in html
-    assert 'id="postComposer"' in html and 'id="roomComposer"' in html
+    assert 'id="roomComposer"' in html
+
+
+def test_게시글_작성란은_모달이_아니라_피드_하단에_항상_있다():
+    """모달 팝업(+ 버튼)이었다가, 하단에 얇고 넓게 항상 보이는 입력란으로 바꿨다."""
+    html = _index()
+    assert 'onclick="openPostComposer()"' not in html
+    assert 'id="postComposer"' not in html
+    본문 = html.split('id="commFeed"')[1].split('id="commFriend"')[0]
+    assert 'class="post-compose-bar"' in 본문
+    assert '<input id="postBody" type="text"' in 본문
+    assert 'onclick="submitPost()">게시</button>' in 본문
+    css = html.split(".post-compose-bar{")[1].split("}")[0]
+    assert "position:sticky" in css and "bottom:0" in css
+    assert "position:fixed" not in css   # 이 저장소는 position:fixed 를 금지한다
 
 
 def test_게시글을_누르면_댓글창이_열린다():

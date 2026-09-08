@@ -491,3 +491,51 @@ def test_하나가_비면_있는_것으로_메운다(키, monkeypatch, 빠진것
     for 키이름, 값 in 기대.items():
         assert d[f"redirect_{키이름}"] == 값
     assert all(d[f"redirect_{k}"] for k in ("pc", "mobile", "app"))
+
+
+# ---------- 실패 이유를 그대로 알려 준다 ----------
+
+@pytest.mark.parametrize("코드, 조각", [
+    (-401, "SECRET KEY"),
+    (-403, "사용 API"),
+    (-429, "한도"),
+    (-500, "카카오페이 서버"),
+    (-503, "점검"),
+])
+def test_카카오_에러코드를_할_일로_바꿔_알려준다(키, monkeypatch, 코드, 조각):
+    """'실패했다' 만 알려주면 붙이는 사람이 손쓸 방법이 없다."""
+    monkeypatch.setattr(kp.httpx, "AsyncClient",
+                        가짜({"error_code": 코드, "error_message": "x"}, status=abs(코드)))
+    r = _login().post("/pay/kakao/ready", json={"amount": 100})
+    assert r.status_code == 502
+    assert 조각 in r.json()["detail"], r.json()["detail"]
+
+
+def test_모르는_에러코드는_일반_문구로_둔다(키, monkeypatch):
+    monkeypatch.setattr(kp.httpx, "AsyncClient",
+                        가짜({"error_code": -9999, "error_message": "x"}, status=400))
+    r = _login().post("/pay/kakao/ready", json={"amount": 100})
+    assert r.status_code == 502
+    assert r.json()["detail"] == "카카오페이 결제를 시작하지 못했어요."
+
+
+def test_에러가_JSON_이_아니어도_터지지_않는다(키, monkeypatch):
+    class Patched(_REAL_CLIENT):
+        def __init__(self, *a, **kw):
+            kw["transport"] = httpx.MockTransport(
+                lambda req: httpx.Response(500, text="<html>gateway</html>"))
+            super().__init__(*a, **kw)
+    monkeypatch.setattr(kp.httpx, "AsyncClient", Patched)
+    r = _login().post("/pay/kakao/ready", json={"amount": 100})
+    assert r.status_code == 502
+
+
+def test_실패_이유를_서버_로그에_남긴다(키, monkeypatch, caplog):
+    """운영에서 눈으로 볼 수 있어야 한다."""
+    import logging
+    monkeypatch.setattr(kp.httpx, "AsyncClient",
+                        가짜({"error_code": -403, "error_message": "사용 API에 없습니다"}, status=403))
+    with caplog.at_level(logging.WARNING):
+        _login().post("/pay/kakao/ready", json={"amount": 100})
+    합친것 = " ".join(r.getMessage() for r in caplog.records)
+    assert "ready" in 합친것 and "-403" in 합친것

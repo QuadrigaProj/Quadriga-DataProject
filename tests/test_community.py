@@ -396,6 +396,19 @@ def test_채팅_열기도_로그인이_필요하다():
     assert c.post("/community/direct", json={"handle": "abcdef"}).status_code == 401
 
 
+def test_남의_개인채팅은_목록에_안_보인다():
+    """단체 채팅방은 둘러보라고 전부 보여주지만, 1:1 채팅은 참여자만의 것이다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    앞_공개방 = c.post("/community/rooms", json={"name": "공개방"}).json()["id"]
+    목록 = [r["id"] for r in c.get("/community/rooms").json()["rooms"]]
+    assert rid not in 목록
+    assert 앞_공개방 in 목록
+
+
 # ---------- L5·L6. 단체 채팅방 멤버 관리 ----------
 
 def _방(a):
@@ -452,11 +465,44 @@ def test_방장만_내보낼_수_있다():
 
 
 def test_방장은_자기를_못_내보낸다():
-    """방을 없앨 방법이 사라진다 — 나가기를 쓰게 한다."""
+    """kick 으로는 방을 없앨 수 없다 — 나가기(leave) 또는 방 폭파(delete)를 쓰게 한다."""
     a = _login(app, "a@x.com", "가")
     ha = a.get("/community/me/handle").json()["아이디"]
     rid = _방(a)
     assert a.post(f"/community/rooms/{rid}/kick", json={"handle": ha}).status_code == 400
+
+
+def test_방장만_방을_폭파할_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = _방(a)
+    _초대해서_들이기(a, b, rid)
+    assert b.delete(f"/community/rooms/{rid}").status_code == 403
+    r = a.delete(f"/community/rooms/{rid}")
+    assert r.status_code == 200, r.text
+    # 멤버였던 사람 기준으로도 방이 사라졌다
+    assert b.get(f"/community/rooms/{rid}/members").status_code == 404
+
+
+def test_방을_폭파하면_멤버와_메시지도_같이_사라진다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = _방(a)
+    _초대해서_들이기(a, b, rid)
+    a.post(f"/community/rooms/{rid}/messages", json={"body": "안녕"})
+    a.delete(f"/community/rooms/{rid}")
+    assert rid not in [r["id"] for r in a.get("/community/rooms").json()["rooms"]]
+    # 같은 이름으로 새로 만들어도 예전 방과 무관한 새 id다
+    new_rid = _방(a)
+    assert a.get(f"/community/rooms/{new_rid}/messages").json()["messages"] == []
+
+
+def test_개인채팅은_폭파할_수_없다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    assert a.delete(f"/community/rooms/{rid}").status_code == 400
 
 
 def test_멤버가_아니면_초대할_수_없다():

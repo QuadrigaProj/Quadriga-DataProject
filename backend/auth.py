@@ -251,13 +251,18 @@ def password_problem(password: str) -> str | None:
 
 def upsert_user(provider: str, uid: str, *, email=None, name=None,
                 salt=None, pw_hash=None) -> int:
+    """이미 있는 사용자면 그대로 로그인시킨다.
+
+    예전에는 재로그인할 때마다 provider 가 주는 이름(name)으로 display_name 을
+    덮어썼다. 그래서 rename_user() 로 정해 둔 별명이 다시 로그인하거나 다른
+    기기에서 로그인할 때마다 카카오·구글 등 제공자 쪽 실명으로 되돌아갔다.
+    display_name 은 가입 시점에만 정하고, 그 뒤로는 rename_user() 로만 바꾼다.
+    """
     with db() as con:
         row = con.execute(
             "SELECT id FROM users WHERE provider=? AND provider_uid=?",
             (provider, uid)).fetchone()
         if row:
-            if name:
-                con.execute("UPDATE users SET display_name=? WHERE id=?", (name, row["id"]))
             return row["id"]
         return con.insert_id(
             "INSERT INTO users (provider, provider_uid, email, display_name,"

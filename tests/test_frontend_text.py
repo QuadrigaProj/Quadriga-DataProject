@@ -397,6 +397,43 @@ def test_커뮤니티_작성과_채팅방_생성은_플러스_버튼으로_연�
     assert 'id="postComposer"' in html and 'id="roomComposer"' in html
 
 
+def test_게시글을_누르면_댓글창이_열린다():
+    """본문 클릭도 '💬 댓글' 버튼과 같은 곳(토글)으로 이동한다 — 별도 상세 화면은 안 만든다."""
+    html = _index()
+    본문 = html.split("function postCard(p){")[1].split("\n}")[0]
+    assert 'class="post-open" onclick="toggleComments(${p.id})"' in 본문
+    # 미디어(사진·동영상) 클릭은 재생/확대만 하고 댓글창을 열면 안 된다
+    assert "post-media\" onclick=\"event.stopPropagation()\"" in 본문
+
+
+def test_게시글_본문이_댓글보다_크고_굵게_보인다():
+    """예전엔 14.5px 대 13px 로 거의 안 갈렸다 — 헷갈린다는 피드백으로 벌렸다."""
+    html = _index()
+    post_css = html.split(".post-body{")[1].split("}")[0]
+    comment_css = html.split(".comment{")[1].split("}")[0]
+    assert "font-weight:600" in post_css
+    post_size = float(post_css.split("font-size:")[1].split("px")[0])
+    comment_size = float(comment_css.split("font-size:")[1].split("px")[0])
+    assert post_size - comment_size >= 2.5
+
+
+def test_채팅방_목록에서_내_채팅만_볼_수_있다():
+    html = _index()
+    assert 'id="roomFilter"' in html
+    assert "onclick=\"setRoomFilter('all')\">전체</button>" in html
+    assert "onclick=\"setRoomFilter('mine')\">내 채팅</button>" in html
+    본문 = html.split("function renderRoomList(){")[1].split("\n}")[0]
+    assert "ROOMS.filter(rm => rm['참여중'])" in 본문
+
+
+def test_방장만_단체_채팅방을_폭파할_수_있다():
+    """개인 채팅(1:1)은 대상이 아니다 — 상대가 있는 대화를 혼자 없앨 수는 없다."""
+    html = _index()
+    본문 = html.split("function renderRoomList(){")[1].split("\n}")[0]
+    assert "rm['방장'] && rm['종류'] !== 'direct'" in 본문
+    assert "API.commRoomDelete" in html.split("async function destroyRoom(id){")[1].split("\n}")[0]
+
+
 # ---------- G2 변화추이 기간 직접 입력 ----------
 
 def test_전체_버튼이_직접_입력으로_바뀌었다():

@@ -1722,7 +1722,7 @@ def test_채팅_메시지에도_이모지를_단다():
     html = _index()
     본문 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
     이모지줄 = [l for l in 본문.split("\n") if "reactBar(" in l][0]
-    assert "reactBar('message', m.id, m['반응'])" in 이모지줄
+    assert "reactBar('message', m.id, m['반응'], { opener: false })" in 이모지줄
     assert "내글" not in 이모지줄
 
 
@@ -1822,7 +1822,28 @@ def test_고정_버튼은_내_채팅에만_뜬다():
     html = _index()
     본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
     핀 = 본문.split("data-pin-room=")[0]
-    assert 핀.rstrip().endswith("${내채팅 ? `<button class=\"room-pin\"")
+    assert 핀.rstrip().endswith('${내채팅 ? `<button type="button" class="room-pin"')
+
+
+def test_고정_버튼은_카드_맨_왼쪽에_아이콘만_있다():
+    """이름보다 먼저 눈에 들어와야 어느 방을 고정했는지 한눈에 보인다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert 본문.index("data-pin-room=") < 본문.index('<div class="rc-info">')
+    css = html.split(".room-card .room-pin{")[1].split("}")[0]
+    assert "order:-1" in css
+    assert "border:none" in css and "background:none" in css   # 버튼 테두리는 없다
+    아이콘 = html.split(".room-card .room-pin svg{")[1].split("}")[0]
+    assert "fill:var(--paper)" in 아이콘 and "stroke:var(--pine)" in 아이콘   # 안 한 것
+    켜짐 = html.split('.room-card .room-pin[aria-pressed="true"] svg{')[1].split("}")[0]
+    assert "fill:var(--pine)" in 켜짐                                        # 한 것
+    assert "📌" not in 본문                                    # 이모지 대신 단색 아이콘
+
+
+def test_들어간_방의_버튼은_참여다():
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "rm['참여중'] ? '참여' : '가입'" in 본문
 
 
 def test_고정은_계정에_남는다():
@@ -1842,7 +1863,8 @@ def test_채팅_메시지에_댓글을_단다():
     html = _index()
     본문 = html.split("function chatRepliesHtml(m)")[1].split("\n}")[0]
     assert "toggleReplies(${m.id})" in 본문
-    assert "💬 댓글 ${목록.length}" in 본문
+    assert "💬 ${목록.length}" in 본문
+    assert "(목록.length || !접힘)" in 본문          # 댓글이 없으면 줄을 안 만든다
     assert 'id="cr-${m.id}"' in 본문                 # 댓글 입력칸
     assert 'class="post-send sm"' in 본문            # 게시글 댓글과 같은 모양
     줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
@@ -1895,3 +1917,54 @@ def test_인라인_수정창은_프로필_폼과_이름이_겹치지_않는다()
     # 인라인 수정창 CSS 가 .edit-row 를 다시 정의하지 않는다
     assert ".edit-row button{" not in html
     assert ".edit-row{ display:flex; gap:6px;" not in html
+
+
+# ---------- 이모지: 눌러서 열고, 남기면 닫는다 ----------
+
+def test_이모지는_눌러야_펴진다():
+    """여섯 개를 늘 펼쳐 두면 글보다 자리를 더 먹는다."""
+    html = _index()
+    본문 = html.split("function reactBar(target_type, id, react, { opener = true } = {})")[1].split("\n}")[0]
+    assert "COMM.emojis.filter(e => counts[e])" in 본문      # 남겨진 것만 늘 보인다
+    assert 'class="react-open"' in 본문                      # 나머지는 버튼으로 연다
+    고르는자리 = html.split("function reactPickerHtml(target_type, id, mine)")[1].split("\n}")[0]
+    assert 'class="react-picker" hidden' in 고르는자리        # 평소엔 접혀 있다
+
+
+def test_이모지를_남기면_고르는_자리가_닫힌다():
+    html = _index()
+    본문 = html.split("async function doReact(tt, id, emoji, btn)")[1].split("\nasync function")[0]
+    # 다시 그리면 picker 는 hidden 인 채로 만들어진다 — 남은 이모지와 여는 버튼만 남는다
+    assert "bar.outerHTML = reactBar(tt, id, r['반응'], { opener: 여는버튼있음 })" in 본문
+    assert "openMsgMenus.delete(id)" in 본문                  # 채팅은 연 자리까지 닫는다
+
+
+def test_한_번에_하나만_펴_둔다():
+    html = _index()
+    본문 = html.split("function toggleReactPicker(btn)")[1].split("\n}")[0]
+    assert "document.querySelectorAll('.react-picker').forEach(el => { el.hidden = true; })" in 본문
+
+
+# ---------- 채팅: 꾹 눌러 여는 자리 ----------
+
+def test_채팅은_꾹_눌러야_반응과_댓글이_나온다():
+    html = _index()
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "reactBar('message', m.id, m['반응'], { opener: false })" in 줄   # 여는 버튼이 없다
+    assert "openReactPickerFor('message', ${m.id})" in 줄
+    assert "replyFromMenu(${m.id})" in 줄
+    누르기 = html.split("function bindChatPress()")[1].split("\n}\n")[0]
+    assert "LONG_PRESS_MS" in 누르기
+    assert "pointerdown" in 누르기
+    assert "contextmenu" in 누르기                    # 마우스에서는 오른쪽 버튼
+    assert "ev.target.closest('button, input, a')" in 누르기   # 버튼을 누른 건 그 버튼 일이다
+
+
+def test_꾹_눌러_연_자리는_다시_그려도_남는다():
+    """채팅은 4초마다 다시 그린다. 열자마자 사라지면 쓸 수가 없다."""
+    html = _index()
+    assert "const openMsgMenus = new Set();" in html
+    그리기 = html.split("function paintChat(list, { 강제 = false } = {})")[1].split("\n}")[0]
+    assert "[...openMsgMenus].sort().join(',')" in 그리기
+    방옮김 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
+    assert "openMsgMenus.clear()" in 방옮김

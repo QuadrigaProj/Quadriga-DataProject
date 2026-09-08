@@ -1677,3 +1677,70 @@ def test_이미_적은_날을_고치면_한_번_묻는다():
     # 아니라고 하면 아무것도 바뀌지 않는다 — 묻기가 먼저다
     assert "&& !confirm(" in 본문
     assert 본문.index("confirm(") < 본문.index("state.workoutLog.push")
+
+
+# ---------- 내가 쓴 것 고치기·지우기, 채팅 이모지 ----------
+
+def test_내_글_댓글_메시지에_수정과_삭제가_있다():
+    html = _index()
+    카드 = html.split("function postCard(p)")[1].split("\n}")[0]
+    assert 'onclick="editPost(${p.id})"' in 카드
+    assert 'onclick="removePost(${p.id})"' in 카드
+    assert "p['내글']" in 카드                    # 남의 글에는 안 뜬다
+
+    댓글 = html.split("async function toggleComments(id)")[1].split("\n}")[0]
+    assert "editComment(${id}, ${c.id})" in 댓글
+    assert "removeComment(${id}, ${c.id})" in 댓글
+    assert "c['내글']" in 댓글
+
+    메시지 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "editMessage(${m.id})" in 메시지
+    assert "removeMessage(${m.id})" in 메시지
+    assert "m['내글']" in 메시지
+
+
+def test_채팅_메시지에도_이모지를_단다():
+    """상대 글에도 달 수 있어야 쓸 데가 있다 — 내글 조건을 걸지 않는다."""
+    html = _index()
+    본문 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    이모지줄 = [l for l in 본문.split("\n") if "reactBar(" in l][0]
+    assert "reactBar('message', m.id, m['반응'])" in 이모지줄
+    assert "내글" not in 이모지줄
+
+
+def test_고친_글에는_표시가_남는다():
+    html = _index()
+    assert "function 수정됨(o)" in html
+    본문 = html.split("function 수정됨(o)")[1].split("\n}")[0]
+    assert "o['수정시각']" in 본문
+    assert "수정됨" in 본문
+
+
+def test_그_자리에서_고친다():
+    """새 창을 열면 앞뒤 맥락이 사라진다. 저장이 실패하면 되돌린다."""
+    html = _index()
+    본문 = html.split("function openInlineEdit(대상, 원래글, 저장)")[1].split("\nasync function")[0]
+    assert "class=\"edit-input\"" in 본문
+    assert "되돌리기" in 본문
+    assert "catch (e) { showToast(e.message); 되돌리기(); }" in 본문   # 쓴 글이 사라지지 않게
+    assert "e.key === 'Escape'" in 본문
+
+
+def test_지우기는_한_번_묻는다():
+    html = _index()
+    for 함수 in ("async function removeComment(pid, cid)", "async function removeMessage(id)"):
+        본문 = html.split(함수)[1].split("\n}")[0]
+        assert "confirm(" in 본문, 함수
+
+
+def test_채팅은_목록을_통째로_다시_그린다():
+    """고친 글·지운 글·이모지는 새 id 를 만들지 않는다.
+    새 것만 이어 붙이면 화면이 영영 안 바뀐다."""
+    html = _index()
+    본문 = html.split("async function pollChat()")[1].split("\n}")[0]
+    assert "API.commMessages(COMM.room)" in 본문      # after 를 주지 않는다
+    assert "paintChat(" in 본문
+    그리기 = html.split("function paintChat(list)")[1].split("\n}")[0]
+    assert "if (sig === chatSig) return;" in 그리기   # 달라졌을 때만
+    assert "맨아래였다" in 그리기                      # 읽는 중에 스크롤이 튀지 않게
+    assert "lastMsgId" not in html                    # 이어 붙이던 자리는 사라졌다

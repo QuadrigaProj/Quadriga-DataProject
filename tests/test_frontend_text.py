@@ -1470,13 +1470,30 @@ def test_그래프가_측정과_운동을_함께_쓴다():
     assert "'운동'" in 본문 and "'측정'" in 본문
 
 
-def test_같은_날이면_측정이_이긴다():
-    """실제로 잰 값이 운동 기록에서 뽑은 추정치보다 낫다."""
+def test_잰_날은_꽉_찬_점으로_그리되_값은_그날_최종값이다():
+    """점 모양은 잰 날인지 아닌지를 말하고, 값은 화면마다 같아야 한다."""
     html = _index()
     본문 = html.split("function trendPoints()")[1].split("\n}")[0]
     운동자리 = 본문.index("출처: '운동'")
-    측정자리 = 본문.index("측정이 나중에 덮는다")
+    측정자리 = 본문.index("measurePoints().forEach")
     assert 운동자리 < 측정자리        # 나중에 set 하는 쪽이 남는다
+    assert "체력나이: dayFinalAge(p.date) ?? p.체력나이" in 본문
+
+
+def test_하루에_보여_주는_체력나이는_하나다():
+    """점검 기록과 직접 적은 운동에 같은 날 다른 숫자가 뜨면
+    어느 게 맞는 값인지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function dayFinalAge(날)")[1].split("\n}")[0]
+    assert "dayAge(날)" in 본문                      # 운동까지 반영한 값이 먼저
+    assert "state.measureLog" in 본문                # 없으면 잰 값
+
+    점검 = html.split("function measureRows()")[1].split("\n}")[0]
+    assert "체력나이: dayFinalAge(m.date) ?? m.체력나이" in 점검
+
+    # 자리수도 맞춘다 — 29.7 을 한쪽은 30, 한쪽은 29.7 로 쓰면 달라 보인다
+    목록 = html.split("$(\'recMeasures\').innerHTML")[1].split(".join(\'\')")[0]
+    assert "Math.round(r.체력나이 * 10) / 10" in 목록
 
 
 def test_체력나이가_없는_운동일은_안_찍는다():

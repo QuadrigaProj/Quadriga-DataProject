@@ -3147,7 +3147,11 @@ function measureRows(){
     if (a && a.값 != null) byDate.set(d, { date: d, 체력나이: a.값, 출처: '운동' });
   });
   (Array.isArray(state.measureLog) ? state.measureLog : []).forEach((m, i) => {
-    if (m && m.date && m.체력나이 != null) byDate.set(m.date, { ...m, 출처: '측정', idx: i });
+    if (!m || !m.date || m.체력나이 == null) return;
+    // 값은 그날의 최종값을 쓴다 — 같은 날 '직접 적은 운동' 과 다른 숫자가
+    // 뜨면 안 된다. 항목별 상세는 잰 그대로 보여 준다.
+    byDate.set(m.date, { ...m, 체력나이: dayFinalAge(m.date) ?? m.체력나이,
+                         출처: '측정', idx: i });
   });
   return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
 }
@@ -3163,7 +3167,7 @@ function renderMeasureRecords(){
   $('recMeasures').innerHTML = rows.map(r => `
         <div class="rec-item">
           <div class="rec-date">${fmtDate(r.date)}</div>
-          <div class="rec-name">체력나이 ${Math.round(r.체력나이)}세</div>
+          <div class="rec-name">체력나이 ${Math.round(r.체력나이 * 10) / 10}세</div>
           ${moreToggle(r.출처 === '측정' ? measureDetailHtml(r) : dayAgeHtml(r.date))}
         </div>`).join('');
 }
@@ -5200,6 +5204,21 @@ function dayAge(날){
   return (m && typeof m === 'object' && m[날]) ? m[날] : null;
 }
 
+/* 그날 화면에 보여 줄 체력나이는 **하나** 다.
+
+   운동 기록이 있는 날은 그날 기록까지 반영한 값(dayAges)을 쓰고,
+   없으면 잰 값을 쓴다. 잰 날과 운동한 날이 겹치면 dayAges 가 그 측정을
+   기준으로 삼아 그날 운동만큼 움직인 값이라, 그쪽이 그날의 최종값이다.
+
+   점검 기록·직접 적은 운동·변화추이가 모두 이걸 쓴다. 화면마다 다른
+   숫자가 뜨면 어느 게 맞는 값인지 알 수 없다. */
+function dayFinalAge(날){
+  const a = dayAge(날);
+  if (a && a.값 != null) return a.값;
+  const m = (state.measureLog || []).find(x => x && x.date === 날 && x.체력나이 != null);
+  return m ? m.체력나이 : null;
+}
+
 /* 직접 기록 한 줄을 이름으로 — '스쿼트 외 2종목' */
 function manualLogName(w){
   const names = (w.items || []).map(x => x.이름);
@@ -5243,8 +5262,10 @@ function trendPoints(){
     byDate.set(d, { date: d, 체력나이: a.값, 신뢰구간: null,
                     항목별: {}, 출처: '운동' });
   });
-  // 측정이 나중에 덮는다
-  measurePoints().forEach(p => byDate.set(p.date, { ...p, 출처: '측정' }));
+  // 측정한 날은 꽉 찬 점으로 덮는다. 값은 그날의 최종값 그대로 — 점검
+  // 기록과 그래프에 다른 숫자가 뜨면 안 된다.
+  measurePoints().forEach(p => byDate.set(p.date,
+    { ...p, 체력나이: dayFinalAge(p.date) ?? p.체력나이, 출처: '측정' }));
   return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 

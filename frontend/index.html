@@ -808,11 +808,18 @@
               font-variant-numeric:tabular-nums; }
   .gauge-now small{ font-size:15px; font-weight:700; margin-left:2px; }
   .gauge-now-label{ font-size:12.5px; color:var(--muted); margin-top:4px; }
-  .gauge-legend{ margin-top:10px; display:flex; gap:14px; font-size:12.5px; color:var(--muted); }
+  /* 세 칸(목표·처음·실제)이 좁은 화면에서 글자 단위로 접히지 않게 한 줄씩 둔다 */
+  .gauge-legend{ margin-top:10px; display:flex; flex-direction:column; gap:4px;
+                 font-size:12.5px; color:var(--muted); }
+  .gauge-legend > div{ white-space:nowrap; }
   .gauge-legend b{ color:var(--ink); }
   .sw{ display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px; }
   .sw-green{ background:#12B76A; }
   .sw-track{ background:#E4DACA; }
+  /* 실제 나이 눈금 — 게이지의 검은 선과 같은 모양으로 세워 둔다 */
+  .sw-tick{ background:var(--ink); width:3px; height:11px; border-radius:2px;
+            vertical-align:-1px; margin-right:8px; }
+  #gaugeAgeRow.off-scale{ opacity:0.55; }
 
   /* ---- 프로필 : 내 정보 편집 ---- */
   .edit-card{
@@ -1476,7 +1483,8 @@
         <div class="gauge-now-label">지금 체력나이</div>
         <div class="gauge-legend">
           <div><i class="sw sw-green"></i>목표 <b id="gaugeGoal">—</b></div>
-          <div><i class="sw sw-track"></i>실제 <b id="gaugeReal">—</b></div>
+          <div><i class="sw sw-track"></i>처음 <b id="gaugeReal">—</b></div>
+          <div id="gaugeAgeRow"><i class="sw sw-tick"></i>실제 <b id="gaugeAge">—</b></div>
         </div>
       </div>
     </div>
@@ -2267,8 +2275,9 @@ function payFromAccount(ev){
 
 /* ---------------------------------------------------------------------------
    게이지 — 로고가 곧 데이터다.
-   왼쪽 끝 0세, 오른쪽 끝 실제 나이, 초록은 목표까지, 주황 점은 지금 체력나이.
-   체력나이가 실제 나이를 넘으면 점이 밑바닥 한가운데(눈금 밖)로 간다.
+   왼쪽 끝 0세, 오른쪽 끝 **처음 기록한 체력나이**, 초록은 목표까지,
+   주황 점은 지금 체력나이, 검은 눈금은 실제 나이.
+   처음보다 나빠지면 점이 밑바닥 한가운데(눈금 밖)로 간다.
    --------------------------------------------------------------------------- */
 
 /* 목표를 아직 안 정했으면 "실제 나이보다 5세 젊게" 를 기본값으로 제안한다. */
@@ -2278,8 +2287,25 @@ function targetAge(){
   return Math.max(11, state.age - 5);
 }
 
+/* 게이지 오른쪽 끝 — 앱에 들어와서 처음 기록한 체력나이.
+
+   실제 나이로 두면 눈금이 해마다 멋대로 움직여서, 좋아졌는지 나빠졌는지가
+   눈금 이동에 섞인다. 처음 기록을 기준으로 두면 점이 왼쪽으로 간 거리가
+   그대로 "얼마나 나아졌나" 가 된다.
+
+   아직 잰 적이 없으면 기준이 없으므로 실제 나이로 둔다. */
+function baselineAge(){
+  const 잰것 = (Array.isArray(state.measureLog) ? state.measureLog : [])
+    .filter(m => m && m.date && m.체력나이 != null)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (잰것.length) return 잰것[0].체력나이;
+  if (state.first?.결과?.체력나이 != null) return state.first.결과.체력나이;
+  return state.age;
+}
+
 function gaugeData(){
-  return { age: state.age, fitnessAge: displayAge(), targetAge: targetAge() };
+  return { baseAge: baselineAge(), fitnessAge: displayAge(),
+           targetAge: targetAge(), realAge: state.age };
 }
 
 function paintGauges({ animate = false } = {}){
@@ -2291,8 +2317,24 @@ function paintGauges({ animate = false } = {}){
   const r = state.result;
   if ($('gaugeNow')) {
     $('gaugeNow').textContent = displayAge() != null ? Math.round(displayAge()) : '—';
-    $('gaugeGoal').textContent = targetAge() ? `만 ${targetAge()}세` : '—';
-    $('gaugeReal').textContent = state.age ? `만 ${state.age}세` : '—';
+    // 목표도 체력나이다. '만' 은 실제 나이에만 붙인다 — 옆의 '처음' 과 어긋났다.
+    $('gaugeGoal').textContent = targetAge() ? `${targetAge()}세` : '—';
+    // 오른쪽 끝이 무엇인지 그대로 적는다. 아직 잰 적이 없으면 실제 나이다.
+    const 기준 = baselineAge();
+    const 잰적있음 = (state.measureLog || []).some(m => m?.체력나이 != null)
+      || state.first?.결과?.체력나이 != null;
+    $('gaugeReal').textContent = 기준 == null ? '—'
+      : (잰적있음 ? `${Math.round(기준)}세` : `만 ${Math.round(기준)}세`);
+
+    // 실제 나이 눈금. 처음 기록보다 많으면 눈금이 닿지 않아 선이 안 그려진다 —
+    // 숫자는 그대로 보여 주되 그 사실을 적는다.
+    if ($('gaugeAge')) {
+      const 눈금안 = !!(state.age && 기준 && state.age <= 기준);
+      $('gaugeAge').textContent = state.age ? `만 ${state.age}세` : '—';
+      $('gaugeAgeRow').title = state.age && !눈금안
+        ? '처음 기록보다 젊어서 눈금 밖이에요' : '';
+      $('gaugeAgeRow').classList.toggle('off-scale', !!state.age && !눈금안);
+    }
   }
 }
 

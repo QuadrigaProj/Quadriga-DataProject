@@ -18,6 +18,9 @@ from backend.main import app  # noqa: E402
 client = TestClient(app)
 
 
+_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _index() -> str:
     """index.html 본문. tests/test_api.py 의 test_frontend_served 와 같은 경로."""
     r = client.get("/")
@@ -1180,4 +1183,95 @@ def test_결제하고_돌아오면_서버_잔액을_다시_읽는다():
     assert "API.payResult(order)" in 본문
     assert "await addCredit();" in 본문          # 인자 없이 — 서버가 이미 올렸다
     assert "stashCredit" not in 본문
+
+
+# ---------- 게이지 오른쪽 끝 = 처음 기록한 체력나이 ----------
+
+def test_게이지_기준은_처음_기록한_체력나이다():
+    """실제 나이로 두면 눈금이 해마다 움직여, 좋아졌는지가 눈금 이동에 섞인다."""
+    html = _index()
+    assert "function baselineAge()" in html
+    본문 = html.split("function baselineAge()")[1].split("\n}")[0]
+    assert "state.measureLog" in 본문
+    assert "a.date < b.date ? -1 : 1" in 본문        # 가장 이른 것
+    assert "state.first?.결과?.체력나이" in 본문       # 이력이 없으면 첫 점검
+    assert "return state.age;" in 본문                # 잰 적 없으면 실제 나이
+
+
+def test_게이지가_기준나이를_넘긴다():
+    html = _index()
+    본문 = html.split("function gaugeData()")[1].split("\n}")[0]
+    assert "baseAge: baselineAge()" in 본문
+    assert "age: state.age" not in 본문
+
+
+def test_게이지_모듈이_기준나이로_비율을_낸다():
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function ratios(")[1].split("\n  }")[0]
+    assert "baseAge" in 본문
+    assert "targetAge / baseAge" in 본문
+    assert "fitnessAge / baseAge" in 본문
+    # 문서도 같이 고쳐야 다음 사람이 헷갈리지 않는다
+    assert "처음 기록한 체력나이" in js
+
+
+def test_범례가_오른쪽_끝을_처음이라고_적는다():
+    html = _index()
+    assert ">처음 <b id=\"gaugeReal\">" in html
+    본문 = html.split("function paintGauges(")[1].split("\n}")[0]
+    assert "baselineAge()" in 본문
+    # 목표도 체력나이다 — '만' 을 붙이지 않는다
+    assert "`만 ${targetAge()}세`" not in 본문
+
+
+# ---------- 실제 나이 눈금 ----------
+
+def test_실제_나이를_검은_눈금으로_그린다():
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    assert "function tickPath(tick)" in js
+    본문 = js.split("function tickPath(tick)")[1].split("\n  }")[0]
+    assert "<line" in 본문
+    assert "TICK" in 본문
+    # 링을 가로지른다 (안쪽 반지름 → 바깥쪽 반지름)
+    assert "R - SW / 2" in 본문 and "R + SW / 2" in 본문
+
+
+def test_눈금_밖이면_선을_그리지_않는다():
+    """눈금이 닿지 않는 자리에 억지로 붙이면 거짓말이 된다."""
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function tickPath(tick)")[1].split("\n  }")[0]
+    assert "if (!(tick > 0 && tick <= 1)) return '';" in 본문
+
+
+def test_눈금은_실제나이를_기준나이로_나눈다():
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function ratios(")[1].split("\n  }")[0]
+    assert "realAge / baseAge" in 본문
+    html = _index()
+    게이지 = html.split("function gaugeData()")[1].split("\n}")[0]
+    assert "realAge: state.age" in 게이지
+
+
+def test_눈금은_차오르는_애니메이션에_안_섞인다():
+    """눈금은 고정된 자리다 — 같이 움직이면 나이가 변하는 것처럼 보인다."""
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function render(")[1].split("\n  }")[0]
+    assert "svg(green * t, dot * t, id, tick)" in 본문      # tick 에는 t 를 안 곱한다
+
+
+def test_범례에_실제_나이도_있다():
+    html = _index()
+    assert 'id="gaugeAgeRow"' in html and 'id="gaugeAge"' in html
+    assert "sw-tick" in html
+    본문 = html.split("function paintGauges(")[1].split("\n}")[0]
+    assert "state.age <= 기준" in 본문                      # 눈금 안에 드는지
+    assert "off-scale" in 본문
+
+
+def test_범례_세_칸이_글자로_접히지_않는다():
+    """375px 에서 '목 표 33 세' 처럼 글자 단위로 접혔다."""
+    html = _index()
+    css = html.split(".gauge-legend{")[1].split("}")[0]
+    assert "flex-direction:column" in css
+    assert "white-space:nowrap" in html.split(".gauge-legend > div{")[1].split("}")[0]
 

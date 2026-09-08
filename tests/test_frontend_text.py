@@ -446,7 +446,8 @@ def test_채팅방_목록에서_내_채팅만_볼_수_있다():
     assert "onclick=\"setRoomFilter('all')\">전체</button>" in html
     assert "onclick=\"setRoomFilter('mine')\">내 채팅</button>" in html
     본문 = html.split("function renderRoomList(){")[1].split("\n}")[0]
-    assert "COMM.roomFilter === 'mine' ? rm['참여중']" in 본문
+    assert "const 내채팅 = COMM.roomFilter === 'mine';" in 본문
+    assert "내채팅 ? rm['참여중'] : !rm['참여중']" in 본문
 
 
 def test_방장만_단체_채팅방을_폭파할_수_있다():
@@ -1569,7 +1570,7 @@ def test_두_목록은_겹치지_않는다():
     """같은 방이 '전체' 와 '내 채팅' 양쪽에 다 뜨면 어느 쪽을 봐야 할지 모른다."""
     html = _index()
     본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
-    assert "COMM.roomFilter === 'mine' ? rm['참여중'] : !rm['참여중']" in 본문
+    assert "내채팅 ? rm['참여중'] : !rm['참여중']" in 본문
     # 빈 목록 문구도 각자 뜻에 맞게
     assert "아직 들어가 있는 채팅방이 없어요" in 본문
     assert "새로 들어갈 채팅방이 없어요" in 본문
@@ -1793,3 +1794,42 @@ def test_자세히_보기는_기록_카드_안에서도_열린다():
     html = _index()
     본문 = html.split("function toggleRecDetail(btn)")[1].split("\n}")[0]
     assert "btn.closest('.rec-item, .post-record')" in 본문
+
+
+# ---------- 채팅방 목록 : 필터와 고정 ----------
+
+def test_필터를_누르면_목록으로_돌아온다():
+    """방을 열어 둔 채로 누르면 화면이 그대로여서, 두 버튼이 아무 일도
+    안 하는 것처럼 보였다."""
+    html = _index()
+    본문 = html.split("function setRoomFilter(f)")[1].split("\n}")[0]
+    assert "if (COMM.room) closeRoom();" in 본문
+    assert "renderRoomList();" in 본문
+
+
+def test_고정한_방이_위로_간다():
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "const 고정 = new Set(내채팅 ? (state.pinnedRooms || []).map(Number) : []);" in 본문
+    assert ".sort((a, b) => (고정.has(b.id) ? 1 : 0) - (고정.has(a.id) ? 1 : 0))" in 본문
+    assert "data-pin-room=" in 본문
+    assert 'aria-pressed="${고정.has(rm.id)}"' in 본문   # 켜짐/꺼짐을 읽어 줄 수 있게
+
+
+def test_고정_버튼은_내_채팅에만_뜬다():
+    """전체 목록은 아직 안 들어간 방이다. 고정할 것이 아니다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    핀 = 본문.split("data-pin-room=")[0]
+    assert 핀.rstrip().endswith("${내채팅 ? `<button class=\"room-pin\"")
+
+
+def test_고정은_계정에_남는다():
+    html = _index()
+    본문 = html.split("async function togglePinRoom(id)")[1].split("\n}")[0]
+    assert "state.pinnedRooms.splice(있던자리, 1)" in 본문   # 다시 누르면 풀린다
+    assert "state.pinnedRooms.unshift(id)" in 본문
+    assert "saveProfile()" in 본문
+    assert "pinnedRooms: state.pinnedRooms," in html                 # 스냅샷에 담고
+    assert "state.pinnedRooms = Array.isArray(saved?.pinnedRooms)" in html   # 되돌린다
+    assert html.count("state.pinnedRooms = [];") >= 3                # 초기화 자리마다

@@ -1204,6 +1204,12 @@
     gap:6px; flex-wrap:wrap; margin-left:auto; }
   .room-card button{ border:none; background:var(--pine); color:#fff; border-radius:10px; padding:7px 12px; font-size:13px; font-family:inherit; cursor:pointer; white-space:nowrap; }
   .room-card .room-password-btn{ background:var(--paper); border:1px solid var(--line); color:var(--pine-deep); }
+  /* 고정 — 아이콘만 있는 작은 버튼. 켜면 테두리가 진해진다 */
+  .room-card .room-pin{ background:var(--paper); border:1px solid var(--line);
+    color:var(--pine-deep); padding:6px 9px; font-size:14px; line-height:1; }
+  .room-card .room-pin[aria-pressed="true"]{ border-color:var(--pine);
+    background:var(--pine-tint); }
+  .rc-pinned{ margin-left:4px; font-size:12px; }
   .room-card .room-danger-btn{ background:var(--paper); border:1px solid var(--clay); color:var(--clay); }
   .chat-head{ display:flex; align-items:center; gap:10px; margin-top:14px; font-weight:700; }
   .chat-back{ border:1.5px solid var(--line); background:#fff; border-radius:10px; padding:5px 10px; font-size:13px; font-family:inherit; cursor:pointer; }
@@ -2154,6 +2160,7 @@ const state = {
   history: [],         // F3/F4: 재측정으로 닫힌 지난 기간들 [{start, end, routineLog:[…], result:{…}, first:{…}}]
   measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 날짜당 한 줄 (같은 날 다시 재면 이전 것을 덮는다)
   dayAges: {},         // 규칙2·3: 운동 기록이 있는 날의 체력나이 { 'yyyy-mm-dd': {값, 기준나이, 당김, 일수, 잰체성분, 소급} }
+  pinnedRooms: [],     // '내 채팅' 에서 위에 붙여 둔 방 id — 사람마다 다른 취향이라 스냅샷에 담는다
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
@@ -2704,6 +2711,7 @@ function snapshot(){
     sports: state.sports, sportsDone: state.sportsDone,
     history: state.history, measureLog: state.measureLog, workoutLog: state.workoutLog,
     dayAges: state.dayAges,
+    pinnedRooms: state.pinnedRooms,
     activityAge: state.activityAge,
     commute: state.commute,
     styleTest: state.styleTest,
@@ -2746,6 +2754,7 @@ function applyProfile(saved){
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
   state.dayAges = (saved?.dayAges && typeof saved.dayAges === 'object') ? saved.dayAges : {};
+  state.pinnedRooms = Array.isArray(saved?.pinnedRooms) ? saved.pinnedRooms.map(Number) : [];
   dedupeMeasureLog();          // 예전 저장본에는 같은 날짜가 여러 줄 있을 수 있다 (규칙 4)
   state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
   // 잔액은 스냅샷에 담지 않는다. 서버 원장에서 읽는다.
@@ -2883,6 +2892,7 @@ async function doDelete(){
   state.measureLog = [];
   state.workoutLog = [];
   state.dayAges = {};
+  state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
   state.commute = null;
@@ -2909,6 +2919,7 @@ async function logout(){
   state.measureLog = [];
   state.workoutLog = [];
   state.dayAges = {};
+  state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
   state.sports = [];
@@ -2947,6 +2958,7 @@ async function resetSettings(){
   state.measureLog = [];
   state.workoutLog = [];
   state.dayAges = {};
+  state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
   state.commute = null;
@@ -3736,13 +3748,20 @@ let ROOMS = [];
    같은 방이 양쪽에 다 뜨면 어느 쪽을 봐야 할지 알 수 없다. */
 function setRoomFilter(f){
   COMM.roomFilter = f;
+  // 방을 열어 둔 채로 눌러도 화면이 그대로여서, 두 버튼이 아무 일도 안 하는
+  // 것처럼 보였다. 목록을 고르는 버튼이니 목록으로 돌아온다.
+  if (COMM.room) closeRoom();
   renderRoomList();
 }
 
 function renderRoomList(){
   document.querySelectorAll('#roomFilter button').forEach(b => b.classList.toggle('on', b.dataset.f === COMM.roomFilter));
   const box = $('roomList');
-  const list = ROOMS.filter(rm => COMM.roomFilter === 'mine' ? rm['참여중'] : !rm['참여중']);
+  const 내채팅 = COMM.roomFilter === 'mine';
+  const 고정 = new Set(내채팅 ? (state.pinnedRooms || []).map(Number) : []);
+  const list = ROOMS.filter(rm => 내채팅 ? rm['참여중'] : !rm['참여중'])
+    // 고정한 방이 위로. 같은 무리 안에서는 원래 차례 그대로다 (정렬이 안정적이다)
+    .sort((a, b) => (고정.has(b.id) ? 1 : 0) - (고정.has(a.id) ? 1 : 0));
   box.innerHTML = list.map(rm => {
     const privateMark = rm['비공개'] ? ' 🔒' : '';
     // 내가 만든 단체 채팅방은 이름 옆에 표시한다 — 목록에서 바로 알아보게.
@@ -3755,9 +3774,14 @@ function renderRoomList(){
       ? `<button class="room-danger-btn" data-destroy-room="${rm.id}">방 폭파</button>` : '';
     return `
     <div class="room-card">
-      <div class="rc-info"><div class="rc-name">${esc(rm['이름'])}${privateMark}${hostMark}</div>
+      <div class="rc-info"><div class="rc-name">${esc(rm['이름'])}${privateMark}${hostMark}${
+        고정.has(rm.id) ? ' <span class="rc-pinned" aria-label="위에 고정함">📌</span>' : ''}</div>
         <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
       <div class="room-actions">
+        ${내채팅 ? `<button class="room-pin" data-pin-room="${rm.id}"
+            aria-pressed="${고정.has(rm.id)}"
+            title="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}"
+            aria-label="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}">📌</button>` : ''}
         ${rm['방장'] && rm['비공개'] ? `<button class="room-password-btn" data-password-room="${rm.id}">비밀번호 변경</button>` : ''}
         ${방폭파버튼}
         <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
@@ -3772,8 +3796,20 @@ function renderRoomList(){
     if (btn.dataset.joined === '1') openRoom(id, rm ? rm['이름'] : '모임');
     else joinRoom(id);
   });
+  box.querySelectorAll('button[data-pin-room]').forEach(btn => btn.onclick = () => togglePinRoom(+btn.dataset.pinRoom));
   box.querySelectorAll('button[data-password-room]').forEach(btn => btn.onclick = () => changeRoomPassword(+btn.dataset.passwordRoom));
   box.querySelectorAll('button[data-destroy-room]').forEach(btn => btn.onclick = () => destroyRoom(+btn.dataset.destroyRoom));
+}
+
+/* 위에 고정 — 사람마다 자주 보는 방이 다르다. 계정 스냅샷에 담기므로
+   기기를 바꿔도 그대로 따라온다. 방 자체를 건드리지는 않는다. */
+async function togglePinRoom(id){
+  if (!Array.isArray(state.pinnedRooms)) state.pinnedRooms = [];
+  const 있던자리 = state.pinnedRooms.indexOf(id);
+  if (있던자리 >= 0) state.pinnedRooms.splice(있던자리, 1);
+  else state.pinnedRooms.unshift(id);
+  renderRoomList();
+  await saveProfile();
 }
 
 async function destroyRoom(id){

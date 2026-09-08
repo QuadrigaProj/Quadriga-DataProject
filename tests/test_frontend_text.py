@@ -1171,7 +1171,7 @@ def test_카카오페이만_진짜_결제창으로_보낸다():
     본문 = html.split("async function startPay()")[1].split("\n}")[0]
     assert "if (payWay === 'kakao')" in 본문
     assert "API.payReady({ amount: payPick })" in 본문
-    assert "location.href = r.redirect" in 본문
+    assert "location.href = payRedirect(r)" in 본문   # 접속 환경에 맞는 주소를 고른다
     # 카드·계좌를 화면에서 모의로 올리면 그게 곧 무료 충전 통로가 된다
     assert "addCredit(팩" not in 본문
     assert "아직 카카오페이만 결제할 수 있어요" in 본문
@@ -1283,4 +1283,16 @@ def test_프로필_안내가_게이지_설명과_맞는다():
     assert "오른쪽 끝은 처음 기록한 체력나이" in 안내
     assert "검은 눈금</b>은 실제 나이" in 안내
     assert "오른쪽 끝은 실제 나이" not in 안내
+
+
+def test_PC_에서는_QR_화면으로_보낸다():
+    """카카오는 접속 환경별로 다른 주소를 준다. PC 주소가 QR 화면이다."""
+    html = _index()
+    assert "function payRedirect(r)" in html
+    본문 = html.split("function payRedirect(r)")[1].split("\n}")[0]
+    assert "navigator.userAgent" in 본문
+    assert "r.redirect_pc" in 본문 and "r.redirect_mobile" in 본문
+    시작 = html.split("async function startPay()")[1].split("\n}")[0]
+    assert "payRedirect(r)" in 시작
+    assert "location.href = r.redirect;" not in 시작
 

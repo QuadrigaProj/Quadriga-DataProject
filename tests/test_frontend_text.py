@@ -1674,3 +1674,18 @@ def test_x축_날짜는_겹치면_건너뛴다():
     assert "if (anchor === 'start') return [cx, cx + w];" in 본문
     assert "if (anchor === 'end') return [cx - w, cx];" in 본문
     assert "고른것.push(b);" in 본문               # 끝은 늘 들어간다
+
+
+def test_댓글_등록도_아이콘_버튼이다():
+    """게시글 작성란과 같은 모양 — 입력칸이 넓고 버튼은 작은 아이콘."""
+    html = _index()
+    본문 = html.split('class="comment-row"')[1].split("</div>")[0]
+    assert 'class="post-send sm"' in 본문
+    assert "<svg" in 본문
+    assert ">등록</button>" not in 본문
+    assert 'aria-label="댓글 등록"' in 본문
+    입력 = html.split(".comment-row input{")[1].split("}")[0]
+    assert "flex:1" in 입력                     # 남는 자리는 입력칸이 가져간다
+    assert "border-radius:999px" in 입력        # 작성란과 같은 알약 모양
+    버튼 = html.split(".post-send.sm{")[1].split("}")[0]
+    assert "32px" in 버튼                       # 게시 버튼(38px)보다 한 단계 작다

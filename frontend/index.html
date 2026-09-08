@@ -3533,6 +3533,16 @@ async function createRoom(){
   catch (e) { showToast(e.message); }
 }
 
+/* 카카오가 준 세 주소 중 지금 환경에 맞는 것을 고른다.
+
+   PC 에서 모바일 주소로 보내면 결제 화면이 제대로 뜨지 않는다. PC 주소는
+   카카오톡으로 결제 요청을 보내는 화면(QR)이라 노트북에서도 결제할 수 있다. */
+function payRedirect(r){
+  const 모바일 = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  return (모바일 ? (r.redirect_mobile || r.redirect_app) : r.redirect_pc)
+      || r.redirect || r.redirect_mobile || r.redirect_pc;
+}
+
 /* 상대 아이디로 1:1 채팅을 연다 (L1).
    이미 있으면 그 방을 다시 쓴다 — 같은 사람과 방이 여러 개 생기지 않는다. */
 async function openDirect(handle){
@@ -5929,7 +5939,7 @@ async function startPay(){
   if (payWay === 'kakao') {
     try {
       const r = await API.payReady({ amount: payPick });
-      location.href = r.redirect;          // 카카오 결제창으로
+      location.href = payRedirect(r);      // 카카오 결제창으로
       return;
     } catch (e) {
       paying = false;

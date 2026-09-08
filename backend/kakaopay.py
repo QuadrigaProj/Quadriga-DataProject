@@ -70,7 +70,13 @@ def new_order_id() -> str:
 
 async def ready(*, amount: int, order_id: str, user_id: str,
                 approval_url: str, cancel_url: str, fail_url: str) -> dict | None:
-    """결제 준비. 성공하면 {"tid", "redirect_pc", "redirect_mobile"}.
+    """결제 준비. 성공하면 {"tid", "redirect_pc", "redirect_mobile", "redirect_app"}.
+
+    카카오는 접속 환경별로 서로 다른 주소를 준다. **아무거나 쓰면 안 된다.**
+      next_redirect_pc_url     PC 웹 — 카카오톡으로 결제 요청을 보내는 화면(QR)
+      next_redirect_mobile_url 모바일 웹
+      next_redirect_app_url    모바일 앱
+    셋 다 돌려주고 고르는 일은 화면에 맡긴다 — 서버는 접속 환경을 모른다.
 
     실패하면 None 을 돌려준다 — 부르는 쪽이 다른 수단으로 안내한다.
     """
@@ -100,9 +106,15 @@ async def ready(*, amount: int, order_id: str, user_id: str,
     tid = d.get("tid")
     pc = d.get("next_redirect_pc_url")
     mo = d.get("next_redirect_mobile_url")
-    if not tid or not (pc or mo):
+    app = d.get("next_redirect_app_url")
+    if not tid or not (pc or mo or app):
         return None
-    return {"tid": tid, "redirect_pc": pc or mo, "redirect_mobile": mo or pc}
+    # 하나라도 비면 있는 것으로 메운다. 빈 주소로 보내면 화면이 멈춘다.
+    있는것 = pc or mo or app
+    return {"tid": tid,
+            "redirect_pc": pc or 있는것,
+            "redirect_mobile": mo or 있는것,
+            "redirect_app": app or mo or 있는것}
 
 
 async def approve(*, tid: str, pg_token: str, order_id: str, user_id: str) -> dict | None:

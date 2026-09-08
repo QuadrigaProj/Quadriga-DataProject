@@ -1654,3 +1654,23 @@ def test_운동한_날_한_줄이_점검_기록에서_접히지_않는다():
     html = _index()
     css = html.split(".rec-name small.rec-way{")[1].split("}")[0]
     assert "display:block" in css
+
+
+def test_x축에_찍힌_날짜를_적는다():
+    """점만 있고 며칠 기록인지 알 수 없으면 그래프를 읽을 수 없다."""
+    html = _index()
+    본문 = html.split("function trendSvg(pts)")[1].split("\nfunction ")[0]
+    assert "const 날짜들 = 날짜자리();" in 본문
+    assert "날짜들.map(p => tick(p) + dateLabel(p, 어느쪽(p)))" in 본문
+    assert "pts.slice(1, -1).forEach" in 본문     # 가운데 점들도 후보다
+
+
+def test_x축_날짜는_겹치면_건너뛴다():
+    """글자가 겹치면 아예 못 읽는다. 처음과 끝은 반드시 남긴다."""
+    html = _index()
+    본문 = html.split("function trendSvg(pts)")[1].split("\nfunction ")[0]
+    assert "if (왼 >= 오른끝) { 고른것.push(p); 오른끝 = 오; }" in 본문
+    # anchor 마다 글자가 퍼지는 방향이 달라서 자리를 따로 잰다
+    assert "if (anchor === 'start') return [cx, cx + w];" in 본문
+    assert "if (anchor === 'end') return [cx - w, cx];" in 본문
+    assert "고른것.push(b);" in 본문               # 끝은 늘 들어간다

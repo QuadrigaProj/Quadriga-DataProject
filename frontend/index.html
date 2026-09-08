@@ -5281,11 +5281,46 @@ function trendSvg(pts){
   const a = pts[0], b = pts[pts.length - 1];
   const dateLabel = (p, anchor) =>
     `<text x="${f(x(p.date))}" y="${H - 8}" font-size="10" text-anchor="${anchor}" style="fill:var(--muted)">${fmtDate(p.date)}</text>`;
+  const tick = (p) =>
+    `<line x1="${f(x(p.date))}" x2="${f(x(p.date))}" y1="${H - B + 2}" y2="${H - B + 6}" style="stroke:var(--line)" stroke-width="1"/>`;
   const valLabel = (p, anchor) =>
     `<text x="${f(x(p.date))}" y="${f(y(p.체력나이) - 9)}" font-size="11" font-weight="700" text-anchor="${anchor}" style="fill:var(--pine-deep)">${Math.round(p.체력나이)}세</text>`;
-  const labels = pts.length > 1
-    ? dateLabel(a, 'start') + dateLabel(b, 'end') + valLabel(a, 'start') + valLabel(b, 'end')
-    : dateLabel(a, 'middle') + valLabel(a, 'middle');
+
+  /* x축 날짜 — 그래프에 찍힌 날은 되도록 다 적는다.
+     겹치면 읽을 수 없으니 앞 글자의 오른쪽 끝을 넘어서는 것만 고른다.
+     맨 왼쪽은 x 에서 오른쪽으로, 맨 오른쪽은 왼쪽으로, 가운데는 양옆으로
+     퍼지므로 자리를 각각 다르게 잡는다 — 간격만 재면 끝에서 겹친다.
+     처음과 끝은 기간을 읽는 기준이라 반드시 남긴다. */
+  const 글자폭 = (p) => fmtDate(p.date).length * 7.2 + 6;   // 10px 한글 ≈ 7px + 여백
+  const 자리 = (p, anchor) => {
+    const w = 글자폭(p), cx = x(p.date);
+    if (anchor === 'start') return [cx, cx + w];
+    if (anchor === 'end') return [cx - w, cx];
+    return [cx - w / 2, cx + w / 2];
+  };
+  const 어느쪽 = (p) => (p === a ? 'start' : (p === b ? 'end' : 'middle'));
+  const 날짜자리 = () => {
+    if (pts.length < 2) return [a];
+    const 고른것 = [a];
+    let 오른끝 = 자리(a, 'start')[1];
+    pts.slice(1, -1).forEach(p => {
+      const [왼, 오] = 자리(p, 'middle');
+      if (왼 >= 오른끝) { 고른것.push(p); 오른끝 = 오; }
+    });
+    // 끝 날짜에 물리는 것은 뺀다 — 끝은 반드시 보여야 한다
+    const 끝왼 = 자리(b, 'end')[0];
+    while (고른것.length > 1
+           && 자리(고른것[고른것.length - 1], 어느쪽(고른것[고른것.length - 1]))[1] > 끝왼) {
+      고른것.pop();
+    }
+    고른것.push(b);
+    return 고른것;
+  };
+  const 날짜들 = 날짜자리();
+  const 축 = 날짜들.map(p => tick(p) + dateLabel(p, 어느쪽(p))).join('');
+  const labels = 축 + (pts.length > 1
+    ? valLabel(a, 'start') + valLabel(b, 'end')
+    : valLabel(a, 'middle'));
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="체력나이 변화 그래프">${grid}
     <path d="${path}" fill="none" style="stroke:var(--pine)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}${labels}</svg>`;

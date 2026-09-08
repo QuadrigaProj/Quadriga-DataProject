@@ -419,13 +419,23 @@ def delete_post(user_id: int, post_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 def list_rooms(me: int) -> list[dict]:
+    """공개 단체 채팅방은 전부, 개인 채팅은 내가 속한 것만 돌려준다.
+
+    단체 채팅방은 가입 전에도 둘러보고 들어갈 수 있어야 하니 전부 보여주지만,
+    개인(1:1) 채팅은 참여자 두 사람만의 것이다. 필터 없이 전부 내보내면
+    나와 무관한 두 사람의 1:1 대화 존재와 상대 닉네임까지 아무 로그인
+    사용자에게 새어 나간다.
+    """
     with auth.db() as con:
         rows = con.execute(
             "SELECT r.*, "
             " (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id) AS 인원,"
             " (SELECT COUNT(*) FROM chat_messages g WHERE g.room_id=r.id) AS 메시지수,"
             " (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?) AS 참여"
-            " FROM chat_rooms r ORDER BY r.id DESC", (me,)).fetchall()
+            " FROM chat_rooms r"
+            " WHERE r.room_type <> 'direct' OR"
+            "  (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
+            " ORDER BY r.id DESC", (me, me)).fetchall()
     out = []
     with auth.db() as con:
         for r in rows:
@@ -688,6 +698,25 @@ def decline_invite(me: int, room_id: int) -> dict:
     return {"ok": True}
 
 
+def delete_room(user_id: int, room_id: int) -> None:
+    """방장이 단체 채팅방을 통째로 없앤다 ("방 폭파").
+
+    멤버·초대·메시지는 chat_rooms 의 ON DELETE CASCADE 로 함께 지워진다
+    (auth.db() 가 SQLite에도 PRAGMA foreign_keys=ON 을 켜 둬서 실제로 동작한다).
+    나가기(leave_room)와 달리 되돌릴 수 없고, 방에 있던 모두가 한 번에 나가진다.
+    개인 채팅(1:1)은 대상이 아니다 — 상대가 있는 대화를 혼자 없앨 수는 없다.
+    """
+    with auth.db() as con:
+        room = con.execute("SELECT * FROM chat_rooms WHERE id=?", (room_id,)).fetchone()
+        if not room:
+            raise HTTPException(404, "모임을 찾을 수 없어요.")
+        if room["room_type"] != "group":
+            raise HTTPException(400, "단체 채팅방만 없앨 수 있어요.")
+        if room["created_by"] != user_id:
+            raise HTTPException(403, "방장만 방을 없앨 수 있어요.")
+        con.execute("DELETE FROM chat_rooms WHERE id=?", (room_id,))
+
+
 def leave_room(user_id: int, room_id: int) -> None:
     with auth.db() as con:
         con.execute("DELETE FROM chat_members WHERE room_id=? AND user_id=?", (room_id, user_id))
@@ -906,6 +935,14 @@ def room_kick(room_id: int, body: HandleIn,
 def room_leave(room_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
     leave_room(me, room_id)
+    return {"ok": True, "rooms": list_rooms(me)}
+
+
+@router.delete("/rooms/{room_id}")
+def room_destroy(room_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    """방장이 단체 채팅방을 폭파한다 — 멤버·메시지·초대가 모두 함께 지워진다."""
+    me = _uid(quadriga_session)
+    delete_room(me, room_id)
     return {"ok": True, "rooms": list_rooms(me)}
 
 

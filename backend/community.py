@@ -107,6 +107,17 @@ CREATE TABLE IF NOT EXISTS chat_invites (
   PRIMARY KEY (room_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_cinv_user ON chat_invites(user_id);
+
+/* 채팅 요청 — 친구가 아닌 사람에게는 바로 말을 걸 수 없다.
+   요청을 보내고 상대가 받아 줘야 1:1 방이 열린다. 아이디만 알면 아무나
+   말을 걸 수 있으면 그게 곧 스팸 통로다. 친구끼리는 이 단계가 없다. */
+CREATE TABLE IF NOT EXISTS chat_requests (
+  from_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (from_id, to_id)
+);
+CREATE INDEX IF NOT EXISTS idx_creq_to ON chat_requests(to_id);
 """
 SCHEMA_PG = (SCHEMA_SQLITE
              .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"))
@@ -331,13 +342,18 @@ def list_posts(me: int, *, before: int | None = None, limit: int = 20) -> list[d
                     f" WHERE post_id IN ({marks}) GROUP BY post_id", ids).fetchall():
                 counts[r["post_id"]] = r["c"]
         reacts = _reaction_summary(con, "post", ids, me)
-    return [_post_dict(r, me, counts.get(r["id"], 0), reacts.get(r["id"])) for r in rows]
+        핸들 = {u: _handle_in(con, u) for u in {r["user_id"] for r in rows}}
+    return [_post_dict(r, me, counts.get(r["id"], 0), reacts.get(r["id"]),
+                       핸들.get(r["user_id"])) for r in rows]
 
 
-def _post_dict(r, me: int, comment_count: int, react: dict | None) -> dict:
+def _post_dict(r, me: int, comment_count: int, react: dict | None,
+               handle: str | None = None) -> dict:
     return {
         "id": r["id"],
         "작성자": r["display_name"],
+        # 프로필을 열려면 아이디가 있어야 한다. 닉네임은 겹칠 수 있다.
+        "작성자아이디": handle,
         "내글": r["user_id"] == me,
         "종류": r["kind"],
         "본문": r["body"],
@@ -362,9 +378,12 @@ def get_post(me: int, post_id: int) -> dict:
         cids = [c["id"] for c in cs]
         preact = _reaction_summary(con, "post", [post_id], me)
         creact = _reaction_summary(con, "comment", cids, me)
-    post = _post_dict(r, me, len(cs), preact.get(post_id))
+        핸들 = {u: _handle_in(con, u)
+              for u in {r["user_id"], *(c["user_id"] for c in cs)}}
+    post = _post_dict(r, me, len(cs), preact.get(post_id), 핸들.get(r["user_id"]))
     post["댓글"] = [{
         "id": c["id"], "작성자": c["display_name"], "내글": c["user_id"] == me,
+        "작성자아이디": 핸들.get(c["user_id"]),
         "본문": c["body"], "작성시각": c["created_at"],
         "반응": creact.get(c["id"], {"counts": {}, "mine": []}),
     } for c in cs]
@@ -499,8 +518,38 @@ def create_room(user_id: int, name: str, topic: str = "", *,
     return rid
 
 
+def _direct_room(con, a: int, b: int):
+    return con.execute(
+        "SELECT r.id FROM chat_rooms r"
+        " WHERE r.room_type='direct'"
+        "   AND EXISTS (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
+        "   AND EXISTS (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
+        "   AND (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id)=2"
+        " ORDER BY r.id LIMIT 1", (a, b)).fetchone()
+
+
+def _make_direct(con, a: int, b: int) -> int:
+    now = int(time.time())
+    rid = con.insert_id(
+        "INSERT INTO chat_rooms (name, topic, room_type, is_private,"
+        " password_salt, password_hash, created_by, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        ("개인 채팅", "", "direct", 0, None, None, a, now))
+    for u in (a, b):
+        con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
+                    (rid, u, now))
+    # 방이 생겼으면 오간 요청은 의미가 없다
+    con.execute("DELETE FROM chat_requests WHERE (from_id=? AND to_id=?)"
+                " OR (from_id=? AND to_id=?)", (a, b, b, a))
+    return rid
+
+
 def open_direct(me: int, handle: str) -> dict:
-    """상대와의 1:1 방을 연다. 이미 있으면 그 방을 그대로 쓴다 (L1).
+    """상대와의 1:1 방을 연다.
+
+    친구면 바로 열린다. 친구가 아니면 **요청만 보내고**, 상대가 받아 줘야
+    방이 생긴다. 이미 대화한 사이(방이 있음)면 요청 없이 그대로 연다.
+    상대가 먼저 나에게 요청해 뒀으면 그 자리에서 열어 준다.
 
     아이디로만 연다 — 이메일을 받으면 그 주소의 가입 여부가 새어 나간다.
     """
@@ -512,27 +561,64 @@ def open_direct(me: int, handle: str) -> dict:
         raise HTTPException(400, "나 자신과는 채팅할 수 없어요.")
 
     with auth.db() as con:
-        기존 = con.execute(
-            "SELECT r.id FROM chat_rooms r"
-            " WHERE r.room_type='direct'"
-            "   AND EXISTS (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
-            "   AND EXISTS (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
-            "   AND (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id)=2"
-            " ORDER BY r.id LIMIT 1", (me, other)).fetchone()
+        기존 = _direct_room(con, me, other)
         if 기존:
-            return {"room_id": 기존["id"], "새로": False,
+            return {"room_id": 기존["id"], "새로": False, "상태": "열림",
                     "상대": _public_user(con, other)}
 
-        now = int(time.time())
-        rid = con.insert_id(
-            "INSERT INTO chat_rooms (name, topic, room_type, is_private,"
-            " password_salt, password_hash, created_by, created_at)"
-            " VALUES (?,?,?,?,?,?,?,?)",
-            ("개인 채팅", "", "direct", 0, None, None, me, now))
-        for u in (me, other):
-            con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
-                        (rid, u, now))
-        return {"room_id": rid, "새로": True, "상대": _public_user(con, other)}
+        받은것 = con.execute("SELECT 1 FROM chat_requests WHERE from_id=? AND to_id=?",
+                           (other, me)).fetchone()
+        if are_friends(con, me, other) or 받은것:
+            rid = _make_direct(con, me, other)
+            return {"room_id": rid, "새로": True, "상태": "열림",
+                    "상대": _public_user(con, other)}
+
+        if not con.execute("SELECT 1 FROM chat_requests WHERE from_id=? AND to_id=?",
+                           (me, other)).fetchone():
+            con.execute("INSERT INTO chat_requests (from_id, to_id, created_at)"
+                        " VALUES (?,?,?)", (me, other, int(time.time())))
+        return {"room_id": None, "새로": False, "상태": "요청함",
+                "상대": _public_user(con, other)}
+
+
+def chat_requests(me: int) -> dict:
+    """받은/보낸 채팅 요청."""
+    with auth.db() as con:
+        받음 = [_public_user(con, r["from_id"]) for r in con.execute(
+            "SELECT from_id FROM chat_requests WHERE to_id=? ORDER BY created_at DESC",
+            (me,)).fetchall()]
+        보냄 = [_public_user(con, r["to_id"]) for r in con.execute(
+            "SELECT to_id FROM chat_requests WHERE from_id=? ORDER BY created_at DESC",
+            (me,)).fetchall()]
+    return {"받은요청": 받음, "보낸요청": 보냄}
+
+
+def accept_chat(me: int, handle: str) -> dict:
+    """받은 요청을 받아 준다 → 1:1 방이 열린다. 친구가 아니어도 된다."""
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    other = target["user_id"]
+    with auth.db() as con:
+        if not con.execute("SELECT 1 FROM chat_requests WHERE from_id=? AND to_id=?",
+                           (other, me)).fetchone():
+            raise HTTPException(404, "받은 요청이 없어요.")
+        기존 = _direct_room(con, me, other)
+        rid = 기존["id"] if 기존 else _make_direct(con, me, other)
+        con.execute("DELETE FROM chat_requests WHERE from_id=? AND to_id=?", (other, me))
+        return {"room_id": rid, "상대": _public_user(con, other)}
+
+
+def decline_chat(me: int, handle: str) -> dict:
+    """받은 요청을 거절하거나, 내가 보낸 요청을 거둔다."""
+    target = find_by_handle(handle)
+    if not target:
+        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
+    other = target["user_id"]
+    with auth.db() as con:
+        con.execute("DELETE FROM chat_requests WHERE (from_id=? AND to_id=?)"
+                    " OR (from_id=? AND to_id=?)", (other, me, me, other))
+    return {"ok": True}
 
 
 def join_room(user_id: int, room_id: int, password: str | None = None) -> None:
@@ -610,10 +696,12 @@ def kick_member(me: int, room_id: int, handle: str) -> dict:
         room = con.execute("SELECT * FROM chat_rooms WHERE id=?", (room_id,)).fetchone()
         if not room:
             raise HTTPException(404, "모임을 찾을 수 없어요.")
-        if room["created_by"] != me:
-            raise HTTPException(403, "방장만 멤버를 내보낼 수 있어요.")
+        # 방 종류가 더 근본적인 조건이다. 개인 채팅방이면 누가 묻든 안 되는 일이라
+        # 방장 여부보다 먼저 본다.
         if room["room_type"] != "group":
             raise HTTPException(400, "단체 채팅방에서만 할 수 있어요.")
+        if room["created_by"] != me:
+            raise HTTPException(403, "방장만 멤버를 내보낼 수 있어요.")
         if target["user_id"] == me:
             raise HTTPException(400, "방장은 내보낼 수 없어요. 나가기를 눌러 주세요.")
         if not _is_member(con, room_id, target["user_id"]):
@@ -986,7 +1074,37 @@ def user_lookup(handle: str, quadriga_session: str | None = Cookie(None)) -> dic
     other = found.pop("user_id")
     with auth.db() as con:
         found["관계"] = friend_state(con, me, other)
+        # 채팅 버튼을 어떻게 그릴지 서버가 정한다 — 규칙이 화면에 흩어지지 않게
+        if me == other:
+            found["채팅"] = "나"
+        elif _direct_room(con, me, other):
+            found["채팅"] = "열림"
+        elif con.execute("SELECT 1 FROM chat_requests WHERE from_id=? AND to_id=?",
+                         (me, other)).fetchone():
+            found["채팅"] = "요청함"
+        elif con.execute("SELECT 1 FROM chat_requests WHERE from_id=? AND to_id=?",
+                         (other, me)).fetchone():
+            found["채팅"] = "받음"
+        else:
+            found["채팅"] = "가능"
     return found
+
+
+@router.get("/chat-requests")
+def chat_request_list(quadriga_session: str | None = Cookie(None)) -> dict:
+    return chat_requests(_uid(quadriga_session))
+
+
+@router.post("/chat-requests/{handle}/accept")
+def chat_request_accept(handle: str, quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    out = accept_chat(me, handle)
+    return {**out, "rooms": list_rooms(me)}
+
+
+@router.delete("/chat-requests/{handle}")
+def chat_request_decline(handle: str, quadriga_session: str | None = Cookie(None)) -> dict:
+    return decline_chat(_uid(quadriga_session), handle)
 
 
 @router.get("/friends")

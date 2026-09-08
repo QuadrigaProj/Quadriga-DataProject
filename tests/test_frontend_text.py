@@ -1062,12 +1062,22 @@ def test_친구와_찾은_사람에게_채팅_버튼이_붙는다():
 
 # ---------- L5·L6. 목록 버튼 · 멤버 관리 ----------
 
-def test_단체_채팅방에만_목록_버튼이_있다():
+def test_모든_채팅방에_목록_버튼이_있다():
+    """멤버면 방장이 아니어도 멤버를 보고 나갈 수 있어야 한다 — 개인 채팅방도 같다."""
     html = _index()
     assert 'id="chatMenuBtn"' in html
     assert 'onclick="openRoomMembers()"' in html
     본문 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
-    assert "rm['종류'] === 'direct'" in 본문       # 개인 채팅에는 안 보인다
+    assert "$('chatMenuBtn').hidden = false;" in 본문
+
+
+def test_개인_채팅방에서는_초대칸을_가린다():
+    """개인 채팅방에는 초대할 자리가 없다. 멤버 확인과 나가기만 남긴다."""
+    html = _index()
+    본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
+    assert "MEMBERS['종류'] === 'direct'" in 본문
+    assert "초대칸.hidden = 개인" in 본문
+    assert "if (!개인) await renderInviteFriends();" in html
 
 
 def test_멤버_창에_요청한_것들이_다_있다():
@@ -1084,7 +1094,7 @@ def test_멤버_창에_요청한_것들이_다_있다():
 def test_방장만_내보내기_버튼을_본다():
     html = _index()
     본문 = html.split("async function loadRoomMembers()")[1].split("\n}")[0]
-    assert "방장 && !u['나']" in 본문
+    assert "방장 && !개인 && !u['나']" in 본문   # 개인 채팅방엔 내보낼 사람이 없다
     assert "data-kick=" in 본문
     assert "API.commRoomKick" in 본문
 
@@ -1353,4 +1363,53 @@ def test_홈에_재측정_버튼이_하나뿐이다():
     홈 = html.split('id="s3"')[1].split("</section>")[0]
     assert 홈.count('class="dday-pill"') == 1
     assert 홈.count('class="topbar"') == 1
+
+
+# ---------- 글쓴이 프로필 · 채팅 요청 ----------
+
+def test_게시글에_프로필이_함께_뜬다():
+    html = _index()
+    assert "function whoHtml(닉네임, 아이디)" in html
+    본문 = html.split("function whoHtml(닉네임, 아이디)")[1].split("\n}")[0]
+    assert "who-avatar" in 본문
+    assert "openProfile(" in 본문
+    assert "if (!아이디) return" in 본문          # 예전 글은 누를 수 없다
+    피드 = html.split('class="post-top"')[1].split("</div>")[0]
+    assert "whoHtml(p['작성자'], p['작성자아이디'])" in 피드
+
+
+def test_프로필에_채팅과_친구_버튼이_있다():
+    html = _index()
+    본문 = html.split("async function openProfile(handle)")[1].split("\n}")[0]
+    assert "data-p-chat=" in 본문 and "data-p-friend=" in 본문
+    assert "API.commFindUser(handle)" in 본문
+    # 서버가 내려준 상태로 버튼을 그린다 — 규칙이 화면에 흩어지지 않게
+    assert "u['관계']" in 본문 and "u['채팅']" in 본문
+    # 프로필에는 닉네임과 아이디뿐이다
+    for 금지 in ("체력나이", "email", "measureLog"):
+        assert 금지 not in 본문, 금지
+
+
+def test_친구가_아니면_요청만_보낸다():
+    html = _index()
+    본문 = html.split("async function openDirect(handle)")[1].split("\n}")[0]
+    assert "if (!r.room_id)" in 본문
+    assert "채팅을 요청했어요" in 본문
+
+
+def test_받은_채팅_요청_자리가_있다():
+    html = _index()
+    assert 'id="chatReqBox"' in html and 'id="chatReqList"' in html
+    본문 = html.split("async function loadChatRequests()")[1].split("\n}")[0]
+    assert "API.commChatRequests()" in 본문
+    assert "data-creq-ok=" in 본문 and "data-creq-no=" in 본문
+    방목록 = html.split("async function loadRooms()")[1].split("\n}\n\n")[0]
+    assert "loadChatRequests()" in 방목록
+
+
+def test_요청을_수락하면_방이_열린다():
+    html = _index()
+    본문 = html.split("async function acceptChat(handle)")[1].split("\n}")[0]
+    assert "API.commChatAccept(handle)" in 본문
+    assert "openRoom(r.room_id" in 본문
 

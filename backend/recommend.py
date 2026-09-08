@@ -77,15 +77,19 @@ def difficulty_label(score: float) -> str:
 
 
 def step_amount(step: dict, 강도: dict) -> str:
-    """이 동작을 오늘 얼마나 하는지 — 세트 · 횟수/초 (H2)."""
+    """이 동작을 오늘 얼마나 하는지 — 횟수/초씩 세트 (H2).
+
+    "2세트 · 10회"처럼 세트를 앞세우면 반복이 먼저인지 세트가 먼저인지
+    헷갈려한다는 피드백이 있어, "10회씩 2세트"처럼 반복을 앞세운다.
+    """
     세트 = 강도.get("세트")
     if step.get("단계") != "본운동":
         return "천천히 한 번"
     if step.get("유형") == "시간":
         초 = 강도.get("시간초")
-        return f"{세트}세트 · {초}초" if 초 else f"{세트}세트"
+        return f"{초}초씩 {세트}세트" if 초 else f"{세트}세트"
     if 강도.get("반복") is not None:
-        return f"{세트}세트 · {강도['반복']}회"
+        return f"{강도['반복']}회씩 {세트}세트"
     if 강도.get("라운드") is not None:
         return f"{강도['라운드']}라운드"
     return f"{세트}세트"

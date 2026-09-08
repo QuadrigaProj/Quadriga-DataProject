@@ -1223,3 +1223,55 @@ def test_범례가_오른쪽_끝을_처음이라고_적는다():
     # 목표도 체력나이다 — '만' 을 붙이지 않는다
     assert "`만 ${targetAge()}세`" not in 본문
 
+
+# ---------- 실제 나이 눈금 ----------
+
+def test_실제_나이를_검은_눈금으로_그린다():
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    assert "function tickPath(tick)" in js
+    본문 = js.split("function tickPath(tick)")[1].split("\n  }")[0]
+    assert "<line" in 본문
+    assert "TICK" in 본문
+    # 링을 가로지른다 (안쪽 반지름 → 바깥쪽 반지름)
+    assert "R - SW / 2" in 본문 and "R + SW / 2" in 본문
+
+
+def test_눈금_밖이면_선을_그리지_않는다():
+    """눈금이 닿지 않는 자리에 억지로 붙이면 거짓말이 된다."""
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function tickPath(tick)")[1].split("\n  }")[0]
+    assert "if (!(tick > 0 && tick <= 1)) return '';" in 본문
+
+
+def test_눈금은_실제나이를_기준나이로_나눈다():
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function ratios(")[1].split("\n  }")[0]
+    assert "realAge / baseAge" in 본문
+    html = _index()
+    게이지 = html.split("function gaugeData()")[1].split("\n}")[0]
+    assert "realAge: state.age" in 게이지
+
+
+def test_눈금은_차오르는_애니메이션에_안_섞인다():
+    """눈금은 고정된 자리다 — 같이 움직이면 나이가 변하는 것처럼 보인다."""
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function render(")[1].split("\n  }")[0]
+    assert "svg(green * t, dot * t, id, tick)" in 본문      # tick 에는 t 를 안 곱한다
+
+
+def test_범례에_실제_나이도_있다():
+    html = _index()
+    assert 'id="gaugeAgeRow"' in html and 'id="gaugeAge"' in html
+    assert "sw-tick" in html
+    본문 = html.split("function paintGauges(")[1].split("\n}")[0]
+    assert "state.age <= 기준" in 본문                      # 눈금 안에 드는지
+    assert "off-scale" in 본문
+
+
+def test_범례_세_칸이_글자로_접히지_않는다():
+    """375px 에서 '목 표 33 세' 처럼 글자 단위로 접혔다."""
+    html = _index()
+    css = html.split(".gauge-legend{")[1].split("}")[0]
+    assert "flex-direction:column" in css
+    assert "white-space:nowrap" in html.split(".gauge-legend > div{")[1].split("}")[0]
+

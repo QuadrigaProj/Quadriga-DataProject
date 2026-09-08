@@ -808,11 +808,18 @@
               font-variant-numeric:tabular-nums; }
   .gauge-now small{ font-size:15px; font-weight:700; margin-left:2px; }
   .gauge-now-label{ font-size:12.5px; color:var(--muted); margin-top:4px; }
-  .gauge-legend{ margin-top:10px; display:flex; gap:14px; font-size:12.5px; color:var(--muted); }
+  /* 세 칸(목표·처음·실제)이 좁은 화면에서 글자 단위로 접히지 않게 한 줄씩 둔다 */
+  .gauge-legend{ margin-top:10px; display:flex; flex-direction:column; gap:4px;
+                 font-size:12.5px; color:var(--muted); }
+  .gauge-legend > div{ white-space:nowrap; }
   .gauge-legend b{ color:var(--ink); }
   .sw{ display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px; }
   .sw-green{ background:#12B76A; }
   .sw-track{ background:#E4DACA; }
+  /* 실제 나이 눈금 — 게이지의 검은 선과 같은 모양으로 세워 둔다 */
+  .sw-tick{ background:var(--ink); width:3px; height:11px; border-radius:2px;
+            vertical-align:-1px; margin-right:8px; }
+  #gaugeAgeRow.off-scale{ opacity:0.55; }
 
   /* ---- 프로필 : 내 정보 편집 ---- */
   .edit-card{
@@ -1477,6 +1484,7 @@
         <div class="gauge-legend">
           <div><i class="sw sw-green"></i>목표 <b id="gaugeGoal">—</b></div>
           <div><i class="sw sw-track"></i>처음 <b id="gaugeReal">—</b></div>
+          <div id="gaugeAgeRow"><i class="sw sw-tick"></i>실제 <b id="gaugeAge">—</b></div>
         </div>
       </div>
     </div>
@@ -2268,7 +2276,8 @@ function payFromAccount(ev){
 /* ---------------------------------------------------------------------------
    게이지 — 로고가 곧 데이터다.
    왼쪽 끝 0세, 오른쪽 끝 **처음 기록한 체력나이**, 초록은 목표까지,
-   주황 점은 지금 체력나이. 처음보다 나빠지면 점이 밑바닥 한가운데(눈금 밖)로 간다.
+   주황 점은 지금 체력나이, 검은 눈금은 실제 나이.
+   처음보다 나빠지면 점이 밑바닥 한가운데(눈금 밖)로 간다.
    --------------------------------------------------------------------------- */
 
 /* 목표를 아직 안 정했으면 "실제 나이보다 5세 젊게" 를 기본값으로 제안한다. */
@@ -2295,7 +2304,8 @@ function baselineAge(){
 }
 
 function gaugeData(){
-  return { baseAge: baselineAge(), fitnessAge: displayAge(), targetAge: targetAge() };
+  return { baseAge: baselineAge(), fitnessAge: displayAge(),
+           targetAge: targetAge(), realAge: state.age };
 }
 
 function paintGauges({ animate = false } = {}){
@@ -2315,6 +2325,16 @@ function paintGauges({ animate = false } = {}){
       || state.first?.결과?.체력나이 != null;
     $('gaugeReal').textContent = 기준 == null ? '—'
       : (잰적있음 ? `${Math.round(기준)}세` : `만 ${Math.round(기준)}세`);
+
+    // 실제 나이 눈금. 처음 기록보다 많으면 눈금이 닿지 않아 선이 안 그려진다 —
+    // 숫자는 그대로 보여 주되 그 사실을 적는다.
+    if ($('gaugeAge')) {
+      const 눈금안 = !!(state.age && 기준 && state.age <= 기준);
+      $('gaugeAge').textContent = state.age ? `만 ${state.age}세` : '—';
+      $('gaugeAgeRow').title = state.age && !눈금안
+        ? '처음 기록보다 젊어서 눈금 밖이에요' : '';
+      $('gaugeAgeRow').classList.toggle('off-scale', !!state.age && !눈금안);
+    }
   }
 }
 

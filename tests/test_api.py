@@ -572,6 +572,19 @@ def test_이메일이_없어도_계정이_만들어진다():
     assert uid > 0
 
 
+def test_별명은_재로그인해도_유지된다():
+    """rename_user() 로 정한 별명이 다음 로그인 때 provider 실명으로 덮이면 안 된다."""
+    from backend import auth
+    uid = auth.upsert_user("kakao", "9999", name="본명")
+    auth.rename_user(uid, "내가정한별명")
+    # 다른 기기에서 다시 로그인 — provider 는 여전히 본명을 준다
+    again = auth.upsert_user("kakao", "9999", name="본명")
+    assert again == uid
+    with auth.db() as con:
+        row = con.execute("SELECT display_name FROM users WHERE id=?", (uid,)).fetchone()
+    assert row["display_name"] == "내가정한별명"
+
+
 # ---------- 약관 · 로고 (소셜 로그인 콘솔이 공개 URL 을 요구한다) ----------
 
 def test_개인정보처리방침이_열린다():

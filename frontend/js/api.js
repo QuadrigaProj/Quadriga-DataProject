@@ -93,6 +93,18 @@ const API = (() => {
     commPost: (b) => post('/community/posts', b),
     commPostDetail: (id) => call('/community/posts/' + id),
     commPostDelete: (id) => call('/community/posts/' + id, { method: 'DELETE' }),
+    // 내가 쓴 것만 고치고 지울 수 있다 — 확인은 서버가 한다
+    commPostEdit: (id, body) => call('/community/posts/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }) }),
+    commCommentEdit: (id, body) => call('/community/comments/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }) }),
+    commCommentDelete: (id) => call('/community/comments/' + id, { method: 'DELETE' }),
+    commMessageEdit: (id, body) => call('/community/messages/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }) }),
+    commMessageDelete: (id) => call('/community/messages/' + id, { method: 'DELETE' }),
     commComment: (id, body) => post('/community/posts/' + id + '/comments', { body }),
     commReact: (target_type, target_id, emoji) =>
       post('/community/reactions', { target_type, target_id, emoji }),

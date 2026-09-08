@@ -1160,6 +1160,23 @@
   .post-actions button{ background:none; border:none; color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; padding:0; }
   .comment{ border-top:1px solid var(--line); padding:6px 0 0; margin-top:6px; font-size:12.5px; line-height:1.4; }
   .comment-author{ font-weight:700; }
+  /* 내가 쓴 것 고치기·지우기 — 눈에 띄지 않게 작게 둔다 */
+  .own-actions{ display:flex; gap:10px; margin-top:4px; }
+  .own-actions button{ background:none; border:none; padding:0; cursor:pointer;
+    font-family:inherit; font-size:12px; color:var(--muted); }
+  .own-actions button:hover{ color:var(--pine-deep); text-decoration:underline;
+    text-underline-offset:3px; }
+  .edited-mark{ font-size:11px; color:var(--muted); }
+  /* 그 자리에서 고친다 — 새 창을 열면 앞뒤 맥락이 사라진다 */
+  .edit-row{ display:flex; gap:6px; align-items:center; margin:4px 0; }
+  .edit-row input{ flex:1; min-width:0; border:1.5px solid var(--pine);
+    border-radius:999px; padding:7px 12px; font-family:inherit; font-size:13px;
+    background:var(--paper); }
+  .edit-row button{ flex-shrink:0; border-radius:999px; padding:6px 12px;
+    font-family:inherit; font-size:12.5px; cursor:pointer; border:1.5px solid var(--pine);
+    background:var(--pine); color:#fff; }
+  .edit-row button.ghost{ background:var(--paper); color:var(--pine-deep);
+    border-color:var(--line); }
   .comment-row{ display:flex; gap:6px; margin-top:6px; align-items:center; }
   .comment-row input{ flex:1; min-width:0; border:1.5px solid var(--line);
     border-radius:999px; padding:7px 12px; font-family:inherit; font-size:13px;
@@ -1184,6 +1201,8 @@
   .chat-msgs{ border:1px solid var(--line); border-radius:14px; padding:12px; margin-top:10px; height:340px; overflow-y:auto; background:var(--paper); }
   .chat-msg{ margin-top:8px; font-size:13.5px; }
   .chat-msg .cm-who{ font-size:11px; color:var(--muted); }
+  .chat-msg .react-bar{ margin-top:4px; }
+  .chat-msg.mine .react-bar, .chat-msg.mine .own-actions{ justify-content:flex-end; }
   .chat-msg .cm-body{ display:inline-block; background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 10px; margin-top:2px; max-width:80%; word-break:break-word; }
   .chat-msg.mine{ text-align:right; }
   .chat-msg.mine .cm-body{ background:var(--pine-tint); border-color:var(--pine-tint); }
@@ -3278,7 +3297,7 @@ function goTo(id){
    서버 계정(state.account)만 이용 가능. 게스트는 안내만 보여준다.
    --------------------------------------------------------------------------- */
 const COMM = { tab: 'feed', emojis: ['👍','🔥','💪','👏','🥲','🎉'],
-               media: [], oldest: null, room: null, lastMsgId: 0, poll: null,
+               media: [], oldest: null, room: null, poll: null,
                roomFilter: 'all' };
 
 function initCommunity(){
@@ -3425,18 +3444,100 @@ function postCard(p){
   return `<div class="post-card" id="post-${p.id}" data-id="${p.id}">
     <div class="post-open" onclick="toggleComments(${p.id})">
       <div class="post-top">${whoHtml(p['작성자'], p['작성자아이디'])}
-        <span class="post-time">${ago(p['작성시각'])}</span></div>
-      ${p['본문'] ? `<div class="post-body">${esc(p['본문'])}</div>` : ''}
+        <span class="post-time">${ago(p['작성시각'])}${수정됨(p)}</span></div>
+      <div class="post-body" ${p['본문'] ? '' : 'hidden'}>${esc(p['본문'] || '')}</div>
       ${p['미디어'] && p['미디어'].length ? `<div class="post-media" onclick="event.stopPropagation()">${mediaHtml(p['미디어'],'')}</div>` : ''}
       ${rec}
     </div>
     ${reactBar('post', p.id, p['반응'])}
     <div class="post-actions">
       <button onclick="toggleComments(${p.id})">💬 댓글 ${p['댓글수']||0}</button>
-      ${p['내글'] ? `<button onclick="removePost(${p.id})">삭제</button>` : ''}
+      ${p['내글'] ? `<button onclick="editPost(${p.id})">수정</button>
+                     <button onclick="removePost(${p.id})">삭제</button>` : ''}
     </div>
     <div class="comment-box" id="cbox-${p.id}" hidden></div>
   </div>`;
+}
+
+/* 고친 글에는 표시를 남긴다 — 앞에 읽은 사람이 헷갈리지 않게 */
+function 수정됨(o){ return o && o['수정시각'] ? ' · <span class="edited-mark">수정됨</span>' : ''; }
+
+/* 그 자리에서 고친다. 새 창을 열면 앞뒤 맥락이 사라진다.
+   저장이 실패하면 원래 모습으로 되돌린다 — 쓴 글이 사라지면 안 된다. */
+function openInlineEdit(대상, 원래글, 저장){
+  if (!대상 || 대상.dataset.editing) return;
+  대상.dataset.editing = '1';
+  const 이전 = 대상.innerHTML;
+  대상.hidden = false;
+  대상.innerHTML = `<div class="edit-row">
+      <input type="text" class="edit-input" />
+      <button type="button" class="edit-ok">저장</button>
+      <button type="button" class="ghost edit-no">취소</button>
+    </div>`;
+  const inp = 대상.querySelector('.edit-input');
+  inp.value = 원래글;
+  inp.focus();
+  inp.setSelectionRange(원래글.length, 원래글.length);
+  const 되돌리기 = () => { 대상.innerHTML = 이전; delete 대상.dataset.editing; };
+  대상.querySelector('.edit-no').onclick = 되돌리기;
+  대상.querySelector('.edit-ok').onclick = async () => {
+    const 새글 = inp.value.trim();
+    if (!새글) { showToast('내용을 입력해 주세요.'); return; }
+    if (새글 === 원래글) { 되돌리기(); return; }
+    try { await 저장(새글); }
+    catch (e) { showToast(e.message); 되돌리기(); }
+  };
+  inp.onkeydown = (e) => {
+    if (e.key === 'Enter') 대상.querySelector('.edit-ok').click();
+    if (e.key === 'Escape') 되돌리기();
+  };
+}
+
+async function editPost(id){
+  const card = $('post-' + id);
+  const body = card?.querySelector('.post-body');
+  if (!body) return;
+  openInlineEdit(body, body.textContent, async (새글) => {
+    await API.commPostEdit(id, 새글);
+    COMM.oldest = null;
+    await loadFeed(false);
+  });
+}
+
+async function editComment(pid, cid){
+  const el = document.querySelector(`#comment-${cid} .c-body`);
+  if (!el) return;
+  openInlineEdit(el, el.textContent, async (새글) => {
+    await API.commCommentEdit(cid, 새글);
+    $('cbox-' + pid).hidden = true;
+    await toggleComments(pid);
+  });
+}
+
+async function removeComment(pid, cid){
+  if (!confirm('댓글을 지울까요? 되돌릴 수 없어요.')) return;
+  try {
+    await API.commCommentDelete(cid);
+    $('cbox-' + pid).hidden = true;
+    await toggleComments(pid);
+  } catch (e) { showToast(e.message); }
+}
+
+async function editMessage(id){
+  const el = document.querySelector(`#msg-${id} .cm-body`);
+  if (!el) return;
+  openInlineEdit(el, el.textContent, async (새글) => {
+    const r = await API.commMessageEdit(id, 새글);
+    paintChat(r.messages || []);
+  });
+}
+
+async function removeMessage(id){
+  if (!confirm('메시지를 지울까요? 되돌릴 수 없어요.')) return;
+  try {
+    const r = await API.commMessageDelete(id);
+    paintChat(r.messages || []);
+  } catch (e) { showToast(e.message); }
 }
 
 async function doReact(tt, id, emoji, btn){
@@ -3455,10 +3556,15 @@ async function toggleComments(id){
   try {
     const p = await API.commPostDetail(id);
     box.innerHTML = (p['댓글'] || []).map(c => `
-      <div class="comment"><span class="comment-author">${esc(c['작성자'])}</span>
-        <span class="post-time"> · ${ago(c['작성시각'])}</span>
-        <div>${esc(c['본문'])}</div>
+      <div class="comment" id="comment-${c.id}">
+        <span class="comment-author">${esc(c['작성자'])}</span>
+        <span class="post-time"> · ${ago(c['작성시각'])}${수정됨(c)}</span>
+        <div class="c-body">${esc(c['본문'])}</div>
         ${reactBar('comment', c.id, c['반응'])}
+        ${c['내글'] ? `<div class="own-actions">
+            <button type="button" onclick="editComment(${id}, ${c.id})">수정</button>
+            <button type="button" onclick="removeComment(${id}, ${c.id})">삭제</button>
+          </div>` : ''}
       </div>`).join('') + `
       <div class="comment-row">
         <input type="text" id="ci-${id}" placeholder="댓글 달기" onkeydown="if(event.key==='Enter')sendComment(${id})" />
@@ -3835,7 +3941,7 @@ async function changeRoomPassword(id){
 }
 
 async function openRoom(id, name){
-  COMM.room = id; COMM.lastMsgId = 0;
+  COMM.room = id; chatSig = '';
   $('roomList').hidden = true; $('chatView').hidden = false;
   $('chatTitle').textContent = name || '모임';
   $('chatMsgs').innerHTML = '';
@@ -3968,18 +4074,40 @@ async function leaveFromMembers(){
 }
 function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
 
+/* 한 줄 — 이모지는 누구 글에나 달 수 있고, 고치고 지우는 건 내 글만. */
+function chatMsgHtml(m){
+  return `<div class="chat-msg${m['내글'] ? ' mine' : ''}" id="msg-${m.id}">
+    <div class="cm-who">${esc(m['작성자'])}${수정됨(m)}</div>
+    <div class="cm-body">${esc(m['본문'])}</div>
+    ${reactBar('message', m.id, m['반응'])}
+    ${m['내글'] ? `<div class="own-actions">
+        <button type="button" onclick="editMessage(${m.id})">수정</button>
+        <button type="button" onclick="removeMessage(${m.id})">삭제</button>
+      </div>` : ''}
+  </div>`;
+}
+
+/* 고친 글·지운 글·이모지는 새 id 를 만들지 않는다. 그래서 새 것만 이어 붙이면
+   화면이 영영 안 바뀐다. 목록을 통째로 받아서 달라졌을 때만 다시 그린다 —
+   매번 그리면 읽는 중에 스크롤이 튄다. */
+let chatSig = '';
+
+function paintChat(list){
+  const box = $('chatMsgs');
+  if (!box) return;
+  const sig = JSON.stringify(list);
+  if (sig === chatSig) return;
+  const 맨아래였다 = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  chatSig = sig;
+  box.innerHTML = list.map(chatMsgHtml).join('');
+  if (맨아래였다) box.scrollTop = box.scrollHeight;
+}
+
 async function pollChat(){
   if (!COMM.room) return;
   try {
-    const r = await API.commMessages(COMM.room, COMM.lastMsgId || undefined);
-    const box = $('chatMsgs');
-    (r.messages || []).forEach(m => {
-      COMM.lastMsgId = Math.max(COMM.lastMsgId, m.id);
-      box.insertAdjacentHTML('beforeend',
-        `<div class="chat-msg${m['내글']?' mine':''}"><div class="cm-who">${esc(m['작성자'])}</div>
-         <div class="cm-body">${esc(m['본문'])}</div></div>`);
-    });
-    if (r.messages && r.messages.length) box.scrollTop = box.scrollHeight;
+    const r = await API.commMessages(COMM.room);
+    paintChat(r.messages || []);
   } catch (e) { /* 폴링은 조용히 넘어간다 */ }
 }
 

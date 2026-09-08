@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS community_posts (
   body       TEXT NOT NULL DEFAULT '',
   media      TEXT NOT NULL DEFAULT '[]',
   record     TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_cposts_created ON community_posts(created_at DESC);
 CREATE TABLE IF NOT EXISTS community_comments (
@@ -43,7 +44,8 @@ CREATE TABLE IF NOT EXISTS community_comments (
   post_id    INTEGER NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_ccomments_post ON community_comments(post_id, created_at);
 CREATE TABLE IF NOT EXISTS community_reactions (
@@ -76,7 +78,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   room_id    INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_cmsg_room ON chat_messages(room_id, id);
 
@@ -128,19 +131,25 @@ def init_db() -> None:
     with auth.db() as con:
         for stmt in filter(str.strip, schema.split(";")):
             con.execute(stmt)
-        # 이미 만들어진 서비스 DB에도 채팅방 설정 컬럼을 안전하게 더한다.
-        if auth.is_postgres():
-            for column in ("room_type TEXT NOT NULL DEFAULT 'group'",
-                           "is_private INTEGER NOT NULL DEFAULT 0",
-                           "password_salt TEXT", "password_hash TEXT"):
-                con.execute(f"ALTER TABLE chat_rooms ADD COLUMN IF NOT EXISTS {column}")
-        else:
-            columns = {row["name"] for row in con.execute("PRAGMA table_info(chat_rooms)").fetchall()}
-            for column in ("room_type TEXT NOT NULL DEFAULT 'group'",
-                           "is_private INTEGER NOT NULL DEFAULT 0",
-                           "password_salt TEXT", "password_hash TEXT"):
-                if column.split()[0] not in columns:
-                    con.execute(f"ALTER TABLE chat_rooms ADD COLUMN {column}")
+        # 이미 만들어진 서비스 DB에도 늘어난 컬럼을 안전하게 더한다.
+        _add_columns(con, "chat_rooms",
+                     ["room_type TEXT NOT NULL DEFAULT 'group'",
+                      "is_private INTEGER NOT NULL DEFAULT 0",
+                      "password_salt TEXT", "password_hash TEXT"])
+        for table in ("community_posts", "community_comments", "chat_messages"):
+            _add_columns(con, table, ["edited_at INTEGER"])
+
+
+def _add_columns(con, table: str, columns: list[str]) -> None:
+    """없는 컬럼만 더한다. 배포(Postgres)와 로컬(SQLite) 문법이 다르다."""
+    if auth.is_postgres():
+        for column in columns:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
+        return
+    있는것 = {row["name"] for row in con.execute(f"PRAGMA table_info({table})").fetchall()}
+    for column in columns:
+        if column.split()[0] not in 있는것:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
 
 
 DATA_URL = re.compile(r"^data:(image|video)/[\w.+-]+;base64,[A-Za-z0-9+/=\s]+$")
@@ -360,6 +369,7 @@ def _post_dict(r, me: int, comment_count: int, react: dict | None,
         "미디어": json.loads(r["media"] or "[]"),
         "기록": json.loads(r["record"]) if r["record"] else None,
         "작성시각": r["created_at"],
+        "수정시각": r["edited_at"],
         "댓글수": comment_count,
         "반응": (react or {"counts": {}, "mine": []}),
     }
@@ -385,6 +395,7 @@ def get_post(me: int, post_id: int) -> dict:
         "id": c["id"], "작성자": c["display_name"], "내글": c["user_id"] == me,
         "작성자아이디": 핸들.get(c["user_id"]),
         "본문": c["body"], "작성시각": c["created_at"],
+        "수정시각": c["edited_at"],
         "반응": creact.get(c["id"], {"counts": {}, "mine": []}),
     } for c in cs]
     return post
@@ -403,11 +414,19 @@ def add_comment(user_id: int, post_id: int, body: str) -> int:
 
 
 def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) -> dict:
-    if target_type not in ("post", "comment"):
+    if target_type not in ("post", "comment", "message"):
         raise HTTPException(400, "잘못된 대상이에요.")
     if emoji not in ALLOWED_EMOJI:
         raise HTTPException(400, "쓸 수 없는 이모지예요.")
     with auth.db() as con:
+        # 채팅은 그 방 사람만 볼 수 있다. 남의 방 메시지에 이모지를 달 수는 없다.
+        if target_type == "message":
+            m = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
+                            (target_id,)).fetchone()
+            if not m:
+                raise HTTPException(404, "메시지를 찾을 수 없어요.")
+            if not _is_member(con, m["room_id"], user_id):
+                raise HTTPException(403, "먼저 모임에 참여해 주세요.")
         hit = con.execute(
             "SELECT 1 FROM community_reactions WHERE target_type=? AND target_id=? AND user_id=? AND emoji=?",
             (target_type, target_id, user_id, emoji)).fetchone()
@@ -423,14 +442,80 @@ def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) 
     return summary.get(target_id, {"counts": {}, "mine": []})
 
 
+def _mine_or_403(con, table: str, row_id: int, user_id: int, 이름: str):
+    """내가 쓴 것만 고치거나 지울 수 있다. 없으면 404, 남의 것이면 403."""
+    r = con.execute(f"SELECT * FROM {table} WHERE id=?", (row_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, f"{이름}을 찾을 수 없어요.")
+    if r["user_id"] != user_id:
+        raise HTTPException(403, f"내 {이름}만 고치거나 지울 수 있어요.")
+    return r
+
+
+def _drop_reactions(con, target_type: str, ids: list[int]) -> None:
+    """이모지에는 글을 가리키는 외래키가 없다(대상이 여러 종류라서).
+       글을 지울 때 여기서 함께 지우지 않으면 남은 줄이 새 글에 붙는다."""
+    if not ids:
+        return
+    marks = ",".join("?" for _ in ids)
+    con.execute(f"DELETE FROM community_reactions"
+                f" WHERE target_type=? AND target_id IN ({marks})", (target_type, *ids))
+
+
+def _edited(body: str, 자리: int) -> str:
+    body = (body or "").strip()
+    if not body:
+        raise HTTPException(400, "내용을 입력해 주세요.")
+    return body[:자리]
+
+
 def delete_post(user_id: int, post_id: int) -> None:
     with auth.db() as con:
-        r = con.execute("SELECT user_id FROM community_posts WHERE id=?", (post_id,)).fetchone()
-        if not r:
-            raise HTTPException(404, "글을 찾을 수 없어요.")
-        if r["user_id"] != user_id:
-            raise HTTPException(403, "내 글만 지울 수 있어요.")
+        _mine_or_403(con, "community_posts", post_id, user_id, "글")
+        cids = [c["id"] for c in con.execute(
+            "SELECT id FROM community_comments WHERE post_id=?", (post_id,)).fetchall()]
+        _drop_reactions(con, "comment", cids)
+        _drop_reactions(con, "post", [post_id])
+        con.execute("DELETE FROM community_comments WHERE post_id=?", (post_id,))
         con.execute("DELETE FROM community_posts WHERE id=?", (post_id,))
+
+
+def edit_post(user_id: int, post_id: int, body: str) -> None:
+    """본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
+    with auth.db() as con:
+        _mine_or_403(con, "community_posts", post_id, user_id, "글")
+        con.execute("UPDATE community_posts SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 4000), int(time.time()), post_id))
+
+
+def delete_comment(user_id: int, comment_id: int) -> None:
+    with auth.db() as con:
+        _mine_or_403(con, "community_comments", comment_id, user_id, "댓글")
+        _drop_reactions(con, "comment", [comment_id])
+        con.execute("DELETE FROM community_comments WHERE id=?", (comment_id,))
+
+
+def edit_comment(user_id: int, comment_id: int, body: str) -> None:
+    with auth.db() as con:
+        _mine_or_403(con, "community_comments", comment_id, user_id, "댓글")
+        con.execute("UPDATE community_comments SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 2000), int(time.time()), comment_id))
+
+
+def delete_message(user_id: int, message_id: int) -> int:
+    with auth.db() as con:
+        r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
+        _drop_reactions(con, "message", [message_id])
+        con.execute("DELETE FROM chat_messages WHERE id=?", (message_id,))
+        return r["room_id"]
+
+
+def edit_message(user_id: int, message_id: int, body: str) -> int:
+    with auth.db() as con:
+        r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
+        con.execute("UPDATE chat_messages SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 2000), int(time.time()), message_id))
+        return r["room_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -822,15 +907,33 @@ def _is_member(con, room_id: int, user_id: int) -> bool:
 
 
 def messages(user_id: int, room_id: int, after: int = 0, limit: int = 50) -> list[dict]:
+    """after 를 주면 그 뒤로 온 것, 안 주면 **가장 최근** 것부터 limit 개.
+
+    예전에는 after 가 없을 때도 앞에서부터 잘라서, 대화가 길어지면 맨 처음
+    50개만 돌려줬다. 화면은 늘 최근 대화를 보여 줘야 한다.
+    고친 글·지운 글·이모지는 새 id 가 생기지 않아서, 화면이 이 목록을
+    통째로 다시 그려야 반영된다.
+    """
+    limit = max(1, min(200, limit))
     with auth.db() as con:
         if not _is_member(con, room_id, user_id):
             raise HTTPException(403, "먼저 모임에 참여해 주세요.")
-        rows = con.execute(
-            "SELECT g.*, u.display_name FROM chat_messages g JOIN users u ON u.id=g.user_id"
-            " WHERE g.room_id=? AND g.id > ? ORDER BY g.id LIMIT ?",
-            (room_id, after, max(1, min(200, limit)))).fetchall()
+        if after:
+            rows = con.execute(
+                "SELECT g.*, u.display_name FROM chat_messages g JOIN users u ON u.id=g.user_id"
+                " WHERE g.room_id=? AND g.id > ? ORDER BY g.id LIMIT ?",
+                (room_id, after, limit)).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT g.*, u.display_name FROM chat_messages g JOIN users u ON u.id=g.user_id"
+                " WHERE g.room_id=? ORDER BY g.id DESC LIMIT ?",
+                (room_id, limit)).fetchall()
+            rows = list(rows)[::-1]
+        react = _reaction_summary(con, "message", [r["id"] for r in rows], user_id)
     return [{"id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == user_id,
-             "본문": r["body"], "작성시각": r["created_at"]} for r in rows]
+             "본문": r["body"], "작성시각": r["created_at"],
+             "수정시각": r["edited_at"],
+             "반응": react.get(r["id"], {"counts": {}, "mine": []})} for r in rows]
 
 
 def send_message(user_id: int, room_id: int, body: str) -> int:
@@ -866,12 +969,17 @@ class PostIn(BaseModel):
     record: dict | None = None
 
 
+class PostEditIn(BaseModel):
+    """글은 본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
+    body: str = Field(..., max_length=4000)
+
+
 class CommentIn(BaseModel):
     body: str = Field(..., max_length=2000)
 
 
 class ReactionIn(BaseModel):
-    target_type: str = Field(..., pattern="^(post|comment)$")
+    target_type: str = Field(..., pattern="^(post|comment|message)$")
     target_id: int
     emoji: str
 
@@ -929,6 +1037,44 @@ def post_detail(post_id: int, quadriga_session: str | None = Cookie(None)) -> di
 def post_remove(post_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
     delete_post(_uid(quadriga_session), post_id)
     return {"ok": True}
+
+
+@router.put("/posts/{post_id}")
+def post_edit(post_id: int, body: PostEditIn,
+              quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    edit_post(me, post_id, body.body)
+    return get_post(me, post_id)
+
+
+@router.put("/comments/{comment_id}")
+def comment_edit(comment_id: int, body: CommentIn,
+                 quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    edit_comment(me, comment_id, body.body)
+    return {"ok": True}
+
+
+@router.delete("/comments/{comment_id}")
+def comment_remove(comment_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    delete_comment(me, comment_id)
+    return {"ok": True}
+
+
+@router.put("/messages/{message_id}")
+def message_edit(message_id: int, body: MessageIn,
+                 quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = edit_message(me, message_id, body.body)
+    return {"messages": messages(me, room_id, 0)}
+
+
+@router.delete("/messages/{message_id}")
+def message_remove(message_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = delete_message(me, message_id)
+    return {"messages": messages(me, room_id, 0)}
 
 
 @router.post("/posts/{post_id}/comments")

@@ -815,3 +815,143 @@ def test_댓글에도_글쓴이_아이디가_실린다():
     댓글 = a.get(f"/community/posts/{pid}").json()["댓글"][0]
     assert 댓글["작성자"] == "나" and 댓글["작성자아이디"] == hb
 
+
+# ---------- 내가 쓴 것 고치기·지우기 ----------
+
+def test_내_글은_고칠_수_있다():
+    a = _login(app, "a@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "스쿼트 3세트"}).json()["id"]
+    r = a.put(f"/community/posts/{pid}", json={"body": "스쿼트 5세트로 고침"})
+    assert r.status_code == 200
+    글 = r.json()
+    assert 글["본문"] == "스쿼트 5세트로 고침"
+    assert 글["수정시각"]                      # 고친 표시가 남는다
+    assert a.get("/community/posts").json()["posts"][0]["본문"] == "스쿼트 5세트로 고침"
+
+
+def test_남의_글은_못_고치고_못_지운다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    pid = a.post("/community/posts", json={"body": "내 글"}).json()["id"]
+    assert b.put(f"/community/posts/{pid}", json={"body": "가로채기"}).status_code == 403
+    assert b.delete(f"/community/posts/{pid}").status_code == 403
+    assert a.get(f"/community/posts/{pid}").json()["본문"] == "내 글"
+
+
+def test_빈_내용으로는_못_고친다():
+    a = _login(app, "a@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "무언가"}).json()["id"]
+    assert a.put(f"/community/posts/{pid}", json={"body": "   "}).status_code == 400
+
+
+def test_내_댓글은_고치고_지울_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    pid = a.post("/community/posts", json={"body": "같이 뛰실 분"}).json()["id"]
+    cid = b.post(f"/community/posts/{pid}/comments", json={"body": "저요"}).json()["id"]
+
+    assert b.put(f"/community/comments/{cid}", json={"body": "저요! 내일 가능"}).status_code == 200
+    댓글 = a.get(f"/community/posts/{pid}").json()["댓글"][0]
+    assert 댓글["본문"] == "저요! 내일 가능" and 댓글["수정시각"]
+
+    assert a.put(f"/community/comments/{cid}", json={"body": "가로채기"}).status_code == 403
+    assert a.delete(f"/community/comments/{cid}").status_code == 403
+    assert b.delete(f"/community/comments/{cid}").status_code == 200
+    assert a.get(f"/community/posts/{pid}").json()["댓글"] == []
+
+
+def test_글을_지우면_댓글과_이모지도_사라진다():
+    """이모지에는 글을 가리키는 외래키가 없다. 남으면 새 글에 붙는다."""
+    a = _login(app, "a@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "지울 글"}).json()["id"]
+    cid = a.post(f"/community/posts/{pid}/comments", json={"body": "댓글"}).json()["id"]
+    a.post("/community/reactions", json={"target_type": "post", "target_id": pid, "emoji": "👍"})
+    a.post("/community/reactions", json={"target_type": "comment", "target_id": cid, "emoji": "🔥"})
+    a.delete(f"/community/posts/{pid}")
+
+    with auth.db() as con:
+        남은 = con.execute("SELECT COUNT(*) c FROM community_reactions").fetchone()["c"]
+        댓글 = con.execute("SELECT COUNT(*) c FROM community_comments").fetchone()["c"]
+    assert 남은 == 0 and 댓글 == 0
+
+
+# ---------- 채팅 메시지 ----------
+
+def test_내_메시지는_고치고_지울_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    b.post(f"/community/rooms/{rid}/join")
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "7시에 만나요"}).json()["messages"][-1]["id"]
+
+    r = a.put(f"/community/messages/{mid}", json={"body": "8시에 만나요"})
+    assert r.status_code == 200
+    m = r.json()["messages"][-1]
+    assert m["본문"] == "8시에 만나요" and m["수정시각"]
+
+    assert b.put(f"/community/messages/{mid}", json={"body": "가로채기"}).status_code == 403
+    assert b.delete(f"/community/messages/{mid}").status_code == 403
+    assert a.delete(f"/community/messages/{mid}").status_code == 200
+    assert b.get(f"/community/rooms/{rid}/messages").json()["messages"] == []
+
+
+def test_채팅_메시지에_이모지를_남긴다():
+    """상대 글에도 남길 수 있다 — 내 글만 되면 쓸 데가 없다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    b.post(f"/community/rooms/{rid}/join")
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "오늘 10km"}).json()["messages"][-1]["id"]
+
+    r = b.post("/community/reactions",
+               json={"target_type": "message", "target_id": mid, "emoji": "🔥"})
+    assert r.status_code == 200 and r.json()["반응"]["counts"]["🔥"] == 1
+    # 목록에도 실린다
+    m = a.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]
+    assert m["반응"]["counts"]["🔥"] == 1 and m["반응"]["mine"] == []
+    assert b.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]["반응"]["mine"] == ["🔥"]
+
+
+def test_남의_방_메시지에는_이모지를_못_남긴다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "비밀 모임"}).json()["id"]
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "우리끼리"}).json()["messages"][-1]["id"]
+    r = b.post("/community/reactions",
+               json={"target_type": "message", "target_id": mid, "emoji": "🔥"})
+    assert r.status_code == 403
+
+
+def test_메시지를_지우면_이모지도_사라진다():
+    a = _login(app, "a@x.com", "가")
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "지울 말"}).json()["messages"][-1]["id"]
+    a.post("/community/reactions", json={"target_type": "message", "target_id": mid, "emoji": "👍"})
+    a.delete(f"/community/messages/{mid}")
+    with auth.db() as con:
+        남은 = con.execute("SELECT COUNT(*) c FROM community_reactions").fetchone()["c"]
+    assert 남은 == 0
+
+
+def test_메시지_목록은_최근_것을_준다():
+    """예전에는 앞에서부터 잘라서, 대화가 길어지면 맨 처음 것만 보였다."""
+    a = _login(app, "a@x.com", "가")
+    rid = a.post("/community/rooms", json={"name": "수다방"}).json()["id"]
+    for i in range(12):
+        a.post(f"/community/rooms/{rid}/messages", json={"body": f"{i}번째"})
+    본것 = [m["본문"] for m in
+          community.messages(1, rid, 0, limit=5)]
+    assert 본것 == ["7번째", "8번째", "9번째", "10번째", "11번째"]
+
+
+def test_고치기_지우기도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.put("/community/posts/1", json={"body": "x"}).status_code == 401
+    assert c.put("/community/comments/1", json={"body": "x"}).status_code == 401
+    assert c.delete("/community/comments/1").status_code == 401
+    assert c.put("/community/messages/1", json={"body": "x"}).status_code == 401
+    assert c.delete("/community/messages/1").status_code == 401

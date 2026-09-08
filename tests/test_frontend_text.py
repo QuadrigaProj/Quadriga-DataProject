@@ -645,7 +645,7 @@ def test_토글은_줄_안에서_상세를_찾는다():
     """버튼 바로 옆에 상세가 없어도(가운데 ✓ 가 끼어도) 동작해야 한다."""
     html = _index()
     본문 = html.split("function toggleRecDetail(btn)")[1].split("\n}")[0]
-    assert "closest('.rec-item')" in 본문
+    assert "closest('.rec-item, .post-record')" in 본문
     assert "querySelector('.rec-detail')" in 본문
     assert "nextElementSibling" not in 본문
 
@@ -1744,3 +1744,35 @@ def test_채팅은_목록을_통째로_다시_그린다():
     assert "if (sig === chatSig) return;" in 그리기   # 달라졌을 때만
     assert "맨아래였다" in 그리기                      # 읽는 중에 스크롤이 튀지 않게
     assert "lastMsgId" not in html                    # 이어 붙이던 자리는 사라졌다
+
+
+# ---------- 기록 공유 ----------
+
+def test_공유한_기록에_항목별_지표와_그날_운동이_담긴다():
+    """나이 한 줄만으로는 무엇을 해서 그렇게 됐는지 알 수 없다."""
+    html = _index()
+    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert "항목별: r?.['항목별'] || null" in 본문
+    assert "오늘운동: todayMoves()" in 본문
+
+    오늘 = html.split("function todayMoves()")[1].split("\n}")[0]
+    assert "logAt(오늘)?.items" in 오늘          # 직접 적은 종목
+    assert "state.routineLog" in 오늘            # 끝낸 루틴의 동작
+    assert "목록.some(m => m.이름 === st.운동명)" in 오늘   # 같은 걸 두 번 적지 않는다
+
+
+def test_공유한_기록은_다섯_줄까지만_늘어놓는다():
+    """피드에서 글 하나가 화면을 다 차지하면 다른 글을 못 본다."""
+    html = _index()
+    assert "const SHARE_ROWS_INLINE = 5;" in html
+    본문 = html.split("function recordHtml(rec)")[1].split("\n}")[0]
+    assert "줄.length > SHARE_ROWS_INLINE ? moreToggle(표) : 표" in 본문
+    assert "AXIS_ORDER" in 본문                   # 항목 차례는 앱 기준을 따른다
+    # 카드를 누르면 댓글이 열린다. 안의 버튼이 그 동작까지 타면 안 된다
+    assert 'onclick="event.stopPropagation()"' in 본문
+
+
+def test_자세히_보기는_기록_카드_안에서도_열린다():
+    html = _index()
+    본문 = html.split("function toggleRecDetail(btn)")[1].split("\n}")[0]
+    assert "btn.closest('.rec-item, .post-record')" in 본문

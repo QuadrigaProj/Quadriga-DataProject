@@ -1153,6 +1153,15 @@
   .post-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
   .post-media img, .post-media video{ max-width:100%; max-height:280px; border-radius:12px; border:1px solid var(--line); }
   .post-record{ margin-top:8px; background:var(--pine-tint); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--pine-deep); }
+  .post-record .pr-head{ font-weight:700; }
+  .post-record .pr-rows{ margin-top:6px; }
+  .post-record .pr-row{ display:flex; justify-content:space-between; gap:10px;
+    font-size:12.5px; line-height:1.7; }
+  .post-record .pr-row b{ font-weight:600; }
+  .post-record .rec-more{ margin-top:8px; color:var(--pine-deep);
+    border-color:var(--pine); background:var(--paper); }
+  .post-record .rec-detail{ background:var(--paper); border-color:var(--pine-tint);
+    margin-top:8px; }
   .react-bar{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
   .react-chip{ border:1.5px solid var(--line); background:#fff; border-radius:999px; padding:4px 10px; font-size:13px; cursor:pointer; font-family:inherit; }
   .react-chip.on{ border-color:var(--pine); background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
@@ -3110,8 +3119,9 @@ function moreToggle(html){
 }
 
 function toggleRecDetail(btn){
-  // 버튼과 상세가 붙어 있지 않아도 찾도록 한 줄 안에서 고른다 (J4)
-  const panel = btn.closest('.rec-item')?.querySelector('.rec-detail');
+  // 버튼과 상세가 붙어 있지 않아도 찾도록 한 덩어리 안에서 고른다 (J4).
+  // 기록 화면의 한 줄이거나, 공유한 기록 카드다.
+  const panel = btn.closest('.rec-item, .post-record')?.querySelector('.rec-detail');
   if (!panel) return;
   const 펼침 = panel.hidden;
   panel.hidden = !펼침;
@@ -3439,8 +3449,31 @@ function reactBar(target_type, id, react){
   }).join('') + `</div>`;
 }
 
+/* 공유한 기록 카드 — 한 줄 요약 + 항목별 지표 + 그날 운동.
+
+   줄이 다섯을 넘으면 늘어놓지 않고 '자세히 보기' 안에 넣는다. 피드에서
+   글 하나가 화면을 다 차지하면 다른 글을 못 본다. */
+const SHARE_ROWS_INLINE = 5;
+
+function recordHtml(rec){
+  if (!rec) return '';
+  const 머리 = `<div class="pr-head">📈 ${esc(rec['요약'] || '')}</div>`;
+  const 항목 = rec['항목별'] || {};
+  const 순서 = [...AXIS_ORDER, ...Object.keys(항목).filter(k => !AXIS_ORDER.includes(k))];
+  const 줄 = 순서.filter(k => 항목[k] != null)
+                .map(k => [k, `${Math.round(항목[k])}세`]);
+  (rec['오늘운동'] || []).forEach(x => { if (x && x.이름) 줄.push([x.이름, x.값 || '']); });
+  if (!줄.length) return `<div class="post-record">${머리}</div>`;
+
+  const 표 = `<div class="pr-rows">` + 줄.map(([a, b]) =>
+    `<div class="pr-row"><b>${esc(a)}</b><span>${esc(b)}</span></div>`).join('') + `</div>`;
+  const 속 = 줄.length > SHARE_ROWS_INLINE ? moreToggle(표) : 표;
+  // 카드를 누르면 댓글이 열린다. 여기 버튼은 그 동작까지 같이 타면 안 된다.
+  return `<div class="post-record" onclick="event.stopPropagation()">${머리}${속}</div>`;
+}
+
 function postCard(p){
-  const rec = p['기록'] ? `<div class="post-record">📈 ${esc(p['기록'].요약 || JSON.stringify(p['기록']))}</div>` : '';
+  const rec = recordHtml(p['기록']);
   return `<div class="post-card" id="post-${p.id}" data-id="${p.id}">
     <div class="post-open" onclick="toggleComments(${p.id})">
       <div class="post-top">${whoHtml(p['작성자'], p['작성자아이디'])}
@@ -3624,6 +3657,23 @@ async function submitPost(){
   } catch (e) { showToast(e.message); }
 }
 
+/* 오늘 한 운동 — 직접 적은 종목과 끝낸 루틴의 동작.
+   기록에 있는 것만 담는다. 없으면 빈 배열이다 (규칙 1). */
+function todayMoves(){
+  const 오늘 = todayIso();
+  const 목록 = [];
+  (logAt(오늘)?.items || []).forEach(x => {
+    const 값 = Object.entries(x.값 || {})
+      .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
+    목록.push({ 이름: x.이름, 값 });
+  });
+  ((state.routineLog || []).find(e => e.date === 오늘)?.steps || []).forEach(st => {
+    if (목록.some(m => m.이름 === st.운동명)) return;      // 같은 걸 두 번 적지 않는다
+    목록.push({ 이름: st.운동명, 값: st.체력요인 || '' });
+  });
+  return 목록;
+}
+
 async function shareMyRecord(){
   const r = state.result;
   const days = (state.routineLog || []).length;
@@ -3632,9 +3682,13 @@ async function shareMyRecord(){
   if (r && r['체력나이'] != null) parts.push(`추정 체력나이 ${Math.round(r['체력나이'])}세`);
   if (days) parts.push(`지금까지 ${days}회 운동 완료`);
   const 요약 = parts.join(' · ');
+  // 항목별 지표와 오늘 한 운동까지 함께 보낸다. 나이 한 줄만으로는
+  // 무엇을 해서 그렇게 됐는지 알 수 없다.
   try {
     await API.commPost({ kind: 'record', body: $('postBody').value.trim(),
-                         record: { 요약, 운동횟수: days } });
+                         record: { 요약, 운동횟수: days,
+                                   항목별: r?.['항목별'] || null,
+                                   오늘운동: todayMoves() } });
     $('postBody').value = ''; COMM.oldest = null; await loadFeed(false);
     showToast('기록을 공유했어요');
   } catch (e) { showToast(e.message); }

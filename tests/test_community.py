@@ -955,3 +955,19 @@ def test_고치기_지우기도_로그인이_필요하다():
     assert c.delete("/community/comments/1").status_code == 401
     assert c.put("/community/messages/1", json={"body": "x"}).status_code == 401
     assert c.delete("/community/messages/1").status_code == 401
+
+
+def test_공유하는_기록은_너무_크면_막는다():
+    """항목별 지표와 그날 운동까지 담아도 한 줄에 들어갈 크기다."""
+    a = _login(app, "a@x.com", "가")
+    큰것 = {"요약": "x", "오늘운동": [{"이름": "가" * 100, "값": "나" * 100} for _ in range(50)]}
+    r = a.post("/community/posts", json={"kind": "record", "body": "기록", "record": 큰것})
+    assert r.status_code == 400
+
+    작은것 = {"요약": "추정 체력나이 28세", "항목별": {"근력": 27, "심폐지구력": 30},
+            "오늘운동": [{"이름": "스쿼트", "값": "3세트"}]}
+    r2 = a.post("/community/posts", json={"kind": "record", "body": "", "record": 작은것})
+    assert r2.status_code == 200
+    글 = a.get("/community/posts").json()["posts"][0]
+    assert 글["기록"]["항목별"]["근력"] == 27
+    assert 글["기록"]["오늘운동"][0]["이름"] == "스쿼트"

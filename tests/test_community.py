@@ -244,7 +244,7 @@ def test_찾은_사람의_정보는_닉네임과_아이디뿐이다():
     b = _login(app, "b@x.com", "나")
     h = b.get("/community/me/handle").json()["아이디"]
     found = a.get(f"/community/users/{h}").json()
-    assert set(found) == {"닉네임", "아이디", "관계", "채팅"}
+    assert set(found) == {"닉네임", "아이디", "관계", "채팅", "기록"}
     본문 = a.get(f"/community/users/{h}").text
     assert "b@x.com" not in 본문
 
@@ -1182,3 +1182,131 @@ def test_날짜_모양이_아니면_막는다():
     assert a.post("/community/posts", json={
         "kind": "record", "record": {"요약": "x"},
         "record_date": "어제"}).status_code == 422
+
+
+# ---------- 친구에게 보이는 운동 기록 ----------
+
+SNAP = {
+    "measureLog": [{"date": "2026-09-06", "체력나이": 29,
+                    "항목별": {"근력": 27, "근지구력": 32, "심폐지구력": 29,
+                             "유연성": 30, "순발력": 31, "체성분": 31}}],
+    "routineLog": [{"date": "2026-09-08", "steps": [{"운동명": "런지", "체력요인": "근력"}]}],
+    "workoutLog": [{"date": "2026-09-08",
+                    "items": [{"이름": "달리기", "값": {"시간": 30}}],
+                    "요약": {"키": 170, "몸무게": 62}}],
+    "dayAges": {"2026-09-08": {"값": 28.4}},
+}
+
+
+def _기록둔사람(client, scope="friends", level="full"):
+    client.post("/me/measurements", json=SNAP)
+    client.put("/community/share/prefs", json={"scope": scope, "level": level})
+    return client.get("/community/me/handle").json()["아이디"]
+
+
+def test_정한_적이_없으면_비공개다():
+    """설정하지 않은 사람의 기록이 새어 나가면 안 된다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    _서로친구(a, b)
+    a.post("/me/measurements", json=SNAP)
+    ha = a.get("/community/me/handle").json()["아이디"]
+    assert a.get("/community/share/prefs").json()["수준"] == "none"
+    assert b.get(f"/community/users/{ha}/records").json()["수준"] == "none"
+    assert b.get(f"/community/users/{ha}/records/2026-09-08").status_code == 403
+
+
+def test_공개_수준마다_보이는_것이_다르다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    _서로친구(a, b)
+    ha = _기록둔사람(a)
+
+    def 본다(level):
+        a.put("/community/share/prefs", json={"scope": "friends", "level": level})
+        r = b.get(f"/community/users/{ha}/records/2026-09-08")
+        return r.status_code, (r.json() if r.status_code == 200 else None)
+
+    코드, d = 본다("full")
+    이름 = [x["이름"] for x in d["운동"]]
+    assert "달리기" in 이름 and "키" in 이름 and "몸무게" in 이름     # 몸 상태까지
+    assert set(d["지표"]) == {"근력", "근지구력", "심폐지구력", "유연성"}
+    assert d["체력나이"] == 28.4
+
+    코드, d = 본다("no_body")
+    이름 = [x["이름"] for x in d["운동"]]
+    assert "달리기" in 이름 and "키" not in 이름 and "몸무게" not in 이름
+    assert d["지표"] and d["체력나이"] == 28.4
+
+    코드, d = 본다("workout_only")
+    assert [x["이름"] for x in d["운동"]] and d["지표"] is None and d["체력나이"] is None
+    assert "키" not in [x["이름"] for x in d["운동"]]
+
+    코드, d = 본다("axes_only")
+    assert d["운동"] is None and d["지표"] and d["체력나이"] == 28.4
+
+    assert 본다("none")[0] == 403
+
+
+def test_지표에는_몸에_관한_항목이_없다():
+    """체성분은 몸 상태다. '체력 지표' 라고 내보내면 안 된다."""
+    assert set(community.SHARE_AXES) == {"유연성", "근력", "근지구력", "심폐지구력"}
+    assert "체성분" not in community.SHARE_AXES
+
+
+def test_친구가_아니면_못_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = _기록둔사람(a, scope="friends", level="full")
+    assert b.get(f"/community/users/{ha}/records/2026-09-08").status_code == 403
+    assert b.get(f"/community/users/{ha}/records").json()["날짜"] == []
+
+
+def test_전체_공개면_친구가_아니어도_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = _기록둔사람(a, scope="all", level="axes_only")
+    assert b.get(f"/community/users/{ha}/records/2026-09-08").status_code == 200
+
+
+def test_고른_친구만_본다_기록():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    ha, hb = _서로친구(a, b)
+    _서로친구(a, c)
+    a.put("/community/share/chosen", json={"handles": [hb]})
+    _기록둔사람(a, scope="chosen", level="full")
+    assert b.get(f"/community/users/{ha}/records/2026-09-08").status_code == 200
+    assert c.get(f"/community/users/{ha}/records/2026-09-08").status_code == 403
+
+
+def test_내_기록은_늘_내가_본다():
+    a = _login(app, "a@x.com", "가")
+    ha = _기록둔사람(a, scope="chosen", level="none")
+    r = a.get(f"/community/users/{ha}/records/2026-09-08")
+    assert r.status_code == 200 and r.json()["수준"] == "full"
+
+
+def test_프로필이_기록을_볼_수_있는지_알려준다():
+    """화면이 판단하면 규칙이 두 벌이 된다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha, hb = _서로친구(a, b)
+    assert b.get(f"/community/users/{ha}").json()["기록"] == "none"
+    _기록둔사람(a, scope="friends", level="axes_only")
+    assert b.get(f"/community/users/{ha}").json()["기록"] == "axes_only"
+
+
+def test_날짜_모양이_아니면_막는다_기록():
+    a = _login(app, "a@x.com", "가")
+    ha = _기록둔사람(a)
+    assert a.get(f"/community/users/{ha}/records/어제").status_code == 400
+
+
+def test_공개_설정도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.get("/community/share/prefs").status_code == 401
+    assert c.put("/community/share/prefs",
+                 json={"scope": "all", "level": "full"}).status_code == 401
+    assert c.get("/community/users/abcdef/records").status_code == 401

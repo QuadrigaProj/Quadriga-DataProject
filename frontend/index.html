@@ -3746,6 +3746,9 @@ async function toggleComments(id){
   if (!box.hidden) { box.hidden = true; return; }
   box.hidden = false;
   box.innerHTML = '불러오는 중…';
+  // 고른 글의 본문을 화면 가운데로 (goToMessage 와 같은 방식). 댓글이 아래에 붙기 전에 잡는다.
+  const 본문영역 = $('post-' + id)?.querySelector('.post-open') || $('post-' + id);
+  if (본문영역) 본문영역.scrollIntoView({ block: 'center', behavior: 'smooth' });
   try {
     const p = await API.commPostDetail(id);
     box.innerHTML = (p['댓글'] || []).map(c => `
@@ -4166,8 +4169,10 @@ async function togglePinRoom(id){
 
 async function destroyRoom(id){
   const rm = ROOMS.find(x => x.id === id);
-  if (!confirm(`${rm ? esc(rm['이름']) : '이'} 채팅방을 폭파할까요?
-멤버 전원이 나가지고, 메시지도 전부 사라져요. 되돌릴 수 없어요.`)) return;
+  // 앱의 다른 확인창과 같은 말투: "…까요?" + 무엇이 사라지는지 + "되돌릴 수 없어요."
+  const 이름 = rm ? `「${rm['이름']}」 ` : '이 ';
+  if (!confirm(`${이름}채팅방을 폭파할까요?
+멤버가 모두 나가고 메시지도 전부 사라져요. 되돌릴 수 없어요.`)) return;
   try {
     if (COMM.room === id) closeRoom();
     await API.commRoomDelete(id);

@@ -91,6 +91,11 @@ const API = (() => {
     commMeta: () => call('/community/meta'),
     commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),
     commPost: (b) => post('/community/posts', b),
+    // 글마다 누구에게 보일지 고른다 — 'chosen' 은 고른 친구만
+    commChosen: () => call('/community/share/chosen'),
+    commChosenSet: (handles) => call('/community/share/chosen', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handles }) }),
     commPostDetail: (id) => call('/community/posts/' + id),
     commPostDelete: (id) => call('/community/posts/' + id, { method: 'DELETE' }),
     // 내가 쓴 것만 고치고 지울 수 있다 — 확인은 서버가 한다

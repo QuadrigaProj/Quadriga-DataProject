@@ -36,9 +36,30 @@ CREATE TABLE IF NOT EXISTS community_posts (
   media      TEXT NOT NULL DEFAULT '[]',
   record     TEXT,
   created_at INTEGER NOT NULL,
-  edited_at  INTEGER
+  edited_at  INTEGER,
+  /* 누가 볼 수 있는 글인지. all=전체, friends=친구 전체, chosen=고른 친구.
+     예전 글에는 값이 없다 — 그때는 전체 공개뿐이었으니 all 로 읽는다. */
+  audience   TEXT,
+  /* 기록 공유 글이 어느 날의 기록인지 (YYYY-MM-DD) */
+  record_date TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cposts_created ON community_posts(created_at DESC);
+
+/* 글을 누구에게 보일지 고른 사람들. audience='chosen' 인 글에만 쓴다.
+   비어 있으면 글쓴이 말고는 아무도 못 본다 — 아무나 보이는 쪽으로 새지 않게. */
+CREATE TABLE IF NOT EXISTS post_audience (
+  post_id INTEGER NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (post_id, user_id)
+);
+
+/* 자주 고르는 친구 묶음 — '선택 친구' 로 올릴 때 기본으로 채워 준다.
+   글마다 다시 고를 수도 있다. */
+CREATE TABLE IF NOT EXISTS share_chosen (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  other_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, other_id)
+);
 CREATE TABLE IF NOT EXISTS community_comments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   post_id    INTEGER NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
@@ -155,6 +176,7 @@ def init_db() -> None:
         for table in ("community_posts", "community_comments", "chat_messages"):
             _add_columns(con, table, ["edited_at INTEGER"])
         _add_columns(con, "chat_messages", ["reply_to INTEGER"])
+        _add_columns(con, "community_posts", ["audience TEXT", "record_date TEXT"])
         _move_replies_into_messages(con)
 
 
@@ -340,8 +362,66 @@ def _clean_media(media) -> str:
 # 게시글 · 댓글 · 반응
 # ---------------------------------------------------------------------------
 
+AUDIENCE = ("all", "friends", "chosen")
+
+
+def _friend_ids(con, me: int) -> set[int]:
+    보냄 = {r["other_id"] for r in con.execute(
+        "SELECT other_id FROM friend_links WHERE user_id=?", (me,)).fetchall()}
+    받음 = {r["user_id"] for r in con.execute(
+        "SELECT user_id FROM friend_links WHERE other_id=?", (me,)).fetchall()}
+    return 보냄 & 받음
+
+
+def chosen_friends(me: int) -> list[dict]:
+    """자주 고르는 친구 묶음. 친구가 아니게 된 사람은 빼고 돌려준다."""
+    with auth.db() as con:
+        고른것 = {r["other_id"] for r in con.execute(
+            "SELECT other_id FROM share_chosen WHERE user_id=?", (me,)).fetchall()}
+        친구 = _friend_ids(con, me)
+        return [_public_user(con, u) for u in sorted(고른것 & 친구)]
+
+
+def set_chosen_friends(me: int, handles: list[str]) -> list[dict]:
+    """친구인 사람만 담는다. 친구가 아닌 사람을 담아 두면, 나중에 친구가
+    되는 순간 예전에 올린 글까지 한꺼번에 보이게 된다."""
+    with auth.db() as con:
+        친구 = _friend_ids(con, me)
+        ids = []
+        for h in handles or []:
+            r = con.execute("SELECT user_id FROM user_handles WHERE handle=?",
+                            (str(h).strip().lower(),)).fetchone()
+            if not r:
+                raise HTTPException(404, f"'{h}' 아이디를 쓰는 회원이 없어요.")
+            if r["user_id"] not in 친구:
+                raise HTTPException(400, "친구인 사람만 고를 수 있어요.")
+            ids.append(r["user_id"])
+        con.execute("DELETE FROM share_chosen WHERE user_id=?", (me,))
+        for u in set(ids):
+            con.execute("INSERT INTO share_chosen (user_id, other_id) VALUES (?,?)", (me, u))
+    return chosen_friends(me)
+
+
+def _audience_ids(con, me: int, audience: str, handles) -> list[int]:
+    """'고른 친구' 로 올릴 때 볼 사람들. 안 주면 저장해 둔 묶음을 쓴다."""
+    친구 = _friend_ids(con, me)
+    if handles is None:
+        고른것 = {r["other_id"] for r in con.execute(
+            "SELECT other_id FROM share_chosen WHERE user_id=?", (me,)).fetchall()}
+        return sorted(고른것 & 친구)
+    out = []
+    for h in handles:
+        r = con.execute("SELECT user_id FROM user_handles WHERE handle=?",
+                        (str(h).strip().lower(),)).fetchone()
+        if not r or r["user_id"] not in 친구:
+            raise HTTPException(400, "친구인 사람만 고를 수 있어요.")
+        out.append(r["user_id"])
+    return sorted(set(out))
+
+
 def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
-                record: dict | None = None) -> int:
+                record: dict | None = None, audience: str = "all",
+                to: list[str] | None = None, record_date: str | None = None) -> int:
     body = (body or "").strip()
     media_json = _clean_media(media)
     if not body and media_json == "[]" and not record:
@@ -350,12 +430,20 @@ def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
     # 들어갈 크기다 — 그보다 크면 화면에 쓰라고 보낸 것이 아니다.
     if record is not None and len(json.dumps(record, ensure_ascii=False)) > 4000:
         raise HTTPException(400, "공유할 기록이 너무 큽니다.")
+    if audience not in AUDIENCE:
+        raise HTTPException(400, "공개 범위가 올바르지 않아요.")
     with auth.db() as con:
-        return con.insert_id(
-            "INSERT INTO community_posts (user_id, kind, body, media, record, created_at)"
-            " VALUES (?,?,?,?,?,?)",
+        볼사람 = _audience_ids(con, user_id, audience, to) if audience == "chosen" else []
+        pid = con.insert_id(
+            "INSERT INTO community_posts"
+            " (user_id, kind, body, media, record, created_at, audience, record_date)"
+            " VALUES (?,?,?,?,?,?,?,?)",
             (user_id, kind, body[:4000], media_json,
-             json.dumps(record, ensure_ascii=False) if record else None, int(time.time())))
+             json.dumps(record, ensure_ascii=False) if record else None,
+             int(time.time()), audience, record_date))
+        for u in 볼사람:
+            con.execute("INSERT INTO post_audience (post_id, user_id) VALUES (?,?)", (pid, u))
+        return pid
 
 
 def _reaction_summary(con, target_type: str, ids: list[int], me: int) -> dict[int, dict]:
@@ -375,15 +463,38 @@ def _reaction_summary(con, target_type: str, ids: list[int], me: int) -> dict[in
     return out
 
 
+def _visible_sql(me: int) -> tuple[str, tuple]:
+    """내가 볼 수 있는 글의 조건.
+
+    내 글은 늘 보이고, 전체 공개도 보인다. '친구 전체' 는 서로 친구일 때만,
+    '고른 친구' 는 글쓴이가 나를 고른 글만. 예전 글(audience 가 비어 있음)은
+    전체 공개뿐이던 때의 것이라 all 로 읽는다.
+    Postgres 는 OR 의 피연산자가 boolean 이어야 해서 EXISTS 로 감싼다.
+    """
+    return (
+        " (p.user_id = ?"
+        "  OR p.audience IS NULL OR p.audience = 'all'"
+        "  OR (p.audience = 'friends'"
+        "      AND EXISTS (SELECT 1 FROM friend_links f1"
+        "                  WHERE f1.user_id = p.user_id AND f1.other_id = ?)"
+        "      AND EXISTS (SELECT 1 FROM friend_links f2"
+        "                  WHERE f2.user_id = ? AND f2.other_id = p.user_id))"
+        "  OR (p.audience = 'chosen'"
+        "      AND EXISTS (SELECT 1 FROM post_audience a"
+        "                  WHERE a.post_id = p.id AND a.user_id = ?)))",
+        (me, me, me, me))
+
+
 def list_posts(me: int, *, before: int | None = None, limit: int = 20) -> list[dict]:
     limit = max(1, min(50, limit))
     with auth.db() as con:
+        볼조건, 볼값 = _visible_sql(me)
         sql = ("SELECT p.*, u.display_name FROM community_posts p"
-               " JOIN users u ON u.id = p.user_id")
-        params: tuple = ()
+               " JOIN users u ON u.id = p.user_id WHERE" + 볼조건)
+        params: tuple = 볼값
         if before:
-            sql += " WHERE p.id < ?"
-            params = (before,)
+            sql += " AND p.id < ?"
+            params = (*볼값, before)
         sql += " ORDER BY p.id DESC LIMIT ?"
         rows = con.execute(sql, (*params, limit)).fetchall()
         ids = [r["id"] for r in rows]
@@ -414,6 +525,8 @@ def _post_dict(r, me: int, comment_count: int, react: dict | None,
         "기록": json.loads(r["record"]) if r["record"] else None,
         "작성시각": r["created_at"],
         "수정시각": r["edited_at"],
+        "공개범위": r["audience"] or "all",
+        "기록날짜": r["record_date"],
         "댓글수": comment_count,
         "반응": (react or {"counts": {}, "mine": []}),
     }
@@ -421,10 +534,13 @@ def _post_dict(r, me: int, comment_count: int, react: dict | None,
 
 def get_post(me: int, post_id: int) -> dict:
     with auth.db() as con:
+        볼조건, 볼값 = _visible_sql(me)
         r = con.execute(
             "SELECT p.*, u.display_name FROM community_posts p"
-            " JOIN users u ON u.id = p.user_id WHERE p.id=?", (post_id,)).fetchone()
+            " JOIN users u ON u.id = p.user_id WHERE p.id=? AND" + 볼조건,
+            (post_id, *볼값)).fetchone()
         if not r:
+            # 못 보는 글과 없는 글을 구분해 주지 않는다 — 있다는 사실도 정보다
             raise HTTPException(404, "글을 찾을 수 없어요.")
         cs = con.execute(
             "SELECT c.*, u.display_name FROM community_comments c"
@@ -1041,6 +1157,16 @@ class PostIn(BaseModel):
     media: list[dict] = Field(default_factory=list)
     kind: str = Field("post", pattern="^(post|record)$")
     record: dict | None = None
+    # 누가 볼 수 있는 글인지. 안 주면 전체 공개 — 지금까지와 같다.
+    audience: str = Field("all", pattern="^(all|friends|chosen)$")
+    # 'chosen' 일 때 볼 사람들. 안 주면 저장해 둔 묶음을 쓴다.
+    to: list[str] | None = Field(None, max_length=100)
+    # 기록 공유 글이 어느 날의 기록인지
+    record_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class ChosenIn(BaseModel):
+    handles: list[str] = Field(default_factory=list, max_length=100)
 
 
 class PostEditIn(BaseModel):
@@ -1100,7 +1226,9 @@ def get_posts(before: int | None = None, limit: int = 20,
 @router.post("/posts")
 def post_new(body: PostIn, quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
-    pid = create_post(me, body=body.body, media=body.media, kind=body.kind, record=body.record)
+    pid = create_post(me, body=body.body, media=body.media, kind=body.kind,
+                      record=body.record, audience=body.audience, to=body.to,
+                      record_date=body.record_date)
     return get_post(me, pid)
 
 
@@ -1159,6 +1287,18 @@ def comment_new(post_id: int, body: CommentIn,
     me = _uid(quadriga_session)
     add_comment(me, post_id, body.body)
     return get_post(me, post_id)
+
+
+@router.get("/share/chosen")
+def share_chosen_get(quadriga_session: str | None = Cookie(None)) -> dict:
+    """'고른 친구' 로 올릴 때 기본으로 채워 줄 사람들."""
+    return {"고른친구": chosen_friends(_uid(quadriga_session))}
+
+
+@router.put("/share/chosen")
+def share_chosen_put(body: ChosenIn,
+                     quadriga_session: str | None = Cookie(None)) -> dict:
+    return {"고른친구": set_chosen_friends(_uid(quadriga_session), body.handles)}
 
 
 @router.post("/reactions")

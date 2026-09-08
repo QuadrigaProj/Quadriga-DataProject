@@ -22,10 +22,13 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 HOST = os.getenv("KAKAOPAY_HOST", "https://open-api.kakaopay.com").rstrip("/")
 READY = "/online/v1/payment/ready"
@@ -55,6 +58,40 @@ def available() -> bool:
 def is_test() -> bool:
     """테스트 가맹점 코드로 도는 중인지 — 화면에 그대로 알린다."""
     return cid() == TEST_CID
+
+
+def _fail(where: str, status: int | None, body) -> dict:
+    """실패 이유를 남기고, 부르는 쪽이 화면에 보여 줄 만큼만 돌려준다.
+
+    예전에는 그냥 None 을 돌려줘서 "실패했다" 밖에 알 수 없었다. 설정이 틀렸는지
+    키가 틀렸는지 구분이 안 되면 붙이는 사람이 손쓸 방법이 없다.
+    """
+    코드 = None
+    메시지 = None
+    if isinstance(body, dict):
+        코드 = body.get("error_code")
+        메시지 = body.get("error_message")
+    log.warning("카카오페이 %s 실패: status=%s error_code=%s error_message=%s",
+                where, status, 코드, 메시지)
+    return {"error": {"status": status, "code": 코드, "message": 메시지}}
+
+
+# 카카오가 알려 주는 흔한 원인 — 붙이는 사람에게 다음 할 일을 바로 알려 준다
+ERROR_HINT = {
+    -400: "요청이 잘못됐어요. 서버 설정을 확인해 주세요.",
+    -401: "SECRET KEY 가 맞지 않아요. 키를 다시 확인해 주세요.",
+    -403: "카카오페이 개발자센터에서 '사용 API' 에 온라인 결제를 등록해 주세요.",
+    -404: "요청 주소가 잘못됐어요.",
+    -429: "오늘 호출 한도를 넘었어요. 내일 다시 시도해 주세요.",
+    -500: "카카오페이 서버 오류예요. 잠시 뒤 다시 시도해 주세요.",
+    -503: "카카오페이가 점검 중이에요. 잠시 뒤 다시 시도해 주세요.",
+}
+
+
+def hint(err: dict | None) -> str:
+    """사용자에게 보여 줄 한 줄. 모르는 코드면 일반 문구로 둔다."""
+    e = (err or {}).get("error") or {}
+    return ERROR_HINT.get(e.get("code"), "카카오페이 결제를 시작하지 못했어요.")
 
 
 def _headers() -> dict:
@@ -98,9 +135,14 @@ async def ready(*, amount: int, order_id: str, user_id: str,
         async with httpx.AsyncClient(timeout=TIMEOUT_SEC) as http:
             r = await http.post(HOST + READY, json=body, headers=_headers())
             if r.status_code >= 400:
-                return None
+                try:
+                    본문 = r.json()
+                except Exception:
+                    본문 = r.text[:300]
+                return _fail("ready", r.status_code, 본문)
             d = r.json()
-    except Exception:
+    except Exception as e:
+        log.warning("카카오페이 ready 호출 실패: %r", e)
         return None
 
     tid = d.get("tid")
@@ -135,9 +177,15 @@ async def approve(*, tid: str, pg_token: str, order_id: str, user_id: str) -> di
         async with httpx.AsyncClient(timeout=TIMEOUT_SEC) as http:
             r = await http.post(HOST + APPROVE, json=body, headers=_headers())
             if r.status_code >= 400:
+                try:
+                    본문 = r.json()
+                except Exception:
+                    본문 = r.text[:300]
+                _fail("approve", r.status_code, 본문)
                 return None
             d = r.json()
-    except Exception:
+    except Exception as e:
+        log.warning("카카오페이 approve 호출 실패: %r", e)
         return None
 
     amount = (d.get("amount") or {}).get("total")
@@ -164,9 +212,15 @@ async def cancel(*, tid: str, amount: int) -> dict | None:
         async with httpx.AsyncClient(timeout=TIMEOUT_SEC) as http:
             r = await http.post(HOST + CANCEL, json=body, headers=_headers())
             if r.status_code >= 400:
+                try:
+                    본문 = r.json()
+                except Exception:
+                    본문 = r.text[:300]
+                _fail("cancel", r.status_code, 본문)
                 return None
             d = r.json()
-    except Exception:
+    except Exception as e:
+        log.warning("카카오페이 cancel 호출 실패: %r", e)
         return None
 
     총 = (d.get("canceled_amount") or {}).get("total")

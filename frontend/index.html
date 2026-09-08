@@ -178,7 +178,10 @@
   .greet-eyebrow{ font-size:13.5px; color:var(--muted); margin-top:4px; }
   .peer-emph{ font-size:17px; font-weight:800; color:var(--amber); }
   .greet-title{ font-size:19px; font-weight:700; }
-  .gauge-now-row{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+  /* 좁은 화면에서 '현재 체력 나이' 가 두 줄로 접혀 버튼과 어긋났다 */
+  .gauge-now-row{ display:flex; align-items:center; gap:8px; margin-top:4px;
+                  flex-wrap:wrap; }
+  .gauge-now-row .gauge-now-label{ white-space:nowrap; }
   .gauge-now-row .gauge-now-label{ margin-top:0; }
   .gauge-now-row .dday-pill{ padding:5px 10px; font-size:11.5px; }
   .dday-pill{
@@ -1478,14 +1481,6 @@
   <section class="screen" id="s3">
     <div class="topbar">
       <div>
-        <div class="greet-eyebrow" id="greetSub">오늘도 좋은 하루예요</div>
-        <div class="greet-title" id="greetName">반가워요</div>
-      </div>
-      <button type="button" class="dday-pill" id="ddayPill" onclick="remeasure()">재측정하기</button>
-    </div>
-
-    <div class="topbar">
-      <div>
         <div class="greet-title" id="greetName">반가워요</div>
         <div class="greet-eyebrow" id="greetSub">오늘도 좋은 하루예요</div>
       </div>
@@ -1501,7 +1496,8 @@
         </div>
         <div class="gauge-legend">
           <div><i class="sw sw-green"></i>목표 <b id="gaugeGoal">—</b></div>
-          <div><i class="sw sw-track"></i>실제 <b id="gaugeReal">—</b></div>
+          <div><i class="sw sw-track"></i>처음 <b id="gaugeReal">—</b></div>
+          <div id="gaugeAgeRow"><i class="sw sw-tick"></i>실제 <b id="gaugeAge">—</b></div>
         </div>
       </div>
     </div>

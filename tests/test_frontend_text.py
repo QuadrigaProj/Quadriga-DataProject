@@ -1880,3 +1880,18 @@ def test_방을_옮기면_펴_둔_댓글은_잊는다():
     html = _index()
     본문 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
     assert "openReplies.clear()" in 본문
+
+
+def test_인라인_수정창은_프로필_폼과_이름이_겹치지_않는다():
+    """.edit-row 는 프로필 폼(성별 버튼 포함)이 이미 쓰던 이름이다.
+    같은 이름을 쓰면 여기 button 규칙이 그쪽 버튼까지 칠한다."""
+    html = _index()
+    assert 'class="inline-edit"' in html
+    assert ".inline-edit button{" in html
+    # 프로필 폼 쪽 규칙은 그대로 살아 있어야 한다
+    assert ".edit-row > span:first-child{" in html
+    앞 = html.split(".edit-seg button.on{")[1].split("}")[0]
+    assert "background:var(--pine)" in 앞
+    # 인라인 수정창 CSS 가 .edit-row 를 다시 정의하지 않는다
+    assert ".edit-row button{" not in html
+    assert ".edit-row{ display:flex; gap:6px;" not in html

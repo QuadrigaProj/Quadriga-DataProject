@@ -1532,7 +1532,7 @@
           </button>
           <div class="player-name" id="playerName">의자에 앉았다 일어서기</div>
         </div>
-        <div class="player-set" id="playerSet">2세트 중 1세트 · 10회</div>
+        <div class="player-set" id="playerSet">10회씩 2세트</div>
       </div>
       <div class="cond-row" id="condRow">
         <button type="button" class="cond-btn heavy" id="heavyBtn" aria-pressed="false" onclick="toggleHeavy()">몸이 무거운 날</button>
@@ -2910,9 +2910,12 @@ async function renderRecords(){
   const st = streakDays(log);
   $('recStreak').textContent = st ? `${st}일` : '—';
 
-  // 체력나이 변화 — 첫 점검이 있어야 비교가 성립한다
+  // 체력나이 변화 — 첫 점검이 있어야 비교가 성립한다.
+  // now 는 마지막 측정값이 아니라 displayAge() — 운동 기록으로 당겨진 값이 있으면
+  // 그걸 쓴다. 여기서 measurement 원값만 쓰면 기록을 적어도 이 카드가 그대로라서
+  // "기록해도 체력나이가 안 바뀐다"는 피드백으로 이어졌다.
   const first = state.first?.결과?.체력나이 ?? null;
-  const now = state.result?.체력나이 ?? null;
+  const now = displayAge() ?? null;
   if (first !== null && now !== null) {
     $('recAgeBlock').style.display = 'block';
     $('recFirstAge').textContent = `${Math.round(first)}세`;
@@ -2968,7 +2971,7 @@ function routineDetailHtml(e){
     .join('');
   const g = e.강도 || {};
   const 강도 = [
-    g.반복 != null ? `${g.반복}회${g.세트 != null ? ` × ${g.세트}세트` : ''}` : null,
+    g.반복 != null ? `${g.반복}회${g.세트 != null ? `씩 ${g.세트}세트` : ''}` : null,
     g.시간초 != null ? `시간형 ${g.시간초}초` : null,
     g.라운드 != null ? `${g.라운드}라운드` : null,
   ].filter(Boolean).join(' · ');
@@ -4354,7 +4357,7 @@ function renderStep(){
     const amount = step.유형 === '시간'
       ? `${it.시간초 ?? 30}초`
       : (it.반복 != null ? `${it.반복}회` : (it.라운드 != null ? `${it.라운드}라운드` : '10회'));
-    $('playerSet').textContent = `${it.세트 ?? 2}세트 · ${amount}` +
+    $('playerSet').textContent = `${amount}씩 ${it.세트 ?? 2}세트` +
       (step.도구 && step.도구 !== '맨몸' ? ` · ${step.도구}` : '');
   } else {
     $('playerSet').textContent = `${step.단계} · ${step.체력요인 || ''}`;

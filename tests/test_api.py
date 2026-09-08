@@ -236,6 +236,44 @@ def test_또래백분위():
 
 
 @needs_data
+def test_안_잰_항목은_또래비교도_항목별에도_안_나온다():
+    """유연성만 보내면 유연성만 나와야 한다 — placeholder 예시값이 실제 값처럼
+    쓰여 근력·체성분까지 '분석'되는 일이 없어야 한다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 45, "flexibility": 8}).json()
+    assert set(b["또래비교"]) == {"유연성"}
+    assert set(b["항목별"]) == {"유연성"}
+
+
+@needs_data
+def test_나이를_안_주면_또래비교_자체가_없다():
+    """또래비교는 나이가 있어야 성립한다 — 측정값이 있어도 나이가 없으면 비워 둔다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "flexibility": 8, "strength": 25}).json()
+    assert b["또래비교"] == {}
+
+
+@needs_data
+def test_빈_문자열이나_NaN은_422로_막혀_계산에_안_들어간다():
+    """프런트가 빈 입력칸을 실수로 빈 문자열("")로 보내는 경우를 흉내 낸다.
+    숫자 타입 필드에 문자열이 오면 Pydantic 이 요청 자체를 거절해야 하고,
+    이게 조용히 0 이나 다른 값으로 둔갑해 계산에 들어가면 안 된다."""
+    r = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 45, "flexibility": ""})
+    assert r.status_code == 422
+
+
+def test_NaN값은_측정_안한_것으로_취급한다():
+    """혹시라도 NaN 이 함수까지 들어오면(예: 다른 호출 경로) '안 잰 것'으로 본다 —
+    None 과 똑같이 취급해서 보간 계산이 NaN 을 퍼뜨리지 않게 막는 마지막 방어선."""
+    from backend import fitness_age as fa
+    assert fa._given(None) is False
+    assert fa._given(float("nan")) is False
+    assert fa._given(0) is True          # 0 은 '안 잰 것'이 아니라 실제로 0을 잰 것이다
+    assert fa._given(12.0) is True
+
+
+@needs_data
 def test_환산나이는_절대_음수가_안된다():
     """website/server.js 에 있던 결함: 재점검 캡 때문에 개선효과가 음수로 나왔다."""
     for flex in (-30, -10, 0, 15, 50):

@@ -1770,8 +1770,8 @@ def test_채팅은_목록을_통째로_다시_그린다():
 def test_공유한_기록에_항목별_지표와_그날_운동이_담긴다():
     """나이 한 줄만으로는 무엇을 해서 그렇게 됐는지 알 수 없다."""
     html = _index()
-    본문 = html.split("function shareRecordFor(날)")[1].split("\n}")[0]
-    assert "기준?.항목별 || null" in 본문
+    본문 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
+    assert "기준?.항목별?.[k]" in 본문
     assert "오늘운동: 운동" in 본문
 
     그날 = html.split("function movesOn(날)")[1].split("\n}")[0]
@@ -1973,10 +1973,29 @@ def test_기록_공유는_날짜와_공개_범위를_고른다():
     html = _index()
     본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
     assert 'id="shareDate"' in 본문
-    assert 'type="date"' in 본문
-    assert 'max="${todayIso()}"' in 본문                  # 오지 않은 날은 고를 수 없다
     assert "pickAudience(" in 본문
     assert "submitShare()" in 본문
+
+
+def test_기록이_있는_날만_고를_수_있다():
+    """아무 날이나 고르게 두면 빈 날을 골라 놓고 '올릴 기록이 없다' 는
+    말을 듣게 된다."""
+    html = _index()
+    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert "const 있는날 = workoutDates();" in 본문        # 기록이 있는 날만
+    assert "<select id=\"shareDate\"" in 본문             # 날짜 입력칸이 아니다
+    assert 'type="date"' not in 본문
+    assert "[...있는날].reverse().map" in 본문             # 최근 날부터
+    assert "아직 기록한 운동이 없어요" in 본문             # 하나도 없으면 그렇다고 말한다
+    assert "${고를수있음 ? '' : 'disabled'}" in 본문        # 올릴 것이 없으면 못 누른다
+
+
+def test_고를_때_어떤_날인지_함께_보여준다():
+    """날짜만 늘어놓으면 어느 날을 고르는지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function shareDateLabel(날)")[1].split("\n}")[0]
+    assert "dayFinalAge(날)" in 본문
+    assert "movesOn(날)" in 본문
 
 
 def test_기본_공개_범위는_친구까지다():
@@ -1998,7 +2017,7 @@ def test_올리기_전에_무엇이_올라가는지_보여준다():
     html = _index()
     본문 = html.split("function renderSharePreview()")[1].split("\n}")[0]
     assert "recordHtml(shareRecordFor(" in 본문
-    기록 = html.split("function shareRecordFor(날)")[1].split("\n}")[0]
+    기록 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
     assert "dayFinalAge(날)" in 기록                      # 그날의 최종값
     assert "movesOn(날)" in 기록                          # 그날 한 운동
 
@@ -2014,9 +2033,17 @@ def test_전체_공개가_아닌_글에는_범위를_적는다():
 
 # ---------- 친구 기록 보기 ----------
 
-def test_기록_공개_설정_자리가_있다():
+def test_기록_공개_설정은_프로필_창에_있다():
+    """올릴 때 고르는 것(글마다)과 늘 열어 두는 것(친구에게)은 다른 일이다.
+    늘 열어 두는 쪽은 내 정보에 둔다."""
     html = _index()
     assert 'id="prefScope"' in html and 'id="prefLevel"' in html
+    친구탭 = html.split('id="commFriend"')[1].split("</section>")[0]
+    assert "prefScope" not in 친구탭          # 친구 탭에서는 뺐다
+    내정보 = html.split('<div class="edit-head">')[1].split("</section>")[0]
+    assert 'id="prefScope"' in 내정보
+    그리기 = html.split("function renderEdit()")[1].split("\n}")[0]
+    assert "loadPrefs()" in 그리기
     본문 = html.split("function renderPrefs()")[1].split("\n}")[0]
     assert "SCOPE_LABEL" in 본문 and "SHARE_LEVEL_LABEL" in 본문
     assert "지금은 아무에게도 보이지 않아요" in 본문       # 비공개일 때 분명히 말한다
@@ -2096,3 +2123,56 @@ def test_채팅_입력칸도_게시글_작성란과_같은_모양이다():
     css = html.split(".chat-compose-row input{")[1].split("}")[0]
     assert "flex:1" in css
     assert "border-radius:999px" in css
+
+
+# ---------- 글마다 얼마나 담을지 ----------
+
+def test_올릴_때_얼마나_담을지_고른다():
+    html = _index()
+    본문 = html.split("const POST_LEVEL_LABEL = {")[1].split("};")[0]
+    for k in ("full", "no_body", "workout_only", "axes_only", "custom"):
+        assert k in 본문, k
+    assert "none" not in 본문                 # 아무것도 안 보이는 글을 올릴 까닭이 없다
+    assert "let shareLevel = 'no_body';" in html   # 몸 상태는 기본으로 담지 않는다
+    시트 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert 'id="shareLevel"' in 시트
+
+
+def test_직접_고르면_하나하나_켠다():
+    html = _index()
+    본문 = html.split("function renderShareItems()")[1].split("\n}")[0]
+    assert "level !== 'custom'" in 본문        # 고를 때만 나온다
+    assert 'type="checkbox"' in 본문
+    assert "toggleShareItem(" in 본문
+    항목 = html.split("function shareItemsFor(날)")[1].split("\n}")[0]
+    assert "dayFinalAge(날)" in 항목           # 체력나이
+    assert "AXES_SHOWN.forEach" in 항목        # 지표 하나하나
+    assert "movesOn(날).forEach" in 항목       # 운동 하나하나
+    assert "LOG_SUMMARY" in 항목               # 그날 몸 상태 하나하나
+
+
+def test_고를_수_없는_것은_늘어놓지_않는다():
+    """켰는데 안 올라간 것처럼 보이면 안 된다."""
+    html = _index()
+    항목 = html.split("function shareItemsFor(날)")[1].split("\n}")[0]
+    assert "기준?.항목별?.[k] != null" in 항목
+    assert "요약[f.key] != null" in 항목
+
+
+def test_담지_않기로_한_것은_아예_만들지_않는다():
+    """담아 놓고 화면에서 가리면 값은 이미 올라간 뒤다."""
+    html = _index()
+    본문 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
+    assert "켬.has('age')" in 본문
+    assert "켬.has('axis:' + k)" in 본문
+    assert "켬.has('move:' + x.이름)" in 본문
+    assert "켬.has('body:' + f.key)" in 본문
+
+
+def test_수준을_바꾸면_켠_것도_따라간다():
+    """빈 목록에서 시작하면 매번 처음부터 다 켜야 한다."""
+    html = _index()
+    본문 = html.split("function pickShareLevel()")[1].split("\n}")[0]
+    assert "pickedByLevel(날, shareLevel)" in 본문
+    잡기 = html.split("function pickedByLevel(날, level)")[1].split("\n}")[0]
+    assert "level === 'full'" in 잡기 and "level === 'axes_only'" in 잡기

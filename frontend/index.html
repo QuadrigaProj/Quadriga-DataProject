@@ -852,6 +852,9 @@
     padding:8px 10px; text-align:right;
   }
   .edit-row input:focus, .edit-row select:focus{ outline:2px solid var(--pine-tint); }
+  /* 앱 내 아이디 — 바꿀 수 없는 값이라 입력칸이 아니라 글자로 둔다 */
+  .my-id{ flex:1; text-align:right; font-weight:700; font-size:14px;
+    font-variant-numeric:tabular-nums; letter-spacing:0.3px; word-break:break-all; }
   .edit-seg{ flex:1; display:flex; gap:6px; justify-content:flex-end; }
   .edit-seg button{
     padding:8px 14px; border-radius:9px; border:1px solid var(--line);
@@ -1202,8 +1205,12 @@
     background:var(--paper); }
   .post-actions{ display:flex; gap:14px; margin-top:8px; font-size:12.5px; color:var(--muted); }
   .post-actions button{ background:none; border:none; color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; padding:0; }
-  .comment{ border-top:1px solid var(--line); padding:6px 0 0; margin-top:6px; font-size:12.5px; line-height:1.4; }
+  .comment{ border-top:1px solid var(--line); padding:8px 0 0; margin-top:6px; font-size:12.5px; line-height:1.4; }
   .comment-author{ font-weight:700; }
+  /* 댓글 글쓴이도 게시글과 같은 모양으로 — 조금 작게 */
+  .comment .who-avatar{ width:22px; height:22px; font-size:11px; }
+  .comment .post-author{ font-size:12.5px; }
+  .comment .c-body{ margin-top:3px; }
   /* 내가 쓴 것 고치기·지우기 — 눈에 띄지 않게 작게 둔다 */
   .own-actions{ display:flex; gap:10px; margin-top:4px; }
   .own-actions button{ background:none; border:none; padding:0; cursor:pointer;
@@ -1253,6 +1260,11 @@
   .chat-head{ display:flex; align-items:center; gap:10px; margin-top:14px; font-weight:700; }
   .chat-back{ border:1.5px solid var(--line); background:#fff; border-radius:10px; padding:5px 10px; font-size:13px; font-family:inherit; cursor:pointer; }
   .chat-msgs{ border:1px solid var(--line); border-radius:14px; padding:12px; margin-top:10px; height:340px; overflow-y:auto; background:var(--paper); }
+  /* 보내기 칸 — 게시글 작성란과 같은 모양. 글자 버튼이 자리를 다 먹지 않게 */
+  .chat-compose-row{ display:flex; gap:8px; align-items:center; margin-top:10px; }
+  .chat-compose-row input{ flex:1; min-width:0; border:1.5px solid var(--line);
+    border-radius:999px; padding:10px 14px; font-family:inherit; font-size:14px;
+    background:var(--bg); }
   .chat-msg{ margin-top:8px; font-size:13.5px; }
   .chat-msg .cm-who{ font-size:11px; color:var(--muted); }
   .chat-msg .react-bar{ margin-top:4px; }
@@ -1739,6 +1751,9 @@
 
       <div class="edit-card">
         <div class="edit-head"><span>내 정보</span><span class="edit-hint" id="editHint"></span></div>
+        <div class="edit-row"><span>앱 내 아이디</span>
+          <span class="my-id" id="editHandle">—</span>
+          <button type="button" class="friend-copy" onclick="copyMyHandle()">복사</button></div>
         <label class="edit-row"><span>별명</span>
           <input id="editName" type="text" maxlength="20" oninput="markDirty()" /></label>
         <label class="edit-row"><span>나이</span>
@@ -2136,9 +2151,13 @@
           </div>
           <div id="chatMsgs" class="chat-msgs"></div>
           <div id="replyStrip" class="reply-strip" hidden></div>
-          <div class="comm-compose-row">
-            <input id="chatInput" type="text" placeholder="메시지 입력" onkeydown="if(event.key==='Enter')sendChat()" />
-            <button class="btn btn-primary comm-post-btn" type="button" onclick="sendChat()">보내기</button>
+          <div class="chat-compose-row">
+            <input id="chatInput" type="text" placeholder="메시지 입력"
+                   onkeydown="if(event.key==='Enter')sendChat()" />
+            <button type="button" class="post-send" onclick="sendChat()"
+                    aria-label="보내기" title="보내기">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.3 21 23 12 2.3 3v7l14.9 2-14.9 2z"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -2570,6 +2589,7 @@ function pickSex(sex){
 
 function renderEdit(){
   $('editName').value = state.user || '';
+  showMyHandle();
   $('editAge').value = state.age ?? '';
   document.querySelectorAll('#editSex button').forEach(b =>
     b.classList.toggle('on', b.dataset.sex === state.sex));
@@ -3743,8 +3763,8 @@ async function toggleComments(id){
     const p = await API.commPostDetail(id);
     box.innerHTML = (p['댓글'] || []).map(c => `
       <div class="comment" id="comment-${c.id}">
-        <span class="comment-author">${esc(c['작성자'])}</span>
-        <span class="post-time"> · ${ago(c['작성시각'])}${수정됨(c)}</span>
+        <div class="post-top">${whoHtml(c['작성자'], c['작성자아이디'])}
+          <span class="post-time">${ago(c['작성시각'])}${수정됨(c)}</span></div>
         <div class="c-body">${esc(c['본문'])}</div>
         ${reactBar('comment', c.id, c['반응'])}
         ${c['내글'] ? `<div class="own-actions">
@@ -4216,6 +4236,20 @@ function whoHtml(닉네임, 아이디){
   if (!아이디) return `<span class="who-btn">${안}</span>`;
   return `<button type="button" class="who-btn" onclick="event.stopPropagation();`
        + ` openProfile('${esc(아이디)}')">${안}</button>`;
+}
+
+/* 내 앱 내 아이디 — 프로필 창에서도 보인다.
+   한 번 발급하면 바뀌지 않는 값이라, 어디서 보든 같은 값이어야 한다.
+   계정이 아니면 서버에 아이디가 없다 — 그때는 그렇다고 적는다. */
+async function showMyHandle(){
+  const el = $('editHandle');
+  if (!el) return;
+  if (MY_HANDLE) { el.textContent = MY_HANDLE; return; }
+  if (!state.account) { el.textContent = '로그인하면 발급돼요'; return; }
+  try {
+    MY_HANDLE = (await API.commMyHandle())['아이디'] || '';
+    el.textContent = MY_HANDLE || '—';
+  } catch (e) { el.textContent = '—'; }
 }
 
 /* 다른 사람 프로필 — 닉네임과 아이디만 보인다.

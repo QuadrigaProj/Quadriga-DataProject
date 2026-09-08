@@ -225,10 +225,15 @@ def _add_columns(con, table: str, columns: list[str]) -> None:
 DATA_URL = re.compile(r"^data:(image|video)/[\w.+-]+;base64,[A-Za-z0-9+/=\s]+$")
 
 
-# 앱 내 아이디에 쓰는 글자. 헷갈리는 0/O, 1/l 은 뺀다.
-HANDLE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
-HANDLE_LEN = 6
-HANDLE_RE = re.compile(r"^[a-z0-9]{3,20}$")
+# 앱 내 아이디에 쓰는 글자 — 대소문자와 숫자 12자.
+# 이메일을 식별자로 쓰면 가입 여부가 새어 나가고, 길어서 주고받기도 어렵다.
+# 한 번 발급하면 바뀌지 않는다. 아무도 고칠 수 없다(고치는 길이 아예 없다).
+HANDLE_ALPHABET = ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                   "abcdefghijklmnopqrstuvwxyz"
+                   "0123456789")
+HANDLE_LEN = 12
+# 예전에 만든 6자 소문자 아이디도 그대로 찾을 수 있어야 한다 — 아이디는 고정이다.
+HANDLE_RE = re.compile(r"^[A-Za-z0-9]{3,20}$")
 
 
 def _new_handle(con) -> str:
@@ -279,7 +284,8 @@ def record_share_state(viewer: int, owner: int) -> str:
 
 def find_by_handle(handle: str) -> dict | None:
     """아이디로 사람 찾기. 정확히 맞아야 찾힌다 — 부분 검색은 목록 훑기가 된다."""
-    handle = (handle or "").strip().lower()
+    # 대소문자를 구분한다. 눕혀서 찾으면 'Ab1' 과 'ab1' 이 같은 사람이 된다.
+    handle = (handle or "").strip()
     if not HANDLE_RE.match(handle):
         return None
     with auth.db() as con:
@@ -403,7 +409,7 @@ def set_chosen_friends(me: int, handles: list[str]) -> list[dict]:
         ids = []
         for h in handles or []:
             r = con.execute("SELECT user_id FROM user_handles WHERE handle=?",
-                            (str(h).strip().lower(),)).fetchone()
+                            (str(h).strip(),)).fetchone()
             if not r:
                 raise HTTPException(404, f"'{h}' 아이디를 쓰는 회원이 없어요.")
             if r["user_id"] not in 친구:
@@ -574,7 +580,7 @@ def _audience_ids(con, me: int, audience: str, handles) -> list[int]:
     out = []
     for h in handles:
         r = con.execute("SELECT user_id FROM user_handles WHERE handle=?",
-                        (str(h).strip().lower(),)).fetchone()
+                        (str(h).strip(),)).fetchone()
         if not r or r["user_id"] not in 친구:
             raise HTTPException(400, "친구인 사람만 고를 수 있어요.")
         out.append(r["user_id"])

@@ -3822,8 +3822,9 @@ async function submitPost(){
 function movesOn(날){
   const 목록 = [];
   (logAt(날)?.items || []).forEach(x => {
+    const 열쇠 = Object.keys(x.값 || {});
     const 값 = Object.entries(x.값 || {})
-      .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
+      .map(([k, v]) => `${v}${wlogUnit(k, 열쇠)}`).join(' ');
     목록.push({ 이름: x.이름, 값 });
   });
   ((state.routineLog || []).find(e => e.date === 날)?.steps || []).forEach(st => {
@@ -6266,7 +6267,7 @@ async function renderDailyLog(){
                      data-item="${x.id}" data-key="${k}"
                      aria-label="${x.이름} ${k}"
                      value="${값[x.id]?.[k] ?? ''}" oninput="markLogRow('${x.id}')" />
-              <span class="wlog-unit">${cat.단위[k] || k}</span>
+              <span class="wlog-unit">${wlogUnit(k, x.입력, cat.단위)}</span>
             </label>`).join('');
       return `
         <div class="wlog-row" id="wlog-${x.id}">
@@ -6591,8 +6592,9 @@ async function deleteSelectedManual(){
 /* 직접 적은 운동 한 날의 상세 — 종목마다 적은 값과 그날 몸 상태 (J4·K2) */
 function manualDetailHtml(w){
   const 종목 = (w.items || []).map(x => {
+    const 열쇠 = Object.keys(x.값 || {});
     const 값 = Object.entries(x.값 || {})
-      .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
+      .map(([k, v]) => `${v}${wlogUnit(k, 열쇠)}`).join(' ');
     return `<div class="rec-detail-row wide"><b>${x.이름}</b><span>${값}</span></div>`;
   }).join('');
   return dayAgeHtml(w.date) + 종목 + summaryDetailHtml(w.요약);
@@ -6636,6 +6638,21 @@ function measureDetailHtml(p){
 /* 화면에 붙이는 단위 — /workout-items 의 단위표와 같다(오프라인 대비 사본). */
 const WLOG_UNIT = { 세트: '세트', 횟수: '회', 무게: 'kg', 시간: '분', 거리: 'km' };
 
+/* 칸 옆에 붙는 말. 옆 칸이 무엇이냐에 따라 조금 달라진다 — 숫자만 늘어놓으면
+   '3 세트 10 회' 가 세 세트인지 세 번인지 헷갈린다.
+     횟수 + 세트  → '10 회씩 3 세트'
+     시간 + 세트  → '30 분씩 2 세트'
+     시간 + 거리  → '30 분 동안 5 km'
+   keys 는 그 종목이 받는 칸 목록(또는 적어 둔 값의 열쇠들)이다. */
+function wlogUnit(k, keys, 단위){
+  const 표 = 단위 || WLOG_UNIT;
+  const 목록 = keys || [];
+  if (k === '횟수' && 목록.includes('세트')) return '회씩';
+  if (k === '시간' && 목록.includes('세트')) return '분씩';
+  if (k === '시간' && 목록.includes('거리')) return '분 동안';
+  return 표[k] || k;
+}
+
 /* ---------------------------------------------------------------------------
    루틴 추천 (G7) — 점검 결과·스타일 테스트·고른 종목·목표를 서버에 넘기면
    250개 고정 루틴에 점수를 매겨 순위를 돌려준다. 루틴을 새로 만들지 않는다.
@@ -6647,6 +6664,7 @@ let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
 let recoAiReady = null;   // 서버에 키가 있는지 (I1) — null=아직 확인 전, true/false=확인됨
+let recoAiWhy = null;     // 못 쓰면 그 까닭 (서버가 준 한 줄)
 
 /* 체력나이 항목별에서 뒤처지는 요인 — 값이 큰(늙은) 쪽이 약점이다.
    성장기는 방향이 반대라 작은 쪽을 고른다. 체성분은 U자형이라 뺀다. */
@@ -6702,6 +6720,7 @@ async function renderRecommend(){
     recoCare = r.조심할부위 || [];
     recoBy = r.출처 || '점수';
     recoAiReady = !!r.ai가능;
+    recoAiWhy = r.ai이유 || null;
     // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
     // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
     // 바꿔 공짜로 쓸 수 있다.
@@ -7055,7 +7074,9 @@ async function startPay(){
       return;
     } catch (e) {
       paying = false;
-      alert('카카오페이 결제를 시작하지 못했어요. 다른 수단을 골라 주세요.');
+      // 서버가 왜 안 됐는지 알려 준다. 그걸 버리고 고정 문구만 띄우면
+      // 설정이 틀렸는지 카카오가 막았는지 알 길이 없다.
+      alert(e.message || '카카오페이 결제를 시작하지 못했어요. 다른 수단을 골라 주세요.');
       return;
     }
   }
@@ -7110,7 +7131,9 @@ function setRecoMode(mode){
   if (mode === 'ai' && recoAiReady !== true) {
     // 예전엔 여기서 조용히 아무 일도 안 해서, 확인이 끝나기 전에 누르면
     // "눌러도 반응이 없다"는 문제로 보였다 (버튼 자체는 비활성화 전이라 눌렸다).
-    showToast(recoAiReady === null ? 'AI 추천을 쓸 수 있는지 확인하는 중이에요' : 'AI 추천은 지금 쓸 수 없어요');
+    showToast(recoAiReady === null
+      ? 'AI 추천을 쓸 수 있는지 확인하는 중이에요'
+      : (recoAiWhy || 'AI 추천은 지금 쓸 수 없어요'));
     return;
   }
   recoMode = mode;

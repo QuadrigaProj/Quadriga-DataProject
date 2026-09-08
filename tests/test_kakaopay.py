@@ -356,13 +356,58 @@ def test_결제되지_않은_주문은_환불할_수_없다(키, monkeypatch):
     assert a.post(f"/pay/refund/{order}").status_code == 404
 
 
-def test_이미_써_버렸으면_잔액이_마이너스로_남는다(키, monkeypatch):
-    """숨기지 않는다 — 운영에서 눈에 보여야 조치할 수 있다."""
+def test_한_번이라도_쓰면_환불할_수_없다(키, monkeypatch):
+    """쓴 만큼은 이미 제공한 서비스다. 일부만 돌려주려면 규정이 있어야 한다."""
     a, order = 충전된(monkeypatch)
-    billing.spend(1, 2900, "AI 추천")
+    billing.spend(1, 100, "AI 추천")              # 3,000 중 100 만 썼어도
     monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(1800)))
-    assert a.post(f"/pay/refund/{order}").json()["잔액"] == -2900
-    # 마이너스면 더 못 쓴다
+    r = a.post(f"/pay/refund/{order}")
+    assert r.status_code == 409
+    assert "이미 사용한" in r.json()["detail"]
+    # 돈도 이용권도 그대로다 — 카카오를 부르지도 않았다
+    assert a.get("/credit").json()["잔액"] == 2900
+    assert billing.get_order(order)["status"] == "paid"
+
+
+def test_안_쓰고_그대로면_환불된다(키, monkeypatch):
+    a, order = 충전된(monkeypatch)
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(1800)))
+    assert a.post(f"/pay/refund/{order}").json()["잔액"] == 0
+
+
+def test_그_결제_전에_쓴_것은_따지지_않는다(키, monkeypatch):
+    """예전 충전분을 썼다고 이번 결제를 못 무르면 말이 안 된다."""
+    a = _login()
+    billing.charge(1, 1000, 1000, "예전주문")
+    billing.spend(1, 500, "AI 추천")              # 예전 것에서 씀
+    order = 준비(a, monkeypatch)["order"]
+    승인(a, order, 1800, monkeypatch)
+    assert a.get("/credit").json()["잔액"] == 3500
+
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(1800)))
+    assert a.post(f"/pay/refund/{order}").json()["잔액"] == 500
+
+
+def test_나중_결제는_앞의_사용과_무관하게_환불된다(키, monkeypatch):
+    a = _login()
+    첫 = 준비(a, monkeypatch)["order"]
+    승인(a, 첫, 1800, monkeypatch)
+    billing.spend(1, 100, "AI 추천")              # 첫 결제분에서 씀
+    둘 = 준비(a, monkeypatch, 1000)["order"]
+    승인(a, 둘, 700, monkeypatch)
+
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(1800)))
+    assert a.post(f"/pay/refund/{첫}").status_code == 409      # 쓴 것
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(700)))
+    assert a.post(f"/pay/refund/{둘}").json()["잔액"] == 2900   # 안 쓴 것
+
+
+def test_환불로_잔액이_음수가_되지_않는다():
+    """부르는 쪽을 우회해도 원장이 마지막으로 막는다."""
+    _login()
+    billing.charge(1, 1000, 1000, "주문A")
+    billing.spend(1, 900, "AI 추천")
     with pytest.raises(Exception) as e:
-        billing.spend(1, 100)
-    assert getattr(e.value, "status_code", None) == 402
+        billing.refund(1, 1000, "주문A")
+    assert getattr(e.value, "status_code", None) == 409
+    assert billing.balance(1) == 100

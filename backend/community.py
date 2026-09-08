@@ -433,8 +433,12 @@ def list_rooms(me: int) -> list[dict]:
             " (SELECT COUNT(*) FROM chat_messages g WHERE g.room_id=r.id) AS 메시지수,"
             " (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?) AS 참여"
             " FROM chat_rooms r"
-            " WHERE r.room_type <> 'direct' OR"
-            "  (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?)"
+            # Postgres 는 OR 의 피연산자가 boolean 이어야 한다. 스칼라 서브쿼리
+            # (SELECT 1 ...) 를 그대로 쓰면 SQLite 는 통과하지만 배포(Postgres)에서
+            # "argument of OR must be type boolean" 으로 죽는다. EXISTS 로 감싼다.
+            " WHERE r.room_type <> 'direct'"
+            "  OR EXISTS (SELECT 1 FROM chat_members m"
+            "             WHERE m.room_id=r.id AND m.user_id=?)"
             " ORDER BY r.id DESC", (me, me)).fetchall()
     out = []
     with auth.db() as con:

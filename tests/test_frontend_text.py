@@ -18,6 +18,9 @@ from backend.main import app  # noqa: E402
 client = TestClient(app)
 
 
+_ROOT = Path(__file__).resolve().parents[1]
+
+
 def _index() -> str:
     """index.html 본문. tests/test_api.py 의 test_frontend_served 와 같은 경로."""
     r = client.get("/")
@@ -1180,4 +1183,43 @@ def test_결제하고_돌아오면_서버_잔액을_다시_읽는다():
     assert "API.payResult(order)" in 본문
     assert "await addCredit();" in 본문          # 인자 없이 — 서버가 이미 올렸다
     assert "stashCredit" not in 본문
+
+
+# ---------- 게이지 오른쪽 끝 = 처음 기록한 체력나이 ----------
+
+def test_게이지_기준은_처음_기록한_체력나이다():
+    """실제 나이로 두면 눈금이 해마다 움직여, 좋아졌는지가 눈금 이동에 섞인다."""
+    html = _index()
+    assert "function baselineAge()" in html
+    본문 = html.split("function baselineAge()")[1].split("\n}")[0]
+    assert "state.measureLog" in 본문
+    assert "a.date < b.date ? -1 : 1" in 본문        # 가장 이른 것
+    assert "state.first?.결과?.체력나이" in 본문       # 이력이 없으면 첫 점검
+    assert "return state.age;" in 본문                # 잰 적 없으면 실제 나이
+
+
+def test_게이지가_기준나이를_넘긴다():
+    html = _index()
+    본문 = html.split("function gaugeData()")[1].split("\n}")[0]
+    assert "baseAge: baselineAge()" in 본문
+    assert "age: state.age" not in 본문
+
+
+def test_게이지_모듈이_기준나이로_비율을_낸다():
+    js = (_ROOT / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    본문 = js.split("function ratios(")[1].split("\n  }")[0]
+    assert "baseAge" in 본문
+    assert "targetAge / baseAge" in 본문
+    assert "fitnessAge / baseAge" in 본문
+    # 문서도 같이 고쳐야 다음 사람이 헷갈리지 않는다
+    assert "처음 기록한 체력나이" in js
+
+
+def test_범례가_오른쪽_끝을_처음이라고_적는다():
+    html = _index()
+    assert ">처음 <b id=\"gaugeReal\">" in html
+    본문 = html.split("function paintGauges(")[1].split("\n}")[0]
+    assert "baselineAge()" in 본문
+    # 목표도 체력나이다 — '만' 을 붙이지 않는다
+    assert "`만 ${targetAge()}세`" not in 본문
 

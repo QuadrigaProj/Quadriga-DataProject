@@ -2,10 +2,14 @@
  *
  * 눈금 읽는 법
  *   왼쪽 끝(약 7시)   = 0세
- *   오른쪽 끝(약 5시) = 사용자의 실제 나이
+ *   오른쪽 끝(약 5시) = **처음 기록한 체력나이** (기준점)
  *   초록 채움         = 0세 → 목표 체력나이
  *   주황 점           = 지금 체력나이
- *   점이 밑바닥 한가운데 = 체력나이가 실제 나이를 넘었다는 뜻 (눈금 밖)
+ *   점이 밑바닥 한가운데 = 처음보다 나빠졌다는 뜻 (눈금 밖)
+ *
+ * 오른쪽 끝을 실제 나이로 두면 눈금이 1년에 한 칸씩 멋대로 움직인다.
+ * 처음 기록을 기준으로 두면 점이 왼쪽으로 갈수록 좋아진 것이고,
+ * 그 거리가 곧 "앱을 쓰면서 얼마나 나아졌나" 가 된다.
  *
  * 좌표는 로고 원본(1024x1024)을 픽셀 단위로 계측한 값이다. 건드리지 말 것.
  */
@@ -58,12 +62,13 @@ const GAUGE = (() => {
 </svg>`;
   }
 
-  /* 나이·체력나이·목표 → 비율. 값이 없으면 로고 원본 비율로 돌아간다. */
-  function ratios({ age, fitnessAge, targetAge } = {}) {
-    if (!age || age <= 0) return { ...DEFAULT, known: false };
+  /* 기준나이·체력나이·목표 → 비율. 값이 없으면 로고 원본 비율로 돌아간다.
+     baseAge 는 오른쪽 끝 = 처음 기록한 체력나이. */
+  function ratios({ baseAge, fitnessAge, targetAge } = {}) {
+    if (!baseAge || baseAge <= 0) return { ...DEFAULT, known: false };
     return {
-      green: targetAge ? clamp(targetAge / age, 0, 1) : DEFAULT.green,
-      dot: fitnessAge ? fitnessAge / age : DEFAULT.dot,
+      green: targetAge ? clamp(targetAge / baseAge, 0, 1) : DEFAULT.green,
+      dot: fitnessAge ? fitnessAge / baseAge : DEFAULT.dot,
       known: !!fitnessAge,
     };
   }

@@ -1054,8 +1054,9 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
         cancel_url=public_url(request, f"/pay/kakao/cancel?order={order}"),
         fail_url=public_url(request, f"/pay/kakao/fail?order={order}"),
     )
-    if not out:
-        raise HTTPException(502, "카카오페이 결제 준비에 실패했습니다.")
+    if not out or not out.get("tid"):
+        # 왜 실패했는지 그대로 알려 준다. "실패했다" 만으로는 손쓸 방법이 없다.
+        raise HTTPException(502, kp.hint(out))
 
     billing.new_order(order, 누구["id"], out["tid"], pack["이용권"], pack["결제"])
     # 접속 환경은 화면이 안다. 셋 다 주고 고르게 한다 — PC 는 QR 화면으로 가야 한다.

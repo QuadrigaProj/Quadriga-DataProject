@@ -370,10 +370,6 @@
   .rec-pick input{ width:17px; height:17px; margin:0 10px 0 0; flex-shrink:0;
                    accent-color:var(--pine); }
   .rec-way{ font-size:12px; color:var(--muted); flex-shrink:0; }
-  /* 운동 기록에서 뽑은 줄은 고를 수 없다. 체크박스 자리는 비워서 칸을 맞춘다 */
-  .rec-pick-gap{ width:17px; margin:0 10px 0 0; flex-shrink:0; }
-  /* 이름 옆에 따로 두면 이름 칸이 눌려 한 글자씩 접힌다 — 아래 줄로 내린다 */
-  .rec-name small.rec-way{ display:block; margin-top:2px; }
   .rec-actions{ margin-top:12px; }
   .rec-del{ width:100%; padding:11px 0; border-radius:12px;
             border:1px solid var(--line); background:var(--paper);
@@ -1783,11 +1779,8 @@
       <div class="rec-block" id="recMeasureBlock" style="display:none;">
         <div class="rec-head">점검 기록</div>
         <div id="recMeasures"></div>
-        <div class="rec-actions">
-          <button type="button" class="rec-del" id="recDeleteBtn" disabled
-                  onclick="deleteSelectedMeasures()">삭제할 기록을 고르세요</button>
-        </div>
-        <div class="rec-note" id="recDeleteNote"></div>
+        <div class="rec-note">점검 기록은 여기서 지우지 않아요.
+          그날 운동 기록을 지우면 함께 사라집니다.</div>
       </div>
     </div>
 
@@ -3111,7 +3104,6 @@ function toggleRecDetail(btn){
    달력·변화추이가 읽는 값과 같아서, 여기서 지우면 그쪽에서도 함께 사라진다.
    measureLog 는 스냅샷에 담겨 저장되므로 계정이면 서버에도 그대로 반영된다. */
 const MEASURE_WAY = { home: '홈 체력측정', inbody: 'InBody' };
-let measurePicked = new Set();
 
 /* 화면에 그릴 점검 기록 줄 (규칙 4).
 
@@ -3123,7 +3115,7 @@ function measureRows(){
   const byDate = new Map();
   workoutDates().forEach(d => {
     const a = dayAge(d);
-    if (a && a.값 != null) byDate.set(d, { date: d, 체력나이: a.값, 출처: '운동', 소급: !!a.소급 });
+    if (a && a.값 != null) byDate.set(d, { date: d, 체력나이: a.값, 출처: '운동' });
   });
   (Array.isArray(state.measureLog) ? state.measureLog : []).forEach((m, i) => {
     if (m && m.date && m.체력나이 != null) byDate.set(m.date, { ...m, 출처: '측정', idx: i });
@@ -3131,51 +3123,20 @@ function measureRows(){
   return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
+/* 여기서는 지우지 않는다. 점검 기록은 재측정과 운동 기록에 딸린 것이라,
+   원본을 그대로 두고 이 줄만 지우면 두 목록이 어긋난다.
+   그래서 줄마다 고르는 자리도 두지 않는다 — 모양이 하나다. */
 function renderMeasureRecords(){
   const box = $('recMeasureBlock');
-  const note = $('recDeleteNote');
-  if (note) note.textContent = '';
   const rows = measureRows();
-  if (!rows.length) { measurePicked.clear(); box.style.display = 'none'; return; }
+  if (!rows.length) { box.style.display = 'none'; return; }
   box.style.display = 'block';
-  // 고른 자리는 measureLog 의 원래 위치로 기억한다 — 최신순으로 뒤집어 그려도 어긋나지 않는다
-  const 잰수 = (state.measureLog || []).length;
-  measurePicked = new Set([...measurePicked].filter(i => i < 잰수));
-  $('recMeasures').innerHTML = rows.map(r => r.출처 === '측정' ? `
-        <div class="rec-item rec-pick">
-          <label class="rec-pick-main">
-            <input type="checkbox" ${measurePicked.has(r.idx) ? 'checked' : ''}
-                   onchange="pickMeasure(${r.idx}, this.checked)" />
-            <div class="rec-date">${fmtDate(r.date)}</div>
-            <div class="rec-name">체력나이 ${Math.round(r.체력나이)}세</div>
-          </label>
-          ${moreToggle(measureDetailHtml(r))}
-        </div>` : `
-        <div class="rec-item rec-pick">
-          <div class="rec-pick-main">
-            <span class="rec-pick-gap"></span>
-            <div class="rec-date">${fmtDate(r.date)}</div>
-            <div class="rec-name">체력나이 ${Math.round(r.체력나이)}세<small
-              class="rec-way">운동 기록에서${r.소급 ? ' · 거슬러 쓴 추정' : ''}</small></div>
-          </div>
-          ${moreToggle(dayAgeHtml(r.date) + `<div class="rec-detail-row wide"><b>지우려면</b>
-            <span>이 줄은 잰 게 아니라 그날 운동 기록에서 뽑은 값이에요.
-            그날 기록을 지우면 함께 사라집니다.</span></div>`)}
+  $('recMeasures').innerHTML = rows.map(r => `
+        <div class="rec-item">
+          <div class="rec-date">${fmtDate(r.date)}</div>
+          <div class="rec-name">체력나이 ${Math.round(r.체력나이)}세</div>
+          ${moreToggle(r.출처 === '측정' ? measureDetailHtml(r) : dayAgeHtml(r.date))}
         </div>`).join('');
-  paintMeasureDeleteBtn();
-}
-
-function pickMeasure(i, on){
-  if (on) measurePicked.add(i); else measurePicked.delete(i);
-  paintMeasureDeleteBtn();
-}
-
-function paintMeasureDeleteBtn(){
-  const btn = $('recDeleteBtn');
-  if (!btn) return;
-  const n = measurePicked.size;
-  btn.disabled = !n;
-  btn.textContent = n ? `선택한 ${n}개 삭제` : '삭제할 기록을 고르세요';
 }
 
 /* ---------------------------------------------------------------------------
@@ -5824,6 +5785,15 @@ async function saveDailyLog(){
   if (!items.length && !Object.keys(요약).length) return;
   const 날 = logTargetDate || todayIso();
   if (!Array.isArray(state.workoutLog)) state.workoutLog = [];
+
+  // 하루에 하나다. 이미 적어 둔 날이면 덮어쓰기 전에 한 번 묻는다 —
+  // 되돌릴 수 없고, 그날 체력나이도 새 값으로 다시 뽑힌다.
+  const 이전 = state.workoutLog.find(w => w.date === 날);
+  const 적어둔게있다 = !!이전
+    && ((이전.items || []).length || Object.keys(이전.요약 || {}).length);
+  if (적어둔게있다
+      && !confirm('이전 기록은 사라지고 저장되는 기록으로 바뀝니다. 괜찮으시겠습니까?')) return;
+
   state.workoutLog = state.workoutLog.filter(w => w.date !== 날);
   state.workoutLog.push({ date: 날, items, 요약 });
 
@@ -5899,30 +5869,6 @@ async function deleteSelectedManual(){
   if (note) note.textContent = `직접 적은 운동 ${n}개를 지웠어요.`;
 }
 
-/* 고른 기록을 지운다. 되돌릴 수 없어서 한 번 묻는다.
-   단, 같은 날짜에 '직접 적은 운동'이 아직 남아있으면 먼저 지우지 못하게 막는다. */
-async function deleteSelectedMeasures(){
-  const n = measurePicked.size;
-  if (!n) return;
-  const list = state.measureLog || [];
-  const 선택된날짜 = [...measurePicked].map(i => list[i]?.date);
-  const 직접적은날짜 = new Set((state.workoutLog || [])
-    .filter(w => (w.items || []).length || Object.keys(w.요약 || {}).length)
-    .map(w => w.date));
-  if (선택된날짜.some(d => 직접적은날짜.has(d))) {
-    openNoticeModal('직접 적은 운동에서 먼저 삭제를 진행해주세요');
-    return;
-  }
-  if (!confirm(`점검 기록 ${n}개를 지울까요?
-달력과 변화추이에서도 사라지고, 되돌릴 수 없어요.`)) return;
-  state.measureLog = (state.measureLog || []).filter((_, i) => !measurePicked.has(i));
-  measurePicked.clear();
-  await saveProfile();
-  renderRecords();
-  const note = $('recDeleteNote');
-  if (note) note.textContent = `점검 기록 ${n}개를 지웠어요.`;
-}
-
 /* 직접 적은 운동 한 날의 상세 — 종목마다 적은 값과 그날 몸 상태 (J4·K2) */
 function manualDetailHtml(w){
   const 종목 = (w.items || []).map(x => {
@@ -5941,8 +5887,7 @@ function dayAgeHtml(날){
   const 방향 = a.값 < a.기준나이 ? '−' : '+';
   const 폭 = Math.abs(Math.round((a.값 - a.기준나이) * 10) / 10);
   const 꼬리 = 폭 ? ` (측정 ${Math.round(a.기준나이)}세에서 ${방향}${폭})` : '';
-  const 잰것 = (a.잰체성분 != null ? ' · 체성분은 그날 잰 값' : '')
-             + (a.소급 ? ' · 나중에 잰 값을 거슬러 쓴 추정' : '');
+  const 잰것 = a.잰체성분 != null ? ' · 체성분은 그날 잰 값' : '';
   return `<div class="rec-detail-row wide day-age"><b>체력나이</b>
     <span>${Math.round(a.값 * 10) / 10}세<small>${꼬리}${잰것}</small></span></div>`;
 }

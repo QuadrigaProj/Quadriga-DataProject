@@ -331,33 +331,27 @@ def test_화면을_옮기면_목록이_닫힌다():
     assert "closeMenu();" in goto
 
 
-# ---------- G1 점검기록 선택 삭제 ----------
+# ---------- G1 점검기록 ----------
 
-def test_점검기록_선택_삭제_UI가_있다():
+def test_점검기록에는_삭제가_없다():
+    """점검 기록은 재측정과 운동 기록에 딸린 것이다. 원본을 그대로 두고
+    이 줄만 지우면 두 목록이 어긋난다."""
     html = _index()
-    assert 'id="recDeleteBtn"' in html
-    assert 'onclick="deleteSelectedMeasures()"' in html
-    assert "삭제할 기록을 고르세요" in html
-    assert "function renderMeasureRecords()" in html
-    assert "function pickMeasure(i, on)" in html
-    assert "async function deleteSelectedMeasures()" in html
+    for 없어야 in ("recDeleteBtn", "deleteSelectedMeasures", "measurePicked",
+                 "pickMeasure", "paintMeasureDeleteBtn"):
+        assert 없어야 not in html, 없어야
+    본문 = html.split("function renderMeasureRecords()")[1].split("\n}")[0]
+    assert "checkbox" not in 본문
+    assert "점검 기록은 여기서 지우지 않아요" in html
 
 
 def test_점검기록은_measureLog를_보여준다():
-    """달력·변화추이와 같은 배열을 읽어야 지운 결과가 함께 반영된다."""
+    """달력·변화추이와 같은 배열을 읽어야 결과가 함께 반영된다."""
     html = _index()
-    body = html.split("function renderMeasureRecords()")[1].split("\nfunction pickMeasure")[0]
+    body = html.split("function measureRows()")[1].split("\n}")[0]
     assert "state.measureLog" in body
     # 서버 스냅샷 목록을 쓰던 옛 경로는 사라졌다
     assert "const rows = (r.기록 || []).filter" not in html
-
-
-def test_삭제는_저장까지_한다():
-    html = _index()
-    body = html.split("async function deleteSelectedMeasures()")[1].split("\n}")[0]
-    assert "confirm(" in body            # 되돌릴 수 없으니 한 번 묻는다
-    assert "saveProfile()" in body       # 기기·계정 모두에 반영
-    assert "renderRecords()" in body
 
 
 def test_직접적은운동_선택_삭제_UI가_있다():
@@ -374,20 +368,10 @@ def test_직접적은운동_선택_삭제_UI가_있다():
     assert "renderRecords()" in body
 
 
-def test_점검기록_삭제는_직접적은운동이_남아있으면_막힌다():
-    """같은 날짜에 직접 적은 운동이 남아있으면, 그 기록의 기준나이가 참조하고 있을 수
-    있어 점검 기록을 먼저 지우지 못하게 막는다."""
-    html = _index()
-    body = html.split("async function deleteSelectedMeasures()")[1].split("\n}")[0]
-    assert "state.workoutLog" in body
-    assert "직접 적은 운동에서 먼저 삭제를 진행해주세요" in body
-
-
-def test_점검기록_삭제_안내는_닫을수있는_모달로_보인다():
+def test_안내_모달은_닫을_수_있다():
     html = _index()
     assert 'id="noticeModal"' in html
     assert 'onclick="closeNoticeModal()"' in html
-    assert "openNoticeModal('직접 적은 운동에서 먼저 삭제를 진행해주세요')" in html
 
 
 def test_채팅방_생성은_플러스_버튼으로_연다():
@@ -672,9 +656,9 @@ def test_세_목록_모두_자세히_보기가_있다():
     assert "moreToggle(routineDetailHtml(e))" in 루틴
     직접 = html.split("$('recManual').innerHTML")[1].split("\n}")[0]
     assert "moreToggle(manualDetailHtml(w))" in 직접
-    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
-    assert "moreToggle(measureDetailHtml(r))" in 점검
-    assert "moreToggle(dayAgeHtml(r.date)" in 점검      # 운동에서 뽑은 줄도 펼쳐진다
+    점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]
+    assert "measureDetailHtml(r)" in 점검
+    assert "dayAgeHtml(r.date)" in 점검                 # 운동에서 뽑은 줄도 펼쳐진다
 
 
 def test_달력_아래_목록도_같다():
@@ -693,14 +677,13 @@ def test_달력이_직접기록의_종목을_받는다():
     assert "items: w.items" in 본문
 
 
-def test_점검_기록은_버튼과_체크박스가_안_겹친다():
-    """label 안에 button 을 두면 버튼을 눌러도 체크박스가 켜진다."""
+def test_점검_기록에는_고르는_자리가_없다():
+    """지우기가 없어졌으니 체크박스도 label 도 없다 — 줄 모양이 하나다."""
     html = _index()
-    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
-    assert '<div class="rec-item rec-pick">' in 점검      # label 이 아니다
-    assert '<label class="rec-pick-main">' in 점검        # 고르는 부분만 label
-    # 버튼은 label 밖에 있어야 한다
-    assert 점검.index("</label>") < 점검.index("moreToggle(")
+    점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]
+    assert '<div class="rec-item">' in 점검
+    assert "<label" not in 점검
+    assert "rec-pick" not in 점검
 
 
 # ---------- J2. 결제창 · 카카오페이 ----------
@@ -944,8 +927,10 @@ def test_그날_전에_잰_적이_없으면_뒤_측정을_거슬러_쓴다():
     assert "if (list.length) return list[0];" in 본문              # 없으면 가장 이른 것
     산출 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
     assert "소급: !!(기준 && 기준.date && 기준.date > r.date)" in 산출
+    # 화면에는 '거슬러 쓴 추정' 이라고 적지 않는다 — 그래프의 속 빈 점과
+    # 안내 문구가 이미 추정치라고 말한다. 값에는 그 사실을 남겨 둔다.
     상세 = html.split("function dayAgeHtml(날)")[1].split("\n}")[0]
-    assert "a.소급" in 상세 and "추정" in 상세
+    assert "거슬러 쓴 추정" not in 상세
 
 
 def test_예전_기록은_한_번에_채운다():
@@ -999,7 +984,7 @@ def test_삭제_버튼이_부르는_함수가_실제로_있다():
 def test_삭제_함수가_중복_정의되지_않는다():
     """#85 에서 deleteSelectedMeasures 가 두 번 선언돼 앞엣것이 죽은 코드가 됐다."""
     html = _index()
-    for f in ("deleteSelectedMeasures", "deleteSelectedManual",
+    for f in ("deleteSelectedManual",
               "pickManual", "paintManualDeleteBtn", "renderManualRecords"):
         assert html.count(f"function {f}(") == 1, f
 
@@ -1626,14 +1611,12 @@ def test_운동한_날은_점검_기록에도_뜬다():
     assert 본문.index("출처: '운동'") < 본문.index("출처: '측정'")
 
 
-def test_운동에서_뽑은_줄은_거기서_지울_수_없다():
-    """그날 운동 기록을 지워야 사라진다. 점검 기록에서 따로 지우면 어긋난다."""
+def test_점검_기록은_어느_줄도_지울_수_없다():
+    """그날 운동 기록이나 재측정 쪽에서만 바뀐다. 여기서 따로 지우면 어긋난다."""
     html = _index()
-    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
-    운동줄 = 점검.split("r.출처 === '측정' ?")[1].split(": `")[1]
-    assert "checkbox" not in 운동줄
-    assert "운동 기록에서" in 운동줄
-    assert "그날 기록을 지우면 함께 사라집니다" in 운동줄
+    점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]
+    assert "checkbox" not in 점검
+    assert "그날 운동 기록을 지우면 함께 사라집니다" in html
 
 
 def test_끝낸_루틴도_운동한_날로_센다():
@@ -1648,12 +1631,6 @@ def test_끝낸_루틴도_운동한_날로_센다():
     완료 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
     assert "체력요인: s.체력요인 || null" in 완료
 
-
-def test_운동한_날_한_줄이_점검_기록에서_접히지_않는다():
-    """'체력나이 29세' 가 한 글자씩 세로로 접혀 보였다."""
-    html = _index()
-    css = html.split(".rec-name small.rec-way{")[1].split("}")[0]
-    assert "display:block" in css
 
 
 def test_x축에_찍힌_날짜를_적는다():
@@ -1689,3 +1666,14 @@ def test_댓글_등록도_아이콘_버튼이다():
     assert "border-radius:999px" in 입력        # 작성란과 같은 알약 모양
     버튼 = html.split(".post-send.sm{")[1].split("}")[0]
     assert "32px" in 버튼                       # 게시 버튼(38px)보다 한 단계 작다
+
+
+def test_이미_적은_날을_고치면_한_번_묻는다():
+    """하루에 하나다. 덮어쓰면 되돌릴 수 없고 그날 체력나이도 다시 뽑힌다."""
+    html = _index()
+    본문 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "이전 기록은 사라지고 저장되는 기록으로 바뀝니다. 괜찮으시겠습니까?" in 본문
+    assert "적어둔게있다" in 본문
+    # 아니라고 하면 아무것도 바뀌지 않는다 — 묻기가 먼저다
+    assert "&& !confirm(" in 본문
+    assert 본문.index("confirm(") < 본문.index("state.workoutLog.push")

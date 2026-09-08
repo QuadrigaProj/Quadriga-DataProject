@@ -1426,3 +1426,59 @@ def test_요청을_수락하면_방이_열린다():
     assert "API.commChatAccept(handle)" in 본문
     assert "openRoom(r.room_id" in 본문
 
+
+# ---------- 변화추이에 운동한 날 (M4) ----------
+
+def test_그래프가_측정과_운동을_함께_쓴다():
+    """측정만 그리면 매일 운동해도 그래프가 안 움직이는 것처럼 보인다."""
+    html = _index()
+    assert "function trendPoints()" in html
+    본문 = html.split("function trendPoints()")[1].split("\n}")[0]
+    assert "state.workoutLog" in 본문
+    assert "measurePoints()" in 본문
+    assert "'운동'" in 본문 and "'측정'" in 본문
+
+
+def test_같은_날이면_측정이_이긴다():
+    """실제로 잰 값이 운동 기록에서 뽑은 추정치보다 낫다."""
+    html = _index()
+    본문 = html.split("function trendPoints()")[1].split("\n}")[0]
+    운동자리 = 본문.index("출처: '운동'")
+    측정자리 = 본문.index("측정이 나중에 덮는다")
+    assert 운동자리 < 측정자리        # 나중에 set 하는 쪽이 남는다
+
+
+def test_체력나이가_없는_운동일은_안_찍는다():
+    """측정 전에 적은 날은 기준이 없어 값이 없다. 0 으로 찍으면 거짓말이 된다."""
+    html = _index()
+    본문 = html.split("function trendPoints()")[1].split("\n}")[0]
+    assert "a.값 == null" in 본문
+
+
+def test_그래프가_trendPoints를_쓴다():
+    html = _index()
+    본문 = html.split("function renderTrend()")[1].split("\n\n  $('trendCount')")[0]
+    assert "trendPoints().filter" in 본문
+    assert "measurePoints().filter" not in 본문
+
+
+def test_그래프가_빈_날을_채우고_다시_그린다():
+    """예전에 적어 둔 날에는 체력나이가 없다. 채운 뒤 한 번 더 그린다."""
+    html = _index()
+    본문 = html.split("function renderTrend()")[1].split("\n}")[0]
+    assert "backfillLogAges().then(ok => { if (ok) renderTrend(); })" in 본문
+
+
+def test_추정치는_속_빈_점으로_그린다():
+    """잰 값과 추정치를 같은 모양으로 그리면 둘을 구분할 수 없다."""
+    html = _index()
+    본문 = html.split("function trendSvg(pts)")[1].split("\n}")[0]
+    assert "p.출처 === '운동'" in 본문
+    assert "fill:var(--paper);stroke:var(--pine)" in 본문     # 속 빈 점
+    assert "fill:var(--pine);stroke:var(--paper)" in 본문     # 꽉 찬 점
+
+
+def test_추정치라고_문구에_적는다():
+    html = _index()
+    본문 = html.split("function renderTrend()")[1].split("\n}")[0]
+    assert "속 빈 점" in 본문 and "추정치" in 본문

@@ -973,7 +973,7 @@ def test_공유하는_기록은_너무_크면_막는다():
     assert 글["기록"]["오늘운동"][0]["이름"] == "스쿼트"
 
 
-# ---------- 채팅 메시지 댓글 ----------
+# ---------- 채팅 답장 ----------
 
 def _방과_메시지(a, b=None):
     rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
@@ -984,64 +984,74 @@ def _방과_메시지(a, b=None):
     return rid, mid
 
 
-def test_채팅_메시지에_댓글을_단다():
+def test_답장도_그냥_메시지다():
+    """따로 매달아 두면 대화가 시간순으로 읽히지 않는다."""
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     rid, mid = _방과_메시지(a, b)
-    r = b.post(f"/community/messages/{mid}/comments", json={"body": "저 늦어요"})
-    assert r.status_code == 200
-    m = r.json()["messages"][-1]
-    assert [c["본문"] for c in m["댓글"]] == ["저 늦어요"]
-    assert m["댓글"][0]["작성자"] == "나"
-    # 다른 사람도 본다
-    assert a.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]["댓글"][0]["내글"] is False
+    b.post(f"/community/rooms/{rid}/messages", json={"body": "저 늦어요", "reply_to": mid})
+    a.post(f"/community/rooms/{rid}/messages", json={"body": "천천히 오세요"})
+
+    본것 = a.get(f"/community/rooms/{rid}/messages").json()["messages"]
+    # 답장이 목록 한가운데 그대로 끼어 있다 — 적은 차례 그대로다
+    assert [m["본문"] for m in 본것] == ["7시에 만나요", "저 늦어요", "천천히 오세요"]
+    assert 본것[1]["답장"]["id"] == mid
+    assert 본것[1]["답장"]["작성자"] == "가"
+    assert 본것[1]["답장"]["본문"] == "7시에 만나요"
+    assert 본것[0]["답장"] is None and 본것[2]["답장"] is None
 
 
-def test_그_방_사람만_댓글을_단다():
+def test_답장도_고치고_지우고_이모지를_단다():
+    """답장이 메시지라서 따로 만들 것이 없다."""
     a = _login(app, "a@x.com", "가")
-    b = _login(app, "b@x.com", "나")
     rid, mid = _방과_메시지(a)
-    assert b.post(f"/community/messages/{mid}/comments",
-                  json={"body": "끼어들기"}).status_code == 403
+    rid2 = a.post(f"/community/rooms/{rid}/messages",
+                  json={"body": "혼잣말", "reply_to": mid}).json()["messages"][-1]["id"]
+    assert a.put(f"/community/messages/{rid2}", json={"body": "고친 혼잣말"}).status_code == 200
+    assert a.post("/community/reactions",
+                  json={"target_type": "message", "target_id": rid2,
+                        "emoji": "👍"}).status_code == 200
+    assert a.delete(f"/community/messages/{rid2}").status_code == 200
 
 
-def test_내_채팅_댓글만_고치고_지운다():
+def test_다른_방_글에는_답장할_수_없다():
+    """그 방 사람만 볼 수 있는 글이다."""
+    a = _login(app, "a@x.com", "가")
+    rid, mid = _방과_메시지(a)
+    다른방 = a.post("/community/rooms", json={"name": "다른 방"}).json()["id"]
+    r = a.post(f"/community/rooms/{다른방}/messages",
+               json={"body": "엉뚱한 답장", "reply_to": mid})
+    assert r.status_code == 404
+
+
+def test_원글을_지워도_답장은_남는다():
+    """원글이 없어졌다는 이유로 남의 글까지 지울 수는 없다."""
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     rid, mid = _방과_메시지(a, b)
-    cid = b.post(f"/community/messages/{mid}/comments",
-                 json={"body": "저 늦어요"}).json()["messages"][-1]["댓글"][0]["id"]
-
-    assert a.put(f"/community/replies/{cid}", json={"body": "가로채기"}).status_code == 403
-    assert a.delete(f"/community/replies/{cid}").status_code == 403
-
-    r = b.put(f"/community/replies/{cid}", json={"body": "10분만 늦어요"})
-    assert r.json()["messages"][-1]["댓글"][0]["본문"] == "10분만 늦어요"
-    assert r.json()["messages"][-1]["댓글"][0]["수정시각"]
-
-    b.delete(f"/community/replies/{cid}")
-    assert a.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]["댓글"] == []
-
-
-def test_메시지를_지우면_댓글도_사라진다():
-    a = _login(app, "a@x.com", "가")
-    rid, mid = _방과_메시지(a)
-    a.post(f"/community/messages/{mid}/comments", json={"body": "혼잣말"})
+    b.post(f"/community/rooms/{rid}/messages", json={"body": "저 늦어요", "reply_to": mid})
     a.delete(f"/community/messages/{mid}")
-    with auth.db() as con:
-        남은 = con.execute("SELECT COUNT(*) c FROM chat_replies").fetchone()["c"]
-    assert 남은 == 0
+
+    본것 = b.get(f"/community/rooms/{rid}/messages").json()["messages"]
+    assert [m["본문"] for m in 본것] == ["저 늦어요"]
+    assert 본것[0]["답장"] is None          # 가리킬 원글이 없으니 머리말도 없다
 
 
-def test_빈_댓글은_막는다():
+def test_예전_댓글은_메시지로_옮겨진다():
+    """따로 두던 자리를 없애면서, 이미 달아 둔 댓글이 사라지면 안 된다."""
     a = _login(app, "a@x.com", "가")
     rid, mid = _방과_메시지(a)
-    assert a.post(f"/community/messages/{mid}/comments",
-                  json={"body": "  "}).status_code == 400
+    with auth.db() as con:
+        con.execute(
+            "INSERT INTO chat_replies (message_id, user_id, body, created_at)"
+            " VALUES (?,?,?,?)", (mid, 1, "예전에 단 댓글", 1757000000))
+    community.init_db()          # 옮겨 담기가 여기서 돈다
 
-
-def test_채팅_댓글도_로그인이_필요하다():
-    c = TestClient(app)
-    assert c.post("/community/messages/1/comments", json={"body": "x"}).status_code == 401
-    assert c.put("/community/replies/1", json={"body": "x"}).status_code == 401
-    assert c.delete("/community/replies/1").status_code == 401
+    본것 = a.get(f"/community/rooms/{rid}/messages").json()["messages"]
+    옮긴것 = [m for m in 본것 if m["본문"] == "예전에 단 댓글"]
+    assert len(옮긴것) == 1 and 옮긴것[0]["답장"]["id"] == mid
+    with auth.db() as con:
+        assert con.execute("SELECT COUNT(*) c FROM chat_replies").fetchone()["c"] == 0
+    community.init_db()          # 두 번 돌아도 그대로다
+    assert len([m for m in a.get(f"/community/rooms/{rid}/messages").json()["messages"]
+                if m["본문"] == "예전에 단 댓글"]) == 1

@@ -1238,16 +1238,27 @@
     color:var(--pine-deep); cursor:pointer; }
   .cm-menu button:hover{ border-color:var(--pine); background:var(--pine-tint); }
   .chat-msg.pressing .cm-body{ opacity:0.6; }
-  /* 메시지에 달린 댓글 — 한 칸 들여써서 어디에 매달렸는지 보이게 */
-  .cm-replies{ margin:6px 0 0 14px; padding-left:10px;
-    border-left:2px solid var(--line); text-align:left; }
-  .cm-reply{ font-size:12.5px; line-height:1.5; padding:4px 0; }
-  .cm-reply + .cm-reply{ border-top:1px solid var(--line); }
-  .cm-reply .r-who{ font-weight:700; }
-  .cm-reply .r-time{ font-size:11px; color:var(--muted); }
-  .cm-reply-btn{ background:none; border:none; padding:0; margin-top:4px;
-    font-family:inherit; font-size:12px; color:var(--muted); cursor:pointer; }
-  .cm-reply-btn:hover{ color:var(--pine-deep); }
+  /* 답장 — 글 위에 작고 흐리게 '어떤 글의 답장인지' 를 적는다.
+     누르면 그 원글로 간다. */
+  .cm-quote{ display:block; max-width:80%; margin:0 0 2px; padding:0;
+    background:none; border:none; font-family:inherit; font-size:11px;
+    color:var(--muted); text-align:left; cursor:pointer;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chat-msg.mine .cm-quote{ margin-left:auto; text-align:right; }
+  .cm-quote:hover{ color:var(--pine-deep); text-decoration:underline;
+    text-underline-offset:2px; }
+  .cm-quote b{ font-weight:700; }
+  /* 찾아간 글을 잠깐 밝힌다 — 어디로 갔는지 알 수 있게 */
+  @keyframes cm-flash { from { background:var(--pine-tint); } to { background:transparent; } }
+  .chat-msg.found{ animation:cm-flash 1.4s ease-out; border-radius:12px; }
+  /* 답장 쓰는 중 — 보내기 칸 위에 무엇에 답하는지 띄운다 */
+  .reply-strip{ display:flex; align-items:center; gap:8px; margin:8px 0 0;
+    padding:6px 10px; border:1px solid var(--line); border-left:3px solid var(--pine);
+    border-radius:10px; background:var(--paper); font-size:12px; color:var(--muted); }
+  .reply-strip .rs-text{ flex:1; min-width:0; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; }
+  .reply-strip button{ flex-shrink:0; background:none; border:none; padding:0;
+    font-family:inherit; font-size:14px; color:var(--muted); cursor:pointer; }
   .chat-msg.mine .react-bar, .chat-msg.mine .own-actions,
   .chat-msg.mine .cm-menu{ justify-content:flex-end; }
   .chat-msg .cm-body{ display:inline-block; background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 10px; margin-top:2px; max-width:80%; word-break:break-word; }
@@ -2089,6 +2100,7 @@
                     title="멤버" aria-label="멤버 목록" onclick="openRoomMembers()">☰</button>
           </div>
           <div id="chatMsgs" class="chat-msgs"></div>
+          <div id="replyStrip" class="reply-strip" hidden></div>
           <div class="comm-compose-row">
             <input id="chatInput" type="text" placeholder="메시지 입력" onkeydown="if(event.key==='Enter')sendChat()" />
             <button class="btn btn-primary comm-post-btn" type="button" onclick="sendChat()">보내기</button>
@@ -4117,7 +4129,7 @@ async function changeRoomPassword(id){
 
 async function openRoom(id, name){
   COMM.room = id; chatSig = ''; CHAT_MSGS = [];
-  openReplies.clear(); openMsgMenus.clear();
+  openMsgMenus.clear(); replyTarget = null;
   $('roomList').hidden = true; $('chatView').hidden = false;
   $('chatTitle').textContent = name || '모임';
   $('chatMsgs').innerHTML = '';
@@ -4250,45 +4262,25 @@ async function leaveFromMembers(){
 }
 function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
 
-/* 펼쳐 둔 댓글 — 다시 그려도 접히지 않게 기억한다 */
-const openReplies = new Set();
-
-function toggleReplies(id){
-  if (openReplies.has(id)) openReplies.delete(id); else openReplies.add(id);
-  paintChat(CHAT_MSGS, { 강제: true });
-  if (openReplies.has(id)) $('cr-' + id)?.focus();
+/* 답장 머리말 — 글 위에 작고 흐리게 '어떤 글의 답장인지'.
+   원글이 지워졌으면 아무것도 그리지 않는다. */
+function replyQuoteHtml(m){
+  const 원글 = m['답장'];
+  if (!원글) return '';
+  return `<button type="button" class="cm-quote" onclick="goToMessage(${원글.id})"
+      title="원글로 가기">↩ <b>${esc(원글['작성자'])}</b> ${esc(원글['본문'])}</button>`;
 }
 
-/* 메시지 한 줄에 달린 댓글 */
-function chatRepliesHtml(m){
-  const 목록 = m['댓글'] || [];
-  const 접힘 = !openReplies.has(m.id);
-  // 댓글이 없으면 줄을 만들지 않는다 — 다는 길은 꾹 눌러 여는 자리에 있다
-  const 단추 = (목록.length || !접힘)
-    ? `<button type="button" class="cm-reply-btn"
-        onclick="toggleReplies(${m.id})">💬 ${목록.length}${접힘 ? '' : ' 접기'}</button>`
-    : '';
-  if (접힘) return 단추;
-  const 줄 = 목록.map(c => `
-    <div class="cm-reply" id="reply-${c.id}">
-      <span class="r-who">${esc(c['작성자'])}</span>
-      <span class="r-time"> · ${ago(c['작성시각'])}${수정됨(c)}</span>
-      <div class="r-body">${esc(c['본문'])}</div>
-      ${c['내글'] ? `<div class="own-actions">
-          <button type="button" onclick="editReply(${c.id})">수정</button>
-          <button type="button" onclick="removeReply(${c.id})">삭제</button>
-        </div>` : ''}
-    </div>`).join('');
-  return 단추 + `<div class="cm-replies">${줄}
-      <div class="comment-row">
-        <input type="text" id="cr-${m.id}" placeholder="댓글 달기"
-               onkeydown="if(event.key==='Enter')sendReply(${m.id})" />
-        <button type="button" class="post-send sm" onclick="sendReply(${m.id})"
-                aria-label="댓글 등록" title="등록">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.3 21 23 12 2.3 3v7l14.9 2-14.9 2z"/></svg>
-        </button>
-      </div>
-    </div>`;
+/* 원글로 찾아간다. 화면 밖이면 스크롤하고, 잠깐 밝혀서 어디인지 알려 준다.
+   너무 오래된 글이라 목록에 없으면 그 사실을 알린다 — 조용히 아무 일도
+   안 일어나면 눌러도 안 되는 버튼처럼 보인다. */
+function goToMessage(id){
+  const el = $('msg-' + id);
+  if (!el) { showToast('원글이 이 목록에는 없어요'); return; }
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.remove('found');
+  void el.offsetWidth;                 // 애니메이션을 다시 시작시킨다
+  el.classList.add('found');
 }
 
 /* 꾹 눌러 연 자리 — 다시 그려도 열린 채로 두려고 기억한다 */
@@ -4300,17 +4292,17 @@ const openMsgMenus = new Set();
 function chatMsgHtml(m){
   const 열림 = openMsgMenus.has(m.id);
   return `<div class="chat-msg${m['내글'] ? ' mine' : ''}" id="msg-${m.id}" data-mid="${m.id}">
+    ${replyQuoteHtml(m)}
     <div class="cm-who">${esc(m['작성자'])}${수정됨(m)}</div>
     <div class="cm-body">${esc(m['본문'])}</div>
     ${reactBar('message', m.id, m['반응'], { opener: false })}
     ${열림 ? `<div class="cm-menu">
         <button type="button" onclick="openReactPickerFor('message', ${m.id})">반응 남기기</button>
-        <button type="button" onclick="replyFromMenu(${m.id})">댓글 달기</button>
+        <button type="button" onclick="replyFromMenu(${m.id})">답장하기</button>
         ${m['내글'] ? `<button type="button" onclick="editMessage(${m.id})">수정</button>
           <button type="button" onclick="removeMessage(${m.id})">삭제</button>` : ''}
         <button type="button" onclick="closeMsgMenu(${m.id})">닫기</button>
       </div>` : ''}
-    ${chatRepliesHtml(m)}
   </div>`;
 }
 
@@ -4330,12 +4322,31 @@ function closeMsgMenu(id){
   paintChat(CHAT_MSGS, { 강제: true });
 }
 
-/* 댓글 달기 — 연 자리는 닫고 댓글 칸을 편다 */
+/* 답장하기 — 연 자리는 닫고, 보내기 칸 위에 '무엇에 답하는지' 를 띄운다.
+   답장도 메시지라 자리는 시간순 그대로다. 매달아 두면 대화가 안 읽힌다. */
 function replyFromMenu(id){
   openMsgMenus.delete(id);
-  openReplies.add(id);
+  replyTarget = id;
   paintChat(CHAT_MSGS, { 강제: true });
-  $('cr-' + id)?.focus();
+  paintReplyStrip();
+  $('chatInput')?.focus();
+}
+
+let replyTarget = null;          // 지금 답장하려는 원글 id
+
+function cancelReply(){
+  replyTarget = null;
+  paintReplyStrip();
+}
+
+function paintReplyStrip(){
+  const strip = $('replyStrip');
+  if (!strip) return;
+  const m = (CHAT_MSGS || []).find(x => x.id === replyTarget);
+  if (!m) { strip.hidden = true; replyTarget = null; return; }
+  strip.hidden = false;
+  strip.innerHTML = `<span class="rs-text">↩ <b>${esc(m['작성자'])}</b> 에게 답장 — ${esc(String(m['본문']).slice(0, 40))}</span>
+    <button type="button" onclick="cancelReply()" aria-label="답장 그만두기" title="그만두기">×</button>`;
 }
 
 function bindChatPress(){
@@ -4367,38 +4378,6 @@ function bindChatPress(){
   });
 }
 
-async function sendReply(mid){
-  const inp = $('cr-' + mid);
-  const body = (inp?.value || '').trim();
-  if (!body) return;
-  // 보낸 글자는 먼저 지운다. 다시 그릴 때 '적다 만 것' 으로 되살아나면
-  // 방금 단 댓글이 입력칸에 그대로 남는다.
-  inp.value = '';
-  inp.disabled = true;
-  try {
-    const r = await API.commMsgReply(mid, body);
-    paintChat(r.messages || [], { 강제: true });
-    $('cr-' + mid)?.focus();
-  } catch (e) { inp.disabled = false; showToast(e.message); }
-}
-
-async function editReply(id){
-  const el = document.querySelector(`#reply-${id} .r-body`);
-  if (!el) return;
-  openInlineEdit(el, el.textContent, async (새글) => {
-    const r = await API.commReplyEdit(id, 새글);
-    paintChat(r.messages || [], { 강제: true });
-  });
-}
-
-async function removeReply(id){
-  if (!confirm('댓글을 지울까요? 되돌릴 수 없어요.')) return;
-  try {
-    const r = await API.commReplyDelete(id);
-    paintChat(r.messages || [], { 강제: true });
-  } catch (e) { showToast(e.message); }
-}
-
 /* 고친 글·지운 글·이모지는 새 id 를 만들지 않는다. 그래서 새 것만 이어 붙이면
    화면이 영영 안 바뀐다. 목록을 통째로 받아서 달라졌을 때만 다시 그린다 —
    매번 그리면 읽는 중에 스크롤이 튄다. */
@@ -4409,8 +4388,7 @@ function paintChat(list, { 강제 = false } = {}){
   const box = $('chatMsgs');
   if (!box) return;
   CHAT_MSGS = list;
-  const sig = JSON.stringify(list)
-            + [...openReplies].sort().join(',') + '|' + [...openMsgMenus].sort().join(',');
+  const sig = JSON.stringify(list) + '|' + [...openMsgMenus].sort().join(',');
   if (!강제 && sig === chatSig) return;
   const 맨아래였다 = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   // 적다 만 댓글은 지키고 다시 그린다 — 4초마다 사라지면 쓸 수가 없다
@@ -4420,6 +4398,7 @@ function paintChat(list, { 강제 = false } = {}){
   box.innerHTML = list.map(chatMsgHtml).join('');
   Object.entries(적던것).forEach(([id, v]) => { const i = $(id); if (i) i.value = v; });
   bindChatPress();
+  paintReplyStrip();
   if (맨아래였다) box.scrollTop = box.scrollHeight;
 }
 
@@ -4436,7 +4415,10 @@ async function sendChat(){
   const body = inp.value.trim();
   if (!body || !COMM.room) return;
   inp.value = '';
-  try { await API.commSend(COMM.room, body); await pollChat(); }
+  const 답장 = replyTarget;
+  replyTarget = null;
+  paintReplyStrip();
+  try { await API.commSend(COMM.room, body, 답장); await pollChat(); }
   catch (e) { showToast(e.message); inp.value = body; }
 }
 

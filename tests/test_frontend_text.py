@@ -1859,51 +1859,6 @@ def test_고정은_계정에_남는다():
 
 # ---------- 채팅 댓글 ----------
 
-def test_채팅_메시지에_댓글을_단다():
-    html = _index()
-    본문 = html.split("function chatRepliesHtml(m)")[1].split("\n}")[0]
-    assert "toggleReplies(${m.id})" in 본문
-    assert "💬 ${목록.length}" in 본문
-    assert "(목록.length || !접힘)" in 본문          # 댓글이 없으면 줄을 안 만든다
-    assert 'id="cr-${m.id}"' in 본문                 # 댓글 입력칸
-    assert 'class="post-send sm"' in 본문            # 게시글 댓글과 같은 모양
-    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
-    assert "chatRepliesHtml(m)" in 줄
-
-
-def test_채팅_댓글도_내_것만_고치고_지운다():
-    html = _index()
-    본문 = html.split("function chatRepliesHtml(m)")[1].split("\n}")[0]
-    assert "c['내글']" in 본문
-    assert "editReply(${c.id})" in 본문 and "removeReply(${c.id})" in 본문
-    지우기 = html.split("async function removeReply(id)")[1].split("\n}")[0]
-    assert "confirm(" in 지우기
-
-
-def test_펼쳐_둔_댓글은_다시_그려도_접히지_않는다():
-    """채팅은 4초마다 다시 그린다. 펴 둔 게 접히면 읽을 수가 없다."""
-    html = _index()
-    assert "const openReplies = new Set();" in html
-    본문 = html.split("function toggleReplies(id)")[1].split("\n}")[0]
-    assert "openReplies.delete(id)" in 본문 and "openReplies.add(id)" in 본문
-    그리기 = html.split("function paintChat(list, { 강제 = false } = {})")[1].split("\n}")[0]
-    assert "[...openReplies].sort().join(',')" in 그리기   # 펴고 접은 것도 화면에 든다
-
-
-def test_댓글을_보내면_입력칸을_비운다():
-    """다시 그릴 때 '적다 만 것' 으로 되살아나면, 방금 단 댓글이 칸에 남는다."""
-    html = _index()
-    본문 = html.split("async function sendReply(mid)")[1].split("\n}")[0]
-    assert "inp.value = '';" in 본문
-    assert 본문.index("inp.value = '';") < 본문.index("API.commMsgReply")
-
-
-def test_방을_옮기면_펴_둔_댓글은_잊는다():
-    html = _index()
-    본문 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
-    assert "openReplies.clear()" in 본문
-
-
 def test_인라인_수정창은_프로필_폼과_이름이_겹치지_않는다():
     """.edit-row 는 프로필 폼(성별 버튼 포함)이 이미 쓰던 이름이다.
     같은 이름을 쓰면 여기 button 규칙이 그쪽 버튼까지 칠한다."""
@@ -1968,3 +1923,43 @@ def test_꾹_눌러_연_자리는_다시_그려도_남는다():
     assert "[...openMsgMenus].sort().join(',')" in 그리기
     방옮김 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
     assert "openMsgMenus.clear()" in 방옮김
+
+# ---------- 채팅 답장 ----------
+
+def test_답장은_시간순_그대로_끼어든다():
+    """따로 매달아 두면 대화가 시간순으로 읽히지 않는다."""
+    html = _index()
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "replyQuoteHtml(m)" in 줄
+    assert "chatRepliesHtml" not in html          # 매달아 두던 자리는 없앴다
+    assert "openReplies" not in html
+
+
+def test_답장_위에_어떤_글의_답장인지_적는다():
+    html = _index()
+    본문 = html.split("function replyQuoteHtml(m)")[1].split("\n}")[0]
+    assert "m['답장']" in 본문
+    assert "if (!원글) return '';" in 본문        # 원글이 지워졌으면 안 그린다
+    assert "goToMessage(${원글.id})" in 본문
+    css = html.split(".cm-quote{")[1].split("}")[0]
+    assert "font-size:11px" in css               # 작고
+    assert "color:var(--muted)" in css           # 흐리게
+
+
+def test_인용문을_누르면_원글로_간다():
+    html = _index()
+    본문 = html.split("function goToMessage(id)")[1].split("\n}")[0]
+    assert "scrollIntoView" in 본문
+    assert "classList.add('found')" in 본문       # 어디로 갔는지 잠깐 밝힌다
+    assert "원글이 이 목록에는 없어요" in 본문      # 조용히 아무 일도 안 하면 안 된다
+
+
+def test_답장_쓰는_중에는_무엇에_답하는지_보인다():
+    html = _index()
+    assert 'id="replyStrip"' in html
+    본문 = html.split("function paintReplyStrip()")[1].split("\n}")[0]
+    assert "replyTarget" in 본문
+    assert "cancelReply()" in 본문                # 그만둘 수 있다
+    보내기 = html.split("async function sendChat()")[1].split("\n}")[0]
+    assert "API.commSend(COMM.room, body, 답장)" in 보내기
+    assert 보내기.index("replyTarget = null") < 보내기.index("API.commSend")

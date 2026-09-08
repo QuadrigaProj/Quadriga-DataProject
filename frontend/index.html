@@ -589,6 +589,11 @@
     display:flex; justify-content:space-between; align-items:center; }
   .pay-logbtn:hover{ border-color:var(--pine); }
   .pay-logbtn .arrow{ font-size:11px; color:var(--muted); }
+  .pay-why{ display:block; font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .pay-refund{ flex-shrink:0; background:var(--paper); color:var(--clay);
+    border:1px solid var(--line); border-radius:999px; padding:5px 11px;
+    font:inherit; font-size:12px; cursor:pointer; }
+  .pay-refund:hover{ border-color:var(--clay); }
   .pay-warn{ font-size:12.5px; color:var(--clay); background:var(--amber-tint);
              border-radius:12px; padding:11px 13px; margin-top:12px; line-height:1.6; }
 
@@ -5720,6 +5725,7 @@ async function loadCredit(){
       state.creditLog = (c['내역'] || []).map(e => ({
         date: new Date((e['때'] || 0) * 1000).toISOString().slice(0, 10),
         종류: e['종류'], 금액: e['금액'], 결제: e['결제'] ?? e['금액'],
+        주문번호: e['주문번호'] || null, 환불가능: !!e['환불가능'], 사유: e['사유'] || null,
       }));
     } catch (e) { /* 못 받으면 있던 값을 그대로 둔다 */ }
   }
@@ -5745,12 +5751,34 @@ function renderCredit(){
         <div class="rec-date">${fmtDate(e.date)}</div>
         <div class="rec-name">${e.종류} ${won(e.금액)}${
           e.종류 === '충전' && e.결제 != null && e.결제 < e.금액
-            ? `<span class="pay-off">${won(e.결제)} 결제</span>` : ''}</div>
-        <div class="rec-way">남은 ${won(e.잔액)}</div>
+            ? `<span class="pay-off">${won(e.결제)} 결제</span>` : ''}
+          ${e.사유 ? `<span class="pay-why">${esc(e.사유)}</span>` : ''}</div>
+        ${e.환불가능 ? `<button type="button" class="pay-refund"
+            data-refund="${esc(e.주문번호)}" data-amt="${e.결제}">환불</button>` : ''}
       </div>`).join('')
     : '<div class="rec-empty">아직 결제한 내역이 없어요.</div>';
+
+  $('creditLog').querySelectorAll('[data-refund]').forEach(b => b.onclick = () =>
+    askRefund(b.dataset.refund, +b.dataset.amt));
   const btn = $('creditLogBtn');
   if (btn) btn.querySelector('span').textContent = `결제 내역 조회${log.length ? ` (${log.length})` : ''}`;
+}
+
+/* 환불 — 안 쓴 선결제권만 통째로 취소한다.
+   쓸 수 있는지는 서버가 판단해서 내려준다(내역의 '환불가능').
+   화면에 규칙을 옮겨 두면 서버와 어긋난다. */
+async function askRefund(order, 결제){
+  if (!order) return;
+  if (!confirm(`${won(결제)} 결제를 취소할까요?
+받은 이용권도 함께 사라지고, 되돌릴 수 없어요.`)) return;
+  try {
+    const r = await API.payRefund(order);
+    await loadCredit();
+    alert(`${won(r['환불'] ?? 결제)} 환불했어요.`);
+  } catch (e) {
+    showToast(e.message);
+    await loadCredit();          // 서버 판단이 바뀌었을 수 있다
+  }
 }
 
 /* 결제 내역 접었다 펴기 (K3) */

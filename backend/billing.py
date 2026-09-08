@@ -75,15 +75,42 @@ def balance(user_id: int) -> int:
 
 
 def history(user_id: int, limit: int = 30) -> list[dict]:
+    """결제 내역. 충전 줄에는 환불할 수 있는지도 함께 적는다.
+
+    환불 규칙을 화면에 옮겨 두면 서버와 어긋난다. 여기서 판단해서 내려준다.
+    """
     with auth.db() as con:
         rows = con.execute(
-            "SELECT amount, kind, paid, memo, created_at FROM credit_ledger"
+            "SELECT id, amount, kind, paid, order_id, memo, created_at FROM credit_ledger"
             " WHERE user_id=? ORDER BY id DESC LIMIT ?", (user_id, limit)).fetchall()
+        # 마지막 '사용' 보다 뒤에 있는 충전만 아직 안 쓴 것이다 — 한 번에 구한다
+        u = con.execute("SELECT COALESCE(MAX(id), 0) AS m FROM credit_ledger"
+                        " WHERE user_id=? AND kind='use'", (user_id,)).fetchone()
+        마지막사용 = int(u["m"] or 0)
+        낸주문 = {o["order_id"]: o["status"] for o in con.execute(
+            "SELECT order_id, status FROM pay_orders WHERE user_id=?", (user_id,)).fetchall()}
+
     종류 = {"charge": "충전", "use": "사용", "refund": "환불"}
-    return [{"종류": 종류.get(r["kind"], r["kind"]),
+    out = []
+    for r in rows:
+        줄 = {"종류": 종류.get(r["kind"], r["kind"]),
              "금액": abs(int(r["amount"])), "부호": 1 if r["amount"] > 0 else -1,
              "결제": r["paid"], "메모": r["memo"],
-             "때": int(r["created_at"])} for r in rows]
+             "때": int(r["created_at"]),
+             "주문번호": None, "환불가능": False, "사유": None}
+        if r["kind"] == "charge" and r["order_id"]:
+            줄["주문번호"] = r["order_id"]
+            상태 = 낸주문.get(r["order_id"])
+            if 상태 == "refunded":
+                줄["사유"] = "환불함"
+            elif 상태 != "paid":
+                줄["사유"] = "환불할 수 없는 결제예요"
+            elif r["id"] < 마지막사용:
+                줄["사유"] = "이미 사용해서 환불할 수 없어요"
+            else:
+                줄["환불가능"] = True
+        out.append(줄)
+    return out
 
 
 def _add(con, user_id: int, amount: int, kind: str, *,

@@ -41,13 +41,22 @@ JSON 만 출력하세요. 다른 말은 쓰지 마세요.
 
 def available() -> bool:
     """지금 AI 를 부를 수 있는지. 키와 SDK 가 모두 있어야 한다."""
+    return why_unavailable() is None
+
+
+def why_unavailable() -> str | None:
+    """못 쓰는 까닭 한 줄. 쓸 수 있으면 None.
+
+    "지금 쓸 수 없어요" 만 보여 주면 붙이는 사람이 무엇을 해야 할지 모른다.
+    키 값은 절대 담지 않는다 — 있는지 없는지만 말한다.
+    """
     if not os.getenv("ANTHROPIC_API_KEY"):
-        return False
+        return "서버에 ANTHROPIC_API_KEY 가 없어요. 관리자가 넣으면 켜집니다."
     try:
         import anthropic  # noqa: F401
     except ImportError:
-        return False
-    return True
+        return "서버에 anthropic 패키지가 없어요. 관리자가 설치하면 켜집니다."
+    return None
 
 
 def _prompt(후보: list[dict], 참고: dict, 연령대: str) -> str:

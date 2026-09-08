@@ -119,6 +119,8 @@ const API = (() => {
     commInviteDecline: (id) => call('/community/invites/' + id, { method: 'DELETE' }),
     commRoomKick: (id, handle) => post('/community/rooms/' + id + '/kick', { handle }),
     commRoomLeave: (id) => post('/community/rooms/' + id + '/leave', {}),
+    // 방장 전용 "방 폭파" — 멤버·메시지·초대까지 전부 없앤다 (되돌릴 수 없음)
+    commRoomDelete: (id) => call('/community/rooms/' + id, { method: 'DELETE' }),
     commRoomPassword: (id, password) => call('/community/rooms/' + id + '/password', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
     }),

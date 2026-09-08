@@ -407,6 +407,8 @@
   .cal-legend .cal-dot.done{ background:var(--pine); }
   .cal-legend .cal-dot.measure{ background:var(--amber); }
   .seg.trend-seg button{ padding:9px 0; font-size:13.5px; }   /* .seg button(뒤에 선언) 보다 우선하도록 클래스 둘 */
+  .seg.room-filter{ gap:6px; }
+  .seg.room-filter button{ padding:7px 0; font-size:13px; }
   /* 기간 직접 입력 (G2) — 숫자 + 단위(일·주·개월) */
   .trend-custom{ display:flex; gap:8px; align-items:center; margin-top:10px; }
   .trend-custom input, .trend-custom select{
@@ -1096,10 +1098,11 @@
   .comm-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
   .comm-media img, .comm-media video{ width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); }
   .post-card{ border:1px solid var(--line); border-radius:var(--radius-lg); padding:14px; margin-top:12px; background:var(--paper); }
+  .post-open{ cursor:pointer; }
   .post-top{ display:flex; justify-content:space-between; align-items:baseline; }
   .post-author{ font-weight:700; font-size:14px; }
   .post-time{ font-size:11.5px; color:var(--muted); }
-  .post-body{ font-size:14.5px; line-height:1.55; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
+  .post-body{ font-size:15.5px; font-weight:600; line-height:1.55; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
   .post-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
   .post-media img, .post-media video{ max-width:100%; max-height:280px; border-radius:12px; border:1px solid var(--line); }
   .post-record{ margin-top:8px; background:var(--pine-tint); border-radius:12px; padding:10px 12px; font-size:13px; color:var(--pine-deep); }
@@ -1108,16 +1111,17 @@
   .react-chip.on{ border-color:var(--pine); background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
   .post-actions{ display:flex; gap:14px; margin-top:8px; font-size:12.5px; color:var(--muted); }
   .post-actions button{ background:none; border:none; color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; padding:0; }
-  .comment{ border-top:1px solid var(--line); padding:8px 0 0; margin-top:8px; font-size:13px; }
+  .comment{ border-top:1px solid var(--line); padding:6px 0 0; margin-top:6px; font-size:12.5px; line-height:1.4; }
   .comment-author{ font-weight:700; }
-  .comment-row{ display:flex; gap:6px; margin-top:8px; }
-  .comment-row input{ flex:1; border:1.5px solid var(--line); border-radius:10px; padding:8px 10px; font-family:inherit; font-size:13px; }
+  .comment-row{ display:flex; gap:6px; margin-top:6px; }
+  .comment-row input{ flex:1; border:1.5px solid var(--line); border-radius:10px; padding:7px 10px; font-family:inherit; font-size:13px; }
   .room-card{ border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .room-card .rc-name{ font-weight:700; font-size:14px; }
   .room-card .rc-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
   .room-actions{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
   .room-card button{ border:none; background:var(--pine); color:#fff; border-radius:10px; padding:7px 12px; font-size:13px; font-family:inherit; cursor:pointer; white-space:nowrap; }
   .room-card .room-password-btn{ background:var(--paper); border:1px solid var(--line); color:var(--pine-deep); }
+  .room-card .room-danger-btn{ background:var(--paper); border:1px solid var(--clay); color:var(--clay); }
   .chat-head{ display:flex; align-items:center; gap:10px; margin-top:14px; font-weight:700; }
   .chat-back{ border:1.5px solid var(--line); background:#fff; border-radius:10px; padding:5px 10px; font-size:13px; font-family:inherit; cursor:pointer; }
   .chat-msgs{ border:1px solid var(--line); border-radius:14px; padding:12px; margin-top:10px; height:340px; overflow-y:auto; background:var(--paper); }
@@ -1936,6 +1940,10 @@
           <div id="inviteList"></div>
         </div>
         <div class="comm-list-head"><span>채팅방</span><button type="button" class="comm-add" onclick="openRoomComposer()" aria-label="채팅방 만들기">＋</button></div>
+        <div class="seg room-filter" id="roomFilter" style="margin-top:8px;">
+          <button type="button" class="on" data-f="all" onclick="setRoomFilter('all')">전체</button>
+          <button type="button" data-f="mine" onclick="setRoomFilter('mine')">내 채팅</button>
+        </div>
         <div id="roomList"></div>
 
         <div id="chatView" hidden>
@@ -3191,7 +3199,8 @@ function goTo(id){
    서버 계정(state.account)만 이용 가능. 게스트는 안내만 보여준다.
    --------------------------------------------------------------------------- */
 const COMM = { tab: 'feed', emojis: ['👍','🔥','💪','👏','🥲','🎉'],
-               media: [], oldest: null, room: null, lastMsgId: 0, poll: null };
+               media: [], oldest: null, room: null, lastMsgId: 0, poll: null,
+               roomFilter: 'all' };
 
 function initCommunity(){
   const ok = !!state.account;
@@ -3335,11 +3344,13 @@ function reactBar(target_type, id, react){
 function postCard(p){
   const rec = p['기록'] ? `<div class="post-record">📈 ${esc(p['기록'].요약 || JSON.stringify(p['기록']))}</div>` : '';
   return `<div class="post-card" id="post-${p.id}" data-id="${p.id}">
-    <div class="post-top"><span class="post-author">${esc(p['작성자'])}</span>
-      <span class="post-time">${ago(p['작성시각'])}</span></div>
-    ${p['본문'] ? `<div class="post-body">${esc(p['본문'])}</div>` : ''}
-    ${p['미디어'] && p['미디어'].length ? `<div class="post-media">${mediaHtml(p['미디어'],'')}</div>` : ''}
-    ${rec}
+    <div class="post-open" onclick="toggleComments(${p.id})">
+      <div class="post-top"><span class="post-author">${esc(p['작성자'])}</span>
+        <span class="post-time">${ago(p['작성시각'])}</span></div>
+      ${p['본문'] ? `<div class="post-body">${esc(p['본문'])}</div>` : ''}
+      ${p['미디어'] && p['미디어'].length ? `<div class="post-media" onclick="event.stopPropagation()">${mediaHtml(p['미디어'],'')}</div>` : ''}
+      ${rec}
+    </div>
     ${reactBar('post', p.id, p['반응'])}
     <div class="post-actions">
       <button onclick="toggleComments(${p.id})">💬 댓글 ${p['댓글수']||0}</button>
@@ -3457,31 +3468,64 @@ function closeNoticeModal(){ $('noticeModal').hidden = true; }
 
 /* ---- 운동 모임 채팅 ---- */
 let ROOMS = [];
+
+/* '전체'는 아직 안 들어간 공개 단체 채팅방까지 둘러보는 목록이고,
+   '내 채팅'은 참여중인 것만 — 방장인 단체 채팅방을 다시 찾거나
+   폭파하려 할 때 전체 목록에서 찾아야 하는 게 번거롭다는 요청으로 추가했다. */
+function setRoomFilter(f){
+  COMM.roomFilter = f;
+  renderRoomList();
+}
+
+function renderRoomList(){
+  document.querySelectorAll('#roomFilter button').forEach(b => b.classList.toggle('on', b.dataset.f === COMM.roomFilter));
+  const box = $('roomList');
+  const list = (COMM.roomFilter === 'mine') ? ROOMS.filter(rm => rm['참여중']) : ROOMS;
+  box.innerHTML = list.map(rm => {
+    const privateMark = rm['비공개'] ? ' 🔒' : '';
+    const kind = rm['종류'] === 'direct' ? '개인 채팅' : (rm['비공개'] ? '비공개 단체 채팅' : '공개 단체 채팅');
+    const 방폭파버튼 = (rm['방장'] && rm['종류'] !== 'direct')
+      ? `<button class="room-danger-btn" data-destroy-room="${rm.id}">방 폭파</button>` : '';
+    return `
+    <div class="room-card">
+      <div><div class="rc-name">${esc(rm['이름'])}${privateMark}</div>
+        <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
+      <div class="room-actions">
+        ${rm['방장'] && rm['비공개'] ? `<button class="room-password-btn" data-password-room="${rm.id}">비밀번호 변경</button>` : ''}
+        ${방폭파버튼}
+        <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
+      </div>
+    </div>`;
+  }).join('') || (COMM.roomFilter === 'mine'
+    ? '<div class="more-card">아직 참여 중인 채팅방이 없어요.</div>'
+    : '<div class="more-card">아직 채팅방이 없어요. 먼저 만들어보세요!</div>');
+  box.querySelectorAll('button[data-room]').forEach(btn => btn.onclick = () => {
+    const id = +btn.dataset.room;
+    const rm = ROOMS.find(x => x.id === id);
+    if (btn.dataset.joined === '1') openRoom(id, rm ? rm['이름'] : '모임');
+    else joinRoom(id);
+  });
+  box.querySelectorAll('button[data-password-room]').forEach(btn => btn.onclick = () => changeRoomPassword(+btn.dataset.passwordRoom));
+  box.querySelectorAll('button[data-destroy-room]').forEach(btn => btn.onclick = () => destroyRoom(+btn.dataset.destroyRoom));
+}
+
+async function destroyRoom(id){
+  const rm = ROOMS.find(x => x.id === id);
+  if (!confirm(`${rm ? esc(rm['이름']) : '이'} 채팅방을 폭파할까요?
+멤버 전원이 나가지고, 메시지도 전부 사라져요. 되돌릴 수 없어요.`)) return;
+  try {
+    if (COMM.room === id) closeRoom();
+    await API.commRoomDelete(id);
+    await loadRooms();
+    showToast('채팅방을 없앴어요.');
+  } catch (e) { showToast(e.message); }
+}
+
 async function loadRooms(){
   try {
     const r = await API.commRooms();
     ROOMS = r.rooms || [];
-    const box = $('roomList');
-    box.innerHTML = ROOMS.map(rm => {
-      const privateMark = rm['비공개'] ? ' 🔒' : '';
-      const kind = rm['종류'] === 'direct' ? '개인 채팅' : (rm['비공개'] ? '비공개 단체 채팅' : '공개 단체 채팅');
-      return `
-      <div class="room-card">
-        <div><div class="rc-name">${esc(rm['이름'])}${privateMark}</div>
-          <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
-        <div class="room-actions">
-          ${rm['방장'] && rm['비공개'] ? `<button class="room-password-btn" data-password-room="${rm.id}">비밀번호 변경</button>` : ''}
-          <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
-        </div>
-      </div>`;
-    }).join('') || '<div class="more-card">아직 채팅방이 없어요. 먼저 만들어보세요!</div>';
-    box.querySelectorAll('button[data-room]').forEach(btn => btn.onclick = () => {
-      const id = +btn.dataset.room;
-      const rm = ROOMS.find(x => x.id === id);
-      if (btn.dataset.joined === '1') openRoom(id, rm ? rm['이름'] : '모임');
-      else joinRoom(id);
-    });
-    box.querySelectorAll('button[data-password-room]').forEach(btn => btn.onclick = () => changeRoomPassword(+btn.dataset.passwordRoom));
+    renderRoomList();
   } catch (e) { $('roomList').innerHTML = '<div class="more-card">모임을 불러오지 못했어요.</div>'; }
   loadInvites();
 }

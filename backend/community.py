@@ -73,18 +73,22 @@ CREATE TABLE IF NOT EXISTS chat_members (
   joined_at INTEGER NOT NULL,
   PRIMARY KEY (room_id, user_id)
 );
+/* 답장도 메시지다. reply_to 로 어떤 글에 단 것인지만 적어 둔다.
+   따로 매달아 두면 대화가 시간순으로 읽히지 않는다. */
 CREATE TABLE IF NOT EXISTS chat_messages (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   room_id    INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  edited_at  INTEGER
+  edited_at  INTEGER,
+  reply_to   INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_cmsg_room ON chat_messages(room_id, id);
 
-/* 채팅 메시지에 다는 댓글. 한 줄이 길어질 때 그 줄에 매달아 이야기한다.
-   방을 지우면 메시지가 지워지고, 메시지를 지우면 댓글도 함께 지워진다. */
+/* 예전에 댓글을 따로 두던 자리. 지금은 답장도 chat_messages 의 한 줄이다.
+   이 표는 옮겨 담기(_move_replies_into_messages)만을 위해 남겨 둔다 —
+   없애 버리면 아직 옮기지 않은 DB 의 댓글이 그대로 사라진다. */
 CREATE TABLE IF NOT EXISTS chat_replies (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
@@ -150,6 +154,30 @@ def init_db() -> None:
                       "password_salt TEXT", "password_hash TEXT"])
         for table in ("community_posts", "community_comments", "chat_messages"):
             _add_columns(con, table, ["edited_at INTEGER"])
+        _add_columns(con, "chat_messages", ["reply_to INTEGER"])
+        _move_replies_into_messages(con)
+
+
+def _move_replies_into_messages(con) -> None:
+    """예전에 따로 두던 댓글(chat_replies)을 메시지로 옮긴다.
+
+    답장도 메시지가 되면서 자리가 하나로 합쳐졌다. 옮기지 않으면 이미 달아
+    둔 댓글이 화면에서 사라진다. 옮긴 줄은 지우므로 두 번 돌아도 그대로다.
+    """
+    try:
+        rows = con.execute(
+            "SELECT c.*, g.room_id FROM chat_replies c"
+            " JOIN chat_messages g ON g.id = c.message_id ORDER BY c.id").fetchall()
+    except Exception:
+        return                      # 그 테이블을 만든 적이 없는 DB
+    for r in rows:
+        con.execute(
+            "INSERT INTO chat_messages (room_id, user_id, body, created_at, edited_at, reply_to)"
+            " VALUES (?,?,?,?,?,?)",
+            (r["room_id"], r["user_id"], r["body"], r["created_at"],
+             r["edited_at"], r["message_id"]))
+    if rows:
+        con.execute("DELETE FROM chat_replies")
 
 
 def _add_columns(con, table: str, columns: list[str]) -> None:
@@ -522,7 +550,8 @@ def delete_message(user_id: int, message_id: int) -> int:
     with auth.db() as con:
         r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
         _drop_reactions(con, "message", [message_id])
-        con.execute("DELETE FROM chat_replies WHERE message_id=?", (message_id,))
+        # 답장은 남긴다. 원글이 없어졌다는 이유로 남의 글까지 지울 수는 없다.
+        con.execute("UPDATE chat_messages SET reply_to=NULL WHERE reply_to=?", (message_id,))
         con.execute("DELETE FROM chat_messages WHERE id=?", (message_id,))
         return r["room_id"]
 
@@ -948,77 +977,49 @@ def messages(user_id: int, room_id: int, after: int = 0, limit: int = 50) -> lis
             rows = list(rows)[::-1]
         ids = [r["id"] for r in rows]
         react = _reaction_summary(con, "message", ids, user_id)
-        댓글 = _replies_for(con, ids, user_id)
+        원글 = _reply_targets(con, [r["reply_to"] for r in rows])
     return [{"id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == user_id,
              "본문": r["body"], "작성시각": r["created_at"],
              "수정시각": r["edited_at"],
              "반응": react.get(r["id"], {"counts": {}, "mine": []}),
-             "댓글": 댓글.get(r["id"], [])} for r in rows]
+             "답장": 원글.get(r["reply_to"])} for r in rows]
 
 
-def _replies_for(con, message_ids: list[int], me: int) -> dict[int, list[dict]]:
-    """메시지마다 달린 댓글. 한 번에 읽는다 — 줄마다 물으면 요청이 줄 수만큼 는다."""
-    if not message_ids:
+def _reply_targets(con, ids: list) -> dict[int, dict]:
+    """답장이 가리키는 원글 — 누가 쓴 무슨 글인지 한 줄만.
+
+    화면에 원글을 통째로 다시 그릴 필요는 없다. 어떤 글의 답장인지 알아보고
+    눌러서 찾아갈 수 있으면 된다. 원글이 지워졌으면 아무것도 돌려주지 않는다.
+    """
+    쓸것 = sorted({i for i in ids if i})
+    if not 쓸것:
         return {}
-    marks = ",".join("?" for _ in message_ids)
+    marks = ",".join("?" for _ in 쓸것)
     rows = con.execute(
-        f"SELECT c.*, u.display_name FROM chat_replies c JOIN users u ON u.id=c.user_id"
-        f" WHERE c.message_id IN ({marks}) ORDER BY c.id", message_ids).fetchall()
-    out: dict[int, list[dict]] = {i: [] for i in message_ids}
-    for r in rows:
-        out[r["message_id"]].append({
-            "id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == me,
-            "본문": r["body"], "작성시각": r["created_at"], "수정시각": r["edited_at"],
-        })
-    return out
+        f"SELECT g.id, g.body, u.display_name FROM chat_messages g"
+        f" JOIN users u ON u.id=g.user_id WHERE g.id IN ({marks})", 쓸것).fetchall()
+    return {r["id"]: {"id": r["id"], "작성자": r["display_name"],
+                      "본문": r["body"][:60]} for r in rows}
 
 
-def add_reply(user_id: int, message_id: int, body: str) -> int:
-    with auth.db() as con:
-        m = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
-                        (message_id,)).fetchone()
-        if not m:
-            raise HTTPException(404, "메시지를 찾을 수 없어요.")
-        if not _is_member(con, m["room_id"], user_id):
-            raise HTTPException(403, "먼저 모임에 참여해 주세요.")
-        con.insert_id(
-            "INSERT INTO chat_replies (message_id, user_id, body, created_at)"
-            " VALUES (?,?,?,?)", (message_id, user_id, _edited(body, 2000), int(time.time())))
-        return m["room_id"]
-
-
-def _reply_room(con, reply_id: int, user_id: int) -> int:
-    r = _mine_or_403(con, "chat_replies", reply_id, user_id, "댓글")
-    m = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
-                    (r["message_id"],)).fetchone()
-    return m["room_id"] if m else 0
-
-
-def edit_reply(user_id: int, reply_id: int, body: str) -> int:
-    with auth.db() as con:
-        room_id = _reply_room(con, reply_id, user_id)
-        con.execute("UPDATE chat_replies SET body=?, edited_at=? WHERE id=?",
-                    (_edited(body, 2000), int(time.time()), reply_id))
-        return room_id
-
-
-def delete_reply(user_id: int, reply_id: int) -> int:
-    with auth.db() as con:
-        room_id = _reply_room(con, reply_id, user_id)
-        con.execute("DELETE FROM chat_replies WHERE id=?", (reply_id,))
-        return room_id
-
-
-def send_message(user_id: int, room_id: int, body: str) -> int:
+def send_message(user_id: int, room_id: int, body: str,
+                 reply_to: int | None = None) -> int:
     body = (body or "").strip()
     if not body:
         raise HTTPException(400, "메시지를 입력해 주세요.")
     with auth.db() as con:
         if not _is_member(con, room_id, user_id):
             raise HTTPException(403, "먼저 모임에 참여해 주세요.")
+        if reply_to is not None:
+            # 다른 방 글에 답장할 수는 없다 — 그 방 사람만 볼 수 있는 글이다
+            대상 = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
+                             (reply_to,)).fetchone()
+            if not 대상 or 대상["room_id"] != room_id:
+                raise HTTPException(404, "답장할 메시지를 찾을 수 없어요.")
         return con.insert_id(
-            "INSERT INTO chat_messages (room_id, user_id, body, created_at) VALUES (?,?,?,?)",
-            (room_id, user_id, body[:2000], int(time.time())))
+            "INSERT INTO chat_messages (room_id, user_id, body, created_at, reply_to)"
+            " VALUES (?,?,?,?,?)",
+            (room_id, user_id, body[:2000], int(time.time()), reply_to))
 
 
 # ---------------------------------------------------------------------------
@@ -1079,6 +1080,8 @@ class RoomPasswordIn(BaseModel):
 
 class MessageIn(BaseModel):
     body: str = Field(..., max_length=2000)
+    # 답장이면 원글 id. 답장도 그냥 메시지라, 자리는 시간순 그대로다.
+    reply_to: int | None = None
 
 
 @router.get("/meta")
@@ -1140,29 +1143,6 @@ def message_edit(message_id: int, body: MessageIn,
                  quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
     room_id = edit_message(me, message_id, body.body)
-    return {"messages": messages(me, room_id, 0)}
-
-
-@router.post("/messages/{message_id}/comments")
-def message_comment(message_id: int, body: CommentIn,
-                    quadriga_session: str | None = Cookie(None)) -> dict:
-    me = _uid(quadriga_session)
-    room_id = add_reply(me, message_id, body.body)
-    return {"messages": messages(me, room_id, 0)}
-
-
-@router.put("/replies/{reply_id}")
-def reply_edit(reply_id: int, body: CommentIn,
-               quadriga_session: str | None = Cookie(None)) -> dict:
-    me = _uid(quadriga_session)
-    room_id = edit_reply(me, reply_id, body.body)
-    return {"messages": messages(me, room_id, 0)}
-
-
-@router.delete("/replies/{reply_id}")
-def reply_remove(reply_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
-    me = _uid(quadriga_session)
-    room_id = delete_reply(me, reply_id)
     return {"messages": messages(me, room_id, 0)}
 
 
@@ -1291,8 +1271,8 @@ def room_messages(room_id: int, after: int = 0,
 def room_send(room_id: int, body: MessageIn,
               quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
-    send_message(me, room_id, body.body)
-    return {"messages": messages(me, room_id, 0)[-30:]}
+    send_message(me, room_id, body.body, body.reply_to)
+    return {"messages": messages(me, room_id, 0)}
 
 
 # ---------- 앱 내 아이디 · 상호 친구 ----------

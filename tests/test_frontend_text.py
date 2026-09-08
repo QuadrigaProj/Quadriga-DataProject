@@ -2030,63 +2030,6 @@ def test_전체_공개가_아닌_글에는_범위를_적는다():
     카드 = html.split("function postCard(p)")[1].split("\n}")[0]
     assert "범위표시(p)" in 카드
 
-
-# ---------- 친구 기록 보기 ----------
-
-def test_기록_공개_설정은_프로필_창에_있다():
-    """올릴 때 고르는 것(글마다)과 늘 열어 두는 것(친구에게)은 다른 일이다.
-    늘 열어 두는 쪽은 내 정보에 둔다."""
-    html = _index()
-    assert 'id="prefScope"' in html and 'id="prefLevel"' in html
-    친구탭 = html.split('id="commFriend"')[1].split("</section>")[0]
-    assert "prefScope" not in 친구탭          # 친구 탭에서는 뺐다
-    내정보 = html.split('<div class="edit-head">')[1].split("</section>")[0]
-    assert 'id="prefScope"' in 내정보
-    그리기 = html.split("function renderEdit()")[1].split("\n}")[0]
-    assert "loadPrefs()" in 그리기
-    본문 = html.split("function renderPrefs()")[1].split("\n}")[0]
-    assert "SCOPE_LABEL" in 본문 and "SHARE_LEVEL_LABEL" in 본문
-    assert "지금은 아무에게도 보이지 않아요" in 본문       # 비공개일 때 분명히 말한다
-
-
-def test_공개_수준_다섯_가지가_다_있다():
-    html = _index()
-    본문 = html.split("const SHARE_LEVEL_LABEL = {")[1].split("};")[0]
-    for k in ("full", "no_body", "workout_only", "axes_only", "none"):
-        assert k in 본문, k
-
-
-def test_친구_기록은_달력에서_날을_골라_본다():
-    html = _index()
-    본문 = html.split("function renderFriendCal()")[1].split("\n}")[0]
-    assert "cal-grid" in 본문
-    assert "openFriendDay(" in 본문
-    assert "disabled" in 본문                       # 기록 없는 날은 누를 수 없다
-    assert "frMove(-1)" in 본문 and "frMove(1)" in 본문
-
-
-def test_화면은_받은_것만_그린다():
-    """화면에서 가리는 방식이면 값은 이미 건너온 뒤다."""
-    html = _index()
-    본문 = html.split("async function openFriendDay(date)")[1].split("\n}")[0]
-    assert "d['지표']" in 본문 and "d['운동']" in 본문
-    # 수준을 화면에서 따지지 않는다 — 서버가 걸러서 준다
-    assert "no_body" not in 본문 and "workout_only" not in 본문
-
-
-def test_공개하지_않은_사람은_그렇다고_말한다():
-    html = _index()
-    본문 = html.split("async function openFriendRecords(handle)")[1].split("\n}")[0]
-    assert "이 회원은 기록을 공개하지 않았어요" in 본문
-
-
-def test_프로필의_기록_보기는_서버가_정한다():
-    html = _index()
-    본문 = html.split("async function openProfile(handle)")[1].split("\n}")[0]
-    assert "u['기록'] && u['기록'] !== 'none'" in 본문
-    assert "openFriendRecords(" in 본문
-
-
 # ---------- 아이디 · 댓글 프로필 · 채팅 입력칸 ----------
 
 def test_프로필_창에서도_내_아이디를_본다():
@@ -2176,3 +2119,18 @@ def test_수준을_바꾸면_켠_것도_따라간다():
     assert "pickedByLevel(날, shareLevel)" in 본문
     잡기 = html.split("function pickedByLevel(날, level)")[1].split("\n}")[0]
     assert "level === 'full'" in 잡기 and "level === 'axes_only'" in 잡기
+
+
+def test_늘_열어_두는_공개_설정은_두지_않는다():
+    """공유는 글마다 고른다. 켤 방법이 없는 설정과 죽은 화면을 남기지 않는다."""
+    html = _index()
+    for 없어야 in ("prefScope", "prefLevel", "loadPrefs", "renderPrefs", "savePrefs",
+                 "openFriendRecords", "renderFriendCal", "openFriendDay",
+                 "commSharePrefs", "commFriendDays"):
+        assert 없어야 not in html, 없어야
+
+
+def test_api에도_지운_길이_남지_않는다():
+    js = (_ROOT / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    for 없어야 in ("share/prefs", "/records"):
+        assert 없어야 not in js, 없어야

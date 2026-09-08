@@ -53,16 +53,7 @@ CREATE TABLE IF NOT EXISTS post_audience (
   PRIMARY KEY (post_id, user_id)
 );
 
-/* 내 운동 기록을 누구에게 얼마나 보일지.
-   줄이 없으면 비공개다 — 설정하지 않은 사람의 기록이 새어 나가지 않게. */
-CREATE TABLE IF NOT EXISTS share_prefs (
-  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  scope   TEXT NOT NULL DEFAULT 'friends',
-  level   TEXT NOT NULL DEFAULT 'none'
-);
-
-/* 자주 고르는 친구 묶음 — '선택 친구' 로 올릴 때 기본으로 채워 주고,
-   기록 공개 범위를 '고른 친구' 로 둘 때도 이 묶음을 쓴다. */
+/* 자주 고르는 친구 묶음 — '고른 친구' 로 올릴 때 기본으로 채워 준다. */
 CREATE TABLE IF NOT EXISTS share_chosen (
   user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   other_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -277,11 +268,6 @@ def _public_user(con, user_id: int) -> dict:
     return {"아이디": _handle_in(con, user_id), "닉네임": r["display_name"]}
 
 
-def record_share_state(viewer: int, owner: int) -> str:
-    with auth.db() as con:
-        return _may_see_records(con, owner, viewer)
-
-
 def find_by_handle(handle: str) -> dict | None:
     """아이디로 사람 찾기. 정확히 맞아야 찾힌다 — 부분 검색은 목록 훑기가 된다."""
     # 대소문자를 구분한다. 눕혀서 찾으면 'Ab1' 과 'ab1' 이 같은 사람이 된다.
@@ -419,155 +405,6 @@ def set_chosen_friends(me: int, handles: list[str]) -> list[dict]:
         for u in set(ids):
             con.execute("INSERT INTO share_chosen (user_id, other_id) VALUES (?,?)", (me, u))
     return chosen_friends(me)
-
-
-# 누구에게 — 전체 / 친구 전체 / 고른 친구
-SHARE_SCOPE = ("all", "friends", "chosen")
-# 얼마나 — 아래로 갈수록 덜 보인다
-#   full         모든 운동 기록 (그날 잰 몸 상태까지)
-#   no_body      몸 상태를 뺀 운동 기록 + 체력 지표
-#   workout_only 몸 상태를 뺀 운동 기록만
-#   axes_only    체력 지표만
-#   none         비공개
-SHARE_LEVEL = ("full", "no_body", "workout_only", "axes_only", "none")
-# 지표로 보여 주는 항목. 몸 상태(키·몸무게·인바디)는 여기 없다.
-SHARE_AXES = ("유연성", "근력", "근지구력", "심폐지구력")
-
-
-def share_prefs(me: int) -> dict:
-    """내 기록 공개 설정. 정한 적이 없으면 비공개다."""
-    with auth.db() as con:
-        r = con.execute("SELECT scope, level FROM share_prefs WHERE user_id=?",
-                        (me,)).fetchone()
-    return {"범위": r["scope"] if r else "friends",
-            "수준": r["level"] if r else "none",
-            "고른친구": chosen_friends(me)}
-
-
-def set_share_prefs(me: int, scope: str, level: str) -> dict:
-    if scope not in SHARE_SCOPE or level not in SHARE_LEVEL:
-        raise HTTPException(400, "공개 설정이 올바르지 않아요.")
-    with auth.db() as con:
-        con.execute("DELETE FROM share_prefs WHERE user_id=?", (me,))
-        con.execute("INSERT INTO share_prefs (user_id, scope, level) VALUES (?,?,?)",
-                    (me, scope, level))
-    return share_prefs(me)
-
-
-def _may_see_records(con, owner: int, viewer: int) -> str:
-    """viewer 가 owner 의 기록을 어느 수준까지 볼 수 있는지. 못 보면 'none'."""
-    if owner == viewer:
-        return "full"
-    r = con.execute("SELECT scope, level FROM share_prefs WHERE user_id=?",
-                    (owner,)).fetchone()
-    if not r or r["level"] == "none":
-        return "none"
-    scope = r["scope"]
-    if scope == "all":
-        return r["level"]
-    if scope == "friends":
-        return r["level"] if are_friends(con, owner, viewer) else "none"
-    # 고른 친구 — 친구이면서 묶음에 든 사람만
-    골랐나 = con.execute(
-        "SELECT 1 FROM share_chosen WHERE user_id=? AND other_id=?",
-        (owner, viewer)).fetchone()
-    return r["level"] if (골랐나 and are_friends(con, owner, viewer)) else "none"
-
-
-def _snapshot(con, user_id: int) -> dict:
-    """그 사람의 마지막 저장본. 없으면 빈 것."""
-    r = con.execute(
-        "SELECT payload FROM measurements WHERE user_id=?"
-        " ORDER BY measured_at DESC LIMIT 1", (user_id,)).fetchone()
-    if not r:
-        return {}
-    try:
-        return json.loads(r["payload"]) or {}
-    except Exception:
-        return {}
-
-
-def _record_days(snap: dict) -> list[str]:
-    """기록이 하나라도 있는 날 — 달력에 점을 찍는 데 쓴다."""
-    날 = set()
-    for e in (snap.get("routineLog") or []):
-        if isinstance(e, dict) and e.get("date"):
-            날.add(e["date"])
-    for w in (snap.get("workoutLog") or []):
-        if isinstance(w, dict) and w.get("date"):
-            날.add(w["date"])
-    return sorted(날)
-
-
-def _day_moves(snap: dict, date: str, 몸상태: bool) -> list[dict]:
-    """그날 한 운동. 몸상태=False 면 키·몸무게·인바디는 담지 않는다."""
-    out = []
-    for w in (snap.get("workoutLog") or []):
-        if not isinstance(w, dict) or w.get("date") != date:
-            continue
-        for x in (w.get("items") or []):
-            값 = " · ".join(f"{v}" for v in (x.get("값") or {}).values())
-            out.append({"이름": x.get("이름"), "값": 값})
-        if 몸상태:
-            for k, v in (w.get("요약") or {}).items():
-                out.append({"이름": k, "값": v, "몸상태": True})
-    for e in (snap.get("routineLog") or []):
-        if not isinstance(e, dict) or e.get("date") != date:
-            continue
-        for st in (e.get("steps") or []):
-            이름 = st.get("운동명")
-            if 이름 and not any(m["이름"] == 이름 for m in out):
-                out.append({"이름": 이름, "값": st.get("체력요인") or ""})
-    return out
-
-
-def _day_axes(snap: dict, date: str) -> dict:
-    """그날 기준이 되는 측정의 체력 지표. 몸 상태는 담지 않는다."""
-    잰것 = [m for m in (snap.get("measureLog") or [])
-           if isinstance(m, dict) and m.get("date") and m["date"] <= date and m.get("항목별")]
-    if not 잰것:
-        return {}
-    기준 = sorted(잰것, key=lambda m: m["date"])[-1]
-    return {k: v for k, v in (기준.get("항목별") or {}).items() if k in SHARE_AXES}
-
-
-def friend_record_days(viewer: int, handle: str) -> dict:
-    """달력에 찍을 날 목록. 볼 수 없으면 날짜도 주지 않는다."""
-    target = find_by_handle(handle)
-    if not target:
-        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
-    owner = target["user_id"]
-    with auth.db() as con:
-        수준 = _may_see_records(con, owner, viewer)
-        if 수준 == "none":
-            return {"수준": "none", "날짜": [], "닉네임": target["닉네임"]}
-        snap = _snapshot(con, owner)
-    return {"수준": 수준, "날짜": _record_days(snap),
-            "닉네임": target["닉네임"]}
-
-
-def friend_record_day(viewer: int, handle: str, date: str) -> dict:
-    target = find_by_handle(handle)
-    if not target:
-        raise HTTPException(404, "그 아이디를 쓰는 회원이 없어요.")
-    owner = target["user_id"]
-    with auth.db() as con:
-        수준 = _may_see_records(con, owner, viewer)
-        if 수준 == "none":
-            raise HTTPException(403, "이 회원은 기록을 공개하지 않았어요.")
-        snap = _snapshot(con, owner)
-
-    운동보임 = 수준 in ("full", "no_body", "workout_only")
-    지표보임 = 수준 in ("full", "no_body", "axes_only")
-    out = {"날짜": date, "수준": 수준, "닉네임": target["닉네임"],
-           "운동": _day_moves(snap, date, 몸상태=(수준 == "full")) if 운동보임 else None,
-           "지표": _day_axes(snap, date) if 지표보임 else None,
-           "체력나이": None}
-    if 지표보임:
-        나이 = (snap.get("dayAges") or {}).get(date)
-        if isinstance(나이, dict) and 나이.get("값") is not None:
-            out["체력나이"] = 나이["값"]
-    return out
 
 
 def _audience_ids(con, me: int, audience: str, handles) -> list[int]:
@@ -1337,11 +1174,6 @@ class ChosenIn(BaseModel):
     handles: list[str] = Field(default_factory=list, max_length=100)
 
 
-class SharePrefsIn(BaseModel):
-    scope: str = Field(..., pattern="^(all|friends|chosen)$")
-    level: str = Field(..., pattern="^(full|no_body|workout_only|axes_only|none)$")
-
-
 class PostEditIn(BaseModel):
     """글은 본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
     body: str = Field(..., max_length=4000)
@@ -1472,31 +1304,6 @@ def share_chosen_get(quadriga_session: str | None = Cookie(None)) -> dict:
 def share_chosen_put(body: ChosenIn,
                      quadriga_session: str | None = Cookie(None)) -> dict:
     return {"고른친구": set_chosen_friends(_uid(quadriga_session), body.handles)}
-
-
-@router.get("/share/prefs")
-def share_prefs_get(quadriga_session: str | None = Cookie(None)) -> dict:
-    return share_prefs(_uid(quadriga_session))
-
-
-@router.put("/share/prefs")
-def share_prefs_put(body: SharePrefsIn,
-                    quadriga_session: str | None = Cookie(None)) -> dict:
-    return set_share_prefs(_uid(quadriga_session), body.scope, body.level)
-
-
-@router.get("/users/{handle}/records")
-def friend_records(handle: str, quadriga_session: str | None = Cookie(None)) -> dict:
-    """기록이 있는 날 목록 — 달력에 점을 찍는 데 쓴다."""
-    return friend_record_days(_uid(quadriga_session), handle)
-
-
-@router.get("/users/{handle}/records/{date}")
-def friend_record_on(handle: str, date: str,
-                     quadriga_session: str | None = Cookie(None)) -> dict:
-    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", date or ""):
-        raise HTTPException(400, "날짜가 올바르지 않아요.")
-    return friend_record_day(_uid(quadriga_session), handle, date)
 
 
 @router.post("/reactions")
@@ -1638,8 +1445,6 @@ def user_lookup(handle: str, quadriga_session: str | None = Cookie(None)) -> dic
     other = found.pop("user_id")
     with auth.db() as con:
         found["관계"] = friend_state(con, me, other)
-        # 기록을 볼 수 있는지도 서버가 정한다. 화면이 판단하면 규칙이 두 벌이 된다
-        found["기록"] = _may_see_records(con, other, me)
         # 채팅 버튼을 어떻게 그릴지 서버가 정한다 — 규칙이 화면에 흩어지지 않게
         if me == other:
             found["채팅"] = "나"

@@ -1058,7 +1058,12 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
         raise HTTPException(502, "카카오페이 결제 준비에 실패했습니다.")
 
     billing.new_order(order, 누구["id"], out["tid"], pack["이용권"], pack["결제"])
-    return {"order": order, "redirect": out["redirect_mobile"],
+    # 접속 환경은 화면이 안다. 셋 다 주고 고르게 한다 — PC 는 QR 화면으로 가야 한다.
+    return {"order": order,
+            "redirect": out["redirect_mobile"],        # 예전 화면 호환
+            "redirect_pc": out["redirect_pc"],
+            "redirect_mobile": out["redirect_mobile"],
+            "redirect_app": out["redirect_app"],
             "결제": pack["결제"], "이용권": pack["이용권"]}
 
 

@@ -456,3 +456,38 @@ def test_나중_결제만_환불_가능으로_표시된다(키, monkeypatch):
           if x["종류"] == "충전"}
     assert 표[첫] is False and 표[둘] is True
 
+
+
+# ---------- 접속 환경별 결제창 주소 ----------
+
+READY_3 = {"tid": "T1",
+           "next_redirect_pc_url": "https://kakao/pc",
+           "next_redirect_mobile_url": "https://kakao/mo",
+           "next_redirect_app_url": "https://kakao/app"}
+
+
+def test_세_주소를_모두_돌려준다(키, monkeypatch):
+    """PC 에서 모바일 주소로 보내면 결제 화면이 제대로 뜨지 않는다.
+
+    PC 주소가 카카오톡으로 결제 요청을 보내는 화면(QR)이다.
+    """
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(READY_3))
+    d = _login().post("/pay/kakao/ready", json={"amount": 3000}).json()
+    assert d["redirect_pc"] == "https://kakao/pc"
+    assert d["redirect_mobile"] == "https://kakao/mo"
+    assert d["redirect_app"] == "https://kakao/app"
+
+
+@pytest.mark.parametrize("빠진것, 기대", [
+    ("next_redirect_pc_url", {"pc": "https://kakao/mo"}),
+    ("next_redirect_mobile_url", {"mobile": "https://kakao/pc"}),
+    ("next_redirect_app_url", {"app": "https://kakao/mo"}),
+])
+def test_하나가_비면_있는_것으로_메운다(키, monkeypatch, 빠진것, 기대):
+    """빈 주소로 보내면 화면이 그 자리에서 멈춘다."""
+    응답 = {k: v for k, v in READY_3.items() if k != 빠진것}
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(응답))
+    d = _login().post("/pay/kakao/ready", json={"amount": 3000}).json()
+    for 키이름, 값 in 기대.items():
+        assert d[f"redirect_{키이름}"] == 값
+    assert all(d[f"redirect_{k}"] for k in ("pc", "mobile", "app"))

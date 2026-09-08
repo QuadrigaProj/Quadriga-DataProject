@@ -396,18 +396,44 @@ def test_채팅방_생성은_플러스_버튼으로_연다():
     assert 'id="roomComposer"' in html
 
 
-def test_게시글_작성란은_모달이_아니라_피드_하단에_항상_있다():
-    """모달 팝업(+ 버튼)이었다가, 하단에 얇고 넓게 항상 보이는 입력란으로 바꿨다."""
+def test_게시글_작성란은_플러스_버튼으로_폈다_접는다():
+    """모달 → 늘 펼쳐진 하단 입력란 → 지금은 ＋ 로 펴는 하단 입력란.
+
+    늘 펼쳐 두니 좁은 화면에서 피드를 가려서, 머리의 ＋ 로 펴게 되돌렸다.
+    모달로는 안 돌아간다 — 접었다 펴는 자리는 그대로 피드 하단이다."""
     html = _index()
-    assert 'onclick="openPostComposer()"' not in html
-    assert 'id="postComposer"' not in html
+    assert 'id="postComposer"' not in html          # 모달은 없앤 그대로
+    머리 = html.split('id="commFeed"')[1].split('id="feedList"')[0]
+    assert 'id="postAddBtn"' in 머리
+    assert 'onclick="togglePostComposer()"' in 머리
     본문 = html.split('id="commFeed"')[1].split('id="commFriend"')[0]
-    assert 'class="post-compose-bar"' in 본문
+    assert 'id="postComposeBar" class="post-compose-bar" hidden' in 본문
     assert '<input id="postBody" type="text"' in 본문
-    assert 'onclick="submitPost()">게시</button>' in 본문
     css = html.split(".post-compose-bar{")[1].split("}")[0]
     assert "position:sticky" in css and "bottom:0" in css
     assert "position:fixed" not in css   # 이 저장소는 position:fixed 를 금지한다
+
+
+def test_게시_버튼은_글자_대신_아이콘이다():
+    """게시 버튼이 자리를 많이 먹어서 입력란이 짧아 보였다."""
+    html = _index()
+    본문 = html.split('id="postComposeBar"')[1].split("</div>")[0]
+    assert 'class="post-send"' in 본문
+    assert "<svg" in 본문                              # 글자가 아니라 아이콘
+    assert ">게시</button>" not in 본문
+    assert 'aria-label="게시"' in 본문                 # 아이콘만 있어도 읽히게
+    css = html.split(".post-send{")[1].split("}")[0]
+    assert "flex-shrink:0" in css                      # 입력란이 남는 자리를 갖는다
+    입력 = html.split(".post-compose-bar input[type=text]{")[1].split("}")[0]
+    assert "flex:1" in 입력
+
+
+def test_작성란을_펴면_입력칸에_바로_쓸_수_있다():
+    html = _index()
+    본문 = html.split("function togglePostComposer(열기)")[1].split("\n}")[0]
+    assert "$('postBody').focus()" in 본문
+    assert "aria-expanded" in 본문                     # 접힘/펼침을 읽어 줄 수 있게
+    assert "$('postPreview').hidden" in 본문           # 미리보기도 같이 접힌다
 
 
 def test_게시글을_누르면_댓글창이_열린다():
@@ -436,7 +462,7 @@ def test_채팅방_목록에서_내_채팅만_볼_수_있다():
     assert "onclick=\"setRoomFilter('all')\">전체</button>" in html
     assert "onclick=\"setRoomFilter('mine')\">내 채팅</button>" in html
     본문 = html.split("function renderRoomList(){")[1].split("\n}")[0]
-    assert "ROOMS.filter(rm => rm['참여중'])" in 본문
+    assert "COMM.roomFilter === 'mine' ? rm['참여중']" in 본문
 
 
 def test_방장만_단체_채팅방을_폭파할_수_있다():
@@ -1482,3 +1508,46 @@ def test_추정치라고_문구에_적는다():
     html = _index()
     본문 = html.split("function renderTrend()")[1].split("\n}")[0]
     assert "속 빈 점" in 본문 and "추정치" in 본문
+
+
+# ---------- 채팅방 목록 표기 ----------
+
+def test_방_종류는_공개_여부만_적는다():
+    """'비공개 단체 채팅' 은 좁은 목록에서 너무 길다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "'비공개 단체 채팅'" not in 본문 and "'공개 단체 채팅'" not in 본문
+    assert "rm['비공개'] ? '비공개' : '공개'" in 본문
+    assert "'개인 채팅'" in 본문          # 개인 채팅은 그대로 구분해서 보여 준다
+
+
+def test_내가_방장인_방은_이름_옆에_표시된다():
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "rc-host" in 본문
+    assert 'aria-label="내가 만든 방"' in 본문
+    assert "${privateMark}${hostMark}" in 본문     # 이름 옆에 붙는다
+    # 개인 채팅에는 방장이 없다 — 먼저 말을 건 쪽일 뿐이라 표시할 뜻이 없다
+    assert "(rm['방장'] && rm['종류'] !== 'direct')" in 본문
+
+
+def test_방_카드가_좁아도_이름이_접히지_않는다():
+    """방장이면 버튼이 셋이라, 이름 칸이 한 글자씩 세로로 접혔다."""
+    html = _index()
+    카드 = html.split(".room-card{")[1].split("}")[0]
+    assert "flex-wrap:wrap" in 카드              # 버튼 줄이 아래로 내려간다
+    정보 = html.split(".room-card .rc-info{")[1].split("}")[0]
+    assert "min-width:0" in 정보
+    버튼 = html.split(".room-actions{")[1].split("}")[0]
+    assert "flex-shrink:0" not in 버튼           # 이름을 밀어내지 않는다
+    assert 'class="rc-info"' in html
+
+
+def test_두_목록은_겹치지_않는다():
+    """같은 방이 '전체' 와 '내 채팅' 양쪽에 다 뜨면 어느 쪽을 봐야 할지 모른다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "COMM.roomFilter === 'mine' ? rm['참여중'] : !rm['참여중']" in 본문
+    # 빈 목록 문구도 각자 뜻에 맞게
+    assert "아직 들어가 있는 채팅방이 없어요" in 본문
+    assert "새로 들어갈 채팅방이 없어요" in 본문

@@ -370,6 +370,10 @@
   .rec-pick input{ width:17px; height:17px; margin:0 10px 0 0; flex-shrink:0;
                    accent-color:var(--pine); }
   .rec-way{ font-size:12px; color:var(--muted); flex-shrink:0; }
+  /* 운동 기록에서 뽑은 줄은 고를 수 없다. 체크박스 자리는 비워서 칸을 맞춘다 */
+  .rec-pick-gap{ width:17px; margin:0 10px 0 0; flex-shrink:0; }
+  /* 이름 옆에 따로 두면 이름 칸이 눌려 한 글자씩 접힌다 — 아래 줄로 내린다 */
+  .rec-name small.rec-way{ display:block; margin-top:2px; }
   .rec-actions{ margin-top:12px; }
   .rec-del{ width:100%; padding:11px 0; border-radius:12px;
             border:1px solid var(--line); background:var(--paper);
@@ -2122,7 +2126,8 @@ const state = {
   sports: [],          // 배우고 싶은 운동 종목 id 목록
   sportsDone: false,   // 선택을 끝냈는지 (끝냈으면 요약 화면을 먼저 보여준다)
   history: [],         // F3/F4: 재측정으로 닫힌 지난 기간들 [{start, end, routineLog:[…], result:{…}, first:{…}}]
-  measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 결과가 나올 때마다 append (같은 날 여러 번 재면 모두 남긴다)
+  measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 날짜당 한 줄 (같은 날 다시 재면 이전 것을 덮는다)
+  dayAges: {},         // 규칙2·3: 운동 기록이 있는 날의 체력나이 { 'yyyy-mm-dd': {값, 기준나이, 당김, 일수, 잰체성분, 소급} }
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
@@ -2199,7 +2204,8 @@ function archivePeriod(){
   state.programStart = today;
 }
 
-/* 측정 결과 한 줄을 이력에 보탠다 (변화추이용). */
+/* 측정 결과 한 줄을 이력에 보탠다 (변화추이용).
+   같은 날 다시 재면 이전 줄은 지우고 새 값으로 바꾼다 (규칙 4). */
 function appendMeasureLog(){
   const r = state.result;
   if (!r || r.체력나이 == null) return;
@@ -2208,6 +2214,22 @@ function appendMeasureLog(){
     date: todayIso(), 체력나이: r.체력나이, 신뢰구간: r.신뢰구간 ?? null,
     항목별: { ...(r.항목별 || {}) }, method: state.method,
   });
+  dedupeMeasureLog();
+}
+
+/* 점검 기록은 날짜당 한 줄이다 (규칙 4).
+
+   같은 날짜가 두 줄 남아 있으면 목록에서 어느 쪽이 지금 값인지 알 수 없고,
+   하나를 지워도 옛 값이 되살아난 것처럼 보인다. 나중에 적은 것을 남긴다.
+   바뀐 게 있으면 true — 부르는 쪽에서 저장할지 정한다. */
+function dedupeMeasureLog(){
+  const list = Array.isArray(state.measureLog) ? state.measureLog : [];
+  const byDate = new Map();
+  list.forEach(m => { if (m && m.date) byDate.set(m.date, m); });
+  const 정리 = [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const 바뀜 = 정리.length !== list.length;
+  state.measureLog = 정리;
+  return 바뀜;
 }
 
 /* 새 측정 결과가 state.result 에 들어온 직후 한 번 호출한다.
@@ -2655,6 +2677,7 @@ function snapshot(){
     programStart: state.programStart, routineLog: state.routineLog,
     sports: state.sports, sportsDone: state.sportsDone,
     history: state.history, measureLog: state.measureLog, workoutLog: state.workoutLog,
+    dayAges: state.dayAges,
     activityAge: state.activityAge,
     commute: state.commute,
     styleTest: state.styleTest,
@@ -2696,6 +2719,8 @@ function applyProfile(saved){
   state.history = Array.isArray(saved?.history) ? saved.history : [];
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
+  state.dayAges = (saved?.dayAges && typeof saved.dayAges === 'object') ? saved.dayAges : {};
+  dedupeMeasureLog();          // 예전 저장본에는 같은 날짜가 여러 줄 있을 수 있다 (규칙 4)
   state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
   // 잔액은 스냅샷에 담지 않는다. 서버 원장에서 읽는다.
   state.credit = 0;
@@ -2831,6 +2856,7 @@ async function doDelete(){
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
+  state.dayAges = {};
   state.credit = 0;
   state.creditLog = [];
   state.commute = null;
@@ -2856,6 +2882,7 @@ async function logout(){
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
+  state.dayAges = {};
   state.credit = 0;
   state.creditLog = [];
   state.sports = [];
@@ -2893,6 +2920,7 @@ async function resetSettings(){
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
+  state.dayAges = {};
   state.credit = 0;
   state.creditLog = [];
   state.commute = null;
@@ -3014,16 +3042,20 @@ async function renderRecords(){
 
   renderMeasureRecords();
   renderManualRecords();
-  // 예전에 적어 둔 날에는 체력나이가 없다. 한 번에 채우고 다시 그린다 (K1)
-  backfillLogAges().then(ok => { if (ok) renderManualRecords(); });
+  // 예전에 적어 둔 날에는 체력나이가 없다. 한 번에 채우고 다시 그린다 (규칙 2)
+  backfillLogAges().then(ok => {
+    if (!ok) return;
+    renderManualRecords();
+    renderMeasureRecords();       // 운동한 날이 점검 기록에도 뜨게 (규칙 4)
+  });
 }
 
-/* 비어 있는 날만 채운다. 채운 게 있으면 true. */
+/* 체력나이가 아직 없는 날만 채운다. 채운 게 있으면 true. */
 async function backfillLogAges(){
-  const 빈날 = (state.workoutLog || []).filter(w => w && w.date && !w.체력나이).length;
+  const 빈날 = workoutDates().filter(d => !dayAge(d)).length;
   if (!빈날) return false;
   await refreshLogAges();
-  const 남은 = (state.workoutLog || []).filter(w => w && w.date && !w.체력나이).length;
+  const 남은 = workoutDates().filter(d => !dayAge(d)).length;
   if (남은 === 빈날) return false;
   await saveProfile();
   return true;
@@ -3070,31 +3102,60 @@ function toggleRecDetail(btn){
   btn.textContent = 펼침 ? '접기' : '자세히 보기';
 }
 
-/* 점검 기록 (G1) — measureLog 한 줄이 측정 한 번이다.
-   달력·변화추이가 읽는 배열과 같아서, 여기서 지우면 그쪽에서도 함께 사라진다.
+/* 점검 기록 (G1) — 그날의 체력나이 한 줄.
+   달력·변화추이가 읽는 값과 같아서, 여기서 지우면 그쪽에서도 함께 사라진다.
    measureLog 는 스냅샷에 담겨 저장되므로 계정이면 서버에도 그대로 반영된다. */
 const MEASURE_WAY = { home: '홈 체력측정', inbody: 'InBody' };
 let measurePicked = new Set();
+
+/* 화면에 그릴 점검 기록 줄 (규칙 4).
+
+   - 날짜당 한 줄이다. 잰 날과 운동한 날이 겹치면 **잰 값이 이긴다**.
+   - 운동 기록이 있는데 그날 잰 적이 없으면, 그날 뽑은 체력나이를 함께 보여 준다.
+     '직접 적은 운동' 에는 있는데 여기엔 없는 날이 생기지 않게 한다.
+   - idx 는 state.measureLog 안의 자리다. 지우기가 이 번호를 쓴다. */
+function measureRows(){
+  const byDate = new Map();
+  workoutDates().forEach(d => {
+    const a = dayAge(d);
+    if (a && a.값 != null) byDate.set(d, { date: d, 체력나이: a.값, 출처: '운동', 소급: !!a.소급 });
+  });
+  (Array.isArray(state.measureLog) ? state.measureLog : []).forEach((m, i) => {
+    if (m && m.date && m.체력나이 != null) byDate.set(m.date, { ...m, 출처: '측정', idx: i });
+  });
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
+}
 
 function renderMeasureRecords(){
   const box = $('recMeasureBlock');
   const note = $('recDeleteNote');
   if (note) note.textContent = '';
-  const list = Array.isArray(state.measureLog) ? state.measureLog : [];
-  if (!list.length) { measurePicked.clear(); box.style.display = 'none'; return; }
+  const rows = measureRows();
+  if (!rows.length) { measurePicked.clear(); box.style.display = 'none'; return; }
   box.style.display = 'block';
-  // 고른 자리는 배열의 원래 위치로 기억한다 — 목록을 최신순으로 뒤집어 그려도 어긋나지 않는다
-  measurePicked = new Set([...measurePicked].filter(i => i < list.length));
-  const rows = list.map((m, i) => ({ m, i })).sort((a, b) => (a.m.date < b.m.date ? 1 : -1));
-  $('recMeasures').innerHTML = rows.map(({ m, i }) => `
+  // 고른 자리는 measureLog 의 원래 위치로 기억한다 — 최신순으로 뒤집어 그려도 어긋나지 않는다
+  const 잰수 = (state.measureLog || []).length;
+  measurePicked = new Set([...measurePicked].filter(i => i < 잰수));
+  $('recMeasures').innerHTML = rows.map(r => r.출처 === '측정' ? `
         <div class="rec-item rec-pick">
           <label class="rec-pick-main">
-            <input type="checkbox" ${measurePicked.has(i) ? 'checked' : ''}
-                   onchange="pickMeasure(${i}, this.checked)" />
-            <div class="rec-date">${fmtDate(m.date)}</div>
-            <div class="rec-name">체력나이 ${Math.round(m.체력나이)}세</div>
+            <input type="checkbox" ${measurePicked.has(r.idx) ? 'checked' : ''}
+                   onchange="pickMeasure(${r.idx}, this.checked)" />
+            <div class="rec-date">${fmtDate(r.date)}</div>
+            <div class="rec-name">체력나이 ${Math.round(r.체력나이)}세</div>
           </label>
-          ${moreToggle(measureDetailHtml(m))}
+          ${moreToggle(measureDetailHtml(r))}
+        </div>` : `
+        <div class="rec-item rec-pick">
+          <div class="rec-pick-main">
+            <span class="rec-pick-gap"></span>
+            <div class="rec-date">${fmtDate(r.date)}</div>
+            <div class="rec-name">체력나이 ${Math.round(r.체력나이)}세<small
+              class="rec-way">운동 기록에서${r.소급 ? ' · 거슬러 쓴 추정' : ''}</small></div>
+          </div>
+          ${moreToggle(dayAgeHtml(r.date) + `<div class="rec-detail-row wide"><b>지우려면</b>
+            <span>이 줄은 잰 게 아니라 그날 운동 기록에서 뽑은 값이에요.
+            그날 기록을 지우면 함께 사라집니다.</span></div>`)}
         </div>`).join('');
   paintMeasureDeleteBtn();
 }
@@ -4644,12 +4705,21 @@ function logRoutineDone(){
     state.routineLog.push({
       date: today, no, done: true,
       name: state.routineMeta?.루틴명 || null,
-      // 자세히 보기용 스냅샷 — 그날 실제로 한 동작과 강도 (H8)
-      steps: activeRoutine().map(s => ({ 단계: s.단계, 운동명: s.운동명 })),
+      // 자세히 보기용 스냅샷 — 그날 실제로 한 동작과 강도 (H8).
+      // 체력요인도 함께 남긴다 — 그날 무엇을 단련했는지가 체력나이에 쓰인다 (규칙 2)
+      steps: activeRoutine().map(s => ({ 단계: s.단계, 운동명: s.운동명,
+                                         체력요인: s.체력요인 || null })),
       강도: state.intensity || null,
     });
-    saveProfile();
     showToast(`오늘 루틴 완료 · 지난 측정 이후 ${state.routineLog.length}회`);
+    // 기록이 생겼으니 그날 체력나이도 뽑아서 저장한다 (규칙 2).
+    // 화면을 붙잡지 않게 뒤에서 돌린다 — 실패해도 루틴 기록 자체는 남는다.
+    (async () => {
+      await refreshActivityAge();
+      await refreshLogAges({ 전부: true });
+      await saveProfile();
+      paintGauges();
+    })();
   }
 }
 
@@ -4961,6 +5031,24 @@ function allRoutineLog(){
   return [...past, ...(state.routineLog || []), ...manual];
 }
 
+/* 운동 기록이 하나라도 있는 날 (규칙 3).
+
+   루틴을 끝낸 날 + 직접 적은 날. 예전에는 '직접 적은 운동' 만 체력나이를
+   뽑아서, 루틴만 하는 사람은 아무리 운동해도 그래프에 점이 안 찍혔다.
+   몸 상태만 적은 날도 넣는다 — 그날 몸무게가 체성분을 바꾼다 (규칙 2). */
+function workoutDates(){
+  const 날 = new Set();
+  allRoutineLog().forEach(e => { if (e && e.date) 날.add(e.date); });
+  (state.workoutLog || []).forEach(w => { if (w && w.date) 날.add(w.date); });
+  return [...날].sort();
+}
+
+/* 그날 체력나이 — 없으면 null */
+function dayAge(날){
+  const m = state.dayAges;
+  return (m && typeof m === 'object' && m[날]) ? m[날] : null;
+}
+
 /* 직접 기록 한 줄을 이름으로 — '스쿼트 외 2종목' */
 function manualLogName(w){
   const names = (w.items || []).map(x => x.이름);
@@ -4998,11 +5086,11 @@ function measurePoints(){
    측정을 아직 한 번도 안 했으면 기준이 없어 운동일에도 값이 없다(K1 규칙). */
 function trendPoints(){
   const byDate = new Map();
-  (state.workoutLog || []).forEach(w => {
-    const a = w && w.체력나이;
-    if (!w?.date || !a || a.값 == null) return;
-    byDate.set(w.date, { date: w.date, 체력나이: a.값, 신뢰구간: null,
-                        항목별: {}, 출처: '운동' });
+  workoutDates().forEach(d => {
+    const a = dayAge(d);
+    if (!a || a.값 == null) return;
+    byDate.set(d, { date: d, 체력나이: a.값, 신뢰구간: null,
+                    항목별: {}, 출처: '운동' });
   });
   // 측정이 나중에 덮는다
   measurePoints().forEach(p => byDate.set(p.date, { ...p, 출처: '측정' }));
@@ -5554,45 +5642,64 @@ function paintLogSaveBtn(){
 }
 
 /* 끝날을 포함한 28일 동안 각 체력요인을 운동한 '날 수'.
-   같은 날 같은 요인은 한 번만 센다. 끝날을 안 주면 오늘까지 (I3). */
+   같은 날 같은 요인은 한 번만 센다. 끝날을 안 주면 오늘까지 (I3).
+
+   직접 적은 운동과 끝낸 루틴을 모두 센다 (규칙 2). 루틴만 하는 사람의
+   기록이 체력나이에 하나도 안 닿으면, 운동해도 숫자가 안 움직인다.
+   루틴 쪽 체력요인은 '근력·협응력' 처럼 '·' 로 이어 붙어 있어 나눠서 본다.
+   체력요인을 안 남긴 예전 루틴 기록은 셀 수 없다 — 지어내지 않는다. */
 const ACTIVITY_WINDOW = 28;
 function activityCounts(끝날){
   const 끝 = 끝날 || todayIso();
   const 시작 = new Date(new Date(끝 + 'T00:00:00').getTime()
                       - (ACTIVITY_WINDOW - 1) * 86400000).toISOString().slice(0, 10);
   const 날별 = new Map();
-  (state.workoutLog || []).forEach(w => {
-    if (!w.date || w.date < 시작 || w.date > 끝) return;
-    const set = 날별.get(w.date) || new Set();
-    (w.items || []).forEach(x => { if (x.요인) set.add(x.요인); });
-    날별.set(w.date, set);
+  const 넣기 = (날, 요인들) => {
+    if (!날 || 날 < 시작 || 날 > 끝) return;
+    const set = 날별.get(날) || new Set();
+    요인들.forEach(f => { if (f) set.add(f); });
+    날별.set(날, set);
+  };
+  (state.workoutLog || []).forEach(w => 넣기(w.date, (w.items || []).map(x => x.요인)));
+  allRoutineLog().forEach(e => {
+    if (e.직접) return;                      // 직접 적은 건 위에서 이미 셌다
+    const 요인들 = (e.steps || []).flatMap(st => String(st.체력요인 || '').split('·'));
+    넣기(e.date, 요인들.map(f => f.trim()).filter(Boolean));
   });
   const 셈 = {};
   날별.forEach(set => set.forEach(f => { 셈[f] = (셈[f] || 0) + 1; }));
   return 셈;
 }
 
-/* 그 날짜까지 중 가장 나중에 한 측정 (K1).
-   9월 5일 기록에 9월 20일 측정을 기준으로 쓰면 미래를 갖다 쓰는 셈이다. */
+/* 그날 체력나이를 뽑을 기준이 되는 측정.
+
+   되도록 그 날짜까지 중 가장 나중에 한 측정을 쓴다 — 9월 5일 기록에
+   9월 20일 측정을 쓰면 미래를 갖다 쓰는 셈이라 정확하지 않다.
+   다만 그날까지 잰 적이 아예 없으면 가장 이른 뒤 측정을 소급해서 쓴다.
+   기록이 있는 날은 무조건 체력나이를 남긴다는 규칙이 먼저다 (규칙 2).
+   소급해서 뽑은 값은 화면에 추정치라고 적는다 — 숨기지 않는다. */
 function measureAtOrBefore(날){
   const list = (Array.isArray(state.measureLog) ? state.measureLog : [])
-    .filter(m => m && m.date && m.date <= 날 && m.항목별)
+    .filter(m => m && m.date && m.항목별)
     .sort((a, b) => (a.date < b.date ? -1 : 1));
-  if (list.length) return list[list.length - 1];
+  const 이전 = list.filter(m => m.date <= 날);
+  if (이전.length) return 이전[이전.length - 1];
+  if (list.length) return list[0];
   // 측정 이력이 없으면 지금 결과라도 쓴다 (예전 저장본)
   return state.result?.항목별 ? state.result : null;
 }
 
-/* 그날 하루치 요청 몸통 — 그날까지의 측정 + 그날까지의 운동 + 그날 잰 몸 상태 (K1) */
-function activityBodyFor(w){
-  const 기준 = measureAtOrBefore(w.date);
+/* 그날 하루치 요청 몸통 — 기준 측정 + 그날까지의 운동 + 그날 잰 몸 상태.
+   날짜만 받는다. 루틴만 끝낸 날에는 직접 적은 줄이 없다 (규칙 3). */
+function activityBodyFor(날){
+  const 기준 = measureAtOrBefore(날);
   if (!기준?.항목별 || !state.ageGbn) return null;
-  const 요약 = w.요약 || {};
+  const 요약 = logAt(날)?.요약 || {};
   return {
-    date: w.date,
+    date: 날,
     age_gbn: state.ageGbn, age: state.age ?? null, sex: state.sex || null,
     항목별: 기준.항목별, 신뢰구간: 기준.신뢰구간 ?? null,
-    활동: activityCounts(w.date),
+    활동: activityCounts(날),
     키: 요약.키 ?? state.height ?? null,
     몸무게: 요약.몸무게 ?? null,
     체지방률: 요약.체지방률 ?? null,
@@ -5604,22 +5711,32 @@ function activityBodyFor(w){
    하루를 고치면 그 뒤 날들의 28일 창도 달라지므로 전부 다시 센다.
    요청은 한 번이다. 실패하면 있던 값을 그대로 둔다 — 화면이 비지 않는다. */
 async function refreshLogAges({ 전부 = false } = {}){
-  const log = (state.workoutLog || []).filter(w => w && w.date);
-  const 대상 = (전부 ? log : log.filter(w => !w.체력나이)).slice(-400);
+  if (!state.dayAges || typeof state.dayAges !== 'object') state.dayAges = {};
+  const 날들 = workoutDates();
+  // 기록이 지워진 날은 남겨 두지 않는다
+  const 살아있는 = new Set(날들);
+  Object.keys(state.dayAges).forEach(d => { if (!살아있는.has(d)) delete state.dayAges[d]; });
+
+  const 대상 = (전부 ? 날들 : 날들.filter(d => !dayAge(d))).slice(-400);
   if (!대상.length) return;
   const bodies = 대상.map(activityBodyFor).filter(Boolean);
   if (!bodies.length) return;
   try {
     const rows = await API.activityAgeDays(bodies);
-    const byDate = new Map(rows.map(r => [r.date, r]));
-    log.forEach(w => {
-      const r = byDate.get(w.date);
-      if (!r || r.체력나이 == null) return;
-      w.체력나이 = {
+    rows.forEach(r => {
+      if (!r || r.date == null || r.체력나이 == null) return;
+      const 기준 = measureAtOrBefore(r.date);
+      state.dayAges[r.date] = {
         값: r.체력나이, 기준나이: r.기준나이, 당김: r.당김,
-        일수: 활동일수(activityCounts(w.date)),
+        일수: 활동일수(activityCounts(r.date)),
         잰체성분: r.잰체성분 ?? null,
+        // 그날까지 잰 적이 없어 나중 측정을 끌어다 쓴 날 — 화면에 밝힌다
+        소급: !!(기준 && 기준.date && 기준.date > r.date),
       };
+    });
+    // 직접 적은 운동 한 줄에도 붙여 둔다 — 상세 화면이 이걸 읽는다
+    (state.workoutLog || []).forEach(w => {
+      if (w && w.date && state.dayAges[w.date]) w.체력나이 = state.dayAges[w.date];
     });
   } catch (e) { /* 있던 값을 그대로 둔다 */ }
 }
@@ -5770,18 +5887,19 @@ function manualDetailHtml(w){
       .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
     return `<div class="rec-detail-row wide"><b>${x.이름}</b><span>${값}</span></div>`;
   }).join('');
-  return dayAgeHtml(w) + 종목 + summaryDetailHtml(w.요약);
+  return dayAgeHtml(w.date) + 종목 + summaryDetailHtml(w.요약);
 }
 
 /* 그날 기록으로 뽑은 체력나이 (K1).
    측정이 아니라 그날 기록에서 나온 추정치라고 분명히 적는다. */
-function dayAgeHtml(w){
-  const a = w.체력나이;
+function dayAgeHtml(날){
+  const a = dayAge(날);
   if (!a || a.값 == null) return '';
   const 방향 = a.값 < a.기준나이 ? '−' : '+';
   const 폭 = Math.abs(Math.round((a.값 - a.기준나이) * 10) / 10);
   const 꼬리 = 폭 ? ` (측정 ${Math.round(a.기준나이)}세에서 ${방향}${폭})` : '';
-  const 잰것 = a.잰체성분 != null ? ' · 체성분은 그날 잰 값' : '';
+  const 잰것 = (a.잰체성분 != null ? ' · 체성분은 그날 잰 값' : '')
+             + (a.소급 ? ' · 나중에 잰 값을 거슬러 쓴 추정' : '');
   return `<div class="rec-detail-row wide day-age"><b>체력나이</b>
     <span>${Math.round(a.값 * 10) / 10}세<small>${꼬리}${잰것}</small></span></div>`;
 }

@@ -673,7 +673,8 @@ def test_세_목록_모두_자세히_보기가_있다():
     직접 = html.split("$('recManual').innerHTML")[1].split("\n}")[0]
     assert "moreToggle(manualDetailHtml(w))" in 직접
     점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
-    assert "moreToggle(measureDetailHtml(m))" in 점검
+    assert "moreToggle(measureDetailHtml(r))" in 점검
+    assert "moreToggle(dayAgeHtml(r.date)" in 점검      # 운동에서 뽑은 줄도 펼쳐진다
 
 
 def test_달력_아래_목록도_같다():
@@ -895,7 +896,8 @@ def test_기록한_날마다_체력나이를_저장한다():
     assert "async function refreshLogAges(" in html
     본문 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
     assert "API.activityAgeDays(bodies)" in 본문      # 날마다 부르지 않고 한 번에
-    assert "w.체력나이 = {" in 본문
+    assert "state.dayAges[r.date] = {" in 본문         # 날짜별 보관함에 넣는다
+    assert "w.체력나이 = state.dayAges[w.date]" in 본문  # 직접 적은 줄에도 붙여 둔다
     저장 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
     assert "refreshLogAges({ 전부: true })" in 저장
 
@@ -910,31 +912,48 @@ def test_그날까지의_측정만_기준으로_쓴다():
 def test_그날까지의_운동만_센다():
     html = _index()
     본문 = html.split("function activityCounts(끝날)")[1].split("\n}")[0]
-    assert "w.date < 시작 || w.date > 끝" in 본문     # 창 밖과 미래를 뺀다
+    assert "날 < 시작 || 날 > 끝" in 본문             # 창 밖과 미래를 뺀다
     assert "끝날 || todayIso()" in 본문               # 안 주면 오늘까지 (I3 그대로)
 
 
 def test_그날_잰_몸_상태를_함께_보낸다():
     html = _index()
-    본문 = html.split("function activityBodyFor(w)")[1].split("\n}")[0]
+    본문 = html.split("function activityBodyFor(날)")[1].split("\n}")[0]
     for k in ("키:", "몸무게:", "체지방률:", "sex:"):
         assert k in 본문, k
     assert "요약.몸무게" in 본문
+    # 루틴만 끝낸 날에는 직접 적은 줄이 없다 — 날짜로 찾아온다 (규칙 3)
+    assert "logAt(날)?.요약" in 본문
 
 
-def test_기준이_없으면_만들지_않는다():
-    """측정 전에 적은 날은 비교할 기준이 없다."""
+def test_한_번도_안_쟀으면_만들지_않는다():
+    """잰 적이 아예 없으면 비교할 기준 자체가 없다 — 값을 지어내지 않는다."""
     html = _index()
-    본문 = html.split("function activityBodyFor(w)")[1].split("\n}")[0]
+    본문 = html.split("function activityBodyFor(날)")[1].split("\n}")[0]
     assert "if (!기준?.항목별 || !state.ageGbn) return null;" in 본문
+
+
+def test_그날_전에_잰_적이_없으면_뒤_측정을_거슬러_쓴다():
+    """기록이 있는 날은 무조건 체력나이를 남긴다 (규칙 2).
+
+    되도록 그날까지의 측정을 쓰지만, 그전에 잰 적이 아예 없으면
+    가장 이른 뒤 측정을 끌어다 쓴다. 대신 추정이라고 화면에 밝힌다."""
+    html = _index()
+    본문 = html.split("function measureAtOrBefore(날)")[1].split("\n}")[0]
+    assert "const 이전 = list.filter(m => m.date <= 날);" in 본문   # 먼저 그날까지
+    assert "if (list.length) return list[0];" in 본문              # 없으면 가장 이른 것
+    산출 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
+    assert "소급: !!(기준 && 기준.date && 기준.date > r.date)" in 산출
+    상세 = html.split("function dayAgeHtml(날)")[1].split("\n}")[0]
+    assert "a.소급" in 상세 and "추정" in 상세
 
 
 def test_예전_기록은_한_번에_채운다():
     html = _index()
     assert "async function backfillLogAges()" in html
     본문 = html.split("async function backfillLogAges()")[1].split("\n}")[0]
-    assert "!w.체력나이" in 본문                       # 빈 날만
-    assert "saveProfile()" in 본문                      # 채웠으면 저장한다
+    assert "workoutDates().filter(d => !dayAge(d))" in 본문   # 빈 날만
+    assert "saveProfile()" in 본문                             # 채웠으면 저장한다
 
 
 def test_지우면_뒤_날들도_다시_센다():
@@ -946,13 +965,13 @@ def test_지우면_뒤_날들도_다시_센다():
 
 def test_그날_체력나이를_상세에_보여준다():
     html = _index()
-    assert "function dayAgeHtml(w)" in html
-    본문 = html.split("function dayAgeHtml(w)")[1].split("\n}")[0]
+    assert "function dayAgeHtml(날)" in html
+    본문 = html.split("function dayAgeHtml(날)")[1].split("\n}")[0]
     assert "체력나이" in 본문
     assert "측정 ${Math.round(a.기준나이)}세에서" in 본문   # 측정값과 비교해서 보여 준다
     assert "체성분은 그날 잰 값" in 본문
     상세 = html.split("function manualDetailHtml(w)")[1].split("\n}")[0]
-    assert "dayAgeHtml(w)" in 상세
+    assert "dayAgeHtml(w.date)" in 상세
 
 
 def test_서버가_실패해도_있던_값을_지우지_않는다():
@@ -1460,7 +1479,8 @@ def test_그래프가_측정과_운동을_함께_쓴다():
     html = _index()
     assert "function trendPoints()" in html
     본문 = html.split("function trendPoints()")[1].split("\n}")[0]
-    assert "state.workoutLog" in 본문
+    assert "workoutDates()" in 본문      # 루틴만 끝낸 날도 들어온다 (규칙 3)
+    assert "dayAge(d)" in 본문
     assert "measurePoints()" in 본문
     assert "'운동'" in 본문 and "'측정'" in 본문
 
@@ -1551,3 +1571,86 @@ def test_두_목록은_겹치지_않는다():
     # 빈 목록 문구도 각자 뜻에 맞게
     assert "아직 들어가 있는 채팅방이 없어요" in 본문
     assert "새로 들어갈 채팅방이 없어요" in 본문
+
+
+# ---------- 기록 규칙 (2·3·4) ----------
+
+def test_운동한_날에는_루틴만_한_날도_들어간다():
+    """루틴만 하는 사람은 아무리 운동해도 그래프에 점이 안 찍혔다 (규칙 3)."""
+    html = _index()
+    본문 = html.split("function workoutDates()")[1].split("\n}")[0]
+    assert "allRoutineLog()" in 본문          # 루틴을 끝낸 날
+    assert "state.workoutLog" in 본문         # 직접 적은 날 (몸 상태만 적은 날 포함)
+    assert "new Set()" in 본문                # 겹쳐도 한 번만
+
+
+def test_기록이_지워진_날은_체력나이도_지운다():
+    html = _index()
+    본문 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
+    assert "delete state.dayAges[d]" in 본문
+
+
+def test_루틴을_끝내도_그날_체력나이를_뽑는다():
+    """저장만 하고 끝내면 루틴만 한 날은 영영 값이 없다 (규칙 2)."""
+    html = _index()
+    본문 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
+    assert "refreshLogAges({ 전부: true })" in 본문
+    assert "saveProfile()" in 본문
+
+
+def test_날짜별_체력나이는_저장되고_돌아온다():
+    html = _index()
+    assert "dayAges: state.dayAges," in html                       # 스냅샷에 담는다
+    assert "state.dayAges = (saved?.dayAges" in html               # 되돌린다
+    assert html.count("state.dayAges = {};") >= 3                  # 초기화 자리마다
+
+
+def test_점검_기록은_날짜당_한_줄이다():
+    """같은 날 두 줄이면 어느 쪽이 지금 값인지 알 수 없다 (규칙 4)."""
+    html = _index()
+    본문 = html.split("function dedupeMeasureLog()")[1].split("\n}")[0]
+    assert "byDate.set(m.date, m)" in 본문        # 나중 것이 이긴다
+    보탬 = html.split("function appendMeasureLog()")[1].split("\n}")[0]
+    assert "dedupeMeasureLog()" in 보탬           # 잴 때마다 정리한다
+    assert "dedupeMeasureLog();" in html.split("state.dayAges = (saved?.dayAges")[1][:400]
+
+
+def test_운동한_날은_점검_기록에도_뜬다():
+    """'직접 적은 운동' 에는 있는데 '점검 기록' 에는 없는 날이 생기면 안 된다 (규칙 4)."""
+    html = _index()
+    본문 = html.split("function measureRows()")[1].split("\n}")[0]
+    assert "workoutDates()" in 본문
+    assert "출처: '운동'" in 본문
+    assert "출처: '측정'" in 본문
+    # 잰 값이 나중에 덮는다 — 실제로 잰 쪽이 이긴다
+    assert 본문.index("출처: '운동'") < 본문.index("출처: '측정'")
+
+
+def test_운동에서_뽑은_줄은_거기서_지울_수_없다():
+    """그날 운동 기록을 지워야 사라진다. 점검 기록에서 따로 지우면 어긋난다."""
+    html = _index()
+    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
+    운동줄 = 점검.split("r.출처 === '측정' ?")[1].split(": `")[1]
+    assert "checkbox" not in 운동줄
+    assert "운동 기록에서" in 운동줄
+    assert "그날 기록을 지우면 함께 사라집니다" in 운동줄
+
+
+def test_끝낸_루틴도_운동한_날로_센다():
+    """루틴만 하는 사람의 기록이 체력나이에 하나도 안 닿으면,
+    운동해도 숫자가 안 움직인다 (규칙 2)."""
+    html = _index()
+    본문 = html.split("function activityCounts(끝날)")[1].split("\n}")[0]
+    assert "allRoutineLog()" in 본문
+    assert "if (e.직접) return;" in 본문                  # 직접 적은 건 두 번 세지 않는다
+    assert "String(st.체력요인 || '').split('·')" in 본문   # '근력·협응력' 을 나눈다
+    # 루틴 기록에 체력요인을 남겨야 셀 수 있다
+    완료 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
+    assert "체력요인: s.체력요인 || null" in 완료
+
+
+def test_운동한_날_한_줄이_점검_기록에서_접히지_않는다():
+    """'체력나이 29세' 가 한 글자씩 세로로 접혀 보였다."""
+    html = _index()
+    css = html.split(".rec-name small.rec-way{")[1].split("}")[0]
+    assert "display:block" in css

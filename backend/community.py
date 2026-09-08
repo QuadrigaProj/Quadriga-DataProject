@@ -306,6 +306,10 @@ def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
     media_json = _clean_media(media)
     if not body and media_json == "[]" and not record:
         raise HTTPException(400, "내용이나 사진을 하나는 넣어주세요.")
+    # 공유하는 기록에는 항목별 지표와 그날 운동까지 담긴다. 그래도 한 줄에
+    # 들어갈 크기다 — 그보다 크면 화면에 쓰라고 보낸 것이 아니다.
+    if record is not None and len(json.dumps(record, ensure_ascii=False)) > 4000:
+        raise HTTPException(400, "공유할 기록이 너무 큽니다.")
     with auth.db() as con:
         return con.insert_id(
             "INSERT INTO community_posts (user_id, kind, body, media, record, created_at)"

@@ -1176,15 +1176,17 @@
   .own-actions button:hover{ color:var(--pine-deep); text-decoration:underline;
     text-underline-offset:3px; }
   .edited-mark{ font-size:11px; color:var(--muted); }
-  /* 그 자리에서 고친다 — 새 창을 열면 앞뒤 맥락이 사라진다 */
-  .edit-row{ display:flex; gap:6px; align-items:center; margin:4px 0; }
-  .edit-row input{ flex:1; min-width:0; border:1.5px solid var(--pine);
+  /* 그 자리에서 고친다 — 새 창을 열면 앞뒤 맥락이 사라진다.
+     이름은 .inline-edit 다. 프로필 폼이 쓰는 .edit-row 와 겹치면
+     여기 button 규칙이 그쪽 성별 버튼까지 칠한다(실제로 그랬다). */
+  .inline-edit{ display:flex; gap:6px; align-items:center; margin:4px 0; }
+  .inline-edit input{ flex:1; min-width:0; border:1.5px solid var(--pine);
     border-radius:999px; padding:7px 12px; font-family:inherit; font-size:13px;
     background:var(--paper); }
-  .edit-row button{ flex-shrink:0; border-radius:999px; padding:6px 12px;
+  .inline-edit button{ flex-shrink:0; border-radius:999px; padding:6px 12px;
     font-family:inherit; font-size:12.5px; cursor:pointer; border:1.5px solid var(--pine);
     background:var(--pine); color:#fff; }
-  .edit-row button.ghost{ background:var(--paper); color:var(--pine-deep);
+  .inline-edit button.ghost{ background:var(--paper); color:var(--pine-deep);
     border-color:var(--line); }
   .comment-row{ display:flex; gap:6px; margin-top:6px; align-items:center; }
   .comment-row input{ flex:1; min-width:0; border:1.5px solid var(--line);
@@ -3528,7 +3530,7 @@ function openInlineEdit(대상, 원래글, 저장){
   대상.dataset.editing = '1';
   const 이전 = 대상.innerHTML;
   대상.hidden = false;
-  대상.innerHTML = `<div class="edit-row">
+  대상.innerHTML = `<div class="inline-edit">
       <input type="text" class="edit-input" />
       <button type="button" class="edit-ok">저장</button>
       <button type="button" class="ghost edit-no">취소</button>

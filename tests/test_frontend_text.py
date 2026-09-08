@@ -1275,3 +1275,12 @@ def test_범례_세_칸이_글자로_접히지_않는다():
     assert "flex-direction:column" in css
     assert "white-space:nowrap" in html.split(".gauge-legend > div{")[1].split("}")[0]
 
+
+def test_프로필_안내가_게이지_설명과_맞는다():
+    """눈금 뜻을 바꾸면 이 안내도 같이 고쳐야 한다 — 안 고치면 거짓말이 된다."""
+    html = _index()
+    안내 = html.split('class="edit-note"')[1].split("</div>")[0]
+    assert "오른쪽 끝은 처음 기록한 체력나이" in 안내
+    assert "검은 눈금</b>은 실제 나이" in 안내
+    assert "오른쪽 끝은 실제 나이" not in 안내
+

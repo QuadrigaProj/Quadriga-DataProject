@@ -2010,3 +2010,51 @@ def test_전체_공개가_아닌_글에는_범위를_적는다():
     assert "친구 공개" in 본문 and "고른 친구" in 본문
     카드 = html.split("function postCard(p)")[1].split("\n}")[0]
     assert "범위표시(p)" in 카드
+
+
+# ---------- 친구 기록 보기 ----------
+
+def test_기록_공개_설정_자리가_있다():
+    html = _index()
+    assert 'id="prefScope"' in html and 'id="prefLevel"' in html
+    본문 = html.split("function renderPrefs()")[1].split("\n}")[0]
+    assert "SCOPE_LABEL" in 본문 and "SHARE_LEVEL_LABEL" in 본문
+    assert "지금은 아무에게도 보이지 않아요" in 본문       # 비공개일 때 분명히 말한다
+
+
+def test_공개_수준_다섯_가지가_다_있다():
+    html = _index()
+    본문 = html.split("const SHARE_LEVEL_LABEL = {")[1].split("};")[0]
+    for k in ("full", "no_body", "workout_only", "axes_only", "none"):
+        assert k in 본문, k
+
+
+def test_친구_기록은_달력에서_날을_골라_본다():
+    html = _index()
+    본문 = html.split("function renderFriendCal()")[1].split("\n}")[0]
+    assert "cal-grid" in 본문
+    assert "openFriendDay(" in 본문
+    assert "disabled" in 본문                       # 기록 없는 날은 누를 수 없다
+    assert "frMove(-1)" in 본문 and "frMove(1)" in 본문
+
+
+def test_화면은_받은_것만_그린다():
+    """화면에서 가리는 방식이면 값은 이미 건너온 뒤다."""
+    html = _index()
+    본문 = html.split("async function openFriendDay(date)")[1].split("\n}")[0]
+    assert "d['지표']" in 본문 and "d['운동']" in 본문
+    # 수준을 화면에서 따지지 않는다 — 서버가 걸러서 준다
+    assert "no_body" not in 본문 and "workout_only" not in 본문
+
+
+def test_공개하지_않은_사람은_그렇다고_말한다():
+    html = _index()
+    본문 = html.split("async function openFriendRecords(handle)")[1].split("\n}")[0]
+    assert "이 회원은 기록을 공개하지 않았어요" in 본문
+
+
+def test_프로필의_기록_보기는_서버가_정한다():
+    html = _index()
+    본문 = html.split("async function openProfile(handle)")[1].split("\n}")[0]
+    assert "u['기록'] && u['기록'] !== 'none'" in 본문
+    assert "openFriendRecords(" in 본문

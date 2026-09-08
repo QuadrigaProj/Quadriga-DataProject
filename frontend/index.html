@@ -1132,6 +1132,16 @@
     font-weight:700; }
   .share-none{ font-size:12.5px; color:var(--muted); margin-top:8px; }
   .share-preview{ margin-top:14px; }
+  /* 친구 기록 보기 — 시트 안의 작은 달력 */
+  .fr-cal-head{ display:flex; align-items:center; justify-content:space-between;
+    margin-top:12px; font-weight:700; font-size:14px; }
+  .fr-cal-head button{ border:1px solid var(--line); background:var(--paper);
+    border-radius:9px; width:30px; height:30px; font:inherit; cursor:pointer;
+    color:var(--pine-deep); }
+  .fr-dow{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
+    margin-top:8px; font-size:11px; color:var(--muted); text-align:center; }
+  .fr-detail{ margin-top:14px; }
+  .fr-none{ font-size:12.5px; color:var(--muted); line-height:1.6; margin-top:12px; }
   .comm-post-btn{ padding:9px 16px; font-size:14px; margin:0; }
   .comm-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
   .comm-media img, .comm-media video{ width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); }
@@ -2078,6 +2088,16 @@
         </div>
         <p class="friend-note">이 아이디로만 서로를 찾을 수 있어요.
           상대에게는 <b>닉네임과 아이디만</b> 보입니다.</p>
+
+        <div class="more-card" style="text-align:left;">
+          <div class="friend-head" style="margin-top:0;">내 운동 기록 공개</div>
+          <div class="share-field"><label>누구에게</label>
+            <div class="share-pick" id="prefScope"></div></div>
+          <div class="share-field"><label>얼마나</label>
+            <select id="prefLevel" onchange="savePrefs()"></select></div>
+          <div id="prefWho"></div>
+          <p class="friend-note" id="prefNote"></p>
+        </div>
 
         <div class="comm-compose-row friend-find">
           <input id="friendQuery" type="text" placeholder="친구 아이디 입력"
@@ -3419,6 +3439,8 @@ async function loadFriends(){
   } catch (e) { $('myHandle').textContent = '—'; }
   try {
     const f = await API.commFriends();
+    shareFriends = f['친구'] || [];        // 공개 범위에서 고를 때 쓴다
+    loadPrefs();
     $('friendLists').innerHTML =
         friendGroup('받은 신청', f['받은신청'], '수락')
       + friendGroup('친구', f['친구'], '끊기')
@@ -4030,6 +4052,64 @@ async function loadRooms(){
   loadChatRequests();
 }
 
+/* 내 운동 기록을 누구에게 얼마나 보일지.
+   정한 적이 없으면 비공개다 — 설정하지 않은 사람의 기록이 새어 나가지 않게. */
+const SCOPE_LABEL = { all: '전체', friends: '친구 전체', chosen: '고른 친구' };
+let PREFS = { 범위: 'friends', 수준: 'none', 고른친구: [] };
+
+async function loadPrefs(){
+  if (!$('prefScope')) return;
+  try { PREFS = await API.commSharePrefs(); } catch (e) { return; }
+  renderPrefs();
+}
+
+function renderPrefs(){
+  $('prefScope').innerHTML = Object.entries(SCOPE_LABEL).map(([k, v]) =>
+    `<button type="button" data-scope="${k}" class="${PREFS['범위'] === k ? 'on' : ''}"
+       onclick="pickPrefScope('${k}')">${v}</button>`).join('');
+  $('prefLevel').innerHTML = Object.entries(SHARE_LEVEL_LABEL).map(([k, v]) =>
+    `<option value="${k}" ${PREFS['수준'] === k ? 'selected' : ''}>${v}</option>`).join('');
+  const 고름 = PREFS['범위'] === 'chosen';
+  $('prefWho').innerHTML = 고름
+    ? `<div class="share-pick">${(shareFriends.length ? shareFriends : PREFS['고른친구']).map(u =>
+        `<button type="button" class="${PREFS['고른친구'].some(c => c['아이디'] === u['아이디']) ? 'on' : ''}"
+           onclick="togglePrefFriend('${esc(u['아이디'])}')">${esc(u['닉네임'])}</button>`).join('')
+        || '<span class="share-none">아직 친구가 없어요.</span>'}</div>`
+    : '';
+  $('prefNote').textContent = PREFS['수준'] === 'none'
+    ? '지금은 아무에게도 보이지 않아요.'
+    : `${SCOPE_LABEL[PREFS['범위']]}에게 ${SHARE_LEVEL_LABEL[PREFS['수준']]}까지 보입니다.`;
+}
+
+async function pickPrefScope(k){
+  PREFS['범위'] = k;
+  if (k === 'chosen' && !shareFriends.length) {
+    try { shareFriends = (await API.commFriends())['친구'] || []; } catch (e) { /* 그냥 둔다 */ }
+  }
+  renderPrefs();
+  await savePrefs();
+}
+
+async function togglePrefFriend(handle){
+  const 있음 = PREFS['고른친구'].some(c => c['아이디'] === handle);
+  const 새목록 = 있음
+    ? PREFS['고른친구'].filter(c => c['아이디'] !== handle).map(c => c['아이디'])
+    : [...PREFS['고른친구'].map(c => c['아이디']), handle];
+  try {
+    const r = await API.commChosenSet(새목록);
+    PREFS['고른친구'] = r['고른친구'] || [];
+    renderPrefs();
+  } catch (e) { showToast(e.message); }
+}
+
+async function savePrefs(){
+  const level = $('prefLevel')?.value || PREFS['수준'];
+  try {
+    PREFS = await API.commSharePrefsSet(PREFS['범위'], level);
+    renderPrefs();
+  } catch (e) { showToast(e.message); }
+}
+
 /* 받은 채팅 요청 — 받아 주면 친구가 아니어도 1:1 방이 열린다. */
 async function loadChatRequests(){
   const box = $('chatReqBox');
@@ -4166,6 +4246,10 @@ async function openProfile(handle){
     </div>
     <div class="prof-note">서로의 프로필은 볼 수 없어요. 닉네임과 아이디만 보입니다.${
       채팅 === '가능' ? '<br/>채팅은 상대가 받아 줘야 열려요.' : ''}</div>
+    ${u['기록'] && u['기록'] !== 'none' ? `<div class="prof-actions">
+      <button type="button" class="ghost"
+              onclick="openFriendRecords('${esc(u['아이디'])}')">운동 기록 보기</button>
+    </div>` : ''}
     ${관계 === '나' ? '' : `<div class="prof-actions">
       <button type="button" ${채팅가능 ? '' : 'disabled'} data-p-chat="${esc(u['아이디'])}"
               data-state="${esc(채팅)}">${CHAT_LABEL[채팅] || 채팅}</button>
@@ -4185,6 +4269,86 @@ async function openProfile(handle){
     try { await API.commFriendAdd(f.dataset.pFriend); await openProfile(f.dataset.pFriend); }
     catch (e) { f.disabled = false; showToast(e.message); }
   };
+}
+
+/* 친구 기록 보기 — 달력에서 날을 골라 그날 기록을 본다.
+
+   무엇이 보이는지는 그 사람이 정한다. 서버가 걸러서 주고, 화면은 받은
+   것만 그린다 — 화면에서 가리는 방식이면 값은 이미 건너온 뒤다. */
+const SHARE_LEVEL_LABEL = {
+  full: '운동 기록과 몸 상태까지', no_body: '몸 상태를 뺀 운동 기록과 체력 지표',
+  workout_only: '몸 상태를 뺀 운동 기록', axes_only: '체력 지표', none: '비공개',
+};
+let FR = { handle: null, days: [], ym: null, sel: null, 수준: 'none', 닉네임: '' };
+
+async function openFriendRecords(handle){
+  openSheet('운동 기록', '<div class="prof-note">불러오는 중이에요…</div>');
+  try {
+    const r = await API.commFriendDays(handle);
+    FR = { handle, days: r['날짜'] || [], sel: null,
+           수준: r['수준'], 닉네임: r['닉네임'] || '',
+           ym: null };
+  } catch (e) { $('sheetBody').innerHTML = `<div class="fr-none">${esc(e.message)}</div>`; return; }
+  if (FR.수준 === 'none') {
+    $('sheetBody').innerHTML = '<div class="fr-none">이 회원은 기록을 공개하지 않았어요.</div>';
+    return;
+  }
+  const 마지막 = FR.days[FR.days.length - 1] || todayIso();
+  const [y, m] = 마지막.split('-').map(Number);
+  FR.ym = { y, m: m - 1 };
+  renderFriendCal();
+}
+
+function frMove(step){
+  const d = new Date(FR.ym.y, FR.ym.m + step, 1);
+  FR.ym = { y: d.getFullYear(), m: d.getMonth() };
+  renderFriendCal();
+}
+
+function renderFriendCal(){
+  const { y, m } = FR.ym;
+  const 있는날 = new Set(FR.days);
+  const 첫날 = new Date(y, m, 1).getDay();
+  const 날수 = new Date(y, m + 1, 0).getDate();
+  const 칸 = [];
+  for (let i = 0; i < 첫날; i++) 칸.push('<div class="cal-day blank"></div>');
+  for (let d = 1; d <= 날수; d++) {
+    const key = `${y}-${pad2(m + 1)}-${pad2(d)}`;
+    const 있음 = 있는날.has(key);
+    칸.push(`<button type="button" class="cal-day${있음 ? ' done' : ''}${FR.sel === key ? ' sel' : ''}"
+      ${있음 ? `onclick="openFriendDay('${key}')"` : 'disabled'}>${d}
+      ${있음 ? '<span class="cal-dot"></span>' : ''}</button>`);
+  }
+  $('sheetBody').innerHTML = `
+    <div class="prof-note">${esc(FR.닉네임)} 님이 공개한 범위: <b>${SHARE_LEVEL_LABEL[FR.수준]}</b></div>
+    <div class="fr-cal-head">
+      <button type="button" onclick="frMove(-1)" aria-label="이전 달">‹</button>
+      <span>${y}년 ${m + 1}월</span>
+      <button type="button" onclick="frMove(1)" aria-label="다음 달">›</button>
+    </div>
+    <div class="fr-dow">${['일','월','화','수','목','금','토'].map(x => `<span>${x}</span>`).join('')}</div>
+    <div class="cal-grid">${칸.join('')}</div>
+    <div class="fr-detail" id="frDetail">${FR.days.length
+      ? '<div class="fr-none">기록이 있는 날을 눌러보세요.</div>'
+      : '<div class="fr-none">아직 남긴 기록이 없어요.</div>'}</div>`;
+}
+
+async function openFriendDay(date){
+  FR.sel = date;
+  renderFriendCal();
+  const box = $('frDetail');
+  box.innerHTML = '<div class="fr-none">불러오는 중이에요…</div>';
+  let d;
+  try { d = await API.commFriendDay(FR.handle, date); }
+  catch (e) { box.innerHTML = `<div class="fr-none">${esc(e.message)}</div>`; return; }
+  const 줄 = [];
+  if (d['체력나이'] != null) 줄.push(['체력나이', `${Math.round(d['체력나이'] * 10) / 10}세`]);
+  Object.entries(d['지표'] || {}).forEach(([k, v]) => 줄.push([k, `${Math.round(v)}세`]));
+  (d['운동'] || []).forEach(x => 줄.push([x['이름'], x['값'] || '']));
+  box.innerHTML = `<div class="post-record"><div class="pr-head">📈 ${fmtDate(date)}</div>
+    ${줄.length ? `<div class="pr-rows">${줄.map(([a, b]) =>
+      `<div class="pr-row"><b>${esc(a)}</b><span>${esc(String(b))}</span></div>`).join('')}</div>`
+      : '<div class="fr-none">그날 공개된 내용이 없어요.</div>'}</div>`;
 }
 
 /* 받은 채팅 요청을 받아 준다 → 방이 열린다 */

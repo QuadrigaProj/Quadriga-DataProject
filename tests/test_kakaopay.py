@@ -193,8 +193,8 @@ def test_승인하면_서버_잔액이_오른다(키, monkeypatch):
     # 1,800원 내고 3,000원짜리 이용권을 받는다
     c = a.get("/credit").json()
     assert c["잔액"] == 3000
-    assert c["내역"][0] == {"종류": "충전", "금액": 3000, "부호": 1,
-                          "결제": 1800, "메모": "", "때": c["내역"][0]["때"]}
+    줄 = c["내역"][0]
+    assert (줄["종류"], 줄["금액"], 줄["부호"], 줄["결제"], 줄["메모"])         == ("충전", 3000, 1, 1800, "")
     assert a.get(f"/pay/result/{order}").json()["amount"] == 3000
 
 
@@ -411,3 +411,48 @@ def test_환불로_잔액이_음수가_되지_않는다():
         billing.refund(1, 1000, "주문A")
     assert getattr(e.value, "status_code", None) == 409
     assert billing.balance(1) == 100
+
+
+# ---------- 환불 버튼이 쓸 정보 ----------
+
+def test_내역이_환불_가능_여부를_함께_준다(키, monkeypatch):
+    """환불 규칙을 화면에 옮겨 두면 서버와 어긋난다."""
+    a, order = 충전된(monkeypatch)
+    줄 = a.get("/credit").json()["내역"][0]
+    assert 줄["종류"] == "충전"
+    assert 줄["주문번호"] == order
+    assert 줄["환불가능"] is True and 줄["사유"] is None
+
+
+def test_쓰고_나면_환불_불가로_바뀐다(키, monkeypatch):
+    a, order = 충전된(monkeypatch)
+    billing.spend(1, 100, "AI 추천")
+    내역 = a.get("/credit").json()["내역"]
+    충전줄 = [x for x in 내역 if x["종류"] == "충전"][0]
+    assert 충전줄["환불가능"] is False
+    assert "이미 사용" in 충전줄["사유"]
+    # 사용 줄에는 환불 얘기가 없다
+    사용줄 = [x for x in 내역 if x["종류"] == "사용"][0]
+    assert 사용줄["환불가능"] is False and 사용줄["주문번호"] is None
+
+
+def test_환불한_뒤에는_환불함으로_보인다(키, monkeypatch):
+    a, order = 충전된(monkeypatch)
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(1800)))
+    a.post(f"/pay/refund/{order}")
+    충전줄 = [x for x in a.get("/credit").json()["내역"] if x["종류"] == "충전"][0]
+    assert 충전줄["환불가능"] is False and 충전줄["사유"] == "환불함"
+
+
+def test_나중_결제만_환불_가능으로_표시된다(키, monkeypatch):
+    a = _login()
+    첫 = 준비(a, monkeypatch)["order"]
+    승인(a, 첫, 1800, monkeypatch)
+    billing.spend(1, 100, "AI 추천")
+    둘 = 준비(a, monkeypatch, 1000)["order"]
+    승인(a, 둘, 700, monkeypatch)
+
+    표 = {x["주문번호"]: x["환불가능"] for x in a.get("/credit").json()["내역"]
+          if x["종류"] == "충전"}
+    assert 표[첫] is False and 표[둘] is True
+

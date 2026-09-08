@@ -1134,6 +1134,13 @@
   .share-pick button.on{ border-color:var(--pine); background:var(--pine-tint);
     font-weight:700; }
   .share-none{ font-size:12.5px; color:var(--muted); margin-top:8px; }
+  /* 직접 고르기 — 하나하나 켜고 끈다 */
+  .share-items{ margin-top:8px; border:1px solid var(--line); border-radius:12px;
+    padding:4px 12px; background:var(--paper); }
+  .share-items label{ display:flex; align-items:center; gap:10px; padding:7px 0;
+    font-size:13.5px; cursor:pointer; }
+  .share-items label + label{ border-top:1px solid var(--line); }
+  .share-items input{ width:17px; height:17px; accent-color:var(--pine); }
   .share-preview{ margin-top:14px; }
   /* 친구 기록 보기 — 시트 안의 작은 달력 */
   .fr-cal-head{ display:flex; align-items:center; justify-content:space-between;
@@ -1754,6 +1761,11 @@
         <div class="edit-row"><span>앱 내 아이디</span>
           <span class="my-id" id="editHandle">—</span>
           <button type="button" class="friend-copy" onclick="copyMyHandle()">복사</button></div>
+        <div class="share-field"><label>친구에게 내 운동 기록 공개</label>
+          <div class="share-pick" id="prefScope"></div>
+          <select id="prefLevel" onchange="savePrefs()" style="margin-top:8px;"></select>
+          <div id="prefWho"></div>
+          <p class="share-none" id="prefNote"></p></div>
         <label class="edit-row"><span>별명</span>
           <input id="editName" type="text" maxlength="20" oninput="markDirty()" /></label>
         <label class="edit-row"><span>나이</span>
@@ -2104,15 +2116,6 @@
         <p class="friend-note">이 아이디로만 서로를 찾을 수 있어요.
           상대에게는 <b>닉네임과 아이디만</b> 보입니다.</p>
 
-        <div class="more-card" style="text-align:left;">
-          <div class="friend-head" style="margin-top:0;">내 운동 기록 공개</div>
-          <div class="share-field"><label>누구에게</label>
-            <div class="share-pick" id="prefScope"></div></div>
-          <div class="share-field"><label>얼마나</label>
-            <select id="prefLevel" onchange="savePrefs()"></select></div>
-          <div id="prefWho"></div>
-          <p class="friend-note" id="prefNote"></p>
-        </div>
 
         <div class="comm-compose-row friend-find">
           <input id="friendQuery" type="text" placeholder="친구 아이디 입력"
@@ -2590,6 +2593,7 @@ function pickSex(sex){
 function renderEdit(){
   $('editName').value = state.user || '';
   showMyHandle();
+  loadPrefs();
   $('editAge').value = state.age ?? '';
   document.querySelectorAll('#editSex button').forEach(b =>
     b.classList.toggle('on', b.dataset.sex === state.sex));
@@ -3460,7 +3464,6 @@ async function loadFriends(){
   try {
     const f = await API.commFriends();
     shareFriends = f['친구'] || [];        // 공개 범위에서 고를 때 쓴다
-    loadPrefs();
     $('friendLists').innerHTML =
         friendGroup('받은 신청', f['받은신청'], '수락')
       + friendGroup('친구', f['친구'], '끊기')
@@ -3853,6 +3856,15 @@ function todayMoves(){ return movesOn(todayIso()); }
    예전에는 누르는 즉시 오늘 기록이 전체 공개로 올라갔다. 몸에 관한
    기록이라 되돌릴 수 없는 일을 한 번에 하면 안 된다. */
 const AUDIENCE_LABEL = { all: '전체 공개', friends: '친구 전체', chosen: '고른 친구' };
+/* 한 글에 얼마나 담을지. 친구에게 늘 열어 두는 설정과 달리, 글마다 고른다.
+   '비공개' 는 여기 없다 — 아무것도 안 보이는 글을 올릴 까닭이 없다. */
+const POST_LEVEL_LABEL = {
+  full: '운동 기록과 몸 상태까지', no_body: '몸 상태를 뺀 운동 기록과 체력 지표',
+  workout_only: '몸 상태를 뺀 운동 기록', axes_only: '체력 지표',
+  custom: '직접 고르기',
+};
+let shareLevel = 'no_body';        // 몸 상태는 기본으로 담지 않는다
+let sharePicked = null;            // '직접 고르기' 로 켠 항목들 (Set)
 let shareAudience = 'friends';      // 기본은 친구까지만 — 넓히는 건 사용자가 고른다
 let shareChosen = [];               // 고른 친구 아이디
 let shareFriends = [];              // 내 친구 목록 (고르는 자리에 쓴다)
@@ -3868,10 +3880,22 @@ async function shareMyRecord(){
   } catch (e) { shareFriends = []; shareChosen = []; }
   if (!shareChosen.length) shareAudience = shareAudience === 'chosen' ? 'friends' : shareAudience;
 
+  // 고를 수 있는 날은 기록이 있는 날뿐이다. 아무 날이나 고르게 두면
+  // 빈 날을 골라 놓고 '올릴 기록이 없다' 는 말을 듣게 된다.
+  const 고를수있음 = 있는날.length > 0;
   $('sheetBody').innerHTML = `
     <div class="share-field"><label for="shareDate">언제 기록인가요?</label>
-      <input type="date" id="shareDate" max="${todayIso()}" value="${날}"
-             onchange="renderSharePreview()" /></div>
+      ${고를수있음 ? `<select id="shareDate" onchange="onShareDate()">${
+        [...있는날].reverse().map(d =>
+          `<option value="${d}" ${d === 날 ? 'selected' : ''}>${shareDateLabel(d)}</option>`).join('')
+      }</select>` : `<div class="share-none">아직 기록한 운동이 없어요.
+        운동을 기록하면 그날을 골라서 공유할 수 있어요.</div>`}</div>
+    <div class="share-field"><label for="shareLevel">얼마나 보일까요?</label>
+      <select id="shareLevel" onchange="pickShareLevel()">${
+        Object.entries(POST_LEVEL_LABEL).map(([k, v]) =>
+          `<option value="${k}" ${shareLevel === k ? 'selected' : ''}>${v}</option>`).join('')
+      }</select>
+      <div id="shareItems"></div></div>
     <div class="share-field"><label>누구에게 보일까요?</label>
       <div class="share-pick" id="shareAud">${Object.entries(AUDIENCE_LABEL).map(([k, v]) =>
         `<button type="button" data-aud="${k}" class="${shareAudience === k ? 'on' : ''}"
@@ -3879,10 +3903,21 @@ async function shareMyRecord(){
       <div id="shareWho"></div></div>
     <div class="share-preview" id="sharePreview"></div>
     <div class="prof-actions">
-      <button type="button" onclick="submitShare()">이 기록 올리기</button>
+      <button type="button" onclick="submitShare()" ${고를수있음 ? '' : 'disabled'}>이 기록 올리기</button>
     </div>`;
   pickAudience(shareAudience);
+  renderShareItems();
   renderSharePreview();
+}
+
+/* 고를 때 그날이 어떤 날이었는지 함께 보여 준다 — 날짜만 늘어놓으면
+   어느 날을 고르는지 알 수 없다. */
+function shareDateLabel(날){
+  const 나이 = dayFinalAge(날);
+  const 수 = movesOn(날).length;
+  const 꼬리 = [나이 != null ? `체력나이 ${Math.round(나이 * 10) / 10}세` : null,
+              수 ? `운동 ${수}가지` : null].filter(Boolean).join(' · ');
+  return 꼬리 ? `${fmtDate(날)} · ${꼬리}` : fmtDate(날);
 }
 
 function pickAudience(k){
@@ -3906,24 +3941,118 @@ function toggleShareFriend(handle){
   pickAudience('chosen');
 }
 
+/* 날을 바꾸면 담을 수 있는 것도 달라진다 — 켠 것을 다시 잡는다 */
+function onShareDate(){
+  if (($('shareLevel')?.value) === 'custom') sharePicked = pickedByLevel($('shareDate').value, shareLevel);
+  renderShareItems();
+  renderSharePreview();
+}
+
 /* 올리기 전에 무엇이 올라가는지 그대로 보여 준다 */
 function renderSharePreview(){
   const box = $('sharePreview');
   if (!box) return;
-  box.innerHTML = recordHtml(shareRecordFor($('shareDate')?.value || todayIso()));
+  // 고를 날이 없으면 보여 줄 것도 없다. 오늘로 대신 채우면 없는 기록을
+  // 올릴 수 있는 것처럼 보인다.
+  const 날 = $('shareDate')?.value;
+  box.innerHTML = 날 ? recordHtml(shareRecordFor(날)) : '';
 }
 
-/* 그날 기록 한 덩어리 — 그날 체력나이와 그날 한 운동. */
-function shareRecordFor(날){
-  const 나이 = dayFinalAge(날);
+/* 그날 기록 한 덩어리 — 고른 만큼만 담는다.
+
+   담지 않기로 한 것은 아예 만들지 않는다. 담아 놓고 화면에서 가리면
+   값은 이미 올라간 뒤다. */
+function shareRecordFor(날, 수준){
+  const level = 수준 || $('shareLevel')?.value || shareLevel;
+  // 켠 것만 담는다. '직접 고르기' 가 아니면 수준이 정한 대로다.
+  const 켬 = level === 'custom'
+    ? (sharePicked || pickedByLevel(날, shareLevel))
+    : pickedByLevel(날, level);
+
+  const 나이 = 켬.has('age') ? dayFinalAge(날) : null;
   const 기준 = measureAtOrBefore(날);
+  const 항목 = Object.fromEntries(AXES_SHOWN
+    .filter(k => 켬.has('axis:' + k) && 기준?.항목별?.[k] != null)
+    .map(k => [k, 기준.항목별[k]]));
+
+  const 운동 = movesOn(날).filter(x => 켬.has('move:' + x.이름));
+  const 요약 = logAt(날)?.요약 || {};
+  LOG_SUMMARY.filter(f => 요약[f.key] != null && 켬.has('body:' + f.key))
+    .forEach(f => 운동.push({ 이름: f.이름, 값: `${요약[f.key]}${f.단위}` }));
+
   const parts = [];
   if (나이 != null) parts.push(`${fmtDate(날)} 체력나이 ${Math.round(나이 * 10) / 10}세`);
-  const 운동 = movesOn(날);
   if (운동.length) parts.push(`${운동.length}가지 운동`);
   return { 요약: parts.join(' · ') || `${fmtDate(날)} 기록`,
            운동횟수: (state.routineLog || []).length,
-           항목별: 기준?.항목별 || null, 오늘운동: 운동 };
+           항목별: Object.keys(항목).length ? 항목 : null, 오늘운동: 운동 };
+}
+
+/* 공유에 담는 체력 지표. 체성분은 몸 상태라 여기 없다 (서버와 같은 목록). */
+const AXES_SHOWN = ['유연성', '근력', '근지구력', '심폐지구력'];
+
+/* 그날 담을 수 있는 것들 — 없는 항목은 아예 만들지 않는다.
+   고를 수 없는 것을 늘어놓으면 켰는데 안 올라간 것처럼 보인다. */
+function shareItemsFor(날){
+  const out = [];
+  if (dayFinalAge(날) != null) out.push({ key: 'age', 이름: '체력나이' });
+  const 기준 = measureAtOrBefore(날);
+  AXES_SHOWN.forEach(k => {
+    if (기준?.항목별?.[k] != null) out.push({ key: 'axis:' + k, 이름: k });
+  });
+  movesOn(날).forEach(x => out.push({ key: 'move:' + x.이름, 이름: x.이름 }));
+  const 요약 = logAt(날)?.요약 || {};
+  LOG_SUMMARY.filter(f => 요약[f.key] != null)
+    .forEach(f => out.push({ key: 'body:' + f.key, 이름: f.이름, 몸상태: true }));
+  return out;
+}
+
+/* 고른 수준이 담았을 항목들 — '직접 고르기' 로 넘어갈 때 여기서 시작한다.
+   빈 목록에서 시작하면 매번 처음부터 다 켜야 한다. */
+function pickedByLevel(날, level){
+  const 켬 = new Set();
+  shareItemsFor(날).forEach(it => {
+    const 지표 = it.key === 'age' || it.key.startsWith('axis:');
+    const 몸 = !!it.몸상태;
+    const 운동 = it.key.startsWith('move:');
+    if (level === 'full') 켬.add(it.key);
+    else if (level === 'no_body' && (지표 || 운동)) 켬.add(it.key);
+    else if (level === 'workout_only' && 운동) 켬.add(it.key);
+    else if (level === 'axes_only' && 지표) 켬.add(it.key);
+  });
+  return 켬;
+}
+
+function renderShareItems(){
+  const box = $('shareItems');
+  if (!box) return;
+  const 날 = $('shareDate')?.value;
+  const level = $('shareLevel')?.value || shareLevel;
+  if (level !== 'custom' || !날) { box.innerHTML = ''; return; }
+  const 항목 = shareItemsFor(날);
+  if (!sharePicked) sharePicked = pickedByLevel(날, shareLevel);
+  box.innerHTML = 항목.length
+    ? `<div class="share-items">${항목.map(it =>
+        `<label><input type="checkbox" ${sharePicked.has(it.key) ? 'checked' : ''}
+           onchange="toggleShareItem('${esc(it.key)}', this.checked)" />
+         <span>${esc(it.이름)}${it.몸상태 ? ' <small>(몸 상태)</small>' : ''}</span></label>`).join('')}</div>`
+    : '<div class="share-none">그날은 담을 것이 없어요.</div>';
+}
+
+function toggleShareItem(key, on){
+  if (!sharePicked) sharePicked = new Set();
+  if (on) sharePicked.add(key); else sharePicked.delete(key);
+  renderSharePreview();
+}
+
+/* 수준을 바꾸면 켠 항목을 그 수준에 맞춰 다시 잡는다 */
+function pickShareLevel(){
+  const 날 = $('shareDate')?.value;
+  const level = $('shareLevel')?.value;
+  if (level === 'custom') sharePicked = pickedByLevel(날, shareLevel);
+  else { shareLevel = level; sharePicked = null; }
+  renderShareItems();
+  renderSharePreview();
 }
 
 async function submitShare(){
@@ -4078,8 +4207,11 @@ const SCOPE_LABEL = { all: '전체', friends: '친구 전체', chosen: '고른 �
 let PREFS = { 범위: 'friends', 수준: 'none', 고른친구: [] };
 
 async function loadPrefs(){
-  if (!$('prefScope')) return;
+  if (!$('prefScope') || !state.account) return;
   try { PREFS = await API.commSharePrefs(); } catch (e) { return; }
+  if (PREFS['범위'] === 'chosen' && !shareFriends.length) {
+    try { shareFriends = (await API.commFriends())['친구'] || []; } catch (e) { /* 그냥 둔다 */ }
+  }
   renderPrefs();
 }
 

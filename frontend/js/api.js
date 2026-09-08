@@ -93,16 +93,6 @@ const API = (() => {
     commPost: (b) => post('/community/posts', b),
     // 글마다 누구에게 보일지 고른다 — 'chosen' 은 고른 친구만
     commChosen: () => call('/community/share/chosen'),
-    // 내 기록을 누구에게 얼마나 보일지
-    commSharePrefs: () => call('/community/share/prefs'),
-    commSharePrefsSet: (scope, level) => call('/community/share/prefs', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope, level }) }),
-    // 친구 기록 — 날 목록과 하루치
-    commFriendDays: (handle) =>
-      call('/community/users/' + encodeURIComponent(handle) + '/records'),
-    commFriendDay: (handle, date) =>
-      call('/community/users/' + encodeURIComponent(handle) + '/records/' + date),
     commChosenSet: (handles) => call('/community/share/chosen', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ handles }) }),

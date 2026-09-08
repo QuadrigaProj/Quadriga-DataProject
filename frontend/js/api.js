@@ -105,6 +105,12 @@ const API = (() => {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body }) }),
     commMessageDelete: (id) => call('/community/messages/' + id, { method: 'DELETE' }),
+    // 채팅 메시지에 다는 댓글 — 응답은 그 방 메시지 목록 전체다
+    commMsgReply: (id, body) => post('/community/messages/' + id + '/comments', { body }),
+    commReplyEdit: (id, body) => call('/community/replies/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }) }),
+    commReplyDelete: (id) => call('/community/replies/' + id, { method: 'DELETE' }),
     commComment: (id, body) => post('/community/posts/' + id + '/comments', { body }),
     commReact: (target_type, target_id, emoji) =>
       post('/community/reactions', { target_type, target_id, emoji }),

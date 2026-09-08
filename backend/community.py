@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_cmsg_room ON chat_messages(room_id, id);
 
+/* 채팅 메시지에 다는 댓글. 한 줄이 길어질 때 그 줄에 매달아 이야기한다.
+   방을 지우면 메시지가 지워지고, 메시지를 지우면 댓글도 함께 지워진다. */
+CREATE TABLE IF NOT EXISTS chat_replies (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_creply_msg ON chat_replies(message_id, id);
+
 /* 앱 내 아이디 — 다른 사람에게 보이는 유일한 식별자다.
    이메일로 사람을 찾게 두면 이메일이 곧 검색키가 된다(가입 여부가 새어 나간다). */
 CREATE TABLE IF NOT EXISTS user_handles (
@@ -510,6 +522,7 @@ def delete_message(user_id: int, message_id: int) -> int:
     with auth.db() as con:
         r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
         _drop_reactions(con, "message", [message_id])
+        con.execute("DELETE FROM chat_replies WHERE message_id=?", (message_id,))
         con.execute("DELETE FROM chat_messages WHERE id=?", (message_id,))
         return r["room_id"]
 
@@ -933,11 +946,67 @@ def messages(user_id: int, room_id: int, after: int = 0, limit: int = 50) -> lis
                 " WHERE g.room_id=? ORDER BY g.id DESC LIMIT ?",
                 (room_id, limit)).fetchall()
             rows = list(rows)[::-1]
-        react = _reaction_summary(con, "message", [r["id"] for r in rows], user_id)
+        ids = [r["id"] for r in rows]
+        react = _reaction_summary(con, "message", ids, user_id)
+        댓글 = _replies_for(con, ids, user_id)
     return [{"id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == user_id,
              "본문": r["body"], "작성시각": r["created_at"],
              "수정시각": r["edited_at"],
-             "반응": react.get(r["id"], {"counts": {}, "mine": []})} for r in rows]
+             "반응": react.get(r["id"], {"counts": {}, "mine": []}),
+             "댓글": 댓글.get(r["id"], [])} for r in rows]
+
+
+def _replies_for(con, message_ids: list[int], me: int) -> dict[int, list[dict]]:
+    """메시지마다 달린 댓글. 한 번에 읽는다 — 줄마다 물으면 요청이 줄 수만큼 는다."""
+    if not message_ids:
+        return {}
+    marks = ",".join("?" for _ in message_ids)
+    rows = con.execute(
+        f"SELECT c.*, u.display_name FROM chat_replies c JOIN users u ON u.id=c.user_id"
+        f" WHERE c.message_id IN ({marks}) ORDER BY c.id", message_ids).fetchall()
+    out: dict[int, list[dict]] = {i: [] for i in message_ids}
+    for r in rows:
+        out[r["message_id"]].append({
+            "id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == me,
+            "본문": r["body"], "작성시각": r["created_at"], "수정시각": r["edited_at"],
+        })
+    return out
+
+
+def add_reply(user_id: int, message_id: int, body: str) -> int:
+    with auth.db() as con:
+        m = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
+                        (message_id,)).fetchone()
+        if not m:
+            raise HTTPException(404, "메시지를 찾을 수 없어요.")
+        if not _is_member(con, m["room_id"], user_id):
+            raise HTTPException(403, "먼저 모임에 참여해 주세요.")
+        con.insert_id(
+            "INSERT INTO chat_replies (message_id, user_id, body, created_at)"
+            " VALUES (?,?,?,?)", (message_id, user_id, _edited(body, 2000), int(time.time())))
+        return m["room_id"]
+
+
+def _reply_room(con, reply_id: int, user_id: int) -> int:
+    r = _mine_or_403(con, "chat_replies", reply_id, user_id, "댓글")
+    m = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
+                    (r["message_id"],)).fetchone()
+    return m["room_id"] if m else 0
+
+
+def edit_reply(user_id: int, reply_id: int, body: str) -> int:
+    with auth.db() as con:
+        room_id = _reply_room(con, reply_id, user_id)
+        con.execute("UPDATE chat_replies SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 2000), int(time.time()), reply_id))
+        return room_id
+
+
+def delete_reply(user_id: int, reply_id: int) -> int:
+    with auth.db() as con:
+        room_id = _reply_room(con, reply_id, user_id)
+        con.execute("DELETE FROM chat_replies WHERE id=?", (reply_id,))
+        return room_id
 
 
 def send_message(user_id: int, room_id: int, body: str) -> int:
@@ -1071,6 +1140,29 @@ def message_edit(message_id: int, body: MessageIn,
                  quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
     room_id = edit_message(me, message_id, body.body)
+    return {"messages": messages(me, room_id, 0)}
+
+
+@router.post("/messages/{message_id}/comments")
+def message_comment(message_id: int, body: CommentIn,
+                    quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = add_reply(me, message_id, body.body)
+    return {"messages": messages(me, room_id, 0)}
+
+
+@router.put("/replies/{reply_id}")
+def reply_edit(reply_id: int, body: CommentIn,
+               quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = edit_reply(me, reply_id, body.body)
+    return {"messages": messages(me, room_id, 0)}
+
+
+@router.delete("/replies/{reply_id}")
+def reply_remove(reply_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = delete_reply(me, reply_id)
     return {"messages": messages(me, room_id, 0)}
 
 

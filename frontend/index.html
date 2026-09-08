@@ -1162,9 +1162,19 @@
     border-color:var(--pine); background:var(--paper); }
   .post-record .rec-detail{ background:var(--paper); border-color:var(--pine-tint);
     margin-top:8px; }
-  .react-bar{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  .react-bar{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:8px; }
   .react-chip{ border:1.5px solid var(--line); background:#fff; border-radius:999px; padding:4px 10px; font-size:13px; cursor:pointer; font-family:inherit; }
   .react-chip.on{ border-color:var(--pine); background:var(--pine-tint); color:var(--pine-deep); font-weight:700; }
+  /* 여는 버튼 — 이모지 여섯 개를 늘 펼쳐 두면 글보다 자리를 더 먹는다 */
+  .react-open{ border:1.5px solid var(--line); background:none; border-radius:999px;
+    padding:2px 8px; font-size:13px; line-height:1.5; cursor:pointer;
+    font-family:inherit; color:var(--muted); }
+  .react-open:hover, .react-open[aria-expanded="true"]{ border-color:var(--pine);
+    background:var(--pine-tint); }
+  /* 고르는 자리 — 남기고 나면 닫힌다 */
+  .react-picker{ flex-basis:100%; display:flex; gap:6px; flex-wrap:wrap;
+    margin-top:6px; padding:6px; border:1px solid var(--line); border-radius:12px;
+    background:var(--paper); }
   .post-actions{ display:flex; gap:14px; margin-top:8px; font-size:12.5px; color:var(--muted); }
   .post-actions button{ background:none; border:none; color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; padding:0; }
   .comment{ border-top:1px solid var(--line); padding:6px 0 0; margin-top:6px; font-size:12.5px; line-height:1.4; }
@@ -1206,12 +1216,14 @@
     gap:6px; flex-wrap:wrap; margin-left:auto; }
   .room-card button{ border:none; background:var(--pine); color:#fff; border-radius:10px; padding:7px 12px; font-size:13px; font-family:inherit; cursor:pointer; white-space:nowrap; }
   .room-card .room-password-btn{ background:var(--paper); border:1px solid var(--line); color:var(--pine-deep); }
-  /* 고정 — 아이콘만 있는 작은 버튼. 켜면 테두리가 진해진다 */
-  .room-card .room-pin{ background:var(--paper); border:1px solid var(--line);
-    color:var(--pine-deep); padding:6px 9px; font-size:14px; line-height:1; }
-  .room-card .room-pin[aria-pressed="true"]{ border-color:var(--pine);
-    background:var(--pine-tint); }
-  .rc-pinned{ margin-left:4px; font-size:12px; }
+  /* 고정 — 카드 맨 왼쪽에 아이콘만. 버튼 테두리는 두지 않는다.
+     안 한 것은 초록 테두리만, 한 것은 안까지 초록으로 찬다. */
+  .room-card .room-pin{ order:-1; flex-shrink:0; width:24px; height:24px;
+    padding:0; border:none; background:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; }
+  .room-card .room-pin svg{ width:16px; height:16px;
+    fill:var(--paper); stroke:var(--pine); stroke-width:1.6; }
+  .room-card .room-pin[aria-pressed="true"] svg{ fill:var(--pine); }
   .room-card .room-danger-btn{ background:var(--paper); border:1px solid var(--clay); color:var(--clay); }
   .chat-head{ display:flex; align-items:center; gap:10px; margin-top:14px; font-weight:700; }
   .chat-back{ border:1.5px solid var(--line); background:#fff; border-radius:10px; padding:5px 10px; font-size:13px; font-family:inherit; cursor:pointer; }
@@ -1219,6 +1231,13 @@
   .chat-msg{ margin-top:8px; font-size:13.5px; }
   .chat-msg .cm-who{ font-size:11px; color:var(--muted); }
   .chat-msg .react-bar{ margin-top:4px; }
+  /* 꾹 눌렀을 때 뜨는 자리 (L) */
+  .cm-menu{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .cm-menu button{ border:1.5px solid var(--line); background:var(--paper);
+    border-radius:999px; padding:5px 11px; font-family:inherit; font-size:12.5px;
+    color:var(--pine-deep); cursor:pointer; }
+  .cm-menu button:hover{ border-color:var(--pine); background:var(--pine-tint); }
+  .chat-msg.pressing .cm-body{ opacity:0.6; }
   /* 메시지에 달린 댓글 — 한 칸 들여써서 어디에 매달렸는지 보이게 */
   .cm-replies{ margin:6px 0 0 14px; padding-left:10px;
     border-left:2px solid var(--line); text-align:left; }
@@ -1229,7 +1248,8 @@
   .cm-reply-btn{ background:none; border:none; padding:0; margin-top:4px;
     font-family:inherit; font-size:12px; color:var(--muted); cursor:pointer; }
   .cm-reply-btn:hover{ color:var(--pine-deep); }
-  .chat-msg.mine .react-bar, .chat-msg.mine .own-actions{ justify-content:flex-end; }
+  .chat-msg.mine .react-bar, .chat-msg.mine .own-actions,
+  .chat-msg.mine .cm-menu{ justify-content:flex-end; }
   .chat-msg .cm-body{ display:inline-block; background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 10px; margin-top:2px; max-width:80%; word-break:break-word; }
   .chat-msg.mine{ text-align:right; }
   .chat-msg.mine .cm-body{ background:var(--pine-tint); border-color:var(--pine-tint); }
@@ -3468,13 +3488,51 @@ function mediaHtml(media, cls){
     : `<img src="${m.url}" alt="" class="${cls}" />`).join('');
 }
 
-function reactBar(target_type, id, react){
-  const mine = new Set(react.mine || []);
-  return `<div class="react-bar">` + COMM.emojis.map(e => {
-    const n = (react.counts || {})[e] || 0;
-    return `<button type="button" class="react-chip${mine.has(e)?' on':''}"
-      onclick="doReact('${target_type}',${id},'${e}',this)">${e}${n?' '+n:''}</button>`;
-  }).join('') + `</div>`;
+/* 남긴 이모지 + (여는 버튼).
+
+   여섯 개를 늘 펼쳐 두면 글보다 자리를 더 먹는다. 그래서 평소에는
+   **남겨진 것만** 보이고, 고르는 자리는 누를 때만 편다. 하나 남기면 닫힌다.
+   채팅은 꾹 눌러 여는 자리가 따로 있어서 여는 버튼을 두지 않는다(opener:false). */
+function reactBar(target_type, id, react, { opener = true } = {}){
+  const counts = (react && react.counts) || {};
+  const mine = new Set((react && react.mine) || []);
+  const 남긴것 = COMM.emojis.filter(e => counts[e]).map(e =>
+    `<button type="button" class="react-chip${mine.has(e) ? ' on' : ''}"
+      onclick="doReact('${target_type}',${id},'${e}',this)">${e} ${counts[e]}</button>`).join('');
+  const 여는버튼 = opener
+    ? `<button type="button" class="react-open" aria-expanded="false"
+        aria-label="반응 남기기" title="반응 남기기"
+        onclick="toggleReactPicker(this)">🙂+</button>`
+    : '';
+  return `<div class="react-bar" data-rt="${target_type}" data-rid="${id}">${남긴것}${여는버튼}
+    ${reactPickerHtml(target_type, id, mine)}</div>`;
+}
+
+function reactPickerHtml(target_type, id, mine){
+  return `<div class="react-picker" hidden>` + COMM.emojis.map(e =>
+    `<button type="button" class="react-chip${mine.has(e) ? ' on' : ''}"
+      onclick="doReact('${target_type}',${id},'${e}',this)">${e}</button>`).join('') + `</div>`;
+}
+
+/* 고르는 자리를 폈다 접는다. 한 번에 하나만 열어 둔다. */
+function toggleReactPicker(btn){
+  const bar = btn.closest('.react-bar');
+  const picker = bar?.querySelector('.react-picker');
+  if (!picker) return;
+  const 열림 = picker.hidden;
+  document.querySelectorAll('.react-picker').forEach(el => { el.hidden = true; });
+  document.querySelectorAll('.react-open').forEach(el => el.setAttribute('aria-expanded', 'false'));
+  picker.hidden = !열림;
+  btn.setAttribute('aria-expanded', String(열림));
+}
+
+/* 채팅에서 꾹 눌러 여는 자리 — 버튼이 따로 없다 */
+function openReactPickerFor(target_type, id){
+  const bar = document.querySelector(`.react-bar[data-rt="${target_type}"][data-rid="${id}"]`);
+  const picker = bar?.querySelector('.react-picker');
+  if (!picker) return;
+  document.querySelectorAll('.react-picker').forEach(el => { el.hidden = true; });
+  picker.hidden = false;
 }
 
 /* 공유한 기록 카드 — 한 줄 요약 + 항목별 지표 + 그날 운동.
@@ -3602,10 +3660,20 @@ async function removeMessage(id){
 }
 
 async function doReact(tt, id, emoji, btn){
+  const bar = btn.closest('.react-bar');
   try {
     const r = await API.commReact(tt, id, emoji);
-    const bar = btn.parentElement;
-    bar.outerHTML = reactBar(tt, id, r['반응']);
+    if (tt === 'message') {
+      // 채팅은 꾹 눌러 연 자리까지 닫는다 — 일이 끝나면 남긴 이모지만 남는다
+      const m = (CHAT_MSGS || []).find(x => x.id === id);
+      if (m) m['반응'] = r['반응'];
+      openMsgMenus.delete(id);
+      paintChat(CHAT_MSGS, { 강제: true });
+      return;
+    }
+    // 남기고 나면 고르는 자리는 닫힌다. 남은 이모지와 여는 버튼만 남는다.
+    const 여는버튼있음 = !!bar?.querySelector('.react-open');
+    if (bar) bar.outerHTML = reactBar(tt, id, r['반응'], { opener: 여는버튼있음 });
   } catch (e) { showToast(e.message); }
 }
 
@@ -3786,17 +3854,18 @@ function renderRoomList(){
       ? `<button class="room-danger-btn" data-destroy-room="${rm.id}">방 폭파</button>` : '';
     return `
     <div class="room-card">
-      <div class="rc-info"><div class="rc-name">${esc(rm['이름'])}${privateMark}${hostMark}${
-        고정.has(rm.id) ? ' <span class="rc-pinned" aria-label="위에 고정함">📌</span>' : ''}</div>
+      ${내채팅 ? `<button type="button" class="room-pin" data-pin-room="${rm.id}"
+          aria-pressed="${고정.has(rm.id)}"
+          title="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}"
+          aria-label="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>
+        </button>` : ''}
+      <div class="rc-info"><div class="rc-name">${esc(rm['이름'])}${privateMark}${hostMark}</div>
         <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
       <div class="room-actions">
-        ${내채팅 ? `<button class="room-pin" data-pin-room="${rm.id}"
-            aria-pressed="${고정.has(rm.id)}"
-            title="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}"
-            aria-label="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}">📌</button>` : ''}
         ${rm['방장'] && rm['비공개'] ? `<button class="room-password-btn" data-password-room="${rm.id}">비밀번호 변경</button>` : ''}
         ${방폭파버튼}
-        <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '들어가기' : '가입'}</button>
+        <button data-room="${rm.id}" data-joined="${rm['참여중']?1:0}">${rm['참여중'] ? '참여' : '가입'}</button>
       </div>
     </div>`;
   }).join('') || (COMM.roomFilter === 'mine'
@@ -4047,7 +4116,8 @@ async function changeRoomPassword(id){
 }
 
 async function openRoom(id, name){
-  COMM.room = id; chatSig = ''; CHAT_MSGS = []; openReplies.clear();
+  COMM.room = id; chatSig = ''; CHAT_MSGS = [];
+  openReplies.clear(); openMsgMenus.clear();
   $('roomList').hidden = true; $('chatView').hidden = false;
   $('chatTitle').textContent = name || '모임';
   $('chatMsgs').innerHTML = '';
@@ -4193,8 +4263,11 @@ function toggleReplies(id){
 function chatRepliesHtml(m){
   const 목록 = m['댓글'] || [];
   const 접힘 = !openReplies.has(m.id);
-  const 단추 = `<button type="button" class="cm-reply-btn"
-      onclick="toggleReplies(${m.id})">💬 댓글 ${목록.length}${접힘 ? '' : ' 접기'}</button>`;
+  // 댓글이 없으면 줄을 만들지 않는다 — 다는 길은 꾹 눌러 여는 자리에 있다
+  const 단추 = (목록.length || !접힘)
+    ? `<button type="button" class="cm-reply-btn"
+        onclick="toggleReplies(${m.id})">💬 ${목록.length}${접힘 ? '' : ' 접기'}</button>`
+    : '';
   if (접힘) return 단추;
   const 줄 = 목록.map(c => `
     <div class="cm-reply" id="reply-${c.id}">
@@ -4218,18 +4291,80 @@ function chatRepliesHtml(m){
     </div>`;
 }
 
-/* 한 줄 — 이모지는 누구 글에나 달 수 있고, 고치고 지우는 건 내 글만. */
+/* 꾹 눌러 연 자리 — 다시 그려도 열린 채로 두려고 기억한다 */
+const openMsgMenus = new Set();
+
+/* 한 줄 — 이모지는 누구 글에나 달 수 있고, 고치고 지우는 건 내 글만.
+   이모지 목록과 댓글 다는 길은 글을 꾹 눌러야 나온다. 늘 펼쳐 두면
+   글 한 줄보다 버튼이 더 많아진다. */
 function chatMsgHtml(m){
-  return `<div class="chat-msg${m['내글'] ? ' mine' : ''}" id="msg-${m.id}">
+  const 열림 = openMsgMenus.has(m.id);
+  return `<div class="chat-msg${m['내글'] ? ' mine' : ''}" id="msg-${m.id}" data-mid="${m.id}">
     <div class="cm-who">${esc(m['작성자'])}${수정됨(m)}</div>
     <div class="cm-body">${esc(m['본문'])}</div>
-    ${reactBar('message', m.id, m['반응'])}
-    ${m['내글'] ? `<div class="own-actions">
-        <button type="button" onclick="editMessage(${m.id})">수정</button>
-        <button type="button" onclick="removeMessage(${m.id})">삭제</button>
+    ${reactBar('message', m.id, m['반응'], { opener: false })}
+    ${열림 ? `<div class="cm-menu">
+        <button type="button" onclick="openReactPickerFor('message', ${m.id})">반응 남기기</button>
+        <button type="button" onclick="replyFromMenu(${m.id})">댓글 달기</button>
+        ${m['내글'] ? `<button type="button" onclick="editMessage(${m.id})">수정</button>
+          <button type="button" onclick="removeMessage(${m.id})">삭제</button>` : ''}
+        <button type="button" onclick="closeMsgMenu(${m.id})">닫기</button>
       </div>` : ''}
     ${chatRepliesHtml(m)}
   </div>`;
+}
+
+/* 글을 꾹 누르면 자리를 연다. 한 번에 하나만.
+   폴링이 4초마다 다시 그리므로 줄마다 붙이지 않고 상자 하나에 맡긴다. */
+const LONG_PRESS_MS = 450;
+let pressTimer = null, pressMid = null;
+
+function openMsgMenu(id){
+  openMsgMenus.clear();
+  openMsgMenus.add(id);
+  paintChat(CHAT_MSGS, { 강제: true });
+}
+
+function closeMsgMenu(id){
+  openMsgMenus.delete(id);
+  paintChat(CHAT_MSGS, { 강제: true });
+}
+
+/* 댓글 달기 — 연 자리는 닫고 댓글 칸을 편다 */
+function replyFromMenu(id){
+  openMsgMenus.delete(id);
+  openReplies.add(id);
+  paintChat(CHAT_MSGS, { 강제: true });
+  $('cr-' + id)?.focus();
+}
+
+function bindChatPress(){
+  const box = $('chatMsgs');
+  if (!box || box.dataset.pressBound) return;
+  box.dataset.pressBound = '1';
+  const 취소 = () => {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+    box.querySelectorAll('.chat-msg.pressing').forEach(el => el.classList.remove('pressing'));
+  };
+  box.addEventListener('pointerdown', (ev) => {
+    // 버튼을 누른 거라면 그 버튼이 할 일이 따로 있다
+    if (ev.target.closest('button, input, a')) return;
+    const 줄 = ev.target.closest('.chat-msg');
+    if (!줄) return;
+    pressMid = +줄.dataset.mid;
+    줄.classList.add('pressing');
+    pressTimer = setTimeout(() => { 취소(); openMsgMenu(pressMid); }, LONG_PRESS_MS);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel', 'pointermove', 'scroll']
+    .forEach(e => box.addEventListener(e, 취소));
+  // 마우스에서는 오른쪽 버튼이 '꾹 누르기' 다
+  box.addEventListener('contextmenu', (ev) => {
+    const 줄 = ev.target.closest('.chat-msg');
+    if (!줄) return;
+    ev.preventDefault();
+    openMsgMenu(+줄.dataset.mid);
+  });
 }
 
 async function sendReply(mid){
@@ -4274,7 +4409,8 @@ function paintChat(list, { 강제 = false } = {}){
   const box = $('chatMsgs');
   if (!box) return;
   CHAT_MSGS = list;
-  const sig = JSON.stringify(list) + [...openReplies].sort().join(',');
+  const sig = JSON.stringify(list)
+            + [...openReplies].sort().join(',') + '|' + [...openMsgMenus].sort().join(',');
   if (!강제 && sig === chatSig) return;
   const 맨아래였다 = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   // 적다 만 댓글은 지키고 다시 그린다 — 4초마다 사라지면 쓸 수가 없다
@@ -4283,6 +4419,7 @@ function paintChat(list, { 강제 = false } = {}){
   chatSig = sig;
   box.innerHTML = list.map(chatMsgHtml).join('');
   Object.entries(적던것).forEach(([id, v]) => { const i = $(id); if (i) i.value = v; });
+  bindChatPress();
   if (맨아래였다) box.scrollTop = box.scrollHeight;
 }
 

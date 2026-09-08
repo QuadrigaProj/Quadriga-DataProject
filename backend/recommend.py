@@ -134,10 +134,19 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
             steps = routine_steps(age_gbn, r)
             factors = routine_factors(age_gbn, r)
             덮은약점 = [w for w in weak if any(_factor_hit(w, f) for f in factors)]
-            루틴점수 = 점수 + 1.0 * len(덮은약점) + 0.1 * len(factors)
+            # 종목 반영은 여태까지 목적(purpose) 단위로만 붙어서(맞은종목), 그 목적 안의
+            # 루틴이면 실제로 그 요인을 다루든 말든 다 같은 점수를 받았다 — 결과가 항상
+            # "기초 체력 증진" 같은 넓은 목적 몇 개로만 쏠리고, 고른 종목(등산·수영 등)이
+            # 실제로 어떤 동작에 반영됐는지는 드러나지 않았다. 약점(덮은약점)과 같은
+            # 자리에서 이 루틴 자체의 체력요인을 보고 한 번 더 매겨서, 종목이 필요로
+            # 하는 요인을 실제로 다루는 루틴이 그 목적 안에서도 앞에 오게 한다.
+            덮은종목요인 = sorted({s for s in sport_factors if any(_factor_hit(s, f) for f in factors)})
+            루틴점수 = 점수 + 1.0 * len(덮은약점) + 0.8 * len(덮은종목요인) + 0.1 * len(factors)
             루틴이유 = list(이유)
             if 덮은약점:
                 루틴이유.append(f"오늘 동작에 {' · '.join(덮은약점)} 운동이 들어 있어요")
+            if 덮은종목요인:
+                루틴이유.append(f"고른 종목에 필요한 {' · '.join(덮은종목요인)} 동작이 오늘 루틴에 있어요")
             if not 루틴이유:
                 루틴이유.append("먼저 기본을 고르게 채우는 구성이에요")
             out.append({

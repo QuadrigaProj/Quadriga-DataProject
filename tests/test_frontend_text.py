@@ -1770,14 +1770,14 @@ def test_채팅은_목록을_통째로_다시_그린다():
 def test_공유한_기록에_항목별_지표와_그날_운동이_담긴다():
     """나이 한 줄만으로는 무엇을 해서 그렇게 됐는지 알 수 없다."""
     html = _index()
-    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
-    assert "항목별: r?.['항목별'] || null" in 본문
-    assert "오늘운동: todayMoves()" in 본문
+    본문 = html.split("function shareRecordFor(날)")[1].split("\n}")[0]
+    assert "기준?.항목별 || null" in 본문
+    assert "오늘운동: 운동" in 본문
 
-    오늘 = html.split("function todayMoves()")[1].split("\n}")[0]
-    assert "logAt(오늘)?.items" in 오늘          # 직접 적은 종목
-    assert "state.routineLog" in 오늘            # 끝낸 루틴의 동작
-    assert "목록.some(m => m.이름 === st.운동명)" in 오늘   # 같은 걸 두 번 적지 않는다
+    그날 = html.split("function movesOn(날)")[1].split("\n}")[0]
+    assert "logAt(날)?.items" in 그날            # 직접 적은 종목
+    assert "state.routineLog" in 그날            # 끝낸 루틴의 동작
+    assert "목록.some(m => m.이름 === st.운동명)" in 그날   # 같은 걸 두 번 적지 않는다
 
 
 def test_공유한_기록은_다섯_줄까지만_늘어놓는다():
@@ -1963,3 +1963,50 @@ def test_답장_쓰는_중에는_무엇에_답하는지_보인다():
     보내기 = html.split("async function sendChat()")[1].split("\n}")[0]
     assert "API.commSend(COMM.room, body, 답장)" in 보내기
     assert 보내기.index("replyTarget = null") < 보내기.index("API.commSend")
+
+
+# ---------- 기록 공유: 날짜와 공개 범위 ----------
+
+def test_기록_공유는_날짜와_공개_범위를_고른다():
+    """누르는 즉시 오늘 기록이 전체 공개로 올라가면, 되돌릴 수 없는 일을
+    한 번에 하는 셈이다."""
+    html = _index()
+    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert 'id="shareDate"' in 본문
+    assert 'type="date"' in 본문
+    assert 'max="${todayIso()}"' in 본문                  # 오지 않은 날은 고를 수 없다
+    assert "pickAudience(" in 본문
+    assert "submitShare()" in 본문
+
+
+def test_기본_공개_범위는_친구까지다():
+    """몸에 관한 기록이다. 넓히는 건 사용자가 고르게 한다."""
+    html = _index()
+    assert "let shareAudience = 'friends';" in html
+
+
+def test_고른_친구를_안_고르면_올리지_않는다():
+    html = _index()
+    본문 = html.split("async function submitShare()")[1].split("\n}")[0]
+    assert "shareAudience === 'chosen' && !shareChosen.length" in 본문
+    assert "그날은 올릴 기록이 없어요" in 본문             # 빈 날도 막는다
+    assert "record_date: 날" in 본문
+    assert "audience: shareAudience" in 본문
+
+
+def test_올리기_전에_무엇이_올라가는지_보여준다():
+    html = _index()
+    본문 = html.split("function renderSharePreview()")[1].split("\n}")[0]
+    assert "recordHtml(shareRecordFor(" in 본문
+    기록 = html.split("function shareRecordFor(날)")[1].split("\n}")[0]
+    assert "dayFinalAge(날)" in 기록                      # 그날의 최종값
+    assert "movesOn(날)" in 기록                          # 그날 한 운동
+
+
+def test_전체_공개가_아닌_글에는_범위를_적는다():
+    html = _index()
+    본문 = html.split("function 범위표시(p)")[1].split("\n}")[0]
+    assert "p['공개범위']" in 본문
+    assert "친구 공개" in 본문 and "고른 친구" in 본문
+    카드 = html.split("function postCard(p)")[1].split("\n}")[0]
+    assert "범위표시(p)" in 카드

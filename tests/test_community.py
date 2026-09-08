@@ -1055,3 +1055,130 @@ def test_예전_댓글은_메시지로_옮겨진다():
     community.init_db()          # 두 번 돌아도 그대로다
     assert len([m for m in a.get(f"/community/rooms/{rid}/messages").json()["messages"]
                 if m["본문"] == "예전에 단 댓글"]) == 1
+
+
+# ---------- 글 공개 범위 ----------
+
+def _서로친구(a, b):
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/friends", json={"handle": hb})
+    b.post("/community/friends", json={"handle": ha})
+    return ha, hb
+
+
+def test_전체_공개는_누구나_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    a.post("/community/posts", json={"body": "아무나 보세요", "audience": "all"})
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["아무나 보세요"]
+
+
+def test_친구_공개는_친구만_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    _서로친구(a, b)
+    pid = a.post("/community/posts",
+                 json={"body": "친구만", "audience": "friends"}).json()["id"]
+
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["친구만"]
+    assert c.get("/community/posts").json()["posts"] == []
+    # 남남은 글이 있다는 것도 알 수 없다
+    assert c.get(f"/community/posts/{pid}").status_code == 404
+    assert b.get(f"/community/posts/{pid}").status_code == 200
+    # 내 글은 늘 보인다
+    assert a.get(f"/community/posts/{pid}").json()["공개범위"] == "friends"
+
+
+def test_한쪽만_신청한_사이는_친구가_아니다():
+    """친구 신청을 걸어 두기만 해도 보이면, 아무나 신청해서 볼 수 있다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    b.post("/community/friends", json={"handle": ha})      # 나 → 가 만 걸어 둔 상태
+    a.post("/community/posts", json={"body": "친구만", "audience": "friends"})
+    assert b.get("/community/posts").json()["posts"] == []
+
+
+def test_고른_친구만_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    ha, hb = _서로친구(a, b)
+    _서로친구(a, c)
+    hc = c.get("/community/me/handle").json()["아이디"]
+
+    a.post("/community/posts",
+           json={"body": "너한테만", "audience": "chosen", "to": [hb]})
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["너한테만"]
+    assert c.get("/community/posts").json()["posts"] == []   # 친구지만 안 골랐다
+
+
+def test_친구가_아닌_사람은_고를_수_없다():
+    """친구가 아닌 사람을 담아 두면, 나중에 친구가 되는 순간
+    예전 글까지 한꺼번에 보이게 된다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    r = a.post("/community/posts",
+               json={"body": "너한테만", "audience": "chosen", "to": [hb]})
+    assert r.status_code == 400
+    assert a.put("/community/share/chosen", json={"handles": [hb]}).status_code == 400
+
+
+def test_아무도_안_고르면_나만_본다():
+    """'고른 친구' 인데 비어 있으면 아무나 보이는 쪽으로 새지 않는다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    _서로친구(a, b)
+    a.post("/community/posts", json={"body": "혼잣말", "audience": "chosen", "to": []})
+    assert b.get("/community/posts").json()["posts"] == []
+    assert [p["본문"] for p in a.get("/community/posts").json()["posts"]] == ["혼잣말"]
+
+
+def test_자주_고르는_친구를_기억한다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha, hb = _서로친구(a, b)
+    assert a.put("/community/share/chosen",
+                 json={"handles": [hb]}).json()["고른친구"][0]["아이디"] == hb
+    assert a.get("/community/share/chosen").json()["고른친구"][0]["닉네임"] == "나"
+    # to 를 안 주면 기억해 둔 묶음을 쓴다
+    a.post("/community/posts", json={"body": "기억한 사람들에게", "audience": "chosen"})
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["기억한 사람들에게"]
+
+
+def test_친구가_아니게_되면_묶음에서_빠진다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha, hb = _서로친구(a, b)
+    a.put("/community/share/chosen", json={"handles": [hb]})
+    a.request("DELETE", f"/community/friends/{hb}")
+    assert a.get("/community/share/chosen").json()["고른친구"] == []
+
+
+def test_예전_글은_전체_공개로_읽는다():
+    """그때는 전체 공개뿐이었다. 값이 없다고 숨겨 버리면 글이 사라진다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    a.post("/community/posts", json={"body": "예전 글"})
+    with auth.db() as con:
+        con.execute("UPDATE community_posts SET audience=NULL")
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["예전 글"]
+
+
+def test_기록_공유는_어느_날_기록인지_적는다():
+    a = _login(app, "a@x.com", "가")
+    r = a.post("/community/posts", json={
+        "kind": "record", "body": "", "record": {"요약": "9월 8일 체력나이 28세"},
+        "record_date": "2026-09-08"}).json()
+    assert r["기록날짜"] == "2026-09-08"
+    assert a.get("/community/posts").json()["posts"][0]["기록날짜"] == "2026-09-08"
+
+
+def test_날짜_모양이_아니면_막는다():
+    a = _login(app, "a@x.com", "가")
+    assert a.post("/community/posts", json={
+        "kind": "record", "record": {"요약": "x"},
+        "record_date": "어제"}).status_code == 422

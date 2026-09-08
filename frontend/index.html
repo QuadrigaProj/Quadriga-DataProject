@@ -1117,6 +1117,21 @@
   .post-send svg{ width:17px; height:17px; fill:currentColor; }
   .comm-head-btns{ display:flex; align-items:center; gap:8px; }
   .comm-share-btn{ border:1.5px solid var(--line); background:#fff; border-radius:12px; padding:8px 12px; font-size:13px; font-family:inherit; cursor:pointer; }
+  /* 기록 공유 — 언제 것을, 누구에게 */
+  .share-field{ margin-top:14px; }
+  .share-field > label{ display:block; font-size:12.5px; color:var(--muted);
+    margin-bottom:6px; }
+  .share-field input[type=date], .share-field select{ width:100%; border:1.5px solid var(--line);
+    border-radius:12px; padding:10px 12px; font-family:inherit; font-size:14px;
+    background:var(--paper); box-sizing:border-box; }
+  .share-pick{ display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .share-pick button{ border:1.5px solid var(--line); background:var(--paper);
+    border-radius:999px; padding:5px 11px; font-family:inherit; font-size:12.5px;
+    color:var(--pine-deep); cursor:pointer; }
+  .share-pick button.on{ border-color:var(--pine); background:var(--pine-tint);
+    font-weight:700; }
+  .share-none{ font-size:12.5px; color:var(--muted); margin-top:8px; }
+  .share-preview{ margin-top:14px; }
   .comm-post-btn{ padding:9px 16px; font-size:14px; margin:0; }
   .comm-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
   .comm-media img, .comm-media video{ width:84px; height:84px; object-fit:cover; border-radius:10px; border:1px solid var(--line); }
@@ -3575,7 +3590,7 @@ function postCard(p){
   return `<div class="post-card" id="post-${p.id}" data-id="${p.id}">
     <div class="post-open" onclick="toggleComments(${p.id})">
       <div class="post-top">${whoHtml(p['작성자'], p['작성자아이디'])}
-        <span class="post-time">${ago(p['작성시각'])}${수정됨(p)}</span></div>
+        <span class="post-time">${범위표시(p)}${ago(p['작성시각'])}${수정됨(p)}</span></div>
       <div class="post-body" ${p['본문'] ? '' : 'hidden'}>${esc(p['본문'] || '')}</div>
       ${p['미디어'] && p['미디어'].length ? `<div class="post-media" onclick="event.stopPropagation()">${mediaHtml(p['미디어'],'')}</div>` : ''}
       ${rec}
@@ -3588,6 +3603,14 @@ function postCard(p){
     </div>
     <div class="comment-box" id="cbox-${p.id}" hidden></div>
   </div>`;
+}
+
+/* 전체 공개가 아닌 글에는 누구까지 보이는지 적는다 — 올린 사람이
+   자기 글이 어디까지 갔는지 알 수 있어야 한다. */
+function 범위표시(p){
+  const k = p && p['공개범위'];
+  if (!k || k === 'all') return '';
+  return `<span class="edited-mark">${k === 'friends' ? '친구 공개' : '고른 친구'}</span> · `;
 }
 
 /* 고친 글에는 표시를 남긴다 — 앞에 읽은 사람이 헷갈리지 않게 */
@@ -3767,38 +3790,118 @@ async function submitPost(){
 
 /* 오늘 한 운동 — 직접 적은 종목과 끝낸 루틴의 동작.
    기록에 있는 것만 담는다. 없으면 빈 배열이다 (규칙 1). */
-function todayMoves(){
-  const 오늘 = todayIso();
+function movesOn(날){
   const 목록 = [];
-  (logAt(오늘)?.items || []).forEach(x => {
+  (logAt(날)?.items || []).forEach(x => {
     const 값 = Object.entries(x.값 || {})
       .map(([k, v]) => `${v}${WLOG_UNIT[k] || ''}`).join(' · ');
     목록.push({ 이름: x.이름, 값 });
   });
-  ((state.routineLog || []).find(e => e.date === 오늘)?.steps || []).forEach(st => {
+  ((state.routineLog || []).find(e => e.date === 날)?.steps || []).forEach(st => {
     if (목록.some(m => m.이름 === st.운동명)) return;      // 같은 걸 두 번 적지 않는다
     목록.push({ 이름: st.운동명, 값: st.체력요인 || '' });
   });
   return 목록;
 }
 
+function todayMoves(){ return movesOn(todayIso()); }
+
+/* 기록 공유 — 언제 기록을, 누구에게 보일지 고르고 올린다.
+
+   예전에는 누르는 즉시 오늘 기록이 전체 공개로 올라갔다. 몸에 관한
+   기록이라 되돌릴 수 없는 일을 한 번에 하면 안 된다. */
+const AUDIENCE_LABEL = { all: '전체 공개', friends: '친구 전체', chosen: '고른 친구' };
+let shareAudience = 'friends';      // 기본은 친구까지만 — 넓히는 건 사용자가 고른다
+let shareChosen = [];               // 고른 친구 아이디
+let shareFriends = [];              // 내 친구 목록 (고르는 자리에 쓴다)
+
 async function shareMyRecord(){
-  const r = state.result;
-  const days = (state.routineLog || []).length;
-  if (!r && !days) { showToast('공유할 기록이 아직 없어요'); return; }
-  const parts = [];
-  if (r && r['체력나이'] != null) parts.push(`추정 체력나이 ${Math.round(r['체력나이'])}세`);
-  if (days) parts.push(`지금까지 ${days}회 운동 완료`);
-  const 요약 = parts.join(' · ');
-  // 항목별 지표와 오늘 한 운동까지 함께 보낸다. 나이 한 줄만으로는
-  // 무엇을 해서 그렇게 됐는지 알 수 없다.
+  const 있는날 = workoutDates();
+  const 날 = 있는날.length ? 있는날[있는날.length - 1] : todayIso();
+  openSheet('기록 공유', '<div class="prof-note">불러오는 중이에요…</div>');
   try {
-    await API.commPost({ kind: 'record', body: $('postBody').value.trim(),
-                         record: { 요약, 운동횟수: days,
-                                   항목별: r?.['항목별'] || null,
-                                   오늘운동: todayMoves() } });
-    $('postBody').value = ''; COMM.oldest = null; await loadFeed(false);
-    showToast('기록을 공유했어요');
+    const [f, c] = await Promise.all([API.commFriends(), API.commChosen()]);
+    shareFriends = f['친구'] || [];
+    shareChosen = (c['고른친구'] || []).map(u => u['아이디']);
+  } catch (e) { shareFriends = []; shareChosen = []; }
+  if (!shareChosen.length) shareAudience = shareAudience === 'chosen' ? 'friends' : shareAudience;
+
+  $('sheetBody').innerHTML = `
+    <div class="share-field"><label for="shareDate">언제 기록인가요?</label>
+      <input type="date" id="shareDate" max="${todayIso()}" value="${날}"
+             onchange="renderSharePreview()" /></div>
+    <div class="share-field"><label>누구에게 보일까요?</label>
+      <div class="share-pick" id="shareAud">${Object.entries(AUDIENCE_LABEL).map(([k, v]) =>
+        `<button type="button" data-aud="${k}" class="${shareAudience === k ? 'on' : ''}"
+           onclick="pickAudience('${k}')">${v}</button>`).join('')}</div>
+      <div id="shareWho"></div></div>
+    <div class="share-preview" id="sharePreview"></div>
+    <div class="prof-actions">
+      <button type="button" onclick="submitShare()">이 기록 올리기</button>
+    </div>`;
+  pickAudience(shareAudience);
+  renderSharePreview();
+}
+
+function pickAudience(k){
+  shareAudience = k;
+  document.querySelectorAll('#shareAud button').forEach(b =>
+    b.classList.toggle('on', b.dataset.aud === k));
+  const box = $('shareWho');
+  if (!box) return;
+  if (k !== 'chosen') { box.innerHTML = ''; return; }
+  box.innerHTML = shareFriends.length
+    ? `<div class="share-pick">${shareFriends.map(u =>
+        `<button type="button" data-friend="${esc(u['아이디'])}"
+           class="${shareChosen.includes(u['아이디']) ? 'on' : ''}"
+           onclick="toggleShareFriend('${esc(u['아이디'])}')">${esc(u['닉네임'])}</button>`).join('')}</div>`
+    : '<div class="share-none">아직 친구가 없어요. 친구를 추가하면 여기서 고를 수 있어요.</div>';
+}
+
+function toggleShareFriend(handle){
+  const i = shareChosen.indexOf(handle);
+  if (i >= 0) shareChosen.splice(i, 1); else shareChosen.push(handle);
+  pickAudience('chosen');
+}
+
+/* 올리기 전에 무엇이 올라가는지 그대로 보여 준다 */
+function renderSharePreview(){
+  const box = $('sharePreview');
+  if (!box) return;
+  box.innerHTML = recordHtml(shareRecordFor($('shareDate')?.value || todayIso()));
+}
+
+/* 그날 기록 한 덩어리 — 그날 체력나이와 그날 한 운동. */
+function shareRecordFor(날){
+  const 나이 = dayFinalAge(날);
+  const 기준 = measureAtOrBefore(날);
+  const parts = [];
+  if (나이 != null) parts.push(`${fmtDate(날)} 체력나이 ${Math.round(나이 * 10) / 10}세`);
+  const 운동 = movesOn(날);
+  if (운동.length) parts.push(`${운동.length}가지 운동`);
+  return { 요약: parts.join(' · ') || `${fmtDate(날)} 기록`,
+           운동횟수: (state.routineLog || []).length,
+           항목별: 기준?.항목별 || null, 오늘운동: 운동 };
+}
+
+async function submitShare(){
+  const 날 = $('shareDate')?.value || todayIso();
+  const rec = shareRecordFor(날);
+  if (!rec.항목별 && !(rec.오늘운동 || []).length) {
+    showToast('그날은 올릴 기록이 없어요'); return;
+  }
+  if (shareAudience === 'chosen' && !shareChosen.length) {
+    showToast('보여 줄 친구를 골라주세요'); return;
+  }
+  try {
+    await API.commPost({ kind: 'record', body: $('postBody')?.value.trim() || '',
+                         record: rec, record_date: 날,
+                         audience: shareAudience,
+                         to: shareAudience === 'chosen' ? shareChosen : null });
+    if ($('postBody')) $('postBody').value = '';
+    closeSheet();
+    COMM.oldest = null; await loadFeed(false);
+    showToast(`기록을 ${AUDIENCE_LABEL[shareAudience]}로 올렸어요`);
   } catch (e) { showToast(e.message); }
 }
 

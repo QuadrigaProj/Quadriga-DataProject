@@ -118,13 +118,34 @@ def spend(user_id: int, amount: int, memo: str = "") -> int:
         return 남음 - amount
 
 
+def used_after(user_id: int, order_id: str) -> bool:
+    """그 결제로 받은 이용권을 한 번이라도 썼는지.
+
+    원장은 넣은 순서대로 id 가 붙는다. 그 결제의 충전 줄보다 뒤에 사용 줄이
+    하나라도 있으면 쓴 것으로 본다 — 나중에 한 다른 충전은 이 판단에 끼지 않는다.
+    """
+    with auth.db() as con:
+        r = con.execute("SELECT id FROM credit_ledger WHERE order_id=?",
+                        (order_id,)).fetchone()
+        if not r:
+            return False
+        뒤 = con.execute(
+            "SELECT 1 FROM credit_ledger WHERE user_id=? AND kind='use' AND id>? LIMIT 1",
+            (user_id, r["id"])).fetchone()
+    return bool(뒤)
+
+
 def refund(user_id: int, credit: int, order_id: str, memo: str = "") -> int:
     """환불한 만큼 이용권을 되돌린다(음수 한 줄).
 
-    이미 써 버려서 잔액이 모자라면 그대로 마이너스가 된다 — 숨기지 않는다.
-    운영에서 눈에 보여야 조치할 수 있다.
+    부르는 쪽이 used_after 로 막고 오므로 여기서 잔액이 음수가 될 일은 없다.
+    그래도 한 번 더 확인한다 — 돈이 걸린 자리라 조용히 마이너스로 두지 않는다.
     """
     with auth.db() as con:
+        r = con.execute("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger"
+                        " WHERE user_id=?", (user_id,)).fetchone()
+        if int(r["s"] or 0) < credit:
+            raise HTTPException(409, "이미 사용한 이용권은 환불할 수 없어요.")
         _add(con, user_id, -credit, "refund", order_id=f"refund:{order_id}", memo=memo)
     return balance(user_id)
 

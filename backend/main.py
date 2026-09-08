@@ -998,6 +998,11 @@ async def post_pay_refund(order: str,
     """결제 취소(환불). 산 사람이 스스로 부른다.
 
     전자상거래법상 청약철회를 받아야 하므로 이 길이 필요하다.
+
+    **한 번이라도 쓴 선결제권은 환불하지 않는다.** 쓴 만큼은 이미 제공된
+    서비스라 돌려받을 게 없고, 일부만 돌려주려면 얼마를 돌려줄지 규정이
+    있어야 한다. 지금은 안 쓴 것만 통째로 취소한다.
+
     카카오에서 실제로 취소된 뒤에만 이용권을 되돌린다 — 순서가 바뀌면
     돈은 그대로인데 이용권만 사라진다.
     """
@@ -1005,6 +1010,8 @@ async def post_pay_refund(order: str,
     o = billing.get_order(order)
     if not o or o["user_id"] != user["id"] or o["status"] != "paid":
         raise HTTPException(404, "환불할 결제를 찾을 수 없어요.")
+    if billing.used_after(user["id"], order):
+        raise HTTPException(409, "이미 사용한 이용권은 환불할 수 없어요.")
 
     ok = await kp.cancel(tid=o["tid"], amount=o["amount"])
     if not ok or ok["canceled"] != o["amount"]:

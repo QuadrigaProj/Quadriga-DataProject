@@ -2134,3 +2134,56 @@ def test_api에도_지운_길이_남지_않는다():
     js = (_ROOT / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     for 없어야 in ("share/prefs", "/records"):
         assert 없어야 not in js, 없어야
+
+
+# ---------- 체력 측정 화면 — placeholder는 절대 계산값으로 안 쓴다 ----------
+
+def test_num은_빈_문자열과_NaN을_실제_입력값과_구분한다():
+    """num() 하나만 있어야 한다. 예전엔 syncInputs()가 이걸 안 쓰고 parseFloat(...)
+    를 따로 또 짜서, 빈 칸(NaN)과 정말 0을 잰 경우를 다르게 취급하는 등 갈라지기
+    쉬웠다. placeholder(예: "예: 12")는 DOM에서 별개 속성이라 .value 로 절대
+    안 섞이지만, 그래도 "안 적음"의 기준(빈 문자열·NaN)을 이 한 곳에 명시해 둔다."""
+    html = _index()
+    assert html.count("function num(id){") == 1
+    body = html.split("function num(id){")[1].split("\n}")[0]
+    assert "raw === ''" in body           # 빈 문자열 = 안 적음
+    assert "Number.isFinite(v)" in body   # NaN(숫자로 못 읽음) = 안 적음
+    assert ".value" in body               # placeholder 가 아니라 실제 입력값만 읽는다
+
+
+def test_syncInputs는_직접_parseFloat하지_않고_num을_쓴다():
+    """유연성·근력·키·몸무게 네 항목 모두 num()을 거치게 해서, 빈 칸을 0이나
+    placeholder 예시값으로 잘못 읽는 경로를 하나로 막는다."""
+    html = _index()
+    body = html.split("function syncInputs(){")[1].split("\n}")[0]
+    assert "num('flexInput')" in body
+    assert "num('strengthInput')" in body
+    assert "num('heightInput')" in body
+    assert "num('weightInput')" in body
+    # 이 함수 안에서 더는 값을 직접 parseFloat 하지 않는다(나이 파싱은 정수라 예외)
+    assert body.count("parseFloat(") == 0
+
+
+def test_계산_전에_필수_측정값이_비면_막는다():
+    """나이·키·몸무게·유연성·근력 중 하나라도 안 적었으면 계산 자체를 막아서,
+    placeholder 예시값이 실제 입력인 것처럼 넘어가는 일이 없게 한다."""
+    html = _index()
+    body = html.split("async function calcAge(){")[1].split("\n}\n")[0]
+    assert "need.push('나이')" in body
+    assert "need.push('키')" in body
+    assert "need.push('몸무게')" in body
+    assert "need.push('다리를 펴고 앉아 손끝이 닿는 거리')" in body
+    assert "need.push(strengthLabel())" in body
+    assert "if (need.length)" in body and "return;" in body
+
+
+def test_또래비교_렌더링은_서버가_실제로_준_항목만_그린다():
+    """r.또래비교에 없는 항목(안 잰 항목)은 화면에 만들어 붙이지 않는다 —
+    화면 쪽에서 기본값·mock값으로 항목을 채우는 로직이 없어야 한다."""
+    html = _index()
+    body = html.split("function renderPeerComparison(r){")[1].split("\n}")[0]
+    assert "Object.entries(r.또래비교 || {})" in body
+    # 백분위가 없는 항목은 순위 계산에서 빠진다(체성분처럼 U자형인 것도 그렇다)
+    assert "typeof v.백분위 === 'number'" in body
+    for 금지 in ("?? 12", "?? 0", "|| 12", "상위 5%", "또래 중앙값 10"):
+        assert 금지 not in body

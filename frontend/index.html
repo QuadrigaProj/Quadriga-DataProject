@@ -4728,21 +4728,36 @@ function selectSex(sex){
   document.querySelectorAll('#sexSeg button').forEach(b=>b.classList.toggle('on', b.dataset.sex===sex));
 }
 
+/* 입력칸 하나를 실제 사용자 입력값으로만 읽는다 — placeholder(예: "예: 12")는
+   DOM의 별개 속성이라 .value 에 절대 섞이지 않지만, 그래도 "안 적었다"를
+   구분하는 기준을 여기 한 곳에 명시해 둔다:
+     null/undefined  → 요소가 없거나 값이 없음
+     빈 문자열('')    → 사용자가 아무것도 안 침
+     NaN             → 숫자로 못 읽음(문자만 침 등)
+   이 셋 중 하나면 반드시 null 을 돌려주고, 그 필드는 이후 어떤 분석·백분위
+   계산에도 들어가지 않는다(요청·계산 함수 모두 값이 null 이면 그 항목을 건너뛴다).
+   실제로 유효한 숫자를 쳤을 때만 그 값을 그대로 돌려준다. */
+function num(id){
+  const el = $(id);
+  const raw = (el && el.value != null) ? el.value : '';   // .value — placeholder 아님
+  if (raw === '') return null;                             // 빈 문자열 = 안 적음
+  const v = parseFloat(raw);
+  return Number.isFinite(v) ? v : null;                    // NaN(숫자로 못 읽음) = 안 적음
+}
+
 function syncInputs(){
   const a = parseInt($('ageInput').value, 10);
   state.age = Number.isFinite(a) ? a : null;
   state.ageGbn = ageGroup(state.age) || '성인';
-  const f = parseFloat($('flexInput').value);
-  state.flexibility = Number.isFinite(f) ? f : null;
-  const s = parseFloat($('strengthInput').value);
-  state.strength = Number.isFinite(s) ? s : null;
-  state.height = parseFloat($('heightInput').value) || null;
-  state.weight = parseFloat($('weightInput').value) || null;
+  state.flexibility = num('flexInput');
+  state.strength = num('strengthInput');
+  state.height = num('heightInput');
+  state.weight = num('weightInput');
   // 선택 항목 (G6) — 잰 사람만. 0 이하는 안 잰 것으로 본다
-  const g = parseFloat($('gripInput').value);
-  state.gripKg = Number.isFinite(g) && g > 0 ? g : null;
-  const e = parseFloat($('enduranceInput').value);
-  state.endurance = Number.isFinite(e) && e >= 0 && CARDIO_LABEL[state.ageGbn] ? e : null;
+  const g = num('gripInput');
+  state.gripKg = (g !== null && g > 0) ? g : null;
+  const e = num('enduranceInput');
+  state.endurance = (e !== null && e >= 0 && CARDIO_LABEL[state.ageGbn]) ? e : null;
 }
 
 /* 현재 연령군에서 측정하는 근력 항목 이름 */
@@ -4889,8 +4904,6 @@ async function calcAge(){
   }
   btn.disabled = false; btn.textContent = label;
 }
-
-function num(id){ const v = parseFloat(($(id)||{}).value); return Number.isFinite(v) ? v : null; }
 
 async function searchCenters(){
   const region = $('centerRegion').value.trim();

@@ -50,11 +50,11 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
     등급: list[dict] = []
 
     if age_gbn:
-        if jump_30s is not None:
+        if fa._given(jump_30s):
             a = fa.convert_age(dist, age_gbn, sex, "반복점프", jump_30s)
             if a is not None:
                 parts["순발력"] = a
-        if curlup_30s is not None:
+        if fa._given(curlup_30s):
             a = fa.convert_age(dist, age_gbn, sex, "교차윗몸일으키기", curlup_30s)
             if a is not None:
                 parts["근지구력"] = a
@@ -62,11 +62,12 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
         if cb is not None:
             parts["체성분"] = cb
 
-    # 공개 데이터 없는 항목 — 등급만
-    if knee_pushup_30s is not None:
+    # 공개 데이터 없는 항목 — 등급만. 실제로 잰 항목만(_given) 등급을 매긴다 —
+    # 안 잰 항목이 0·None 언저리 값으로 계산돼 등급이 나오면 안 된다.
+    if fa._given(knee_pushup_30s):
         등급.append({"항목": "상체 근력(무릎 푸시업)", "값": knee_pushup_30s,
                     "등급": _grade(KNEE_PUSHUP, sex, age, knee_pushup_30s)})
-    if high_knee_2min is not None:
+    if fa._given(high_knee_2min):
         등급.append({"항목": "심폐지구력(2분 하이니)", "값": high_knee_2min,
                     "등급": _grade(HIGH_KNEE, sex, age, high_knee_2min)})
 

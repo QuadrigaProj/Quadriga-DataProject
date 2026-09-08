@@ -1164,8 +1164,13 @@
   .post-actions button{ background:none; border:none; color:var(--muted); font-family:inherit; font-size:12.5px; cursor:pointer; padding:0; }
   .comment{ border-top:1px solid var(--line); padding:6px 0 0; margin-top:6px; font-size:12.5px; line-height:1.4; }
   .comment-author{ font-weight:700; }
-  .comment-row{ display:flex; gap:6px; margin-top:6px; }
-  .comment-row input{ flex:1; border:1.5px solid var(--line); border-radius:10px; padding:7px 10px; font-family:inherit; font-size:13px; }
+  .comment-row{ display:flex; gap:6px; margin-top:6px; align-items:center; }
+  .comment-row input{ flex:1; min-width:0; border:1.5px solid var(--line);
+    border-radius:999px; padding:7px 12px; font-family:inherit; font-size:13px;
+    background:var(--bg); }
+  /* 댓글 줄은 게시글 작성란보다 한 단계 작다 */
+  .post-send.sm{ width:32px; height:32px; }
+  .post-send.sm svg{ width:14px; height:14px; }
   .room-card{ border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
   /* 버튼이 셋이면 좁은 화면에서 이름 칸이 한 글자씩 접힌다. 이름이 먼저고,
      자리가 모자라면 버튼 줄을 통째로 아래로 내린다. */
@@ -3496,7 +3501,10 @@ async function toggleComments(id){
       </div>`).join('') + `
       <div class="comment-row">
         <input type="text" id="ci-${id}" placeholder="댓글 달기" onkeydown="if(event.key==='Enter')sendComment(${id})" />
-        <button class="comm-post-btn btn btn-primary" onclick="sendComment(${id})">등록</button>
+        <button type="button" class="post-send sm" onclick="sendComment(${id})"
+                aria-label="댓글 등록" title="등록">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.3 21 23 12 2.3 3v7l14.9 2-14.9 2z"/></svg>
+        </button>
       </div>`;
   } catch (e) { box.innerHTML = '댓글을 불러오지 못했어요.'; }
 }

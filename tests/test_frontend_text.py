@@ -542,12 +542,6 @@ def test_이용권_줄을_누르면_충전창이_열린다():
     assert "openPaySheet()" in 본문
 
 
-def test_충전하면_패널_줄도_갱신한다():
-    # J2 에서 confirmPay 가 addCredit 으로 바뀌었다 — 충전을 반영하는 자리는 여기 하나다
-    html = _index()
-    본문 = html.split("async function addCredit(금액, 결제)")[1].split("\n}")[0]
-    assert "renderAcctCredit()" in 본문
-
 
 def test_아바타_두_곳_모두_프로필로_간다():
     """J3: 헤더 아바타(한 번 더 누르기)와 패널 안 큰 아바타가 같은 길을 쓴다."""
@@ -671,38 +665,7 @@ def test_테스트_가맹점인지_화면에_적는다():
     assert "실제로 결제됩니다" in html
 
 
-def test_카카오페이만_진짜_결제창으로_보낸다():
-    html = _index()
-    본문 = html.split("async function startPay()")[1].split("\n}")[0]
-    assert "if (payWay === 'kakao')" in 본문
-    assert "API.payReady({ amount: payPick })" in 본문
-    assert "location.href = r.redirect" in 본문
-    assert "await addCredit(팩.이용권, 팩.결제);" in 본문   # 나머지는 모의 승인
 
-
-def test_충전_금액은_서버가_확인해_준_값을_쓴다():
-    """화면이 고른 숫자를 그대로 올리면 조작할 수 있다."""
-    html = _index()
-    본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
-    assert "API.payResult(order)" in 본문
-    assert "addCredit(r.amount, r.결제)" in 본문
-    assert "addCredit(payPick)" not in 본문
-
-
-def test_결제만_되고_프로필이_없으면_들고_있는다():
-    """결제창을 다녀오면 페이지가 새로 뜬다. 손님은 그때 프로필이 없다."""
-    html = _index()
-    본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
-    assert "if (state.user) {" in 본문
-    assert "stashCredit(r.amount, r.결제)" in 본문
-    assert "function stashCredit(금액, 결제)" in html
-    assert "async function applyPendingCredit()" in html
-    # 프로필이 정해지는 모든 길에서 확인해야 한다
-    적용 = html.split("function applyProfile(saved)")[1].split("\n}")[0]
-    assert "applyPendingCredit" in 적용
-    # 한 번 반영하면 지운다 (두 번 충전되지 않게)
-    보관 = html.split("async function applyPendingCredit()")[1].split("\n}")[0]
-    assert "removeItem(PENDING_CREDIT)" in 보관
 
 
 def test_돌아온_뒤_주소창을_치운다():
@@ -847,16 +810,6 @@ def test_결제_내역은_접었다_편다():
     assert "aria-expanded" in 본문
 
 
-def test_내역에_실제로_낸_돈도_남긴다():
-    """이용권 3,000원을 1,800원에 샀다는 걸 나중에도 알아야 한다."""
-    html = _index()
-    본문 = html.split("async function addCredit(금액, 결제)")[1].split("\n}")[0]
-    assert "결제: 결제 ?? 금액" in 본문
-    내역 = html.split("function renderCredit()")[1].split("\n}")[0]
-    assert "e.결제 != null && e.결제 < e.금액" in 내역
-
-
-# ---------- K1. 운동을 기록한 날짜에 체력나이도 저장 ----------
 
 def test_기록한_날마다_체력나이를_저장한다():
     html = _index()
@@ -1179,4 +1132,52 @@ def test_초대하면_바로_들어오지_않는다고_적는다():
     html = _index()
     창 = html.split('id="roomMembers"')[1].split("</section>")[0]
     assert "상대가 수락해야 들어와요" in 창
+
+
+# ---------- 실결제: 잔액은 서버 원장이 기준 ----------
+
+def test_잔액을_서버에서_읽는다():
+    """브라우저에 두면 숫자만 바꿔 AI 추천을 공짜로 무제한 쓸 수 있다."""
+    html = _index()
+    assert "async function loadCredit()" in html
+    본문 = html.split("async function loadCredit()")[1].split("\n}")[0]
+    assert "API.credit()" in 본문
+    assert "state.credit = c['잔액']" in 본문
+
+
+def test_잔액을_스냅샷에_담지_않는다():
+    """스냅샷은 브라우저가 보내는 값이다 — 거기 잔액이 있으면 조작된다."""
+    html = _index()
+    본문 = html.split("function snapshot()")[1].split("\n}")[0]
+    assert "credit" not in 본문
+
+
+def test_화면이_잔액을_더하거나_빼지_않는다():
+    html = _index()
+    충전 = html.split("async function addCredit()")[1].split("\n}")[0]
+    assert "loadCredit()" in 충전
+    assert "state.credit =" not in 충전
+    # AI 추천 차감도 서버 응답을 그대로 쓴다
+    추천 = html.split("async function renderRecommend()")[1].split("\nfunction paintRecommend")[0]
+    assert "state.credit = r['잔액']" in 추천
+    assert "- AI_PRICE" not in 추천
+
+
+def test_카카오페이만_진짜_결제창으로_보낸다():
+    html = _index()
+    본문 = html.split("async function startPay()")[1].split("\n}")[0]
+    assert "if (payWay === 'kakao')" in 본문
+    assert "API.payReady({ amount: payPick })" in 본문
+    assert "location.href = r.redirect" in 본문
+    # 카드·계좌를 화면에서 모의로 올리면 그게 곧 무료 충전 통로가 된다
+    assert "addCredit(팩" not in 본문
+    assert "아직 카카오페이만 결제할 수 있어요" in 본문
+
+
+def test_결제하고_돌아오면_서버_잔액을_다시_읽는다():
+    html = _index()
+    본문 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
+    assert "API.payResult(order)" in 본문
+    assert "await addCredit();" in 본문          # 인자 없이 — 서버가 이미 올렸다
+    assert "stashCredit" not in 본문
 

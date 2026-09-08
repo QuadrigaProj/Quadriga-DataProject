@@ -30,6 +30,7 @@ import httpx
 HOST = os.getenv("KAKAOPAY_HOST", "https://open-api.kakaopay.com").rstrip("/")
 READY = "/online/v1/payment/ready"
 APPROVE = "/online/v1/payment/approve"
+CANCEL = "/online/v1/payment/cancel"
 TIMEOUT_SEC = 10.0
 
 # 테스트 가맹점 코드. 실제 계약을 하면 발급받은 코드로 바꾼다.
@@ -131,3 +132,32 @@ async def approve(*, tid: str, pg_token: str, order_id: str, user_id: str) -> di
     if not isinstance(amount, int) or amount <= 0:
         return None
     return {"amount": amount, "aid": d.get("aid"), "approved_at": d.get("approved_at")}
+
+
+async def cancel(*, tid: str, amount: int) -> dict | None:
+    """결제 취소(환불). 전액만 다룬다 — 부분 환불은 규정을 정하고 붙일 것.
+
+    전자상거래법상 청약철회를 받아야 하므로 운영에 이 길이 필요하다.
+    성공하면 {"canceled": 취소된 금액}. 실패하면 None.
+    """
+    if not available():
+        return None
+    body = {
+        "cid": cid(),
+        "tid": tid,
+        "cancel_amount": int(amount),
+        "cancel_tax_free_amount": 0,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_SEC) as http:
+            r = await http.post(HOST + CANCEL, json=body, headers=_headers())
+            if r.status_code >= 400:
+                return None
+            d = r.json()
+    except Exception:
+        return None
+
+    총 = (d.get("canceled_amount") or {}).get("total")
+    if not isinstance(총, int) or 총 <= 0:
+        return None
+    return {"canceled": 총, "status": d.get("status")}

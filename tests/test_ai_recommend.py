@@ -15,8 +15,35 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.main import app  # noqa: E402
 from backend import ai_recommend as air  # noqa: E402
+from backend import auth, billing, community  # noqa: E402
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _db(monkeypatch):
+    """AI 추천은 이용권을 서버 원장에서 깎는다 — DB 가 있어야 한다."""
+    import tempfile
+    if auth.is_postgres():
+        with auth.db() as con:
+            auth.init_db(); community.init_db(); billing.init_db()
+            for t in ("credit_ledger", "pay_orders", "measurements", "sessions",
+                      "oauth_states", "users"):
+                con.execute(f"DELETE FROM {t}")
+    else:
+        monkeypatch.setattr(auth, "DB_PATH", Path(tempfile.mkdtemp()) / "t.db")
+        auth.init_db(); community.init_db(); billing.init_db()
+    yield
+
+
+def _paid(credit: int = 1000) -> TestClient:
+    """이용권을 가진 로그인 사용자."""
+    c = TestClient(app)
+    c.post("/auth/signup", json={"email": "a@x.com", "password": "pw12345678",
+                                 "display_name": "가"})
+    if credit:
+        billing.charge(1, credit, credit, f"seed-{credit}")
+    return c
 
 후보 = [
     {"목적": "다이어트", "루틴명": "전신 HIIT", "동작수": 5, "체력요인": ["심폐지구력"],
@@ -100,14 +127,43 @@ def test_엔드포인트가_출처를_알려준다(monkeypatch):
 
 def test_엔드포인트가_AI를_쓴다(monkeypatch):
     _fake_sdk(monkeypatch, '{"순서":[2,1,0],"이유":{"2":["이게 먼저예요"]}}')
-    d = client.get("/recommend/routines",
-                   params={"age_gbn": "성인", "limit": 3}).json()
+    a = _paid(1000)
+    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
     assert d["출처"] == "ai"
     assert d["추천"][0]["이유"] == ["이게 먼저예요"]
-    # ai=0 이면 부르지 않는다
-    d2 = client.get("/recommend/routines",
-                    params={"age_gbn": "성인", "limit": 3, "ai": 0}).json()
-    assert d2["출처"] == "점수"
+    assert d["잔액"] == 900                     # 서버가 100원 깎았다
+    # ai=0 이면 부르지 않고 깎지도 않는다
+    d2 = a.get("/recommend/routines",
+               params={"age_gbn": "성인", "limit": 3, "ai": 0}).json()
+    assert d2["출처"] == "점수" and d2["잔액"] == 900
+
+
+def test_이용권이_없으면_AI를_부르지_않는다(monkeypatch):
+    """부르고 나서 못 받으면 우리만 돈을 쓴다."""
+    _fake_sdk(monkeypatch, '{"순서":[2,1,0],"이유":{"2":["이게 먼저예요"]}}')
+    a = _paid(0)
+    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
+    assert d["출처"] == "점수" and d["잔액"] == 0
+    assert "이용권이 모자라요" in d["안내"]
+    assert len(d["추천"]) == 3                  # 화면은 비지 않는다
+
+
+def test_로그인하지_않으면_AI를_부르지_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"순서":[2,1,0],"이유":{"2":["이게 먼저예요"]}}')
+    d = TestClient(app).get("/recommend/routines",
+                            params={"age_gbn": "성인", "limit": 3}).json()
+    assert d["출처"] == "점수" and d["잔액"] == 0
+    assert "로그인" in d["안내"]
+
+
+def test_폴백이면_한_푼도_안_깎는다(monkeypatch):
+    """AI 를 불렀지만 응답을 버렸다면 사용자에게 받지 않는다."""
+    _fake_sdk(monkeypatch, "이건 JSON 이 아니다")
+    a = _paid(1000)
+    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
+    assert d["출처"] == "점수"
+    assert d["잔액"] == 1000
+    assert a.get("/credit").json()["잔액"] == 1000
 
 
 def test_모델은_opus5다():
@@ -178,12 +234,21 @@ def test_결제창은_카드정보를_묻지_않는다():
 
 
 def test_AI가_실제로_다듬었을_때만_값을_받는다():
-    """폴백(출처='점수')이면 차감하지 않는다 — 안 쓴 것에 돈을 받지 않는다."""
-    html = _html()
-    body = html.split("async function renderRecommend()")[1].split("\nfunction paintRecommend")[0]
-    assert "if (ai쓰기 && recoBy === 'ai')" in body
-    assert "state.credit = Math.max(0, (state.credit || 0) - AI_PRICE);" in body
-    assert "종류: '사용'" in body
+    """폴백(출처='점수')이면 차감하지 않는다 — 안 쓴 것에 돈을 받지 않는다.
+
+    실결제로 옮기면서 차감이 서버로 갔다. 화면 쪽이 아니라 서버가 지켜야 한다
+    (동작 자체는 test_폴백이면_한_푼도_안_깎는다 가 확인한다).
+    """
+    import inspect
+    from backend import main as m
+    src = inspect.getsource(m.get_recommend_routines)
+    # 다듬어졌을 때만 깎는다
+    assert "if 다듬음:" in src
+    깎는줄 = [l for l in src.splitlines() if "billing.spend" in l]
+    assert len(깎는줄) == 1, 깎는줄
+    assert src.index("if 다듬음:") < src.index("billing.spend")
+    # 잔액이 모자라면 부르지도 않는다
+    assert src.index('out["잔액"] < AI_PRICE') < src.index("air.refine")
 
 
 def test_잔액이_모자라면_무료로_돌아간다():

@@ -714,3 +714,27 @@ def test_선택입력만_보내도_계산된다():
         "weight_kg": 74, "grip_kg": 42}).json()
     assert b["체력나이"] is not None
     assert set(b["항목별"]) == {"근력"}
+
+
+def test_AI를_못_쓰면_까닭을_함께_준다(monkeypatch):
+    """화면이 '지금 쓸 수 없어요' 만 띄우면 손쓸 방법이 없다."""
+    from backend import ai_recommend as air
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert air.available() is False
+    까닭 = air.why_unavailable()
+    assert 까닭 and "ANTHROPIC_API_KEY" in 까닭
+
+    r = client.get("/recommend/routines", params={"age_gbn": "성인", "limit": 2})
+    assert r.status_code == 200
+    assert r.json()["ai가능"] is False
+    assert "ANTHROPIC_API_KEY" in r.json()["ai이유"]
+
+
+def test_까닭에_키_값은_담지_않는다(monkeypatch):
+    """있는지 없는지만 말한다. 값이 화면에 나가면 그게 곧 유출이다."""
+    from backend import ai_recommend as air
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-비밀값123")
+    까닭 = air.why_unavailable()
+    assert 까닭 is None or "비밀값123" not in 까닭

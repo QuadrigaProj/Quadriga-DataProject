@@ -2134,3 +2134,46 @@ def test_api에도_지운_길이_남지_않는다():
     js = (_ROOT / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     for 없어야 in ("share/prefs", "/records"):
         assert 없어야 not in js, 없어야
+
+
+# ---------- 왜 안 되는지 화면에 드러낸다 ----------
+
+def test_카카오_실패는_서버가_준_이유를_보여준다():
+    """고정 문구만 띄우면 설정이 틀렸는지 카카오가 막았는지 알 길이 없다."""
+    html = _index()
+    본문 = html.split("async function startPay()")[1].split("\n}")[0]
+    assert "alert(e.message ||" in 본문
+
+
+def test_AI_추천이_안_되면_까닭을_말한다():
+    html = _index()
+    assert "let recoAiWhy = null;" in html
+    assert "recoAiWhy = r.ai이유 || null;" in html
+    본문 = html.split("function setRecoMode(mode)")[1].split("\n}")[0]
+    assert "recoAiWhy ||" in 본문
+
+
+# ---------- 기록 입력 단위 ----------
+
+def test_회씩_세트로_읽히게_적는다():
+    """'3세트 10회' 는 어느 쪽이 반복인지 헷갈린다."""
+    html = _index()
+    본문 = html.split("function wlogUnit(k, keys, 단위)")[1].split("\n}")[0]
+    assert "k === '횟수' && 목록.includes('세트')" in 본문
+    assert "'회씩'" in 본문
+    assert "k === '시간' && 목록.includes('세트')" in 본문
+    assert "'분씩'" in 본문
+
+
+def test_시간과_거리는_분_동안_km로_읽힌다():
+    html = _index()
+    본문 = html.split("function wlogUnit(k, keys, 단위)")[1].split("\n}")[0]
+    assert "k === '시간' && 목록.includes('거리')" in 본문
+    assert "'분 동안'" in 본문
+
+
+def test_입력칸도_적어_둔_값도_같은_말을_쓴다():
+    html = _index()
+    칸 = html.split('class="wlog-unit"')[1].split("</span>")[0]
+    assert "wlogUnit(k, x.입력, cat.단위)" in 칸
+    assert html.count("wlogUnit(k, 열쇠)") == 2      # 공유용·상세용 둘 다

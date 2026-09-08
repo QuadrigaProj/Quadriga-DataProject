@@ -1217,6 +1217,16 @@
   .chat-msg{ margin-top:8px; font-size:13.5px; }
   .chat-msg .cm-who{ font-size:11px; color:var(--muted); }
   .chat-msg .react-bar{ margin-top:4px; }
+  /* 메시지에 달린 댓글 — 한 칸 들여써서 어디에 매달렸는지 보이게 */
+  .cm-replies{ margin:6px 0 0 14px; padding-left:10px;
+    border-left:2px solid var(--line); text-align:left; }
+  .cm-reply{ font-size:12.5px; line-height:1.5; padding:4px 0; }
+  .cm-reply + .cm-reply{ border-top:1px solid var(--line); }
+  .cm-reply .r-who{ font-weight:700; }
+  .cm-reply .r-time{ font-size:11px; color:var(--muted); }
+  .cm-reply-btn{ background:none; border:none; padding:0; margin-top:4px;
+    font-family:inherit; font-size:12px; color:var(--muted); cursor:pointer; }
+  .cm-reply-btn:hover{ color:var(--pine-deep); }
   .chat-msg.mine .react-bar, .chat-msg.mine .own-actions{ justify-content:flex-end; }
   .chat-msg .cm-body{ display:inline-block; background:#fff; border:1px solid var(--line); border-radius:12px; padding:6px 10px; margin-top:2px; max-width:80%; word-break:break-word; }
   .chat-msg.mine{ text-align:right; }
@@ -4035,7 +4045,7 @@ async function changeRoomPassword(id){
 }
 
 async function openRoom(id, name){
-  COMM.room = id; chatSig = '';
+  COMM.room = id; chatSig = ''; CHAT_MSGS = []; openReplies.clear();
   $('roomList').hidden = true; $('chatView').hidden = false;
   $('chatTitle').textContent = name || '모임';
   $('chatMsgs').innerHTML = '';
@@ -4168,6 +4178,44 @@ async function leaveFromMembers(){
 }
 function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
 
+/* 펼쳐 둔 댓글 — 다시 그려도 접히지 않게 기억한다 */
+const openReplies = new Set();
+
+function toggleReplies(id){
+  if (openReplies.has(id)) openReplies.delete(id); else openReplies.add(id);
+  paintChat(CHAT_MSGS, { 강제: true });
+  if (openReplies.has(id)) $('cr-' + id)?.focus();
+}
+
+/* 메시지 한 줄에 달린 댓글 */
+function chatRepliesHtml(m){
+  const 목록 = m['댓글'] || [];
+  const 접힘 = !openReplies.has(m.id);
+  const 단추 = `<button type="button" class="cm-reply-btn"
+      onclick="toggleReplies(${m.id})">💬 댓글 ${목록.length}${접힘 ? '' : ' 접기'}</button>`;
+  if (접힘) return 단추;
+  const 줄 = 목록.map(c => `
+    <div class="cm-reply" id="reply-${c.id}">
+      <span class="r-who">${esc(c['작성자'])}</span>
+      <span class="r-time"> · ${ago(c['작성시각'])}${수정됨(c)}</span>
+      <div class="r-body">${esc(c['본문'])}</div>
+      ${c['내글'] ? `<div class="own-actions">
+          <button type="button" onclick="editReply(${c.id})">수정</button>
+          <button type="button" onclick="removeReply(${c.id})">삭제</button>
+        </div>` : ''}
+    </div>`).join('');
+  return 단추 + `<div class="cm-replies">${줄}
+      <div class="comment-row">
+        <input type="text" id="cr-${m.id}" placeholder="댓글 달기"
+               onkeydown="if(event.key==='Enter')sendReply(${m.id})" />
+        <button type="button" class="post-send sm" onclick="sendReply(${m.id})"
+                aria-label="댓글 등록" title="등록">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.3 21 23 12 2.3 3v7l14.9 2-14.9 2z"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+
 /* 한 줄 — 이모지는 누구 글에나 달 수 있고, 고치고 지우는 건 내 글만. */
 function chatMsgHtml(m){
   return `<div class="chat-msg${m['내글'] ? ' mine' : ''}" id="msg-${m.id}">
@@ -4178,22 +4226,61 @@ function chatMsgHtml(m){
         <button type="button" onclick="editMessage(${m.id})">수정</button>
         <button type="button" onclick="removeMessage(${m.id})">삭제</button>
       </div>` : ''}
+    ${chatRepliesHtml(m)}
   </div>`;
+}
+
+async function sendReply(mid){
+  const inp = $('cr-' + mid);
+  const body = (inp?.value || '').trim();
+  if (!body) return;
+  // 보낸 글자는 먼저 지운다. 다시 그릴 때 '적다 만 것' 으로 되살아나면
+  // 방금 단 댓글이 입력칸에 그대로 남는다.
+  inp.value = '';
+  inp.disabled = true;
+  try {
+    const r = await API.commMsgReply(mid, body);
+    paintChat(r.messages || [], { 강제: true });
+    $('cr-' + mid)?.focus();
+  } catch (e) { inp.disabled = false; showToast(e.message); }
+}
+
+async function editReply(id){
+  const el = document.querySelector(`#reply-${id} .r-body`);
+  if (!el) return;
+  openInlineEdit(el, el.textContent, async (새글) => {
+    const r = await API.commReplyEdit(id, 새글);
+    paintChat(r.messages || [], { 강제: true });
+  });
+}
+
+async function removeReply(id){
+  if (!confirm('댓글을 지울까요? 되돌릴 수 없어요.')) return;
+  try {
+    const r = await API.commReplyDelete(id);
+    paintChat(r.messages || [], { 강제: true });
+  } catch (e) { showToast(e.message); }
 }
 
 /* 고친 글·지운 글·이모지는 새 id 를 만들지 않는다. 그래서 새 것만 이어 붙이면
    화면이 영영 안 바뀐다. 목록을 통째로 받아서 달라졌을 때만 다시 그린다 —
    매번 그리면 읽는 중에 스크롤이 튄다. */
 let chatSig = '';
+let CHAT_MSGS = [];        // 마지막으로 받은 목록 — 댓글을 펴고 접을 때 다시 쓴다
 
-function paintChat(list){
+function paintChat(list, { 강제 = false } = {}){
   const box = $('chatMsgs');
   if (!box) return;
-  const sig = JSON.stringify(list);
-  if (sig === chatSig) return;
+  CHAT_MSGS = list;
+  const sig = JSON.stringify(list) + [...openReplies].sort().join(',');
+  if (!강제 && sig === chatSig) return;
   const 맨아래였다 = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  // 적다 만 댓글은 지키고 다시 그린다 — 4초마다 사라지면 쓸 수가 없다
+  const 적던것 = {};
+  box.querySelectorAll('.comment-row input').forEach(i => { 적던것[i.id] = i.value; });
   chatSig = sig;
   box.innerHTML = list.map(chatMsgHtml).join('');
+  Object.entries(적던것).forEach(([id, v]) => { const i = $(id); if (i) i.value = v; });
   if (맨아래였다) box.scrollTop = box.scrollHeight;
 }
 

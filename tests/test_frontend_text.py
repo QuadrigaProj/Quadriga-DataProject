@@ -1758,9 +1758,10 @@ def test_채팅은_목록을_통째로_다시_그린다():
     본문 = html.split("async function pollChat()")[1].split("\n}")[0]
     assert "API.commMessages(COMM.room)" in 본문      # after 를 주지 않는다
     assert "paintChat(" in 본문
-    그리기 = html.split("function paintChat(list)")[1].split("\n}")[0]
-    assert "if (sig === chatSig) return;" in 그리기   # 달라졌을 때만
+    그리기 = html.split("function paintChat(list, { 강제 = false } = {})")[1].split("\n}")[0]
+    assert "if (!강제 && sig === chatSig) return;" in 그리기   # 달라졌을 때만
     assert "맨아래였다" in 그리기                      # 읽는 중에 스크롤이 튀지 않게
+    assert "적던것" in 그리기                          # 적다 만 댓글은 지킨다
     assert "lastMsgId" not in html                    # 이어 붙이던 자리는 사라졌다
 
 
@@ -1833,3 +1834,49 @@ def test_고정은_계정에_남는다():
     assert "pinnedRooms: state.pinnedRooms," in html                 # 스냅샷에 담고
     assert "state.pinnedRooms = Array.isArray(saved?.pinnedRooms)" in html   # 되돌린다
     assert html.count("state.pinnedRooms = [];") >= 3                # 초기화 자리마다
+
+
+# ---------- 채팅 댓글 ----------
+
+def test_채팅_메시지에_댓글을_단다():
+    html = _index()
+    본문 = html.split("function chatRepliesHtml(m)")[1].split("\n}")[0]
+    assert "toggleReplies(${m.id})" in 본문
+    assert "💬 댓글 ${목록.length}" in 본문
+    assert 'id="cr-${m.id}"' in 본문                 # 댓글 입력칸
+    assert 'class="post-send sm"' in 본문            # 게시글 댓글과 같은 모양
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "chatRepliesHtml(m)" in 줄
+
+
+def test_채팅_댓글도_내_것만_고치고_지운다():
+    html = _index()
+    본문 = html.split("function chatRepliesHtml(m)")[1].split("\n}")[0]
+    assert "c['내글']" in 본문
+    assert "editReply(${c.id})" in 본문 and "removeReply(${c.id})" in 본문
+    지우기 = html.split("async function removeReply(id)")[1].split("\n}")[0]
+    assert "confirm(" in 지우기
+
+
+def test_펼쳐_둔_댓글은_다시_그려도_접히지_않는다():
+    """채팅은 4초마다 다시 그린다. 펴 둔 게 접히면 읽을 수가 없다."""
+    html = _index()
+    assert "const openReplies = new Set();" in html
+    본문 = html.split("function toggleReplies(id)")[1].split("\n}")[0]
+    assert "openReplies.delete(id)" in 본문 and "openReplies.add(id)" in 본문
+    그리기 = html.split("function paintChat(list, { 강제 = false } = {})")[1].split("\n}")[0]
+    assert "[...openReplies].sort().join(',')" in 그리기   # 펴고 접은 것도 화면에 든다
+
+
+def test_댓글을_보내면_입력칸을_비운다():
+    """다시 그릴 때 '적다 만 것' 으로 되살아나면, 방금 단 댓글이 칸에 남는다."""
+    html = _index()
+    본문 = html.split("async function sendReply(mid)")[1].split("\n}")[0]
+    assert "inp.value = '';" in 본문
+    assert 본문.index("inp.value = '';") < 본문.index("API.commMsgReply")
+
+
+def test_방을_옮기면_펴_둔_댓글은_잊는다():
+    html = _index()
+    본문 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
+    assert "openReplies.clear()" in 본문

@@ -261,5 +261,21 @@ def test_잔액이_모자라면_무료로_돌아간다():
 def test_키가_없으면_AI방식이_잠긴다():
     html = _html()
     body = html.split("function paintRecoMode()")[1].split("\n}")[0]
-    assert "ai.disabled = !recoAiReady;" in body
+    assert "ai.disabled = recoAiReady !== true;" in body
     assert "관리자가 키를 등록하면 켜져요" in body
+
+
+def test_확인되기_전에는_눌러도_조용히_무시하지_않는다():
+    """recoAiReady 가 서버 응답 전(null)일 때 눌리면 예전엔 그냥 아무 일도 안 일어났다.
+
+    버튼 자체는 그때 disabled 가 아직 안 걸려 있어(paintRecoMode 가 안 불렸다),
+    "눌러도 반응이 없는 버튼"처럼 보였다 — 화면에 뜬 안내와 실제 동작이 달랐다.
+    """
+    html = _html()
+    assert "let recoAiReady = null;" in html   # false 로 시작하면 '확인 전'과 '확인해서 없음'을 구분 못 한다
+    body = html.split("function setRecoMode(mode){")[1].split("\n}")[0]
+    assert "recoAiReady !== true" in body
+    assert "showToast(" in body
+    # 화면에 들어오자마자(첫 fetch 전에) 한 번 그려서, 정적 HTML 그대로 눌리는 창을 없앤다
+    reco = html.split("async function renderRecommend(){")[1].split("\n}")[0]
+    assert re.search(r"recoBody['\"]\);\s*\r?\n\s*paintRecoMode\(\);", reco)

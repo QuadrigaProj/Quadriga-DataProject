@@ -4949,6 +4949,26 @@ function measurePoints(){
   return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
+/* 그래프에 찍을 점 — 측정한 날 + 운동을 기록한 날 (M4).
+
+   운동을 기록하면 그날 체력나이가 함께 저장된다(K1). 측정만 그리면 두 점
+   사이가 통째로 비어서, 매일 운동해도 그래프가 안 움직이는 것처럼 보인다.
+
+   같은 날에 둘 다 있으면 **측정이 이긴다** — 실제로 잰 값이 추정치보다 낫다.
+   측정을 아직 한 번도 안 했으면 기준이 없어 운동일에도 값이 없다(K1 규칙). */
+function trendPoints(){
+  const byDate = new Map();
+  (state.workoutLog || []).forEach(w => {
+    const a = w && w.체력나이;
+    if (!w?.date || !a || a.값 == null) return;
+    byDate.set(w.date, { date: w.date, 체력나이: a.값, 신뢰구간: null,
+                        항목별: {}, 출처: '운동' });
+  });
+  // 측정이 나중에 덮는다
+  measurePoints().forEach(p => byDate.set(p.date, { ...p, 출처: '측정' }));
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
 /* 계정이면 서버에 남은 지난 스냅샷에서도 측정 시점을 뽑는다.
    스냅샷은 저장할 때마다 쌓이므로(루틴 완료 등) 직전 행과 체력나이가 다른 행만 측정으로 본다.
    목록은 최근 SERVER_ROWS_LIMIT 행뿐이라 창이 가득 찼으면 더 오래된 행이 잘렸을 수 있다 —
@@ -5125,8 +5145,11 @@ function trendSvg(pts){
     `<line x1="${L}" x2="${W - R}" y1="${f(y(v))}" y2="${f(y(v))}" style="stroke:var(--line)" stroke-width="1"/>` +
     `<text x="${L - 6}" y="${f(y(v) + 3.5)}" font-size="10" text-anchor="end" style="fill:var(--muted)">${Math.round(v)}</text>`).join('');
   const path = pts.map((p, i) => `${i ? 'L' : 'M'}${f(x(p.date))},${f(y(p.체력나이))}`).join(' ');
-  const dots = pts.map(p =>
-    `<circle cx="${f(x(p.date))}" cy="${f(y(p.체력나이))}" r="4" style="fill:var(--pine);stroke:var(--paper)" stroke-width="2"/>`).join('');
+  // 측정한 날은 꽉 찬 점, 운동 기록으로 뽑은 날은 속 빈 점.
+  // 재 값과 추정치를 같은 모양으로 그리면 둘을 구분할 수 없다.
+  const dots = pts.map(p => p.출처 === '운동'
+    ? `<circle cx="${f(x(p.date))}" cy="${f(y(p.체력나이))}" r="3.2" style="fill:var(--paper);stroke:var(--pine)" stroke-width="2"/>`
+    : `<circle cx="${f(x(p.date))}" cy="${f(y(p.체력나이))}" r="4" style="fill:var(--pine);stroke:var(--paper)" stroke-width="2"/>`).join('');
   const a = pts[0], b = pts[pts.length - 1];
   const dateLabel = (p, anchor) =>
     `<text x="${f(x(p.date))}" y="${H - 8}" font-size="10" text-anchor="${anchor}" style="fill:var(--muted)">${fmtDate(p.date)}</text>`;
@@ -5148,8 +5171,11 @@ function renderTrend(){
   const inRange = (d) => (!from || d >= from) && d <= today;
   const log = allRoutineLog();
   const workoutDays = new Set(log.filter(e => inRange(e.date)).map(e => e.date));
-  const pts = measurePoints().filter(p => inRange(p.date));
+  const pts = trendPoints().filter(p => inRange(p.date));
   const label = trendLabel;
+
+  // 예전에 적어 둔 날에는 체력나이가 없다. 채우고 나면 다시 그린다 (K1·M4)
+  backfillLogAges().then(ok => { if (ok) renderTrend(); });
 
   $('trendCount').textContent = `${workoutDays.size}회`;
   const st = streakDays(log);
@@ -5157,7 +5183,7 @@ function renderTrend(){
 
   if (!pts.length) {
     $('trendDelta').textContent = '—';
-    $('trendChart').innerHTML = `<div class="trend-empty">${label}에는 측정 기록이 없어요.<br/>재측정하면 체력나이 흐름이 여기에 그려져요.</div>`;
+    $('trendChart').innerHTML = `<div class="trend-empty">${label}에는 체력나이 기록이 없어요.<br/>한 번 측정하면 그 뒤로는 운동한 날도 함께 그려져요.</div>`;
     $('trendNote').textContent = workoutDays.size ? `${label} 운동 ${workoutDays.size}회.` : '';
     return;
   }
@@ -5165,7 +5191,7 @@ function renderTrend(){
   if (pts.length < 2) {
     $('trendDelta').textContent = `${Math.round(pts[0].체력나이)}세`;
     $('trendNote').textContent =
-      `${label}에는 측정이 한 번(${fmtDate(pts[0].date)} · ${Math.round(pts[0].체력나이)}세)뿐이라 변화를 비교할 수 없어요. 기간을 넓히거나 재측정해보세요.`
+      `${label}에는 기록이 한 번(${fmtDate(pts[0].date)} · ${Math.round(pts[0].체력나이)}세)뿐이라 변화를 비교할 수 없어요. 기간을 넓히거나 운동을 기록해보세요.`
       + (workoutDays.size ? ` 운동은 ${workoutDays.size}회 했어요.` : '');
     return;
   }
@@ -5186,7 +5212,12 @@ function renderTrend(){
     msg = `체력나이가 ${Math.abs(delta)}세 ${better ? '어려졌어요' : '늘었어요'}. 측정 편차보다 커서 의미 있는 변화예요.`;
   const spanDays = trendDays || (Math.round((Date.parse(today) - Date.parse(a.date)) / 86400000) + 1);
   const perWeek = (workoutDays.size / Math.max(1, spanDays / 7)).toFixed(1);
-  $('trendNote').textContent = `${fmtDate(a.date)} → ${fmtDate(b.date)} · ${msg} ${label} 운동 ${workoutDays.size}회(주 평균 ${perWeek}회).`;
+  const 운동점 = pts.filter(p => p.출처 === '운동').length;
+  const 꼬리 = 운동점
+    ? ` 속 빈 점 ${운동점}개는 운동 기록으로 뽑은 추정치예요 — 재보면 진짜 값으로 바뀝니다.`
+    : '';
+  $('trendNote').textContent = `${fmtDate(a.date)} → ${fmtDate(b.date)} · ${msg}`
+    + ` ${label} 운동 ${workoutDays.size}회(주 평균 ${perWeek}회).${꼬리}`;
 }
 
 /* ---- 화면 10 : 운동 스타일 테스트 (F1) ----

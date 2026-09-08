@@ -1118,6 +1118,30 @@
   .post-open{ cursor:pointer; }
   .post-top{ display:flex; justify-content:space-between; align-items:baseline; }
   .post-author{ font-weight:700; font-size:14px; }
+  /* 글쓴이 프로필 — 눌러서 프로필을 연다 */
+  .who-btn{ display:inline-flex; align-items:center; gap:7px; background:none;
+    border:none; padding:0; font:inherit; cursor:pointer; color:inherit;
+    text-align:left; }
+  .who-avatar{ width:26px; height:26px; border-radius:50%; flex-shrink:0;
+    background:var(--pine); color:#fff; display:flex; align-items:center;
+    justify-content:center; font-size:12px; font-weight:700; }
+  .who-btn:hover .post-author{ text-decoration:underline;
+    text-underline-offset:3px; }
+  /* 프로필 시트 */
+  .prof-head{ display:flex; align-items:center; gap:12px; }
+  .prof-head .who-avatar{ width:48px; height:48px; font-size:19px; }
+  .prof-nm{ font-size:17px; font-weight:700; }
+  .prof-hd{ font-size:12.5px; color:var(--muted); margin-top:2px;
+    font-variant-numeric:tabular-nums; }
+  .prof-note{ font-size:12.5px; color:var(--muted); line-height:1.6;
+    margin:14px 2px 0; }
+  .prof-actions{ display:grid; gap:8px; margin-top:16px; }
+  .prof-actions button{ width:100%; min-height:46px; border-radius:13px;
+    border:1.5px solid var(--pine); background:var(--pine); color:#fff;
+    font:inherit; font-size:14.5px; cursor:pointer; }
+  .prof-actions button.ghost{ background:var(--paper); color:var(--pine-deep);
+    border-color:var(--line); }
+  .prof-actions button:disabled{ opacity:0.5; cursor:default; }
   .post-time{ font-size:11.5px; color:var(--muted); }
   .post-body{ font-size:15.5px; font-weight:600; line-height:1.55; margin-top:6px; white-space:pre-wrap; word-break:break-word; }
   .post-media{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
@@ -1957,6 +1981,10 @@
 
       <!-- 운동 모임 채팅 -->
       <div id="commChat" hidden>
+        <div id="chatReqBox" hidden>
+          <div class="friend-head" style="margin-top:0;">받은 채팅 요청</div>
+          <div id="chatReqList"></div>
+        </div>
         <div id="inviteBox" hidden>
           <div class="friend-head" style="margin-top:0;">받은 초대</div>
           <div id="inviteList"></div>
@@ -3352,7 +3380,7 @@ function postCard(p){
   const rec = p['기록'] ? `<div class="post-record">📈 ${esc(p['기록'].요약 || JSON.stringify(p['기록']))}</div>` : '';
   return `<div class="post-card" id="post-${p.id}" data-id="${p.id}">
     <div class="post-open" onclick="toggleComments(${p.id})">
-      <div class="post-top"><span class="post-author">${esc(p['작성자'])}</span>
+      <div class="post-top">${whoHtml(p['작성자'], p['작성자아이디'])}
         <span class="post-time">${ago(p['작성시각'])}</span></div>
       ${p['본문'] ? `<div class="post-body">${esc(p['본문'])}</div>` : ''}
       ${p['미디어'] && p['미디어'].length ? `<div class="post-media" onclick="event.stopPropagation()">${mediaHtml(p['미디어'],'')}</div>` : ''}
@@ -3533,6 +3561,32 @@ async function loadRooms(){
     renderRoomList();
   } catch (e) { $('roomList').innerHTML = '<div class="more-card">모임을 불러오지 못했어요.</div>'; }
   loadInvites();
+  loadChatRequests();
+}
+
+/* 받은 채팅 요청 — 받아 주면 친구가 아니어도 1:1 방이 열린다. */
+async function loadChatRequests(){
+  const box = $('chatReqBox');
+  if (!box) return;
+  let 받은 = [];
+  try { 받은 = (await API.commChatRequests())['받은요청'] || []; } catch (e) { 받은 = []; }
+  box.hidden = !받은.length;
+  if (!받은.length) { $('chatReqList').innerHTML = ''; return; }
+  $('chatReqList').innerHTML = 받은.map(u => `
+    <div class="invite-card">
+      <div class="who"><div class="nm">${esc(u['닉네임'])}</div>
+        <div class="sub">@${esc(u['아이디'])} 님이 채팅을 요청했어요</div></div>
+      <button type="button" class="ghost" data-creq-no="${esc(u['아이디'])}">거절</button>
+      <button type="button" data-creq-ok="${esc(u['아이디'])}">수락</button>
+    </div>`).join('');
+
+  $('chatReqList').querySelectorAll('[data-creq-ok]').forEach(b => b.onclick = () =>
+    acceptChat(b.dataset.creqOk));
+  $('chatReqList').querySelectorAll('[data-creq-no]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try { await API.commChatDecline(b.dataset.creqNo); loadChatRequests(); }
+    catch (e) { b.disabled = false; showToast(e.message); }
+  });
 }
 
 /* ---- 받은 초대 ----
@@ -3607,12 +3661,90 @@ function payRedirect(r){
       || r.redirect || r.redirect_mobile || r.redirect_pc;
 }
 
+/* 글쓴이 한 사람 — 아바타 + 닉네임. 누르면 프로필이 열린다.
+   아이디가 없으면(예전 글) 누를 수 없게 그냥 이름만 그린다. */
+function whoHtml(닉네임, 아이디){
+  const 첫 = (닉네임 || '?').trim().charAt(0) || '?';
+  const 안 = `<span class="who-avatar">${esc(첫)}</span>`
+           + `<span class="post-author">${esc(닉네임 || '')}</span>`;
+  if (!아이디) return `<span class="who-btn">${안}</span>`;
+  return `<button type="button" class="who-btn" onclick="event.stopPropagation();`
+       + ` openProfile('${esc(아이디)}')">${안}</button>`;
+}
+
+/* 다른 사람 프로필 — 닉네임과 아이디만 보인다.
+   버튼을 어떻게 그릴지는 서버가 내려준 '관계'·'채팅' 으로 정한다. */
+const CHAT_LABEL = {
+  '가능': '채팅 보내기', '요청함': '채팅 요청함', '받음': '채팅 요청 수락',
+  '열림': '채팅 열기', '나': '나',
+};
+
+async function openProfile(handle){
+  openSheet('프로필', '<div class="prof-note">불러오는 중이에요…</div>');
+  let u;
+  try { u = await API.commFindUser(handle); }
+  catch (e) { $('sheetBody').innerHTML = '<div class="prof-note">그 아이디를 쓰는 회원이 없어요.</div>'; return; }
+
+  const 첫 = (u['닉네임'] || '?').trim().charAt(0) || '?';
+  const 관계 = u['관계'], 채팅 = u['채팅'];
+  const 친구가능 = 관계 === '없음' || 관계 === '받음';
+  const 채팅가능 = 채팅 === '가능' || 채팅 === '받음' || 채팅 === '열림';
+  const 친구라벨 = { '없음': '친구 추가', '보냄': '친구 신청함', '받음': '친구 수락',
+                   '친구': '친구', '나': '나' }[관계] || 관계;
+
+  $('sheetBody').innerHTML = `
+    <div class="prof-head">
+      <span class="who-avatar">${esc(첫)}</span>
+      <div><div class="prof-nm">${esc(u['닉네임'])}</div>
+        <div class="prof-hd">@${esc(u['아이디'])}</div></div>
+    </div>
+    <div class="prof-note">서로의 프로필은 볼 수 없어요. 닉네임과 아이디만 보입니다.${
+      채팅 === '가능' ? '<br/>채팅은 상대가 받아 줘야 열려요.' : ''}</div>
+    ${관계 === '나' ? '' : `<div class="prof-actions">
+      <button type="button" ${채팅가능 ? '' : 'disabled'} data-p-chat="${esc(u['아이디'])}"
+              data-state="${esc(채팅)}">${CHAT_LABEL[채팅] || 채팅}</button>
+      <button type="button" class="ghost" ${친구가능 ? '' : 'disabled'}
+              data-p-friend="${esc(u['아이디'])}">${친구라벨}</button>
+    </div>`}`;
+
+  const c = $('sheetBody').querySelector('[data-p-chat]');
+  if (c) c.onclick = async () => {
+    c.disabled = true;
+    if (c.dataset.state === '받음') { await acceptChat(c.dataset.pChat); return; }
+    await openDirect(c.dataset.pChat);
+  };
+  const f = $('sheetBody').querySelector('[data-p-friend]');
+  if (f) f.onclick = async () => {
+    f.disabled = true;
+    try { await API.commFriendAdd(f.dataset.pFriend); await openProfile(f.dataset.pFriend); }
+    catch (e) { f.disabled = false; showToast(e.message); }
+  };
+}
+
+/* 받은 채팅 요청을 받아 준다 → 방이 열린다 */
+async function acceptChat(handle){
+  try {
+    const r = await API.commChatAccept(handle);
+    closeSheet();
+    commTab('chat');
+    await loadRooms();
+    openRoom(r.room_id, r['상대'] ? r['상대']['닉네임'] : '개인 채팅');
+  } catch (e) { showToast(e.message); }
+}
+
 /* 상대 아이디로 1:1 채팅을 연다 (L1).
    이미 있으면 그 방을 다시 쓴다 — 같은 사람과 방이 여러 개 생기지 않는다. */
 async function openDirect(handle){
   if (!handle) return;
   try {
     const r = await API.commDirect(handle);
+    if (!r.room_id) {                       // 친구가 아니면 요청만 간다
+      closeSheet();
+      showToast(`${r['상대'] ? r['상대']['닉네임'] + ' 님에게 ' : ''}채팅을 요청했어요`);
+      if (COMM.tab === 'chat') loadRooms();
+      return;
+    }
+    closeSheet();
     commTab('chat');
     await loadRooms();
     openRoom(r.room_id, r['상대'] ? r['상대']['닉네임'] : '개인 채팅');
@@ -3639,7 +3771,9 @@ async function openRoom(id, name){
   $('chatMsgs').innerHTML = '';
   // 목록 버튼은 단체 채팅방에만 (L5). 개인 채팅에는 관리할 멤버가 없다.
   const rm = ROOMS.find(x => x.id === id);
-  $('chatMenuBtn').hidden = !!rm && rm['종류'] === 'direct';
+  // 개인 채팅방에도 목록을 연다. 멤버 확인과 나가기는 방장이 아니어도 된다.
+  // (초대·내보내기는 단체방에서만 뜬다 — 멤버 창 안에서 가린다)
+  $('chatMenuBtn').hidden = false;
   await pollChat();
   COMM.poll = setInterval(pollChat, 4000);
 }
@@ -3674,6 +3808,10 @@ async function loadRoomMembers(){
   }
   $('roomMembersTitle').textContent = MEMBERS['이름'] || '멤버';
   const 방장 = MEMBERS['내가방장'];
+  // 개인 채팅방에는 초대할 자리가 없다. 멤버 확인과 나가기만 남긴다.
+  const 개인 = MEMBERS['종류'] === 'direct';
+  const 초대칸 = document.querySelector('#roomMembers .member-invite');
+  if (초대칸) 초대칸.hidden = 개인;
   const 초대중 = MEMBERS['초대중'] || [];
   $('memberList').innerHTML =
     `<div class="member-count">멤버 ${MEMBERS['인원']}명${
@@ -3684,7 +3822,7 @@ async function loadRoomMembers(){
           ${u['방장'] ? '<span class="member-tag">방장</span>' : ''}
           ${u['나'] ? '<span class="member-tag">나</span>' : ''}</div>
           <div class="hd">@${esc(u['아이디'])}</div></div>
-        ${방장 && !u['나'] ? `<button type="button" data-kick="${esc(u['아이디'])}"
+        ${방장 && !개인 && !u['나'] ? `<button type="button" data-kick="${esc(u['아이디'])}"
             data-name="${esc(u['닉네임'])}">내보내기</button>` : ''}
       </div>`).join('')
     + 초대중.map(u => `
@@ -3708,7 +3846,7 @@ async function loadRoomMembers(){
     catch (e) { b.disabled = false; showToast(e.message); }
   });
 
-  await renderInviteFriends();
+  if (!개인) await renderInviteFriends();
 }
 
 /* 상호 친구는 아이디를 몰라도 바로 초대한다.

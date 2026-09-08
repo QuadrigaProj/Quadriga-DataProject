@@ -105,6 +105,12 @@ const API = (() => {
                                        { method: 'DELETE' }),
     // 개인 채팅은 상대 아이디로만 연다 — 방 만들기로는 못 만든다 (L1)
     commDirect: (handle) => post('/community/direct', { handle }),
+    // 친구가 아니면 요청만 간다. 상대가 받아 줘야 방이 열린다.
+    commChatRequests: () => call('/community/chat-requests'),
+    commChatAccept: (handle) =>
+      post('/community/chat-requests/' + encodeURIComponent(handle) + '/accept', {}),
+    commChatDecline: (handle) =>
+      call('/community/chat-requests/' + encodeURIComponent(handle), { method: 'DELETE' }),
     commRooms: () => call('/community/rooms'),
     commRoomNew: (body) => post('/community/rooms', body),
     commRoomJoin: (id, password) => post('/community/rooms/' + id + '/join', { password }),

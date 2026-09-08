@@ -31,6 +31,26 @@ def _db(monkeypatch):
     yield
 
 
+def _친구(a, b):
+    """서로 친구로 만든다. 친구끼리는 채팅 요청 단계가 없다."""
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/friends", json={"handle": hb})
+    b.post("/community/friends", json={"handle": ha})
+    return ha, hb
+
+
+def _직접방(a, b):
+    """a 와 b 사이의 1:1 방을 실제로 연다 (요청 → 수락)."""
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    r = a.post("/community/direct", json={"handle": hb}).json()
+    if r.get("room_id"):
+        return r["room_id"], ha, hb
+    r2 = b.post(f"/community/chat-requests/{ha}/accept").json()
+    return r2["room_id"], ha, hb
+
+
 def _login(client: TestClient, email: str, name: str) -> TestClient:
     c = TestClient(app)
     c.post("/auth/signup", json={"email": email, "password": "pw12345678", "display_name": name})
@@ -177,8 +197,7 @@ def test_개인_채팅방은_상대만_참여자로_추가한다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     c = _login(app, "c@x.com", "다")
-    hb = b.get("/community/me/handle").json()["아이디"]
-    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    rid, ha, hb = _직접방(a, b)
     room = b.get("/community/rooms").json()["rooms"][0]
     assert room["종류"] == "direct" and room["참여중"] is True and room["인원"] == 2
     assert c.post(f"/community/rooms/{rid}/join", json={}).status_code == 403
@@ -225,7 +244,7 @@ def test_찾은_사람의_정보는_닉네임과_아이디뿐이다():
     b = _login(app, "b@x.com", "나")
     h = b.get("/community/me/handle").json()["아이디"]
     found = a.get(f"/community/users/{h}").json()
-    assert set(found) == {"닉네임", "아이디", "관계"}
+    assert set(found) == {"닉네임", "아이디", "관계", "채팅"}
     본문 = a.get(f"/community/users/{h}").text
     assert "b@x.com" not in 본문
 
@@ -348,8 +367,7 @@ def test_공개_방은_비밀번호가_없어도_된다():
 def test_채팅_보내기는_같은_방을_두_번_만들지_않는다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
-    ha = a.get("/community/me/handle").json()["아이디"]
-    hb = b.get("/community/me/handle").json()["아이디"]
+    ha, hb = _친구(a, b)                       # 친구끼리는 바로 열린다
     r1 = a.post("/community/direct", json={"handle": hb}).json()
     r2 = a.post("/community/direct", json={"handle": hb}).json()
     assert r1["새로"] is True and r2["새로"] is False
@@ -359,12 +377,16 @@ def test_채팅_보내기는_같은_방을_두_번_만들지_않는다():
     assert r3["room_id"] == r1["room_id"] and r3["새로"] is False
 
 
-def test_친구가_아니어도_채팅을_보낼_수_있다():
-    """아이디를 알면 보낼 수 있다 — 게시글 글쓴이에게 바로 보내는 길이다."""
+def test_친구가_아니면_요청만_간다():
+    """아이디만 알면 아무나 말을 걸 수 있으면 그게 곧 스팸 통로다."""
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     hb = b.get("/community/me/handle").json()["아이디"]
-    assert a.post("/community/direct", json={"handle": hb}).status_code == 200
+    r = a.post("/community/direct", json={"handle": hb}).json()
+    assert r["상태"] == "요청함" and r["room_id"] is None
+    # 아직 방이 없다
+    assert b.get("/community/rooms").json()["rooms"] == []
+    assert [x["닉네임"] for x in b.get("/community/chat-requests").json()["받은요청"]] == ["가"]
 
 
 def test_나_자신과는_채팅방이_안_생긴다():
@@ -382,8 +404,7 @@ def test_개인_채팅방은_상대_이름으로_보인다():
     """'개인 채팅' 이라는 방 이름 대신 상대 닉네임을 보여 준다."""
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
-    hb = b.get("/community/me/handle").json()["아이디"]
-    a.post("/community/direct", json={"handle": hb})
+    _, ha, hb = _직접방(a, b)
     방 = a.get("/community/rooms").json()["rooms"][0]
     assert 방["이름"] == "나"
     assert 방["상대"] == {"닉네임": "나", "아이디": hb}
@@ -401,8 +422,7 @@ def test_남의_개인채팅은_목록에_안_보인다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     c = _login(app, "c@x.com", "다")
-    hb = b.get("/community/me/handle").json()["아이디"]
-    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    rid, ha, hb = _직접방(a, b)
     앞_공개방 = c.post("/community/rooms", json={"name": "공개방"}).json()["id"]
     목록 = [r["id"] for r in c.get("/community/rooms").json()["rooms"]]
     assert rid not in 목록
@@ -500,8 +520,7 @@ def test_방을_폭파하면_멤버와_메시지도_같이_사라진다():
 def test_개인채팅은_폭파할_수_없다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
-    hb = b.get("/community/me/handle").json()["아이디"]
-    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    rid, ha, hb = _직접방(a, b)
     assert a.delete(f"/community/rooms/{rid}").status_code == 400
 
 
@@ -556,9 +575,8 @@ def test_개인_채팅방에서는_멤버_관리를_안_한다():
     a = _login(app, "a@x.com", "가")
     b = _login(app, "b@x.com", "나")
     c = _login(app, "c@x.com", "다")
-    hb = b.get("/community/me/handle").json()["아이디"]
     hc = c.get("/community/me/handle").json()["아이디"]
-    rid = a.post("/community/direct", json={"handle": hb}).json()["room_id"]
+    rid, ha, hb = _직접방(a, b)
     assert a.post(f"/community/rooms/{rid}/invite", json={"handle": hc}).status_code == 400
     assert a.post(f"/community/rooms/{rid}/kick", json={"handle": hb}).status_code == 400
 
@@ -673,4 +691,127 @@ def test_초대_기능도_로그인이_필요하다():
     assert c.get("/community/invites").status_code == 401
     assert c.post("/community/invites/1/accept", json={}).status_code == 401
     assert c.delete("/community/invites/1").status_code == 401
+
+
+# ---------- 채팅 요청 ----------
+
+def test_상대가_받아주면_방이_열린다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/direct", json={"handle": hb})
+    r = b.post(f"/community/chat-requests/{ha}/accept").json()
+    assert r["room_id"]
+    # 친구가 아니어도 대화할 수 있다
+    assert a.get("/community/friends").json()["친구"] == []
+    assert b.get(f"/community/rooms/{r['room_id']}/messages").status_code == 200
+    # 요청은 사라진다
+    assert b.get("/community/chat-requests").json()["받은요청"] == []
+    assert a.get("/community/chat-requests").json()["보낸요청"] == []
+
+
+def test_거절하면_요청이_사라진다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/direct", json={"handle": hb})
+    assert b.delete(f"/community/chat-requests/{ha}").status_code == 200
+    assert b.get("/community/chat-requests").json()["받은요청"] == []
+    assert b.post(f"/community/chat-requests/{ha}/accept").status_code == 404
+    assert b.get("/community/rooms").json()["rooms"] == []
+
+
+def test_보낸_요청을_거둘_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/direct", json={"handle": hb})
+    a.delete(f"/community/chat-requests/{hb}")
+    assert b.get("/community/chat-requests").json()["받은요청"] == []
+
+
+def test_서로_요청하면_그_자리에서_열린다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/direct", json={"handle": hb})
+    r = b.post("/community/direct", json={"handle": ha}).json()
+    assert r["상태"] == "열림" and r["room_id"]
+
+
+def test_친구면_요청_없이_바로_열린다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha, hb = _친구(a, b)
+    r = a.post("/community/direct", json={"handle": hb}).json()
+    assert r["상태"] == "열림" and r["room_id"]
+    assert b.get("/community/chat-requests").json()["받은요청"] == []
+
+
+def test_같은_사람에게_두_번_요청해도_한_번이다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/direct", json={"handle": hb})
+    a.post("/community/direct", json={"handle": hb})
+    assert len(b.get("/community/chat-requests").json()["받은요청"]) == 1
+
+
+def test_한번_대화한_사이는_요청_없이_다시_연다():
+    """이미 방이 있으면 요청 단계로 돌아가지 않는다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid, ha, hb = _직접방(a, b)
+    r = a.post("/community/direct", json={"handle": hb}).json()
+    assert r["상태"] == "열림" and r["room_id"] == rid
+
+
+def test_프로필이_채팅_상태를_알려준다():
+    """버튼을 어떻게 그릴지 서버가 정한다 — 규칙이 화면에 흩어지지 않게."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    assert a.get(f"/community/users/{hb}").json()["채팅"] == "가능"
+    assert a.get(f"/community/users/{ha}").json()["채팅"] == "나"
+    a.post("/community/direct", json={"handle": hb})
+    assert a.get(f"/community/users/{hb}").json()["채팅"] == "요청함"
+    assert b.get(f"/community/users/{ha}").json()["채팅"] == "받음"
+    b.post(f"/community/chat-requests/{ha}/accept")
+    assert a.get(f"/community/users/{hb}").json()["채팅"] == "열림"
+
+
+def test_채팅_요청도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.get("/community/chat-requests").status_code == 401
+    assert c.post("/community/chat-requests/abcdef/accept").status_code == 401
+    assert c.delete("/community/chat-requests/abcdef").status_code == 401
+
+
+# ---------- 게시글 글쓴이 프로필 ----------
+
+def test_게시글에_글쓴이_아이디가_실린다():
+    """프로필을 열려면 아이디가 있어야 한다. 닉네임은 겹칠 수 있다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    pid = a.post("/community/posts", json={"body": "오늘 스쿼트"}).json()["id"]
+    글 = b.get("/community/posts").json()["posts"][0]
+    assert 글["작성자"] == "가" and 글["작성자아이디"] == ha
+
+    상세 = b.get(f"/community/posts/{pid}").json()
+    assert 상세["작성자아이디"] == ha
+
+
+def test_댓글에도_글쓴이_아이디가_실린다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    pid = a.post("/community/posts", json={"body": "같이 뛰실 분"}).json()["id"]
+    b.post(f"/community/posts/{pid}/comments", json={"body": "저요"})
+    댓글 = a.get(f"/community/posts/{pid}").json()["댓글"][0]
+    assert 댓글["작성자"] == "나" and 댓글["작성자아이디"] == hb
 

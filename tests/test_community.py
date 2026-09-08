@@ -1310,3 +1310,56 @@ def test_공개_설정도_로그인이_필요하다():
     assert c.put("/community/share/prefs",
                  json={"scope": "all", "level": "full"}).status_code == 401
     assert c.get("/community/users/abcdef/records").status_code == 401
+
+
+# ---------- 앱 내 아이디 ----------
+
+def test_아이디는_12자_대소문자와_숫자다():
+    """이메일을 식별자로 쓰면 가입 여부가 새어 나가고, 길어서 주고받기도 어렵다."""
+    assert community.HANDLE_LEN == 12
+    assert set("ABCXYZabcxyz0123456789") <= set(community.HANDLE_ALPHABET)
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    assert len(h) == 12
+    assert set(h) <= set(community.HANDLE_ALPHABET)
+
+
+def test_아이디는_대소문자를_구분한다():
+    """눕혀서 찾으면 'Ab1' 과 'ab1' 이 같은 사람이 된다."""
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    뒤집기 = h.swapcase()
+    assert 뒤집기 != h
+    assert a.get(f"/community/users/{h}").status_code == 200
+    assert a.get(f"/community/users/{뒤집기}").status_code == 404
+
+
+def test_예전_6자_아이디도_그대로_찾는다():
+    """아이디는 한 번 발급하면 고정이다. 규칙이 바뀌어도 옛 아이디는 살아 있어야 한다."""
+    a = _login(app, "a@x.com", "가")
+    a.get("/community/me/handle")
+    with auth.db() as con:
+        con.execute("UPDATE user_handles SET handle='abc123'")
+    assert a.get("/community/users/abc123").json()["닉네임"] == "가"
+
+
+def test_아이디는_바꾸는_길이_없다():
+    """마음대로 바꿀 수 없어야 한다 — 고치는 엔드포인트를 두지 않는다."""
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    assert a.put("/community/me/handle", json={"handle": "newone"}).status_code in (404, 405)
+    assert a.post("/community/me/handle", json={"handle": "newone"}).status_code in (404, 405)
+    assert a.get("/community/me/handle").json()["아이디"] == h
+
+
+def test_한_번_발급하면_다시_불러도_같다():
+    a = _login(app, "a@x.com", "가")
+    첫 = a.get("/community/me/handle").json()["아이디"]
+    assert a.get("/community/me/handle").json()["아이디"] == 첫
+
+
+def test_사람마다_아이디가_다르다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    assert (a.get("/community/me/handle").json()["아이디"]
+            != b.get("/community/me/handle").json()["아이디"])

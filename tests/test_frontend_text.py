@@ -2058,3 +2058,41 @@ def test_프로필의_기록_보기는_서버가_정한다():
     본문 = html.split("async function openProfile(handle)")[1].split("\n}")[0]
     assert "u['기록'] && u['기록'] !== 'none'" in 본문
     assert "openFriendRecords(" in 본문
+
+
+# ---------- 아이디 · 댓글 프로필 · 채팅 입력칸 ----------
+
+def test_프로필_창에서도_내_아이디를_본다():
+    """프로필 버튼(친구 탭)과 프로필 창 두 곳 다에서 확인할 수 있어야 한다."""
+    html = _index()
+    assert 'id="myHandle"' in html          # 커뮤니티 친구 탭
+    assert 'id="editHandle"' in html        # 프로필 창
+    본문 = html.split("async function showMyHandle()")[1].split("\n}")[0]
+    assert "MY_HANDLE" in 본문
+    assert "API.commMyHandle()" in 본문
+    assert "로그인하면 발급돼요" in 본문      # 계정이 아니면 그렇다고 적는다
+    그리기 = html.split("function renderEdit()")[1].split("\n}")[0]
+    assert "showMyHandle()" in 그리기
+    # 바꿀 수 없는 값이라 입력칸이 아니다
+    자리 = html.split('<span>앱 내 아이디</span>')[1].split("</div>")[0]
+    assert "<input" not in 자리
+
+
+def test_댓글에도_글쓴이_프로필이_뜬다():
+    html = _index()
+    댓글 = html.split("async function toggleComments(id)")[1].split("\n}")[0]
+    assert "whoHtml(c['작성자'], c['작성자아이디'])" in 댓글
+    css = html.split(".comment .who-avatar{")[1].split("}")[0]
+    assert "22px" in css                    # 게시글보다 조금 작게
+
+
+def test_채팅_입력칸도_게시글_작성란과_같은_모양이다():
+    html = _index()
+    본문 = html.split('class="chat-compose-row"')[1].split("</div>")[0]
+    assert 'class="post-send"' in 본문
+    assert "<svg" in 본문
+    assert ">보내기</button>" not in 본문
+    assert 'aria-label="보내기"' in 본문
+    css = html.split(".chat-compose-row input{")[1].split("}")[0]
+    assert "flex:1" in css
+    assert "border-radius:999px" in css

@@ -6655,7 +6655,7 @@ const WLOG_UNIT = { 세트: '세트', 횟수: '회', 무게: 'kg', 시간: '분'
    '3 세트 10 회' 가 세 세트인지 세 번인지 헷갈린다.
      횟수 + 세트  → '10 회씩 3 세트'
      시간 + 세트  → '30 분씩 2 세트'
-     시간 + 거리  → '30 분 동안 5 km'
+     시간 + 거리  → '30 분 동안 5 km 이동'  (km/h 속도가 아니라 총 이동거리라는 뜻)
    keys 는 그 종목이 받는 칸 목록(또는 적어 둔 값의 열쇠들)이다. */
 function wlogUnit(k, keys, 단위){
   const 표 = 단위 || WLOG_UNIT;
@@ -6663,6 +6663,7 @@ function wlogUnit(k, keys, 단위){
   if (k === '횟수' && 목록.includes('세트')) return '회씩';
   if (k === '시간' && 목록.includes('세트')) return '분씩';
   if (k === '시간' && 목록.includes('거리')) return '분 동안';
+  if (k === '거리' && 목록.includes('시간')) return 'km 이동';
   return 표[k] || k;
 }
 

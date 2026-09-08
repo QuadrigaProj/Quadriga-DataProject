@@ -2219,10 +2219,14 @@ def test_회씩_세트로_읽히게_적는다():
 
 
 def test_시간과_거리는_분_동안_km로_읽힌다():
+    """'로잉머신 12 2.5' 가 아니라 '12분 동안 2.5km 이동' 으로 읽혀야 한다.
+    거리 칸에 'km' 만 붙으면 km/h 속도로 오해할 수 있어 '이동' 을 붙인다."""
     html = _index()
     본문 = html.split("function wlogUnit(k, keys, 단위)")[1].split("\n}")[0]
     assert "k === '시간' && 목록.includes('거리')" in 본문
     assert "'분 동안'" in 본문
+    assert "k === '거리' && 목록.includes('시간')" in 본문
+    assert "'km 이동'" in 본문
 
 
 def test_입력칸도_적어_둔_값도_같은_말을_쓴다():

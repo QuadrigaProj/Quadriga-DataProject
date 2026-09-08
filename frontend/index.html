@@ -174,10 +174,13 @@
   }
 
   /* ===================== SCREEN 3 : 홈 ===================== */
-  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:22px 22px 0; }
-  .greet-eyebrow{ font-size:13.5px; color:var(--muted); }
+  .topbar{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:22px 22px 0; }
+  .greet-eyebrow{ font-size:13.5px; color:var(--muted); margin-top:4px; }
   .peer-emph{ font-size:17px; font-weight:800; color:var(--amber); }
-  .greet-title{ font-size:19px; font-weight:700; margin-top:2px; }
+  .greet-title{ font-size:19px; font-weight:700; }
+  .gauge-now-row{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .gauge-now-row .gauge-now-label{ margin-top:0; }
+  .gauge-now-row .dday-pill{ padding:5px 10px; font-size:11.5px; }
   .dday-pill{
     background:var(--pine-tint); color:var(--pine-deep); font-size:13px; font-weight:700;
     padding:8px 12px; border-radius:20px; white-space:nowrap;
@@ -1481,15 +1484,24 @@
       <button type="button" class="dday-pill" id="ddayPill" onclick="remeasure()">재측정하기</button>
     </div>
 
+    <div class="topbar">
+      <div>
+        <div class="greet-title" id="greetName">반가워요</div>
+        <div class="greet-eyebrow" id="greetSub">오늘도 좋은 하루예요</div>
+      </div>
+    </div>
+
     <div class="gauge-card">
       <div class="gauge-figure" id="homeGauge"></div>
       <div class="gauge-read">
         <div class="gauge-now"><span id="gaugeNow">—</span><small>세</small></div>
-        <div class="gauge-now-label">지금 체력나이</div>
+        <div class="gauge-now-row">
+          <div class="gauge-now-label">현재 체력나이</div>
+          <button type="button" class="dday-pill" id="ddayPill" onclick="remeasure()">재측정하기</button>
+        </div>
         <div class="gauge-legend">
           <div><i class="sw sw-green"></i>목표 <b id="gaugeGoal">—</b></div>
-          <div><i class="sw sw-track"></i>처음 <b id="gaugeReal">—</b></div>
-          <div id="gaugeAgeRow"><i class="sw sw-tick"></i>실제 <b id="gaugeAge">—</b></div>
+          <div><i class="sw sw-track"></i>실제 <b id="gaugeReal">—</b></div>
         </div>
       </div>
     </div>
@@ -1588,7 +1600,7 @@
                  oninput="markDirty()" /></label>
         <div class="edit-note">
           로고와 홈 화면의 게이지는 이 값을 그립니다.
-          <b>초록</b>은 0세부터 목표까지, <b>주황 점</b>은 지금 체력나이,
+          <b>초록</b>은 0세부터 목표까지, <b>주황 점</b>은 현재 체력나이,
           <b>검은 눈금</b>은 실제 나이예요.
           오른쪽 끝은 처음 기록한 체력나이라, 점이 왼쪽으로 갈수록 좋아진 거예요.
         </div>
@@ -2415,7 +2427,7 @@ async function saveEdits(){
       try { state.result = await API.fitnessAge(measurement()); } catch (e) { /* 이전 값 유지 */ }
     }
     await saveProfile();
-    $('greetName').textContent = `${state.user} 님`;
+    updateGreeting();
     syncInputsFromState();
     renderProfile();
     renderEdit();
@@ -2654,7 +2666,7 @@ function applyProfile(saved){
   $('commuteMeta').textContent = '';
   onAgeChange();
   selectSex(state.sex);
-  $('greetName').textContent = `${state.user} 님`;
+  updateGreeting();
 
   paintGauges();
   if (state.result) {
@@ -4040,23 +4052,36 @@ function renderResult(){
   $('resultBlock').style.display = 'block';
   $('nextBtn1').style.display = 'block';
   $('calcBtn').style.display = 'none';
-  $('greetName').textContent = state.user ? `${state.user} 님` : '반가워요';
+  updateGreeting();
+  }
+
+/* 이름 줄 + 또래 비교 줄을 함께 맞춘다. 결과가 없으면 비교 줄은 비워 둔다. */
+function updateGreeting(){
+  const name = state.user ? `${state.user} 님` : '반가워요';
+  if (!state.result) {
+    $('greetName').textContent = name;
+    $('greetSub').innerHTML = '';
+    return;
+  }
+  const age = Math.round(state.result.체력나이);
+  $('greetName').textContent = `${name}의 ${isGrowth() ? '발달 수준이' : '체력 나이가'}`;
   $('greetSub').innerHTML = peerAgeText(age - state.age);
 }
 
 /* A4: (체력나이 − 실제 나이) 를 또래 기준으로 읽어준다. 계산값은 그대로, 표현만 바꾼다.
    또래 기준값은 백엔드가 p50 중앙값을 쓰므로(B5) 문구도 "또래 중앙값" 으로 통일한다.
-   성장기는 숫자가 높을수록 앞선 것이라 방향 표현이 반대다. diff 는 정수(반올림 체력나이 − 나이). */
+   성장기는 숫자가 높을수록 앞선 것이라 방향 표현이 반대다. diff 는 정수(반올림 체력나이 − 나이).
+   앞부분("체력 나이가"/"발달 수준이")은 greetName 줄로 옮겼으니 여기서는 되풀이하지 않는다. */
 function peerAgeText(diff){
   const n = Math.abs(diff);
   if (isGrowth()) {
-    if (diff > 0) return `발달 수준이 또래 중앙값보다<br/><span class="peer-emph">${n}세 앞서요.</span>`;
-    if (diff < 0) return `발달 수준이 또래 중앙값보다<br/><span class="peer-emph">${n}세 뒤처져요.</span>`;
-    return '발달 수준이 또래 중앙값과 비슷해요.';
+    if (diff > 0) return `또래 중앙값보다 <span class="peer-emph">${n}세 앞서요.</span>`;
+    if (diff < 0) return `또래 중앙값보다 <span class="peer-emph">${n}세 뒤처져요.</span>`;
+    return '또래 중앙값과 비슷해요.';
   }
-  if (diff > 0) return `신체 나이가 또래 중앙값보다<br/><span class="peer-emph">${n}세 높게</span> 나왔어요.`;
-  if (diff < 0) return `신체 나이가 또래 중앙값보다<br/><span class="peer-emph">${n}세 낮게</span> 나왔어요.`;
-  return '신체 나이가 또래 중앙값과 비슷해요.';
+  if (diff > 0) return `또래 중앙값보다 <span class="peer-emph">${n}세 높게</span> 나왔어요.`;
+  if (diff < 0) return `또래 중앙값보다 <span class="peer-emph">${n}세 낮게</span> 나왔어요.`;
+  return '또래 중앙값과 비슷해요.';
 }
 
 /* ---------------------------------------------------------------------------

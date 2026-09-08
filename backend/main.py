@@ -41,6 +41,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import ai_recommend as air
     from backend import route
     from backend import kakaopay as kp
+    from backend import billing
     from backend import community
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
@@ -61,6 +62,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import prescription as pr               # noqa: E402
     import route                            # noqa: E402
     import kakaopay as kp                   # noqa: E402
+    import billing                          # noqa: E402
     import community                        # noqa: E402
 
 @asynccontextmanager
@@ -69,6 +71,7 @@ async def lifespan(_: FastAPI):
     try:
         auth.init_db()
         community.init_db()
+        billing.init_db()
     except Exception as e:                       # DB 가 아직 안 붙어도 서버는 뜬다
         print(f"[warn] DB 초기화 실패: {type(e).__name__}")
     yield
@@ -955,6 +958,8 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
 #   이용권 = 앱 안에서 쓸 수 있는 금액,  결제 = 실제로 내는 금액
 # 많이 미리 낼수록 더 싸게 준다. 1회만 결제(100원)는 할인이 없다.
 # **이 표가 기준이다.** 화면이 보낸 결제 금액을 믿지 않고, 여기서 다시 계산한다.
+AI_PRICE = 100                          # AI 추천 1회 값(원). 화면과 같아야 한다
+
 PAY_PACKS = (
     {"이용권": 100,  "결제": 100},      # 1회만
     {"이용권": 1000, "결제": 700},      # 30%
@@ -976,19 +981,6 @@ def pack_view(p: dict) -> dict:
     할인 = round((1 - p["결제"] / p["이용권"]) * 100)
     return {"이용권": p["이용권"], "결제": p["결제"], "할인": 할인}
 
-# 준비한 결제를 승인까지 들고 있는 자리. 프로세스가 하나라는 가정이다.
-# 서버를 여러 개 띄우면 DB(또는 Redis)로 옮겨야 한다.
-_PENDING: dict[str, dict] = {}
-_PAID: dict[str, dict] = {}
-_KEEP = 500                              # 오래된 것부터 버린다
-
-
-def _remember(store: dict, key: str, value: dict) -> None:
-    store[key] = value
-    while len(store) > _KEEP:
-        store.pop(next(iter(store)))
-
-
 @app.get("/pay/methods")
 def get_pay_methods() -> dict:
     """화면이 그릴 결제 수단. 카카오페이만 실제로 붙어 있다."""
@@ -998,6 +990,29 @@ def get_pay_methods() -> dict:
         "카드": CARD_ISSUERS,
         "은행": BANKS,
     }
+
+
+@app.post("/pay/refund/{order}")
+async def post_pay_refund(order: str,
+                          quadriga_session: str | None = Cookie(None)) -> dict:
+    """결제 취소(환불). 산 사람이 스스로 부른다.
+
+    전자상거래법상 청약철회를 받아야 하므로 이 길이 필요하다.
+    카카오에서 실제로 취소된 뒤에만 이용권을 되돌린다 — 순서가 바뀌면
+    돈은 그대로인데 이용권만 사라진다.
+    """
+    user = _require_user(quadriga_session)
+    o = billing.get_order(order)
+    if not o or o["user_id"] != user["id"] or o["status"] != "paid":
+        raise HTTPException(404, "환불할 결제를 찾을 수 없어요.")
+
+    ok = await kp.cancel(tid=o["tid"], amount=o["amount"])
+    if not ok or ok["canceled"] != o["amount"]:
+        raise HTTPException(502, "결제 취소에 실패했어요. 잠시 뒤 다시 시도해 주세요.")
+
+    billing.set_status(order, "refunded")
+    남음 = billing.refund(user["id"], o["credit"], order, memo="결제 취소")
+    return {"ok": True, "환불": o["amount"], "잔액": 남음}
 
 
 CARD_ISSUERS = ["KB국민", "신한", "삼성", "현대", "롯데", "하나", "BC", "NH농협", "우리"]
@@ -1011,19 +1026,23 @@ class PayReadyIn(BaseModel):
 @app.post("/pay/kakao/ready")
 async def post_pay_ready(body: PayReadyIn, request: Request,
                          quadriga_session: str | None = Cookie(None)) -> dict:
-    """카카오페이 결제 준비 → 결제창 주소를 돌려준다."""
+    """카카오페이 결제 준비 → 결제창 주소를 돌려준다.
+
+    실제 결제는 로그인한 회원만 할 수 있다. 잔액이 서버 원장에 쌓이므로
+    붙일 계정이 없으면 돈만 받고 줄 곳이 없다.
+    """
     pack = pack_for(body.amount)
     if not pack:
         raise HTTPException(400, "고를 수 없는 금액입니다.")
     if not kp.available():
         raise HTTPException(503, "카카오페이가 아직 설정되지 않았습니다.")
+    누구 = auth.user_for_token(quadriga_session)
+    if not 누구:
+        raise HTTPException(401, "결제하려면 로그인해 주세요.")
 
     order = kp.new_order_id()
-    # 로그인했으면 그 사용자, 아니면 손님. 카카오에는 이 문자열만 나간다.
-    누구 = auth.user_for_token(quadriga_session)
-    user = f"u{누구['id']}" if 누구 else "guest"
     out = await kp.ready(
-        amount=pack["결제"], order_id=order, user_id=user,
+        amount=pack["결제"], order_id=order, user_id=f"u{누구['id']}",
         approval_url=public_url(request, f"/pay/kakao/approve?order={order}"),
         cancel_url=public_url(request, f"/pay/kakao/cancel?order={order}"),
         fail_url=public_url(request, f"/pay/kakao/fail?order={order}"),
@@ -1031,9 +1050,7 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
     if not out:
         raise HTTPException(502, "카카오페이 결제 준비에 실패했습니다.")
 
-    _remember(_PENDING, order,
-              {"tid": out["tid"], "user": user,
-               "이용권": pack["이용권"], "결제": pack["결제"]})
+    billing.new_order(order, 누구["id"], out["tid"], pack["이용권"], pack["결제"])
     return {"order": order, "redirect": out["redirect_mobile"],
             "결제": pack["결제"], "이용권": pack["이용권"]}
 
@@ -1041,47 +1058,68 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
 @app.get("/pay/kakao/approve")
 async def get_pay_approve(order: str, pg_token: str = "") -> RedirectResponse:
     """카카오가 사용자를 여기로 돌려보낸다. 여기서 승인해야 돈이 빠진다."""
-    pend = _PENDING.pop(order, None)
-    if not pend or not pg_token:
+    o = billing.get_order(order)
+    if not o or not pg_token:
+        return RedirectResponse("/?pay=fail")
+    if o["status"] == "paid":                       # 새로고침으로 다시 들어온 경우
+        return RedirectResponse(f"/?pay=ok&order={order}")
+    if o["status"] != "ready":
         return RedirectResponse("/?pay=fail")
 
-    ok = await kp.approve(tid=pend["tid"], pg_token=pg_token,
-                          order_id=order, user_id=pend["user"])
+    ok = await kp.approve(tid=o["tid"], pg_token=pg_token,
+                          order_id=order, user_id=f"u{o['user_id']}")
     if not ok:
+        billing.set_status(order, "failed")
         return RedirectResponse("/?pay=fail")
 
     # 카카오가 실제로 승인한 금액이 우리가 청구한 금액과 다르면 반영하지 않는다.
-    # 그 위에서 올려 줄 이용권은 표에서 다시 찾는다 — 화면이 보낸 숫자를 믿지 않는다.
-    if ok["amount"] != pend["결제"]:
+    if ok["amount"] != o["amount"]:
+        billing.set_status(order, "failed")
         return RedirectResponse("/?pay=fail")
-    _remember(_PAID, order, {"amount": pend["이용권"], "결제": pend["결제"],
-                             "aid": ok.get("aid")})
+
+    # 이용권은 주문에 적힌 값으로 올린다 — 화면이 보낸 숫자를 믿지 않는다.
+    billing.charge(o["user_id"], o["credit"], o["amount"], order)
+    billing.set_status(order, "paid", ok.get("aid"))
     return RedirectResponse(f"/?pay=ok&order={order}")
 
 
 @app.get("/pay/kakao/cancel")
 def get_pay_cancel(order: str) -> RedirectResponse:
-    _PENDING.pop(order, None)
+    o = billing.get_order(order)
+    if o and o["status"] == "ready":
+        billing.set_status(order, "canceled")
     return RedirectResponse("/?pay=cancel")
 
 
 @app.get("/pay/kakao/fail")
 def get_pay_fail(order: str) -> RedirectResponse:
-    _PENDING.pop(order, None)
+    o = billing.get_order(order)
+    if o and o["status"] == "ready":
+        billing.set_status(order, "failed")
     return RedirectResponse("/?pay=fail")
 
 
 @app.get("/pay/result/{order}")
-def get_pay_result(order: str) -> dict:
-    """화면이 충전을 반영하기 전에 서버에 한 번 더 묻는다.
-
-    한 주문은 한 번만 통한다 — 새로고침으로 두 번 충전되지 않게 꺼내 버린다.
-    """
-    done = _PAID.pop(order, None)
-    if not done:
+def get_pay_result(order: str, quadriga_session: str | None = Cookie(None)) -> dict:
+    """결제가 끝났는지 화면이 확인한다. 충전은 이미 서버에서 끝나 있다."""
+    user = _require_user(quadriga_session)
+    o = billing.get_order(order)
+    if not o or o["user_id"] != user["id"]:
         raise HTTPException(404, "승인된 결제가 아닙니다.")
-    # amount 는 올려 줄 이용권, 결제 는 실제로 낸 돈
-    return {"paid": True, "amount": done["amount"], "결제": done["결제"]}
+    if o["status"] != "paid":
+        raise HTTPException(404, "승인된 결제가 아닙니다.")
+    return {"paid": True, "amount": o["credit"], "결제": o["amount"],
+            "잔액": billing.balance(user["id"])}
+
+
+# ---------- 이용권 잔액 ----------
+
+@app.get("/credit")
+def get_credit(quadriga_session: str | None = Cookie(None)) -> dict:
+    """잔액과 내역. 브라우저가 아니라 서버가 기준이다."""
+    user = _require_user(quadriga_session)
+    return {"잔액": billing.balance(user["id"]),
+            "내역": billing.history(user["id"])}
 
 
 # ---------- 13. 운동 기록 반영 체력나이 ----------
@@ -1163,6 +1201,7 @@ def get_recommend_routines(
     limit: int = Query(12, ge=1, le=30, description="난이도를 오갈 수 있게 넉넉히 준다"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
+    quadriga_session: str | None = Cookie(None),
 ) -> dict:
     """사용자 데이터로 250개 고정 루틴에 점수를 매겨 순위를 낸다.
 
@@ -1181,11 +1220,23 @@ def get_recommend_routines(
     # 실패하면 점수 결과를 그대로 쓴다 — 화면이 비지 않는다.
     out["출처"] = "점수"
     out["ai가능"] = air.available()
+
+    # 이용권 차감은 서버에서 한다. 화면에서 빼면 브라우저에서 숫자만 바꿔
+    # 공짜로 무제한 쓸 수 있다.
+    누구 = auth.user_for_token(quadriga_session)
+    out["잔액"] = billing.balance(누구["id"]) if 누구 else 0
     if ai and out["ai가능"]:
-        다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn)
-        if 다듬음:
-            out["추천"] = 다듬음
-            out["출처"] = "ai"
+        if not 누구:
+            out["안내"] = "AI 추천은 로그인 후 이용할 수 있어요."
+        elif out["잔액"] < AI_PRICE:
+            out["안내"] = "이용권이 모자라요. 먼저 충전해 주세요."
+        else:
+            다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn)
+            # 실제로 다듬어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
+            if 다듬음:
+                out["추천"] = 다듬음
+                out["출처"] = "ai"
+                out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
     return out
 
 

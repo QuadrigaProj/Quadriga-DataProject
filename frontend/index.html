@@ -2528,7 +2528,6 @@ function snapshot(){
     age: state.age, sex: state.sex, ageGbn: state.ageGbn,
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
-    credit: state.credit, creditLog: state.creditLog,
     gripKg: state.gripKg, endurance: state.endurance,
     purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
@@ -2578,8 +2577,9 @@ function applyProfile(saved){
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
   state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
-  state.credit = Number.isFinite(saved?.credit) ? saved.credit : 0;
-  state.creditLog = Array.isArray(saved?.creditLog) ? saved.creditLog : [];
+  // 잔액은 스냅샷에 담지 않는다. 서버 원장에서 읽는다.
+  state.credit = 0;
+  state.creditLog = [];
   state.gripKg = saved?.gripKg ?? null;
   state.endurance = saved?.endurance ?? null;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
@@ -4458,6 +4458,7 @@ function axisOrder(항목별){
 
 function renderProfile(){
   renderCredit();
+  loadCredit();
   const r = state.result;
   if (!r) return;
   $('profileAge').textContent = Math.round(displayAge());
@@ -5532,14 +5533,10 @@ async function renderRecommend(){
     recoBy = r.출처 || '점수';
     recoAiReady = !!r.ai가능;
     // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
-    if (ai쓰기 && recoBy === 'ai') {
-      state.credit = Math.max(0, (state.credit || 0) - AI_PRICE);
-      state.creditLog.push({ date: todayIso(), 종류: '사용', 금액: AI_PRICE, 잔액: state.credit });
-      await saveProfile();
-      renderCredit();
-    } else if (ai쓰기) {
-      recoMode = 'free';
-    }
+    // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
+    // 바꿔 공짜로 쓸 수 있다.
+    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    if (ai쓰기 && recoBy !== 'ai') recoMode = 'free';
     paintRecoMode();
     recoAt = 0;
     recoBack = [];
@@ -5667,6 +5664,26 @@ let payPick = 1000;        // 고른 이용권 금액(원)
 const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 
 function creditTimes(){ return Math.floor((state.credit || 0) / AI_PRICE); }
+
+/* 잔액은 서버 원장이 기준이다 (실결제).
+   예전에는 state.credit 에만 있어서, 브라우저에서 숫자만 바꾸면 AI 추천을
+   공짜로 무제한 쓸 수 있었다. 이제 화면은 서버 값을 받아 그리기만 한다.
+   계정이 아니면(손님) 잔액이 없다 — 결제 자체가 로그인 후에만 된다. */
+async function loadCredit(){
+  if (!state.account) { state.credit = 0; state.creditLog = []; }
+  else {
+    try {
+      const c = await API.credit();
+      state.credit = c['잔액'] || 0;
+      state.creditLog = (c['내역'] || []).map(e => ({
+        date: new Date((e['때'] || 0) * 1000).toISOString().slice(0, 10),
+        종류: e['종류'], 금액: e['금액'], 결제: e['결제'] ?? e['금액'],
+      }));
+    } catch (e) { /* 못 받으면 있던 값을 그대로 둔다 */ }
+  }
+  renderCredit();
+  renderAcctCredit();
+}
 
 /* 프로필의 이용권 블록 */
 function renderCredit(){
@@ -5849,22 +5866,17 @@ async function startPay(){
       return;
     }
   }
-  const 팩 = packFor(payPick);
-  await addCredit(팩.이용권, 팩.결제);      // 모의 승인 (PG 계약 전)
+  // 카드·계좌는 PG 계약 전이라 아직 못 받는다. 잔액이 서버에 있는 이상
+  // 화면에서 모의로 올릴 수 없다 — 올리면 그게 곧 무료 충전 통로가 된다.
   paying = false;
+  showToast('아직 카카오페이만 결제할 수 있어요');
 }
 
-/* 충전을 실제로 반영한다. 카카오페이는 서버가 확인해 준 금액으로만 부른다.
-   금액 = 앱에서 쓸 이용권, 결제 = 실제로 낸 돈 (선결제면 더 적다). */
-async function addCredit(금액, 결제){
-  state.credit = (state.credit || 0) + 금액;
-  if (!Array.isArray(state.creditLog)) state.creditLog = [];
-  state.creditLog.push({ date: todayIso(), 종류: '충전', 금액,
-                         결제: 결제 ?? 금액, 잔액: state.credit });
-  await saveProfile();
+/* 충전은 서버(승인 콜백)에서 이미 끝나 있다. 화면은 잔액을 다시 읽어 그린다.
+   여기서 숫자를 더하면 서버와 어긋나고, 그게 곧 조작 통로가 된다. */
+async function addCredit(){
+  await loadCredit();
   closeSheet();
-  renderCredit();
-  renderAcctCredit();
   if (document.querySelector('.screen.active')?.id === 's12') paintRecoMode();
 }
 
@@ -5883,40 +5895,21 @@ async function handlePayReturn(){
   try {
     const r = await API.payResult(order);
     if (!(r?.paid && r.amount > 0)) return;
-    // 결제창을 다녀오면 페이지가 새로 뜬다. 손님은 이때 아직 프로필을 안 골랐을 수
-    // 있는데, 그대로 올리면 저장될 곳이 없어 돈만 나가고 사라진다.
-    if (state.user) {
-      await addCredit(r.amount, r.결제);
-      alert(`${won(r.결제 ?? r.amount)} 결제하고 이용권 ${won(r.amount)} 받았어요.`);
-    } else {
-      stashCredit(r.amount, r.결제);
-      alert(`${won(r.결제 ?? r.amount)} 결제됐어요. 프로필을 고르면 바로 반영할게요.`);
-    }
+    // 충전은 서버에서 이미 끝났다. 화면은 잔액을 다시 읽기만 한다.
+    await addCredit();
+    alert(`${won(r.결제 ?? r.amount)} 결제하고 이용권 ${won(r.amount)} 받았어요.`);
   } catch (e) {
     alert('결제 확인에 실패했어요. 충전되지 않았다면 다시 시도해 주세요.');
   }
 }
 
-/* 아직 반영 못 한 충전을 프로필이 정해질 때까지 들고 있는 자리 (J2).
-   결제는 이미 끝났으므로 잃어버리면 안 된다. */
+/* 결제는 로그인한 계정에만 붙는다. 서버가 그 계정 원장에 올려 두므로
+   화면이 들고 있다가 나중에 반영할 일이 없다 — 예전에 쓰던 자리는 지운다. */
 const PENDING_CREDIT = 'quadriga.pendingCredit';
 
-function stashCredit(금액, 결제){
-  try {
-    localStorage.setItem(PENDING_CREDIT, JSON.stringify({ 금액, 결제: 결제 ?? 금액 }));
-  } catch (e) {}
-}
-
 async function applyPendingCredit(){
-  let 담김 = null;
-  try { 담김 = JSON.parse(localStorage.getItem(PENDING_CREDIT) || 'null'); } catch (e) {}
-  // 예전 저장본은 숫자 하나만 들어 있다
-  if (typeof 담김 === 'number') 담김 = { 금액: 담김, 결제: 담김 };
-  const 금액 = Number(담김?.금액) || 0;
-  if (!금액 || !state.user) return;
+  // 예전 판에서 남은 것이 있으면 치운다. 충전은 서버 기록이 기준이다.
   try { localStorage.removeItem(PENDING_CREDIT); } catch (e) {}
-  await addCredit(금액, Number(담김?.결제) || 금액);
-  alert(`이용권 ${won(금액)} 받았어요.`);
 }
 
 /* 추천 방식 고르기 */

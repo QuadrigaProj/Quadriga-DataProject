@@ -62,6 +62,8 @@ const API = (() => {
     activityAge: (b) => post('/fitness-age/activity', b),
     activityAgeDays: (b) => post('/fitness-age/activity/days', b),
     // 이용권 결제 (J2). 카드번호 같은 건 오가지 않는다 — 금액과 주문번호뿐이다.
+    // 잔액은 서버 원장이 기준이다. 브라우저 숫자로 올리거나 깎지 않는다.
+    credit: () => call('/credit'),
     payMethods: () => call('/pay/methods'),
     payReady: (b) => post('/pay/kakao/ready', b),
     payResult: (order) => call('/pay/result/' + encodeURIComponent(order)),

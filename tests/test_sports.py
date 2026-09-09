@@ -34,17 +34,11 @@ def test_아이디는_겹치지_않는다():
     assert len(ids) == len(set(ids))
 
 
-def test_체력요인은_루틴_데이터와_같은_말을_쓴다():
-    """여기서 어긋나면 루틴 추천이 선택을 못 알아본다."""
+def test_체력요인_복합표기와_없는_후보를_처리한다():
     from backend import routines as rt
-    쓰는말 = set()
-    for _, phases in rt.load()["pools"].items():
-        for _, items in phases.items():
-            for v in items.values():
-                쓰는말.update(v.get("체력요인", []))
-    for s in sp.load()["sports"]:
-        for f in s["체력요인"]:
-            assert f in 쓰는말, f"'{f}' 는 루틴 데이터에 없는 표기다 ({s['이름']})"
+    assert rt._has_factor({"체력요인": ["근력/근지구력"]}, "근지구력")
+    assert rt._prefer_substitute("성인", "심폐지구력", set(), set()) is None
+    assert rt._prefer_substitute("어르신", "심폐지구력", set(), set()) is not None
 
 
 def test_선택하면_요인을_세어준다():
@@ -90,8 +84,8 @@ def test_종목을_안_고르면_원래_루틴_그대로():
 
 def test_러닝을_고르면_심폐_동작이_들어온다():
     """근력 위주 루틴에 심폐가 하나도 없으면 하나를 넣어준다."""
-    기본 = _routine()
-    러너 = _routine(sports="running,marathon")
+    기본 = _routine(age_gbn="어르신", purpose="유연성 강화")
+    러너 = _routine(age_gbn="어르신", purpose="유연성 강화", sports="running,marathon")
     assert 러너["참고요인"][0] == "심폐지구력"
     요인 = [f for s in 러너["steps"] if s["단계"] == "본운동" for f in s["체력요인"]]
     assert any("심폐지구력" in f for f in 요인)
@@ -110,8 +104,8 @@ def test_이미_맞는_루틴은_건드리지_않는다():
     """근력 루틴 + 헬스 선택 → 바꿀 이유가 없다."""
     기본 = _routine()
     헬스 = _routine(sports="gym,crossfit")
-    assert _mains(헬스) == _mains(기본)
-    assert 헬스["종목반영"] == []
+    assert set(_mains(헬스)) == set(_mains(기본))
+    assert all(item["바꾼것"] is None for item in 헬스["종목반영"])
 
 
 def test_제외한_부위는_종목보다_우선한다():

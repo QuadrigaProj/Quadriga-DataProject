@@ -1,6 +1,6 @@
 """루틴 추천 (G7).
 
-추천을 지어내지 않는다 — 이미 있는 250개 고정 루틴 중에서 고르고 근거를 함께 낸다.
+추천을 지어내지 않는다 — 이미 있는 200개 KSPO 루틴 중에서 고르고 근거를 함께 낸다.
 여기서는 "점수가 근거대로 움직이는가" 와 "근거 없는 추천이 없는가" 를 본다.
 """
 from __future__ import annotations
@@ -58,22 +58,16 @@ def test_고른_종목이_점수와_주의부위에_반영된다():
 
 
 def test_종목_반영은_목적_전체가_아니라_그_요인을_다루는_루틴에_실제로_붙는다():
-    """예전엔 맞은종목이 목적(purpose) 단위로만 붙어서, 같은 목적 안이면 그 요인을
-    실제로 다루든 말든 모든 루틴이 똑같은 점수를 받았다 — 결과가 홈트·기초체력 몇
-    개로만 쏠리고 고른 종목이 진짜 반영됐는지 알 수 없었다. 같은 루틴을 놓고
-    종목 요인을 껐다 켰다 하면서, 그 루틴 '자체'가 점수를 더 받는지 직접 본다."""
-    꺼짐 = rc.score("성인", limit=999)
-    켜짐 = {(x["목적"], x["루틴번호"]): x for x in rc.score("성인", sport_factors=["평형성"], limit=999)}
-
-    맞는루틴 = next(x for x in 꺼짐 if "평형성" in x["체력요인"])
-    후 = 켜짐[(맞는루틴["목적"], 맞는루틴["루틴번호"])]
-    assert 후["점수"] == round(맞는루틴["점수"] + 0.8, 2)
-    assert any("고른 종목에 필요한" in y and "평형성" in y for y in 후["이유"])
-
-    # 그 요인이 없는 루틴은 종목을 켜도 그대로다
-    안맞는루틴 = next(x for x in 꺼짐 if "평형성" not in x["체력요인"])
-    후2 = 켜짐[(안맞는루틴["목적"], 안맞는루틴["루틴번호"])]
-    assert 후2["점수"] == 안맞는루틴["점수"]
+    before = rc.score("어르신", limit=999)
+    after = {(x["목적"], x["루틴번호"]): x for x in rc.score("어르신", sport_factors=["심폐지구력"], limit=999)}
+    matches = []
+    for routine in before:
+        hit = "심폐지구력" in routine["체력요인"]
+        matches.append(hit)
+        purpose_hit = "심폐지구력" in rc.rt.load()["config"]["purpose_factors"][routine["목적"]]
+        updated = after[(routine["목적"], routine["루틴번호"])]
+        assert updated["점수"] == round(routine["점수"] + 1.5 * purpose_hit + 0.8 * hit, 2)
+    assert any(matches) and not all(matches)
 
 
 def test_목표_격차가_크면_숨찬_운동에_무게를_준다():

@@ -37,7 +37,7 @@ def test_bodycomp_분석_판정():
 def test_bodycomp_임의산식_안씀():
     """골격근량만 주고 체지방률·BMI 분포가 없으면 체력나이를 만들지 않는다."""
     b = client.post("/bodycomp", json={
-        "sex": "F", "age": 8, "height_cm": 130, "weight_kg": 28,
+        "sex": "F", "age": 11, "height_cm": 130, "weight_kg": 28,
         "skeletal_muscle_kg": 10,
     }).json()
     assert b["추정체력나이"] is None                # 유소년 분포 없음 → 억지 산출 안 함

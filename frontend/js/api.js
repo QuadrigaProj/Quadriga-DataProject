@@ -58,6 +58,8 @@ const API = (() => {
     centers: (q) => call('/centers?' + qs(q)),
     sports: () => call('/sports'),
     workoutItems: () => call('/workout-items'),
+    // AI 를 쓸 수 있는지만. 값이 들지 않고 루틴 점수도 매기지 않는다
+    aiStatus: () => call('/recommend/ai-status'),
     recommendRoutines: (q) => call('/recommend/routines?' + qs(q)),
     // 일정까지 함께 보낼 때. 요일별 시간표는 쿼리 문자열에 실을 수 없다
     recommendWithSchedule: (b) => post('/recommend/routines', b),

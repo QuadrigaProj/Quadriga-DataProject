@@ -1261,6 +1261,23 @@ def post_activity_days(body: list[ActivityDayIn]) -> list[dict]:
 
 # ---------- 12. 루틴 추천 ----------
 
+@app.get("/recommend/ai-status")
+def get_ai_status(quadriga_session: str | None = Cookie(None)) -> dict:
+    """AI 를 쓸 수 있는지, 이용권이 얼마나 남았는지. 값은 들지 않는다.
+
+    예전에는 이 정보가 추천 응답에만 실려 있었다. 그래서 화면이 AI 를 쓸 수
+    있는지 알려면 추천을 한 번 받아야 했고, 받아 둔 추천이 있어 그 호출을
+    건너뛰면 **영영 알 수 없었다** — AI 방식 버튼이 '확인하는 중…' 인 채로
+    잠겨 있었다. 루틴 점수를 매기지 않으니 가볍다.
+    """
+    누구 = auth.user_for_token(quadriga_session)
+    return {"ai가능": air.available(),
+            "이유": air.why_unavailable(),
+            "값": AI_PRICE,
+            "잔액": billing.balance(누구["id"]) if 누구 else 0,
+            "로그인": bool(누구)}
+
+
 class RecommendIn(BaseModel):
     """일정까지 함께 보낼 때 쓴다.
 

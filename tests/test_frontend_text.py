@@ -2313,6 +2313,15 @@ def test_보던_자리까지_기억한다():
         assert "추천저장();" in 옮김, 옮기기
 
 
+def test_채팅에도_글쓴이_프로필이_뜬다():
+    """게시판과 같은 자리에서 같은 모양으로 — 눌러서 프로필을 연다."""
+    html = _index()
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "whoHtml(m['작성자'], m['작성자아이디'])" in 줄
+    css = html.split(".chat-msg .who-avatar{")[1].split("}")[0]
+    assert "20px" in css                    # 채팅 줄에 맞게 작게
+
+
 # ---------- 짬시간 ----------
 
 def test_짬시간_카드는_경로_안내_위에_있다():

@@ -1099,7 +1099,10 @@ def messages(user_id: int, room_id: int, after: int = 0, limit: int = 50) -> lis
         ids = [r["id"] for r in rows]
         react = _reaction_summary(con, "message", ids, user_id)
         원글 = _reply_targets(con, [r["reply_to"] for r in rows])
+        # 프로필을 열려면 아이디가 있어야 한다. 닉네임은 겹칠 수 있다 (게시글과 같다).
+        핸들 = {u: _handle_in(con, u) for u in {r["user_id"] for r in rows}}
     return [{"id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == user_id,
+             "작성자아이디": 핸들.get(r["user_id"]),
              "본문": r["body"], "작성시각": r["created_at"],
              "수정시각": r["edited_at"],
              "반응": react.get(r["id"], {"counts": {}, "mine": []}),

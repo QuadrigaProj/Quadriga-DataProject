@@ -2311,6 +2311,8 @@ def test_보던_자리까지_기억한다():
     for 옮기기 in ("function goRecommend(i)", "function backRecommend()"):
         옮김 = html.split(옮기기)[1].split("\n}")[0]
         assert "추천저장();" in 옮김, 옮기기
+
+
 def test_채팅에도_글쓴이_프로필이_뜬다():
     """게시판과 같은 자리에서 같은 모양으로 — 눌러서 프로필을 연다."""
     html = _index()
@@ -2318,3 +2320,65 @@ def test_채팅에도_글쓴이_프로필이_뜬다():
     assert "whoHtml(m['작성자'], m['작성자아이디'])" in 줄
     css = html.split(".chat-msg .who-avatar{")[1].split("}")[0]
     assert "20px" in css                    # 채팅 줄에 맞게 작게
+
+
+# ---------- 짬시간 ----------
+
+def test_짬시간_카드는_경로_안내_위에_있다():
+    html = _index()
+    assert 'id="spareCard"' in html
+    앞 = html.index('id="spareCard"')
+    뒤 = html.index('id="commuteFrom"')
+    assert 앞 < 뒤, "경로 안내보다 위에 있어야 한다"
+
+
+def test_일정을_안_적었으면_아무것도_띄우지_않는다():
+    """하루가 통째로 빈다고 단정하면 안 적은 사람에게 온종일 운동하라고 하는 셈이다."""
+    html = _index()
+    본문 = html.split("async function loadSparePlan()")[1].split("\n}")[0]
+    assert "if (!state.schedule?.바쁜시간) { sparePlan = null; card.hidden = true; return; }" in 본문
+    카드 = html.split("function renderSpareCard()")[1].split("\n}")[0]
+    assert "if (!칸) { card.hidden = true; return; }" in 카드
+
+
+def test_지금_들어와_있는_칸을_먼저_고른다():
+    html = _index()
+    본문 = html.split("function currentSlot()")[1].split("\n}")[0]
+    assert "c.시작 <= 지금 && 지금 < c.끝" in 본문      # 지금 들어와 있는 칸
+    assert "지금 < c.시작" in 본문                      # 없으면 오늘 남은 것 중 이른 것
+
+
+def test_홈에_들어올_때_짬시간을_다시_읽는다():
+    html = _index()
+    본문 = html.split("function goTo(id)")[1].split("\n}")[0]
+    assert "loadSparePlan()" in 본문
+
+
+def test_일정은_고른_종목과_약점을_함께_보낸다():
+    """비는 시간에 고른 종목을 넣어 주려면 서버가 그걸 알아야 한다."""
+    html = _index()
+    본문 = html.split("async function loadSparePlan()")[1].split("\n}")[0]
+    assert "sports: state.sports || []" in 본문
+    assert "weak: weakFactors()" in 본문
+
+
+def test_비었거나_거꾸로_된_시간은_담지_않는다():
+    """그런 줄은 빈 칸을 엉뚱하게 만든다."""
+    html = _index()
+    본문 = html.split("async function saveSchedule()")[1].split("\n}")[0]
+    assert "x.시작 && x.끝 && x.시작 < x.끝" in 본문
+    assert "saveProfile()" in 본문
+
+
+def test_일정은_계정에_남는다():
+    html = _index()
+    assert "schedule: state.schedule," in html
+    assert "state.schedule = (saved?.schedule" in html
+    assert html.count("state.schedule = null;") >= 3
+
+
+def test_루틴_추천에서_일정을_넣을_수_있다():
+    """선택 사항이다 — 적은 사람만 쓴다."""
+    html = _index()
+    assert 'id="schOpen"' in html
+    assert 'onclick="openSchedule()"' in html

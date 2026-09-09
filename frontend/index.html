@@ -219,6 +219,31 @@
   }
   .prescribe-label{ font-size:13px; color:var(--muted); }
   .prescribe-text{ font-size:15.5px; font-weight:600; margin-top:6px; line-height:1.5; }
+  /* 짬시간 카드 — 지금 비는 시간에 할 것 (경로 안내 위) */
+  .spare-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:14px 16px; margin-top:14px; background:var(--pine-tint); }
+  .spare-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .spare-label{ font-size:12.5px; color:var(--pine-deep); font-weight:700; }
+  .spare-when{ font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .spare-list{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .spare-item{ background:var(--paper); border:1px solid var(--line);
+    border-radius:999px; padding:6px 11px; font-size:13px; }
+  .spare-why{ font-size:12px; color:var(--muted); margin-top:8px; line-height:1.5; }
+  .spare-set{ margin-top:10px; background:none; border:none; padding:0;
+    font-family:inherit; font-size:12.5px; color:var(--pine-deep);
+    text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  /* 스케줄 적는 자리 */
+  .sch-day{ border-top:1px solid var(--line); padding:10px 0; }
+  .sch-day:first-child{ border-top:none; }
+  .sch-name{ font-weight:700; font-size:13.5px; margin-bottom:6px; }
+  .sch-row{ display:flex; align-items:center; gap:6px; margin-top:6px; }
+  .sch-row input{ width:96px; border:1.5px solid var(--line); border-radius:10px;
+    padding:7px 9px; font-family:inherit; font-size:13px; }
+  .sch-row button{ background:none; border:none; color:var(--muted);
+    font-family:inherit; font-size:16px; cursor:pointer; padding:0 4px; }
+  .sch-add{ background:none; border:1px dashed var(--line); border-radius:999px;
+    padding:5px 11px; font-family:inherit; font-size:12.5px; color:var(--muted);
+    cursor:pointer; margin-top:6px; }
   .commute-row{ display:flex; gap:8px; margin-top:12px; }
   .commute-row input{ flex:1; min-width:0; border:1.5px solid var(--line); border-radius:12px; padding:12px; font-size:15px; font-family:inherit; }
   .commute-row button{ border:none; background:var(--pine); color:#fff; border-radius:12px; padding:0 16px; font-weight:700; font-family:inherit; cursor:pointer; flex-shrink:0; }
@@ -1690,6 +1715,8 @@
       <div class="hero-arrow">▶</div>
     </button>
 
+    <div class="spare-card" id="spareCard" hidden></div>
+
     <div class="prescribe-card">
       <div class="prescribe-label">오늘의 일상 처방</div>
       <div class="prescribe-text" id="dailyText">계단은 올라갈 때만 이용해보세요.<br/>내려올 땐 엘리베이터가 무릎에 더 안전해요.</div>
@@ -2024,6 +2051,8 @@
         <button type="button" data-mode="ai" onclick="setRecoMode('ai')">
           AI 추천<span class="mode-sub">1회 100원</span></button>
       </div>
+      <button type="button" class="spare-set" id="schOpen" onclick="openSchedule()">
+        내 일정 넣기 — 비는 시간에 할 것을 홈에 띄워요</button>
       <div id="recoBody"></div>
     </div>
   </section>
@@ -2261,6 +2290,7 @@ const state = {
   aiReco: null,        // 값을 치르고 받은 AI 추천 {추천, 조심할부위, 자리, 되돌아갈자리, 받은시각}
   freeReco: null,      // 무료 추천도 같은 모양으로 남긴다 — 창을 옮겨도 보던 것이 그대로 있게
   pinnedRooms: [],     // '내 채팅' 에서 위에 붙여 둔 방 id — 사람마다 다른 취향이라 스냅샷에 담는다
+  schedule: null,      // 짬시간: {상태, 바쁜시간:{월:[{시작,끝}], ...}} — 적은 사람만 쓴다
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
@@ -2817,6 +2847,7 @@ function snapshot(){
     freeReco: state.freeReco,
     pinnedRooms: state.pinnedRooms,
     activityAge: state.activityAge,
+    schedule: state.schedule,
     commute: state.commute,
     styleTest: state.styleTest,
     updated: new Date().toISOString().slice(0, 10),
@@ -2875,6 +2906,8 @@ function applyProfile(saved){
                             체력나이: f.체력나이, 신뢰구간: f.신뢰구간 ?? null,
                             항목별: { ...(f.항목별 || {}) }, method: saved?.method || null });
   }
+  state.schedule = (saved?.schedule && typeof saved.schedule === 'object'
+                    && saved.schedule.바쁜시간) ? saved.schedule : null;
   state.commute = (saved?.commute && saved.commute.from && saved.commute.to)
     ? { from: String(saved.commute.from), to: String(saved.commute.to) } : null;
   state.styleTest = (saved?.styleTest && typeof saved.styleTest === 'object' && saved.styleTest.result) ? saved.styleTest : null;
@@ -3003,6 +3036,7 @@ async function doDelete(){
   state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
+  state.schedule = null;
   state.commute = null;
   state.styleTest = null;
   $('authEmail').value = '';
@@ -3034,6 +3068,7 @@ async function logout(){
   state.creditLog = [];
   state.sports = [];
   state.sportsDone = false;
+  state.schedule = null;
   state.commute = null;
   state.styleTest = null;
   $('authEmail').value = '';
@@ -3073,6 +3108,7 @@ async function resetSettings(){
   state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
+  state.schedule = null;
   state.commute = null;
   state.styleTest = null;
   state.flexibility = null;
@@ -3416,7 +3452,7 @@ function goTo(id){
   const content = $(id).querySelector('.content');
   if(content) content.scrollTop = 0;
   if(id === 's2') renderPurpose();
-  if(id === 's3') { loadHome(); paintGauges({ animate: true }); }
+  if(id === 's3') { loadHome(); paintGauges({ animate: true }); loadSparePlan(); }
   if(id === 's4') resetRoutine();
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
   if(id === 's7') renderRecords();
@@ -6742,6 +6778,130 @@ function wlogUnit(k, keys, 단위){
   if (k === '시간' && 목록.includes('세트')) return '분씩';
   if (k === '시간' && 목록.includes('거리')) return '분 동안';
   return 표[k] || k;
+}
+
+
+/* ---------------------------------------------------------------------------
+   짬시간 — 적어 둔 일정에서 남는 칸을 찾아, 지금 할 것을 홈에 띄운다.
+
+   일정을 안 적었으면 아무것도 띄우지 않는다. 하루가 통째로 빈다고 단정하면
+   안 적은 사람에게 온종일 운동하라고 하는 셈이다.
+   --------------------------------------------------------------------------- */
+const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const LIFE_KINDS = ['학생', '직장인', '알바생', '자영업', '그 밖'];
+let sparePlan = null;        // 서버가 준 요일별 빈 칸
+
+/* 오늘 요일 — WEEKDAYS 는 월요일부터다 */
+function todayDow(){ return WEEKDAYS[(new Date().getDay() + 6) % 7]; }
+
+function nowHm(){
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/* 지금 들어와 있는 칸. 없으면 오늘 남은 칸 중 가장 이른 것. */
+function currentSlot(){
+  const 오늘 = sparePlan?.[todayDow()] || [];
+  const 지금 = nowHm();
+  return 오늘.find(c => c.시작 <= 지금 && 지금 < c.끝)
+      || 오늘.find(c => 지금 < c.시작) || null;
+}
+
+async function loadSparePlan(){
+  const card = $('spareCard');
+  if (!card) return;
+  if (!state.schedule?.바쁜시간) { sparePlan = null; card.hidden = true; return; }
+  try {
+    const r = await API.sparePlan({
+      바쁜시간: state.schedule.바쁜시간,
+      sports: state.sports || [],
+      weak: weakFactors(),
+      limit: 3,
+    });
+    sparePlan = r.요일별 || {};
+  } catch (e) { sparePlan = null; }
+  renderSpareCard();
+}
+
+function renderSpareCard(){
+  const card = $('spareCard');
+  if (!card) return;
+  const 칸 = currentSlot();
+  if (!칸) { card.hidden = true; return; }
+  card.hidden = false;
+  const 지금 = nowHm();
+  const 안 = 칸.시작 <= 지금 && 지금 < 칸.끝;
+  card.innerHTML = `
+    <div class="spare-head">
+      <span class="spare-label">${안 ? '지금 비는 시간' : '오늘 비는 시간'}</span>
+      <span class="spare-when">${칸.시작}–${칸.끝} · ${칸.분}분</span>
+    </div>
+    <div class="spare-list">${(칸.추천 || []).map(x =>
+      `<span class="spare-item">${x.아이콘 ? x.아이콘 + ' ' : ''}${esc(x.이름)}</span>`).join('')}</div>
+    ${칸.추천?.[0]?.왜 ? `<div class="spare-why">${esc(칸.추천[0].왜)}</div>` : ''}
+    <button type="button" class="spare-set" onclick="openSchedule()">일정 고치기</button>`;
+}
+
+/* ---- 일정 적기 ---- */
+function scheduleDraft(){
+  const 바쁜 = state.schedule?.바쁜시간 || {};
+  const out = {};
+  WEEKDAYS.forEach(d => { out[d] = (바쁜[d] || []).map(x => ({ ...x })); });
+  return { 상태: state.schedule?.상태 || null, 바쁜시간: out };
+}
+
+let SCH = null;
+
+function openSchedule(){
+  SCH = scheduleDraft();
+  openSheet('내 일정', '');
+  renderSchedule();
+}
+
+function renderSchedule(){
+  const box = $('sheetBody');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="share-field"><label>어떤 하루를 보내세요?</label>
+      <div class="share-pick" id="schKind">${LIFE_KINDS.map(k =>
+        `<button type="button" class="${SCH.상태 === k ? 'on' : ''}"
+           onclick="pickLifeKind('${k}')">${k}</button>`).join('')}</div></div>
+    <div class="share-field"><label>바쁜 시간을 적어주세요 (적은 요일만 씁니다)</label>
+      ${WEEKDAYS.map(d => `
+        <div class="sch-day">
+          <div class="sch-name">${d}</div>
+          ${(SCH.바쁜시간[d] || []).map((x, i) => `
+            <div class="sch-row">
+              <input type="time" value="${x.시작 || ''}" onchange="setSch('${d}',${i},'시작',this.value)" />
+              <span>–</span>
+              <input type="time" value="${x.끝 || ''}" onchange="setSch('${d}',${i},'끝',this.value)" />
+              <button type="button" onclick="dropSch('${d}',${i})" aria-label="지우기">×</button>
+            </div>`).join('')}
+          <button type="button" class="sch-add" onclick="addSch('${d}')">+ 시간 추가</button>
+        </div>`).join('')}
+    </div>
+    <div class="prof-actions">
+      <button type="button" onclick="saveSchedule()">저장</button>
+    </div>`;
+}
+
+function pickLifeKind(k){ SCH.상태 = SCH.상태 === k ? null : k; renderSchedule(); }
+function addSch(d){ (SCH.바쁜시간[d] ||= []).push({ 시작: '09:00', 끝: '18:00' }); renderSchedule(); }
+function dropSch(d, i){ SCH.바쁜시간[d].splice(i, 1); renderSchedule(); }
+function setSch(d, i, k, v){ SCH.바쁜시간[d][i][k] = v; }
+
+async function saveSchedule(){
+  // 시각이 비었거나 거꾸로 된 줄은 담지 않는다 — 그런 줄은 빈 칸을 엉뚱하게 만든다
+  const 담을것 = {};
+  WEEKDAYS.forEach(d => {
+    const 줄 = (SCH.바쁜시간[d] || []).filter(x => x.시작 && x.끝 && x.시작 < x.끝);
+    if (줄.length) 담을것[d] = 줄;
+  });
+  state.schedule = { 상태: SCH.상태 || null, 바쁜시간: 담을것 };
+  await saveProfile();
+  closeSheet();
+  await loadSparePlan();
+  showToast(Object.keys(담을것).length ? '일정을 저장했어요' : '적은 시간이 없어 비웠어요');
 }
 
 /* ---------------------------------------------------------------------------

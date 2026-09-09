@@ -4765,6 +4765,11 @@ async function leaveFromMembers(){
 }
 function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
 
+/* 창으로 돌아오면 밀린 대화를 바로 받아 온다 — 다음 4초를 기다리지 않는다. */
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && COMM.room) pollChat();
+});
+
 /* 답장 머리말 — 글 위에 작고 흐리게 '어떤 글의 답장인지'.
    원글이 지워졌으면 아무것도 그리지 않는다. */
 function replyQuoteHtml(m){
@@ -4907,6 +4912,10 @@ function paintChat(list, { 강제 = false } = {}){
 
 async function pollChat(){
   if (!COMM.room) return;
+  // 안 보이는 창에서는 묻지 않는다. 탭을 옮겨 두고 잊은 채팅방이 4초마다
+  // 서버를 두드리면, 배터리도 서버도 그만큼 쓴다. 돌아오면 곧바로 한 번
+  // 받아 오니 늦게 보이지도 않는다.
+  if (document.hidden) return;
   try {
     const r = await API.commMessages(COMM.room);
     paintChat(r.messages || []);
@@ -7091,12 +7100,8 @@ async function onSchedulePhoto(ev){
   ev.target.value = '';
   if (!f) return;
   if (f.size > 4 * 1024 * 1024) { showToast('사진이 너무 커요. 4MB 아래로 줄여주세요'); return; }
-  if ((state.credit || 0) < AI_PRICE) {
-    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
-    return;
-  }
-  if (!confirm(`사진에서 시간표를 읽어올까요?\n${AI_PRICE}원이 결제됩니다.`
-             + '\n읽은 뒤에 직접 고칠 수 있어요.')) return;
+  if (!값을치를까(`사진에서 시간표를 읽어올까요?\n${AI_PRICE}원이 결제됩니다.`
+                + '\n읽은 뒤에 직접 고칠 수 있어요.')) return;
   const 사진 = await new Promise((ok, no) => {
     const r = new FileReader();
     r.onload = () => ok(r.result);
@@ -7199,7 +7204,11 @@ async function renderRecommend(){
   }
   // 무료 추천도 한 번 받으면 그대로 둔다. 창을 옮겼다 왔다고 다른 루틴이
   // 떠 있으면, 보던 것을 다시 찾을 방법이 없다.
-  if (state.freeReco?.추천?.length) {
+  //
+  // 다만 예전에 몇 개 안 되게 받아 둔 것이면 새로 받는다. 후보가 적으면
+  // '더 쉬운·더 어려운 루틴' 이 갈 곳이 없어 눌리지 않는데, 무료 추천은
+  // 값이 들지 않으니 그대로 두고 볼 이유가 없다.
+  if (state.freeReco?.추천?.length >= 5) {
     $('recoSub').textContent = '먼저 받은 추천이에요. 다른 루틴은 아래 버튼으로 볼 수 있어요.';
     추천되살리기(state.freeReco, '점수');
     return;
@@ -7262,18 +7271,13 @@ function aiIntroHtml(){
 
 /* 다시 받기 — 값이 빠지는 일이라 반드시 한 번 묻는다. */
 async function askAiRecommend(){
-  if (!recoAiReady) { showToast(recoAiWhy || 'AI 추천은 지금 쓸 수 없어요'); return; }
-  if ((state.credit || 0) < AI_PRICE) {
-    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
-    return;
-  }
   // 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다. 값이 빠지고 나서
   // 알게 되면 늦다.
   const 다시 = !!state.aiReco?.추천?.length;
   const 물음 = 다시
     ? `AI 추천을 다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다.`
     : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${AI_PRICE}원이 결제됩니다.`;
-  if (!confirm(물음)) return;
+  if (!값을치를까(물음)) return;
   $('recoBody').innerHTML = '<div class="rec-empty">AI 가 다듬는 중이에요…</div>';
   await fetchRecommend(true);
 }
@@ -7394,9 +7398,9 @@ function paintRecommend(){
         <button type="button" class="reco-btn" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
         <button type="button" class="reco-btn" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
-        <button type="button" class="reco-btn" onclick="askSeasons()"
-                ${recoAiReady ? '' : 'disabled'}>이 루틴으로 자세히 도전하기</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
+          onclick="askSeasons()">이 루틴으로 자세히 도전하기</button>
+        <button type="button" class="reco-btn"
           onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
     </div>`;
@@ -7444,13 +7448,8 @@ function seasonHtml(){
 async function askSeasons(){
   const x = recoList[recoAt];
   if (!x) return;
-  if (!recoAiReady) { showToast(recoAiWhy || 'AI 추천은 지금 쓸 수 없어요'); return; }
   if (recoSeason?.루틴명 === x.루틴명) { showToast('이미 받아 둔 계획이에요'); return; }
-  if ((state.credit || 0) < AI_PRICE) {
-    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
-    return;
-  }
-  if (!confirm(`이 루틴을 계절마다 어떻게 이어갈지 받아볼까요?\n${AI_PRICE}원이 결제됩니다.`)) return;
+  if (!값을치를까(`이 루틴을 계절마다 어떻게 이어갈지 받아볼까요?\n${AI_PRICE}원이 결제됩니다.`)) return;
   try {
     const r = await API.recommendSeasons({
       age_gbn: programAgeGroup(state.age),
@@ -7512,6 +7511,19 @@ async function useRecommend(){
    흐름만 보여주고 카드 정보를 묻지 않는다.
    --------------------------------------------------------------------------- */
 const AI_PRICE = 100;                       // AI 추천 1회 값(원)
+
+/* 값이 빠지는 일을 시작하기 전에 한 자리에서 다 본다.
+   쓸 수 있는지 · 이용권이 남았는지 · 정말 할 것인지. 세 군데(AI 추천 ·
+   계절별 도전 · 시간표 사진)가 같은 순서로 물어야 한다 — 한 곳만 빠지면
+   그 버튼만 묻지 않고 돈이 빠진다. */
+function 값을치를까(물음){
+  if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return false; }
+  if ((state.credit || 0) < AI_PRICE) {
+    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
+    return false;
+  }
+  return confirm(물음);
+}
 /* 선결제 할인 (K3) — 이용권은 앱 안에서 쓰는 금액, 결제는 실제로 내는 돈.
    **서버(/pay/methods)가 준 값이 기준이다.** 여기 있는 건 서버를 못 부를 때 쓰는 사본이라
    백엔드 PAY_PACKS 와 같아야 한다. 실제 청구 금액은 서버가 다시 계산한다. */

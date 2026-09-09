@@ -21,10 +21,13 @@ from pathlib import Path
 from urllib.parse import urlencode
 from typing import Literal
 
+import anyio
 import httpx
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -85,6 +88,36 @@ app = FastAPI(
     description="국민체력100 공공데이터 기반 체력나이 산출·운동 처방",
     version="0.2.0",
 )
+
+# 한 요청이 이만큼을 넘기면 끊는다.
+#
+# 무한 루프 하나가 스레드를 영구 점유해 앱 전체를 멈춰 세운 적이 있다
+# (추천의 limit=12). 서버가 한 대뿐이라 그런 요청 몇 개면 남는 자리가 없다.
+# 오래 걸릴 일이 없는 서비스라, 넘긴 요청은 답을 못 낸 것으로 본다.
+REQUEST_TIMEOUT_SEC = float(os.getenv("REQUEST_TIMEOUT_SEC", "25"))
+
+
+@app.middleware("http")
+async def 시간_제한(request: Request, call_next):
+    """오래 끄는 요청을 끊는다. 0 이하로 두면 끄지 않는다(디버깅용)."""
+    if REQUEST_TIMEOUT_SEC <= 0:
+        return await call_next(request)
+    try:
+        with anyio.fail_after(REQUEST_TIMEOUT_SEC):
+            return await call_next(request)
+    except TimeoutError:
+        # 무엇이 오래 걸렸는지 로그에 남긴다. 경로만 적는다 — 쿼리에는
+        # 개인 정보가 실릴 수 있다.
+        print(f"[timeout] {request.method} {request.url.path} "
+              f"> {REQUEST_TIMEOUT_SEC}s", flush=True)
+        return JSONResponse(
+            {"detail": "처리가 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해주세요."},
+            status_code=503)
+
+
+# 배포(Cloudflare)는 알아서 압축하지만 로컬 개발 서버는 아니다.
+# index.html 이 380KB 라 켜고 끄고가 눈에 띄게 다르다.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # 개발 중에는 프론트 로컬 서버를 허용한다. 배포 시 도메인으로 좁힐 것.
 app.add_middleware(

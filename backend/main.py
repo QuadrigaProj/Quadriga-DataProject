@@ -26,7 +26,7 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:                                        # 저장소 루트에서 실행할 때
@@ -146,7 +146,25 @@ def health() -> dict:
 
 # ---------- 1. 체력나이 ----------
 
-class MeasureIn(BaseModel):
+class ServiceAgeIn(BaseModel):
+    """입력된 만 나이로 서비스 지원 범위와 측정 연령군을 검사한다."""
+    @field_validator("age", check_fields=False)
+    @classmethod
+    def supported_age(cls, value):
+        if value is not None:
+            rt.age_group(value)
+        return value
+
+    @model_validator(mode="after")
+    def align_group(self):
+        age = getattr(self, "age", None)
+        if age is not None and hasattr(self, "age_gbn"):
+            group = rt.age_group(age)
+            self.age_gbn = "성장기" if group in ("유소년", "청소년") else group
+        return self
+
+
+class MeasureIn(ServiceAgeIn):
     age_gbn: AgeGroup = Field(..., description="연령군 (성장기 = 만 11~18세)")
     sex: Sex
     age: float | None = Field(None, ge=5, le=110,
@@ -429,9 +447,9 @@ def get_video_routine(
     }
 
 
-# ---------- 7b. 3개월 프로그램 루틴 (250 고정 루틴) ----------
+# ---------- 7b. 3개월 프로그램 루틴 (200 KSPO 루틴) ----------
 
-ProgramAge = Literal["유아기", "유소년", "청소년", "성인", "어르신"]
+ProgramAge = Literal[ "유소년", "청소년", "성인", "어르신"]
 ProgramPurpose = Literal[
     "다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
 ]
@@ -451,20 +469,24 @@ def get_program_routine(
 ) -> dict:
     """연령대 × 목적 의 고정 루틴 10개 중 오늘 것 한 벌.
 
-    루틴을 새로 만들지 않는다. data/sample/routines_250.json 을 그대로 순환시킨다.
+    루틴을 새로 만들지 않는다. data/generated/routines_200_kspo.json 을 순환시킨다.
     수행량은 12주 3구간 규칙 + 현재 체력 보정(offset)으로 붙인다.
     안전·제외 부위 조건은 후보가 없어도 완화하지 않는다.
     """
+    if real_age is not None:
+        try:
+            age_gbn = rt.age_group(real_age)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
     parts = [p.strip() for p in (exclude_parts or "").split(",") if p.strip()]
 
-    # 고른 운동 종목 → 그 종목이 많이 쓰는 체력요인 상위 2개만 본다.
-    # 너무 많이 넣으면 원래 커리큘럼이 흐려진다.
+    # 선택한 모든 스포츠의 체력요소를 본운동 세 번째 교체 후보에 사용한다.
     # 안 고른 사람에게는 종목 데이터를 아예 읽지 않는다. 종목은 곁가지라
     # sports.json 이 없다고 해서 루틴 자체가 안 나오면 안 된다.
     picked = [i.strip() for i in (sports or "").split(",") if i.strip()]
 
     try:
-        prefer = list(sp.factor_weights(picked))[:2] if picked else []
+        prefer = list(sp.factor_weights(picked)) if picked else []
         routine = rt.build_program_routine(
             age_gbn, purpose, day=day, exclude_parts=parts, heavy=heavy,
             prefer_factors=prefer)
@@ -520,7 +542,7 @@ def get_program_purposes(age_gbn: ProgramAge | None = None) -> list[dict]:
 
 # ---------- 7c. InBody · 홈 체력측정 ----------
 
-class InBodyIn(BaseModel):
+class InBodyIn(ServiceAgeIn):
     sex: Sex
     age: float = Field(..., ge=4, le=110)
     height_cm: float = Field(..., gt=0)
@@ -542,7 +564,7 @@ def post_bodycomp(body: InBodyIn) -> dict:
     )
 
 
-class HomeTestIn(BaseModel):
+class HomeTestIn(ServiceAgeIn):
     sex: Sex
     age: float = Field(..., ge=4, le=110)
     height_cm: float = Field(..., gt=0)
@@ -1137,7 +1159,7 @@ def get_credit(quadriga_session: str | None = Cookie(None)) -> dict:
 
 # ---------- 13. 운동 기록 반영 체력나이 ----------
 
-class ActivityIn(BaseModel):
+class ActivityIn(ServiceAgeIn):
     age_gbn: AgeGroup
     age: float | None = Field(None, ge=5, le=110)
     sex: Sex | None = None
@@ -1215,12 +1237,18 @@ def get_recommend_routines(
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
     quadriga_session: str | None = Cookie(None),
+    real_age: float | None = Query(None),
 ) -> dict:
-    """사용자 데이터로 250개 고정 루틴에 점수를 매겨 순위를 낸다.
+    """사용자 데이터로 200개 KSPO 루틴에 점수를 매겨 순위를 낸다.
 
     루틴을 새로 만들지 않는다. 이미 있는 것 중에서 고르고 왜 골랐는지를 함께 낸다.
     아무 정보가 없어도 안전한 기본 순위를 돌려준다.
     """
+    if real_age is not None:
+        try:
+            age_gbn = rt.age_group(real_age)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from None
     parts = [w.strip() for w in (weak or "").split(",") if w.strip()]
     picked = [s.strip() for s in (sports or "").split(",") if s.strip()]
     try:

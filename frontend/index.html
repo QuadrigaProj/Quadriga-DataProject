@@ -1311,6 +1311,13 @@
   .notice-modal{ text-align:center; padding:28px 42px 24px; }
   .notice-modal .comm-modal-close{ position:absolute; top:12px; right:12px; }
   .notice-modal p{ margin:0; font-size:15px; font-weight:600; line-height:1.55; }
+  .exercise-video-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.65);}
+  .exercise-video-backdrop[hidden]{display:none;}
+  .exercise-video-modal{width:min(100%,800px);max-height:calc(100dvh - 32px);overflow:auto;background:var(--paper);border-radius:18px;padding:16px;}
+  .exercise-video-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
+  .exercise-video-head h2{margin:0;font-size:18px;}
+  .exercise-video-frame{width:100%;aspect-ratio:16/9;background:#000;}
+  .exercise-video-frame iframe{display:block;width:100%;height:100%;border:0;}
 </style>
 </head>
 <body>
@@ -1440,7 +1447,7 @@
           </div>
         </div>
         <div class="field-row">
-          <input class="field-input" id="ageInput" type="number" min="13" max="100"
+          <input class="field-input" id="ageInput" type="number" min="11" max="100"
                  placeholder="예: 34" oninput="onAgeChange()" />
           <div class="field-unit">세</div>
         </div>
@@ -1700,7 +1707,7 @@
     <div class="content" style="padding:0 0 20px;">
       <div class="player-video">
         <div class="player-tag" id="playerTag">1 / 5</div>
-        <div class="play">▶</div>
+        <button type="button" class="play" id="exerciseVideoButton" onclick="openExerciseVideo()" style="font-size:16px;border:0;cursor:pointer;">영상 보기</button>
       </div>
       <div class="player-meta">
         <div class="player-name-row">
@@ -2271,6 +2278,8 @@ const STRENGTH_ITEM = {
              unit: 'cm', step: 5,  init: 190, timer: false },
 };
 
+const AGE_NOTICE = "체력나이 분석은 만 11세 이상부터 이용할 수 있습니다.\n국민체력100 체력측정 데이터의 연령 범위에 따라 현재 서비스는 만 11세 이상을 지원합니다.";
+
 function ageGroup(age) {
   if (age >= 65) return '어르신';
   if (age >= 19) return '성인';
@@ -2278,13 +2287,12 @@ function ageGroup(age) {
   return null;                      // 만 11세 미만은 체력나이 분포 데이터가 없다
 }
 
-/* 루틴은 5개 연령대 모두 있다 (체력나이 산출과 별개). backend/routines.py 와 같은 경계. */
+/* 만 11세 이상 4개 루틴 연령대. backend/routines.py와 같은 경계. */
 function programAgeGroup(age) {
   if (age >= 65) return '어르신';
   if (age >= 19) return '성인';
   if (age >= 13) return '청소년';
-  if (age >= 7)  return '유소년';
-  if (age >= 4)  return '유아기';
+  if (age >= 11) return '유소년';
   return null;
 }
 
@@ -2298,7 +2306,7 @@ function programDay() {
   const ms = Date.now() - new Date(state.programStart + 'T00:00:00').getTime();
   return Math.max(0, Math.floor(ms / 86400000));
 }
-function programWeek() { return Math.min(13, Math.floor(programDay() / 7) + 1); }
+function programWeek() { return Math.min(12, Math.floor(programDay() / 7) + 1); }
 
 /* ---------------------------------------------------------------------------
    기간(period) — 첫 점검(또는 마지막 재측정)부터 다음 재측정까지.
@@ -4703,13 +4711,15 @@ async function sendChat(){
 /* ---- 화면 1 : 기본 정보 ---- */
 function onAgeChange(){
   const age = parseInt($('ageInput').value, 10);
-  if (!age) return;
-  state.age = age;
+  state.age = Number.isFinite(age) ? age : null;
+  $('calcBtn').disabled = !ageGroup(state.age);
+  if (!Number.isFinite(age)) { $('ageNotice').style.display = 'none'; return; }
   const gbn = ageGroup(age);
   const notice = $('ageNotice');
 
   if (!gbn) {
-    notice.innerHTML = '공개 데이터에 <b>만 11세 미만</b> 기록이 충분하지 않아 아직 지원하지 못해요.';
+    notice.textContent = AGE_NOTICE;
+    notice.style.whiteSpace = 'pre-line';
     notice.style.display = 'block';
     return;
   }
@@ -4865,6 +4875,7 @@ async function calcAge(){
     return;
   }
   syncInputs();
+  if (!ageGroup(state.age)) { onAgeChange(); alert(AGE_NOTICE); return; }
   const m = state.method === 'inbody' ? 'inbody' : 'home';   // 측정 방식은 home / inbody 둘뿐
   const need = [];
   if (state.age === null) need.push('나이');
@@ -5250,21 +5261,19 @@ async function loadRoutine(){
       real_age: state.age,
       sports: (state.sports || []).join(','),
     });
+    state.routineError = null;
     state.routineMeta = r;
     state.intensity = r.강도;
     state.routine = (r.steps || []).map(s => ({
-      단계: s.단계, 운동명: s.동작, 체력요인: (s.체력요인 || []).join('·'),
-      도구: s.도구, 유형: s.유형, 부담부위: s.부담부위,
+      단계: s.단계, 운동명: s.동작, youtube_id: s.youtube_id, 체력요인: (s.체력요인 || []).join('·'),
+      도구: s.kspo?.tool_nm ?? s.도구, 유형: s.유형, 부담부위: s.부담부위,
+      부위: s.kspo?.trng_part_nm || "", 설명: s.kspo?.vdo_desc || "",
     }));
   } catch (e) {
     state.routineMeta = null;
-    state.routine = [
-      { 단계:'준비운동', 운동명:'전신 루틴 스트레칭', 체력요인:'유연성', 유형:'시간' },
-      { 단계:'본운동',   운동명:'의자에 앉았다 일어서기', 체력요인:'근력', 유형:'횟수' },
-      { 단계:'본운동',   운동명:'벽 짚고 팔굽혀펴기', 체력요인:'근력', 유형:'횟수' },
-      { 단계:'본운동',   운동명:'제자리 걷기', 체력요인:'심폐지구력', 유형:'시간' },
-      { 단계:'정리운동', 운동명:'옆구리 스트레칭', 체력요인:'유연성', 유형:'시간' },
-    ];
+    state.routine = [];
+    state.intensity = null;
+    state.routineError = '루틴을 불러오지 못했습니다. 연결 상태를 확인하고 다시 시도해주세요.';
   }
 }
 
@@ -5357,13 +5366,59 @@ function activeRoutine(){
   return state.routine.filter(s => s.단계 !== '본운동' || ++main <= 2);
 }
 
+// 닫을 때 iframe 자체를 제거하여 재생과 오디오를 중지한다.
+let exerciseVideoReturnFocus = null;
+function openExerciseVideo(){
+  const step = activeRoutine()[currentStep];
+  if (!step || !/^[A-Za-z0-9_-]{11}$/.test(step.youtube_id || '')) return;
+  exerciseVideoReturnFocus = document.activeElement;
+  $('exerciseVideoTitle').textContent = step.운동명;
+  const iframe = document.createElement('iframe');
+  iframe.title = step.운동명;
+  iframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+  iframe.allowFullscreen = true;
+  iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+  iframe.src = `https://www.youtube.com/embed/${step.youtube_id}`;
+  $('exerciseVideoFrame').replaceChildren(iframe);
+  $('exerciseVideoModal').hidden = false;
+  $('exerciseVideoClose').focus();
+}
+function closeExerciseVideo(){
+  $('exerciseVideoFrame').replaceChildren();
+  $('exerciseVideoModal').hidden = true;
+  exerciseVideoReturnFocus?.focus();
+  exerciseVideoReturnFocus = null;
+}
+function closeExerciseVideoOnBackdrop(event){
+  if (event.target === event.currentTarget) closeExerciseVideo();
+}
+document.addEventListener('keydown', event => {
+  const modal = $('exerciseVideoModal');
+  if (!modal || modal.hidden) return;
+  if (event.key === 'Escape') closeExerciseVideo();
+  if (event.key === 'Tab' && (event.shiftKey || document.activeElement !== $('exerciseVideoClose'))) {
+    event.preventDefault();
+    $('exerciseVideoClose').focus();
+  }
+});
+
 function renderStep(){
   const list = activeRoutine();
-  if (!list.length) return;
+  if (!list.length) {
+    $('playerName').textContent = state.routineError || '나이와 목적을 먼저 선택해주세요.';
+    $('playerSet').textContent = '';
+    $('playerTag').textContent = '';
+    $('stepsDots').innerHTML = '';
+    $('stepBtn').disabled = true;
+    $('exerciseVideoButton').hidden = true;
+    return;
+  }
+  $('stepBtn').disabled = false;
   if (currentStep > list.length - 1) currentStep = list.length - 1;
   const step = list[currentStep];
+  $('exerciseVideoButton').hidden = !/^[A-Za-z0-9_-]{11}$/.test(step.youtube_id || '');
   const it = state.intensity || { 세트: 2, 반복: 10, 시간초: 30 };
-  $('playerTag').textContent = (currentStep+1)+' / '+list.length;
+  $('playerTag').textContent = `${step.단계} · ${currentStep+1} / ${list.length}`;
   $('playerName').textContent = step.운동명;
   renderStepPicto(step);
   if (step.단계 === '본운동') {
@@ -5373,9 +5428,10 @@ function renderStep(){
     $('playerSet').textContent = `${amount}씩 ${it.세트 ?? 2}세트` +
       (step.도구 && step.도구 !== '맨몸' ? ` · ${step.도구}` : '');
   } else {
-    $('playerSet').textContent = `${step.단계} · ${step.체력요인 || ''}`;
+    $('playerSet').textContent = `${it.시간초 ?? 30}초씩 1세트 · ${step.체력요인 || ''}`;
   }
 
+  if (step.부위) $('playerSet').textContent += ` · ${step.부위}`;
   const dots = $('stepsDots');
   dots.innerHTML = list.map((_,i)=>`<div class="d${i<=currentStep?' on':''}"></div>`).join('');
   $('stepBtn').textContent = (currentStep === list.length-1) ? '루틴 완료' : '다음 동작';
@@ -7217,5 +7273,14 @@ function paintRecoMode(){
   else if (h.안내) setStatus(h.안내);
 })();
 </script>
+<div class="exercise-video-backdrop" id="exerciseVideoModal" hidden onclick="closeExerciseVideoOnBackdrop(event)">
+  <section class="exercise-video-modal" role="dialog" aria-modal="true" aria-labelledby="exerciseVideoTitle">
+    <div class="exercise-video-head">
+      <h2 id="exerciseVideoTitle"></h2>
+      <button type="button" class="comm-modal-close" id="exerciseVideoClose" onclick="closeExerciseVideo()" aria-label="닫기">×</button>
+    </div>
+    <div class="exercise-video-frame" id="exerciseVideoFrame"></div>
+  </section>
+</div>
 </body>
 </html>

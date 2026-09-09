@@ -1,6 +1,6 @@
 """루틴 추천 — 사용자 데이터로 후보에 점수를 매겨 순위를 낸다.
 
-추천을 지어내지 않는다. 이미 있는 250개 고정 루틴(data/sample/routines_250.json)
+추천을 지어내지 않는다. 이미 있는 200개 KSPO 루틴(data/generated/routines_200_kspo.json)
 안에서 고르고, 왜 골랐는지를 근거 문장으로 함께 돌려준다.
 근거를 댈 수 없는 추천은 하지 않는다는 것이 이 모듈의 규칙이다.
 
@@ -67,7 +67,7 @@ def difficulty(steps: list[dict]) -> float:
         return 0.0
     숨참 = sum(1 for s in 본 if any(_factor_hit(h, f) for f in s["체력요인"] for h in HARD_FACTORS))
     부담 = sum(1 for s in 본 if s["부담부위"])
-    도구 = sum(1 for s in 본 if s["도구"] and s["도구"] != "맨몸")
+    도구 = sum(1 for s in 본 if s["도구"] and s["도구"] not in ("맨몸", "미제공"))
     n = len(본)
     return round(0.5 * (숨참 / n) + 0.3 * (부담 / n) + 0.2 * (도구 / n), 3)
 

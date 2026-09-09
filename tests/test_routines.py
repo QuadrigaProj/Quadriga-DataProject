@@ -1,4 +1,4 @@
-"""250 고정 루틴 — 로더·순환·강도·컨디션 조정 테스트.
+"""200 KSPO 루틴 — 로더·순환·강도·컨디션 조정 테스트.
 
 루틴 데이터(data/sample/routines_250.json)는 저장소에 함께 커밋된 샘플이다.
 정식 데이터는 data/processed/ 에 같은 스키마로 넣으면 우선 사용된다.
@@ -18,10 +18,10 @@ from backend.main import app                # noqa: E402
 client = TestClient(app)
 
 
-def test_데이터_25조합_250루틴():
+def test_데이터_20조합_200루틴():
     d = rt.load()
-    assert d["_meta"]["조합수"] == 25
-    assert d["_meta"]["루틴수"] == 250
+    assert d["_meta"]["조합수"] == 20
+    assert d["_meta"]["루틴수"] == 200
     for a in rt.AGE_GROUPS:
         for p in rt.PURPOSES:
             rs = d["routines"][a][p]
@@ -109,12 +109,10 @@ def test_program_routine_엔드포인트():
     assert "강도" in b
 
 
-def test_program_routine_유아기도_된다():
-    """공개 측정데이터엔 없지만 루틴은 5개 연령대 모두 있다."""
-    b = client.get("/program/routine", params={
-        "age_gbn": "유아기", "purpose": "유연성 강화", "day": 2, "week": 1}).json()
-    assert len(b["steps"]) == 5
-    assert b["재프레이밍"] == "동물 스트레칭"
+def test_program_routine_유아기_차단():
+    response = client.get("/program/routine", params={
+        "age_gbn": "유아기", "purpose": "유연성 강화", "day": 2, "week": 1})
+    assert response.status_code == 422
 
 
 def test_program_purposes_재프레이밍():

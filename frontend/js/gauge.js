@@ -108,5 +108,27 @@ const GAUGE = (() => {
     })(t0);
   }
 
-  return { render, ratios };
+  /* 점만 이 자리에서 저 자리로 옮긴다 (M3 — 퀘스트 클리어 연출).
+   *
+   * render 의 애니메이션은 0 에서 차오르는 것이라, "예전 자리에서 지금
+   * 자리로 옮겨 갔다" 를 보여 주지 못한다. 초록 채움과 눈금은 붙박아 두고
+   * 주황 점만 움직여야 얼마나 옮겨 갔는지가 눈에 들어온다.
+   *
+   * 다 옮기면 onDone 을 한 번 부른다. */
+  function moveDot(el, data, { fromDot, duration = 1400, onDone } = {}) {
+    if (!el) return;
+    const { green, dot, tick } = ratios(data);
+    const id = 'gq' + (++seq);
+    const 출발 = Number.isFinite(fromDot) ? fromDot : dot;
+    const t0 = performance.now();
+    (function step(now) {
+      // duration 이 0 이면 0/0 = NaN 이 되어 점이 사라진다. 곧바로 끝낸다.
+      const t = duration > 0 ? easeOut(clamp((now - t0) / duration, 0, 1)) : 1;
+      el.innerHTML = svg(green, 출발 + (dot - 출발) * t, id, tick);
+      if (t < 1) requestAnimationFrame(step);
+      else if (onDone) onDone();
+    })(t0);
+  }
+
+  return { render, ratios, moveDot };
 })();

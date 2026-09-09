@@ -2576,3 +2576,86 @@ def test_방에서_나오면_점이_사라진다():
     assert "rm['안읽음'] = 0" in 본문
     assert "renderRoomList()" in 본문
     assert "loadRooms()" in 본문
+
+
+# ---------- 퀘스트 클리어 (체력나이가 어려졌을 때) ----------
+
+def test_어려졌을_때만_띄운다():
+    """같거나 나빠졌는데 축하하면 앱을 못 믿게 된다."""
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "if (지금 >= 이전) return;" in 본문
+    assert "Number.isFinite(이전) && Number.isFinite(지금)" in 본문
+
+
+def test_첫_점검에는_띄우지_않는다():
+    """견줄 지난 기록이 없어 '어려졌다' 가 성립하지 않는다."""
+    html = _index()
+    본문 = html.split("function commitResult()")[1].split("\n}")[0]
+    assert "const 첫점검 = !state.first;" in 본문
+    assert "if (!첫점검) showQuestClear(" in 본문
+
+
+def test_지난번_값은_기록을_더하기_전에_읽는다():
+    """더한 뒤에 읽으면 방금 넣은 값이 스스로와 비교된다 — 늘 '그대로' 가 된다."""
+    html = _index()
+    본문 = html.split("function commitResult()")[1].split("\n}")[0]
+    assert 본문.index("const 지난번 = lastMeasuredAge();") < 본문.index("appendMeasureLog();")
+
+
+def test_같은_날_다시_잰_줄은_지난번으로_치지_않는다():
+    """그 줄은 곧 덮인다 (규칙 4)."""
+    html = _index()
+    본문 = html.split("function lastMeasuredAge()")[1].split("\n}")[0]
+    assert "m.date !== 오늘" in 본문
+    assert "state.first?.결과?.체력나이" in 본문      # 기록이 없으면 첫 결과로
+
+
+def test_점이_예전_자리에서_출발한다():
+    """0 에서 차오르면 '얼마나 옮겨 갔나' 가 보이지 않는다."""
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "GAUGE.moveDot(" in 본문
+    assert "fromDot: 이전 / 기준," in 본문
+
+
+def test_다_옮기면_얼마나_어려졌는지_띄운다():
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "퀘스트 클리어!" in 본문
+    assert "차이.toFixed(1)" in 본문
+    assert "onDone:" in 본문
+
+
+def test_겹쳐_띄우지_않고_눌러서_닫힌다():
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "document.querySelector('.quest')) return;" in 본문
+    assert "box.onclick = 닫기;" in 본문
+    assert "화면을 누르면 닫혀요" in 본문
+
+
+def test_스스로_사라진다():
+    """연출이 화면을 붙잡고 있으면 안 된다."""
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "QUEST_HOLD_MS" in 본문
+    assert "box.remove()" in 본문
+
+
+def test_움직임을_줄여_달라는_사람도_읽을_수_있다():
+    html = _index()
+    assert ".quest, .quest.done .quest-word" in html
+    본문 = html.split(".quest, .quest.done .quest-word")[1].split("}")[0]
+    assert "animation:none" in 본문 and "opacity:1" in 본문
+
+
+def test_게이지는_점만_옮기는_길을_따로_둔다():
+    """초록 채움과 눈금이 같이 움직이면 무엇이 달라졌는지 알 수 없다."""
+    art = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    assert "function moveDot(el, data" in art
+    본문 = art.split("function moveDot(el, data")[1].split("\n  }")[0]
+    assert "출발 + (dot - 출발) * t" in 본문      # 점만 움직인다
+    assert "svg(green," in 본문                  # 채움은 붙박이
+    assert "duration > 0 ?" in 본문              # 0 이면 NaN 이 되어 점이 사라진다
+    assert "moveDot" in art.split("return {")[-1]

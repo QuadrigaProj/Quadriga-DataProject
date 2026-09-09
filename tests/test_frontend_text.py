@@ -2202,7 +2202,8 @@ def test_AI_추천이_안_되면_까닭을_말한다():
     html = _index()
     assert "let recoAiWhy = null;" in html
     assert "recoAiWhy = r.ai이유 || null;" in html
-    본문 = html.split("function setRecoMode(mode)")[1].split("\n}")[0]
+    # 까닭은 들어간 화면(aiIntroHtml)에서 말한다 — 탭을 막고 토스트로 던지지 않는다
+    본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
     assert "recoAiWhy ||" in 본문
 
 
@@ -2705,3 +2706,40 @@ def test_창으로_돌아오면_바로_받아_온다():
     본문 = html.split("visibilitychange")[1][:200]
     assert "!document.hidden && COMM.room" in 본문
     assert "pollChat()" in 본문
+
+
+# ---------- AI 탭은 잠그지 않는다 ----------
+
+def test_AI_탭을_잠그지_않는다():
+    """여기는 '받을지 고르는 자리' 다. 들어가 보지도 못하면 무엇을 고를 수 있는지조차 모른다."""
+    html = _index()
+    본문 = html.split("function paintRecoMode()")[1].split("\n}")[0]
+    assert "ai.disabled" not in 본문
+    고르기 = html.split("function setRecoMode(mode)")[1].split("\n}")[0]
+    assert "recoAiReady !== true" not in 고르기
+    assert "recoMode = mode;" in 고르기
+
+
+def test_쓸_수_있는지는_따로_가볍게_묻는다():
+    """추천 응답에만 실려 있으면, 받아 둔 추천이 있을 때 영영 모른다."""
+    html = _index()
+    assert "async function refreshAiStatus()" in html
+    본문 = html.split("async function refreshAiStatus()")[1].split("\n}")[0]
+    assert "API.aiStatus()" in 본문
+    assert "recoAiReady = !!r.ai가능;" in 본문
+    assert "aiStatusInFlight" in 본문            # 겹쳐 묻지 않는다
+    그리기 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "if (recoAiReady === null) refreshAiStatus();" in 그리기
+    assert "recoMode = 'free';" not in 그리기.split("if (recoMode === 'ai')")[1].split("paintRecoMode();")[0]
+
+
+def test_AI_화면이_왜_못_쓰는지_말해_준다():
+    """버튼만 잠가 두면 손쓸 방법이 없다."""
+    html = _index()
+    본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "확인하는 중이에요" in 본문
+    assert "recoAiWhy" in 본문
+    assert "다시 확인" in 본문 and "refreshAiStatus()" in 본문
+    assert "무료 추천 보기" in 본문
+    # 값이 빠지는 버튼은 쓸 수 있을 때만 눌린다
+    assert "${확인중 || 못씀 || 모자람 ? 'disabled' : ''}" in 본문

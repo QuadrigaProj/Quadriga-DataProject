@@ -259,11 +259,18 @@ def test_잔액이_모자라면_무료로_돌아간다():
     assert "이용권이 모자라요" in body
 
 
-def test_키가_없으면_AI방식이_잠긴다():
+def test_키가_없으면_AI방식은_들어가되_받기_버튼만_잠긴다():
+    """탭은 잠그지 않는다 — 여기는 '받을지 고르는 자리' 다.
+
+    한때 탭 자체를 잠갔더니, 쓸 수 있는지 확인이 끝나기 전에는 들어가 볼
+    수조차 없었다. 값이 빠지는 '받기' 버튼만 잠근다.
+    """
     html = _html()
     body = html.split("function paintRecoMode()")[1].split("\n}")[0]
-    assert "ai.disabled = recoAiReady !== true;" in body
-    assert "관리자가 키를 등록하면 켜져요" in body
+    assert "ai.disabled" not in body
+    assert "관리자가 키를 등록하면 켜져요" in body      # 부제로는 알려 준다
+    intro = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "${확인중 || 못씀 || 모자람 ? 'disabled' : ''}" in intro
 
 
 def test_확인되기_전에는_눌러도_조용히_무시하지_않는다():
@@ -274,9 +281,12 @@ def test_확인되기_전에는_눌러도_조용히_무시하지_않는다():
     """
     html = _html()
     assert "let recoAiReady = null;" in html   # false 로 시작하면 '확인 전'과 '확인해서 없음'을 구분 못 한다
+    # 확인 전에 눌러도 들어가진다. 대신 화면이 '확인하는 중' 이라고 말한다.
     body = html.split("function setRecoMode(mode){")[1].split("\n}")[0]
-    assert "recoAiReady !== true" in body
-    assert "showToast(" in body
+    assert "recoMode = mode;" in body and "return;" not in body
+    intro = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "const 확인중 = recoAiReady === null;" in intro
+    assert "확인하는 중이에요" in intro
     # 화면에 들어오자마자(첫 fetch 전에) 한 번 그려서, 정적 HTML 그대로 눌리는 창을 없앤다
     reco = html.split("async function renderRecommend(){")[1].split("\n}")[0]
     assert re.search(r"recoBody['\"]\);\s*\r?\n\s*paintRecoMode\(\);", reco)
@@ -602,3 +612,25 @@ def test_여러_모습이_프롬프트에_다_실린다(monkeypatch):
     a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴,
                                        "상태": ["대학생", "알바생"]})
     assert "대학생" in 본["글"] and "알바생" in 본["글"]
+
+
+# ---------- AI 를 쓸 수 있는지만 따로 묻는다 ----------
+
+def test_상태_확인은_값이_들지_않고_루틴을_매기지_않는다(monkeypatch):
+    """추천을 받아야만 알 수 있으면, 받아 둔 추천이 있을 때 영영 모른다."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    a = _paid(1000)
+    d = a.get("/recommend/ai-status").json()
+    assert d["ai가능"] is False
+    assert "ANTHROPIC_API_KEY" in d["이유"]
+    assert d["잔액"] == 1000 and d["로그인"] is True
+    assert d["값"] == 100
+    assert "추천" not in d                      # 루틴 점수를 매기지 않는다
+    assert a.get("/credit").json()["잔액"] == 1000   # 한 푼도 안 빠진다
+
+
+def test_상태_확인은_로그인_없이도_된다(monkeypatch):
+    _fake_sdk(monkeypatch, "{}")
+    d = TestClient(app).get("/recommend/ai-status").json()
+    assert d["ai가능"] is True and d["이유"] is None
+    assert d["잔액"] == 0 and d["로그인"] is False

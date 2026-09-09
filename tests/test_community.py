@@ -1250,3 +1250,81 @@ def test_채팅_메시지에도_글쓴이_아이디가_실린다():
     assert m["작성자"] == "가" and m["작성자아이디"] == ha
     # 그 아이디로 프로필을 열 수 있어야 한다
     assert b.get(f"/community/users/{m['작성자아이디']}").json()["닉네임"] == "가"
+
+
+# ---------- 안 읽은 메시지 ----------
+
+def _room(c, rid: int) -> dict:
+    """그 사람 눈에 보이는 방 한 줄."""
+    방들 = c.get("/community/rooms").json()["rooms"]
+    return next(x for x in 방들 if x["id"] == rid)
+
+def test_남이_쓴_글만_안_읽은_것으로_센다():
+    """내가 쓴 글은 쓰는 순간 읽은 것이다. 세면 늘 안 읽은 것이 남는다."""
+    가 = _login(app, "un1@x.com", "가")
+    나 = _login(app, "un2@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "안읽음방"}).json()["id"]
+    나.post(f"/community/rooms/{rid}/join")
+
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "첫 글"})
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "둘째 글"})
+
+    내방 = _room(나, rid)
+    assert 내방["안읽음"] == 2
+    # 글쓴이 쪽은 0 이다 — 자기 글이 안 읽은 것으로 잡히면 안 된다
+    assert _room(가, rid)["안읽음"] == 0
+
+
+def test_방을_열어_보면_안_읽은_수가_0_이_된다():
+    가 = _login(app, "un3@x.com", "가")
+    나 = _login(app, "un4@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "읽음방"}).json()["id"]
+    나.post(f"/community/rooms/{rid}/join")
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "안녕"})
+    assert _room(나, rid)["안읽음"] == 1
+
+    r = 나.get(f"/community/rooms/{rid}/messages").json()
+    assert r["읽은자리"] > 0
+    assert _room(나, rid)["안읽음"] == 0
+
+    # 그 뒤에 온 글은 다시 안 읽은 것이 된다
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "또 왔어요"})
+    assert _room(나, rid)["안읽음"] == 1
+
+
+def test_읽은_자리를_뒤로_되돌리지_않는다():
+    """예전 글을 다시 봤다고 안 읽은 수가 늘면 읽지도 않은 글이 생긴 셈이다."""
+    가 = _login(app, "un5@x.com", "가")
+    나 = _login(app, "un6@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "되돌림방"}).json()["id"]
+    나.post(f"/community/rooms/{rid}/join")
+    for i in range(3):
+        가.post(f"/community/rooms/{rid}/messages", json={"body": f"글 {i}"})
+    나.get(f"/community/rooms/{rid}/messages")
+    assert _room(나, rid)["안읽음"] == 0
+
+    # after 로 앞쪽만 다시 받아 봐도 뒤로 가지 않는다
+    나.get(f"/community/rooms/{rid}/messages", params={"after": 0})
+    assert _room(나, rid)["안읽음"] == 0
+
+
+def test_안_들어간_방에는_안_읽음이_없다():
+    """아직 내 대화가 아니다."""
+    가 = _login(app, "un7@x.com", "가")
+    나 = _login(app, "un8@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "구경방"}).json()["id"]
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "안녕"})
+    방 = _room(나, rid)
+    assert 방["참여중"] is False
+    assert 방["안읽음"] == 0
+    assert 방["메시지수"] == 1        # 전체 수는 그대로 보인다
+
+
+def test_들어가기_전_글은_안_읽은_것으로_잡힌다():
+    """가입한 뒤 처음 열 때까지는 못 본 글이 맞다."""
+    가 = _login(app, "un9@x.com", "가")
+    나 = _login(app, "un10@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "늦게방"}).json()["id"]
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "먼저 온 글"})
+    나.post(f"/community/rooms/{rid}/join")
+    assert _room(나, rid)["안읽음"] == 1

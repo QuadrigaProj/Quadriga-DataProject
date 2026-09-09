@@ -1294,6 +1294,10 @@
   .room-card .rc-name{ font-weight:700; font-size:14px; }
   .room-card .rc-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
   .room-card .rc-host{ margin-left:4px; font-size:12px; }
+  /* 안 읽은 글이 있는 방 — 이름 옆 빨간 점 하나로 알아본다 */
+  .room-card .rc-dot{ display:inline-block; width:7px; height:7px; margin-left:6px;
+    border-radius:50%; background:var(--clay); vertical-align:middle; }
+  .room-card .rc-unread{ color:var(--clay); font-weight:700; }
   .room-actions{ display:flex; align-items:center; justify-content:flex-end;
     gap:6px; flex-wrap:wrap; margin-left:auto; }
   .room-card button{ border:none; background:var(--pine); color:#fff; border-radius:10px; padding:7px 12px; font-size:13px; font-family:inherit; cursor:pointer; white-space:nowrap; }
@@ -4215,6 +4219,16 @@ function renderRoomList(){
     const kind = rm['종류'] === 'direct' ? '개인 채팅' : (rm['비공개'] ? '비공개' : '공개');
     const 방폭파버튼 = (rm['방장'] && rm['종류'] !== 'direct')
       ? `<button class="room-danger-btn" data-destroy-room="${rm.id}">방 폭파</button>` : '';
+    // 들어가 있는 방은 '지금까지 나눈 대화 수' 보다 '내가 안 읽은 수' 가 쓸모 있다.
+    // 아직 안 들어간 방은 안 읽은 것이라는 게 없으니 그대로 전체 수를 보여 준다.
+    const 안읽음 = 내채팅 ? (rm['안읽음'] || 0) : 0;
+    const 안읽음표 = 안읽음
+      ? ` <span class="rc-dot" title="안 읽은 글이 있어요" aria-label="안 읽은 글이 있어요"></span>` : '';
+    // 못 본 연락이 있을 때만 적는다. 조용한 방마다 한 줄씩 붙어 있으면
+    // 정작 봐야 할 방이 어디인지 눈에 덜 들어온다.
+    const 메시지칸 = 내채팅
+      ? (안읽음 ? `<span class="rc-unread">안 읽음 ${안읽음}</span>` : '')
+      : `메시지 ${rm['메시지수']}`;
     return `
     <div class="room-card">
       ${내채팅 ? `<button type="button" class="room-pin" data-pin-room="${rm.id}"
@@ -4223,8 +4237,8 @@ function renderRoomList(){
           aria-label="${고정.has(rm.id) ? '고정 해제' : '위에 고정'}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9V4h1a1 1 0 0 0 0-2H7a1 1 0 0 0 0 2h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>
         </button>` : ''}
-      <div class="rc-info"><div class="rc-name">${esc(rm['이름'])}${privateMark}${hostMark}</div>
-        <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명 · 메시지 ${rm['메시지수']}</div></div>
+      <div class="rc-info"><div class="rc-name">${esc(rm['이름'])}${privateMark}${hostMark}${안읽음표}</div>
+        <div class="rc-sub">${kind}${rm['주제'] ? ' · ' + esc(rm['주제']) : ''} · 멤버 ${rm['인원']}명${메시지칸 ? ' · ' + 메시지칸 : ''}</div></div>
       <div class="room-actions">
         ${rm['방장'] && rm['비공개'] ? `<button class="room-password-btn" data-password-room="${rm.id}">비밀번호 변경</button>` : ''}
         ${방폭파버튼}
@@ -4511,7 +4525,13 @@ async function openRoom(id, name){
 function closeRoom(){
   stopChatPoll();
   closeRoomMembers();
+  const 나온방 = COMM.room;
   $('chatView').hidden = true; $('roomList').hidden = false; COMM.room = null;
+  // 서버는 이미 읽은 것으로 적어 뒀지만, 손에 든 목록은 들어가기 전 것이라
+  // 그대로 두면 방금 다 읽은 방에 빨간 점이 남는다.
+  const rm = ROOMS.find(x => x.id === 나온방);
+  if (rm) { rm['안읽음'] = 0; renderRoomList(); }
+  loadRooms();
 }
 
 /* ---- 단체 채팅방 멤버 창 (L5·L6) ----

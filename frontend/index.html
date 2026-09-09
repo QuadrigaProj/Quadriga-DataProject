@@ -3851,7 +3851,7 @@ function movesOn(날){
   const 목록 = [];
   (logAt(날)?.items || []).forEach(x => {
     const 열쇠 = Object.keys(x.값 || {});
-    const 값 = Object.entries(x.값 || {})
+    const 값 = wlogEntries(x.값)
       .map(([k, v]) => `${v}${wlogUnit(k, 열쇠)}`).join(' ');
     목록.push({ 이름: x.이름, 값 });
   });
@@ -6684,7 +6684,7 @@ async function deleteSelectedManual(){
 function manualDetailHtml(w){
   const 종목 = (w.items || []).map(x => {
     const 열쇠 = Object.keys(x.값 || {});
-    const 값 = Object.entries(x.값 || {})
+    const 값 = wlogEntries(x.값)
       .map(([k, v]) => `${v}${wlogUnit(k, 열쇠)}`).join(' ');
     return `<div class="rec-detail-row wide"><b>${x.이름}</b><span>${값}</span></div>`;
   }).join('');
@@ -6742,6 +6742,12 @@ function wlogUnit(k, keys, 단위){
   if (k === '시간' && 목록.includes('세트')) return '분씩';
   if (k === '시간' && 목록.includes('거리')) return '분 동안';
   return 표[k] || k;
+}
+
+/* 저장된 값 객체의 키 순서를 믿지 않는다 — 예전에 다른 순서로 저장된 기록이 있을 수 있어서다.
+   화면에 보일 때는 항상 '세트'를 맨 뒤로 보내 '10회씩 2세트' 순서로만 읽히게 한다. */
+function wlogEntries(값){
+  return Object.entries(값 || {}).sort((a, b) => (a[0] === '세트') - (b[0] === '세트'));
 }
 
 /* ---------------------------------------------------------------------------

@@ -43,6 +43,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import kakaopay as kp
     from backend import billing
     from backend import community
+    from backend import spare_time as spare
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -64,6 +65,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import kakaopay as kp                   # noqa: E402
     import billing                          # noqa: E402
     import community                        # noqa: E402
+    import spare_time as spare              # noqa: E402
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -1284,6 +1286,28 @@ def get_recommend_routines(
 
 
 # ---------- 11. 당일 기록 종목 ----------
+
+class SpareTimeIn(BaseModel):
+    """짬시간 계산에 필요한 것만. 일정은 저장하지 않는다 — 화면이 갖고 있다."""
+    바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
+                                        description="{요일: [{시작, 끝}, ...]}")
+    sports: list[str] = Field(default_factory=list, max_length=100)
+    weak: list[str] = Field(default_factory=list, max_length=10)
+    limit: int = Field(3, ge=1, le=10)
+
+
+@app.post("/spare-time/plan")
+def post_spare_plan(body: SpareTimeIn) -> dict:
+    """요일별로 남는 칸과 거기서 할 것.
+
+    적어 두지 않은 요일은 결과에도 없다. 하루가 통째로 빈다고 단정하면
+    안 적은 사람에게 온종일 운동하라고 하는 셈이다.
+    """
+    바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
+    return {"요일": list(spare.WEEKDAYS),
+            "요일별": spare.plan(바쁜, sports_ids=body.sports,
+                              weak=body.weak, limit=body.limit)}
+
 
 @app.get("/workout-items")
 def get_workout_items() -> dict:

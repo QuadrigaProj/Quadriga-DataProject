@@ -88,6 +88,8 @@ const API = (() => {
     pushMeasurement: (b) => post('/me/measurements', b),
 
     // --- 커뮤니티 ---
+    // 짬시간 — 적어 둔 일정에서 남는 칸과 거기서 할 것
+    sparePlan: (b) => post('/spare-time/plan', b),
     commMeta: () => call('/community/meta'),
     commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),
     commPost: (b) => post('/community/posts', b),

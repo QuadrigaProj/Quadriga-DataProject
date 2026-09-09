@@ -1,7 +1,8 @@
-"""AI 루틴 추천 (H1).
+"""AI 루틴 추천 (H1 → 맞춤 짓기).
 
-실제 API 를 부르지 않는다. 가짜 응답으로 (1) 붙었을 때 순서·이유가 바뀌는지,
-(2) 지어낸 응답을 버리는지, (3) 어떤 실패에도 점수 결과로 돌아오는지를 본다.
+실제 API 를 부르지 않는다. 가짜 응답으로 (1) 검증된 재료로 루틴이 지어지는지,
+(2) 재료에 없는 것은 줄 단위로 버리고 너무 적으면 통째로 버리는지,
+(3) 어떤 실패에도 점수 결과로 돌아오고 값을 받지 않는지를 본다.
 """
 from __future__ import annotations
 
@@ -45,12 +46,31 @@ def _paid(credit: int = 1000) -> TestClient:
         billing.charge(1, credit, credit, f"seed-{credit}")
     return c
 
-후보 = [
-    {"목적": "다이어트", "루틴명": "전신 HIIT", "동작수": 5, "체력요인": ["심폐지구력"],
-     "이유": ["원래 이유"], "순위": 1},
-    {"목적": "유연성 강화", "루틴명": "온몸 늘리기", "동작수": 5, "체력요인": ["유연성"],
-     "이유": ["원래 이유"], "순위": 2},
-]
+사용자 = {"연령대": "성인", "실제 나이": 40, "체력나이": 44,
+       "항목별 체력나이": {"유연성": 52, "근력": 41, "심폐지구력": 45, "근지구력": 40},
+       "뒤처지는 체력요인": ["유연성"], "고른 종목": ["러닝"], "강도": {"세트": 2, "반복": 10, "시간초": 30}}
+
+
+def _코드(단계: str, n: int = 0) -> str:
+    """그 단계의 실제 공식 동작 코드 — 재료 표에 있는 것."""
+    from backend import routines as rt
+    return list(rt.load()["pools"]["성인"][단계])[n]
+
+
+def _지은응답(꼬리: str = "", 동작=None) -> str:
+    """검증된 재료로 짠 그럴듯한 응답. 꼬리로 짬시간 같은 것을 덧붙인다."""
+    import json as _j
+    줄 = 동작 if 동작 is not None else [
+        {"코드": _코드("준비운동"), "단계": "준비운동", "수행량": "30초", "왜": "몸을 풀어요"},
+        {"코드": _코드("본운동"), "단계": "본운동", "수행량": "10회 2세트", "왜": "본운동"},
+        {"종목": "running", "단계": "본운동", "수행량": "15분", "왜": "고른 종목이에요"},
+        {"기록": "squat", "단계": "본운동", "수행량": "12회 3세트", "왜": "하체"},
+        {"코드": _코드("정리운동"), "단계": "정리운동", "수행량": "30초", "왜": "정리"},
+    ]
+    본문 = _j.dumps({"목적": "다이어트", "루틴명": "오늘의 나", "한마디": "가볍게 시작해요",
+                    "왜": ["유연성이 뒤처져요"], "주의": ["무릎이 아프면 쉬세요"], "동작": 줄},
+                   ensure_ascii=False)
+    return 본문[:-1] + 꼬리 + "}"
 
 
 class _Blk:
@@ -82,40 +102,90 @@ def _fake_sdk(monkeypatch, text=None, stop="end_turn", boom=None):
 def test_키가_없으면_부르지_않는다(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert air.available() is False
-    assert air.refine(후보, {}, "성인") is None
+    assert air.compose(사용자, "성인") is None
 
 
-def test_붙으면_순서와_이유를_다듬는다(monkeypatch):
-    _fake_sdk(monkeypatch, '{"순서":[1,0],"이유":{"1":["유연성이 급해요"]},"한마디":"천천히"}')
-    r = air.refine(후보, {"약점": ["유연성"]}, "성인")["추천"]
-    assert [x["루틴명"] for x in r] == ["온몸 늘리기", "전신 HIIT"]
-    assert r[0]["이유"] == ["유연성이 급해요"]
-    assert r[0]["한마디"] == "천천히"
-    assert r[0]["순위"] == 1 and r[1]["순위"] == 2
-    assert all(x["출처"] == "ai" for x in r)
-    # 이유를 안 준 후보는 원래 이유를 지킨다
-    assert r[1]["이유"] == ["원래 이유"]
+def test_검증된_재료로_루틴이_지어진다(monkeypatch):
+    _fake_sdk(monkeypatch, _지은응답())
+    r = air.compose(사용자, "성인", 종목ids=["running"])["루틴"]
+    assert r["루틴명"] == "오늘의 나" and r["목적"] == "다이어트"
+    assert r["구성"] == "ai" and r["출처"] == "ai" and r["순위"] == 1
+    assert r["이유"] == ["유연성이 뒤처져요"] and r["주의"] == ["무릎이 아프면 쉬세요"]
+    assert r["동작수"] == 5 and r["강도"] == 사용자["강도"]
+    assert [x["단계"] for x in r["steps"]] == ["준비운동", "본운동", "본운동", "본운동", "정리운동"]
+    assert r["steps"][1]["수행량"] == "10회 2세트" and r["steps"][1]["왜"] == "본운동"
+
+
+def test_영상이_없어도_검증된_종목이면_들어간다(monkeypatch):
+    """영상 유무는 조건이 아니다. 고른 종목은 영상이 없지만 검증된 종목이다."""
+    _fake_sdk(monkeypatch, _지은응답())
+    steps = air.compose(사용자, "성인", 종목ids=["running"])["루틴"]["steps"]
+    종목 = next(x for x in steps if x["출처"] == "종목")
+    기록 = next(x for x in steps if x["출처"] == "기록")
+    assert 종목["동작"] == "러닝" and 종목["youtube_id"] is None and 종목["아이콘"]
+    assert 기록["동작"] == "스쿼트" and 기록["youtube_id"] is None
+    assert all(x["youtube_id"] for x in steps if x["출처"] == "동작")   # 공식 동작은 영상이 있다
+
+
+def test_재료에_없는_것은_그_줄만_버린다(monkeypatch):
+    """이름을 지어낼 수 없다. 다만 한 줄 틀렸다고 루틴 전체를 잃지는 않는다."""
+    _fake_sdk(monkeypatch, _지은응답(동작=[
+        {"코드": _코드("준비운동"), "단계": "준비운동", "수행량": "30초"},
+        {"코드": "V지어낸코드", "단계": "본운동", "수행량": "x"},
+        {"종목": "quidditch", "단계": "본운동", "수행량": "x"},
+        {"기록": "없는운동", "단계": "본운동", "수행량": "x"},
+        {"코드": _코드("본운동"), "단계": "본운동", "수행량": "10회"},
+        {"코드": _코드("본운동"), "단계": "본운동", "수행량": "또"},          # 같은 것 두 번
+        {"코드": _코드("정리운동"), "단계": "정리운동", "수행량": "30초"},
+    ]))
+    steps = air.compose(사용자, "성인")["루틴"]["steps"]
+    assert len(steps) == 3
+    assert all(x["동작"] not in ("V지어낸코드", "quidditch", "없는운동") for x in steps)
+
+
+def test_재료의_이름을_쓴다_응답의_이름이_아니라(monkeypatch):
+    """응답이 코드에 엉뚱한 이름을 붙여도 화면에는 재료의 이름이 뜬다."""
+    _fake_sdk(monkeypatch, _지은응답(동작=[
+        {"코드": _코드("준비운동"), "단계": "준비운동", "동작": "엉뚱한 이름", "수행량": "30초"},
+        {"코드": _코드("본운동"), "단계": "본운동", "동작": "엉뚱한 이름", "수행량": "10회"},
+        {"코드": _코드("정리운동"), "단계": "정리운동", "동작": "엉뚱한 이름", "수행량": "30초"},
+    ]))
+    steps = air.compose(사용자, "성인")["루틴"]["steps"]
+    assert all(x["동작"] != "엉뚱한 이름" for x in steps)
 
 
 @pytest.mark.parametrize("본문", [
-    '{"순서":[0,5]}',          # 없는 후보 번호
-    '{"순서":[0,0]}',          # 중복
-    '{"순서":["첫째"]}',        # 번호가 아님
-    '{"순서":[]}',             # 빈 순서
-    '{"이유":{"0":["x"]}}',    # 순서 없음
+    '{"목적":"다이어트"}',                                  # 동작이 없음
+    '{"동작":"스쿼트 열 번"}',                               # 목록이 아님
+    '{"동작":[{"코드":"V없음"},{"종목":"없음"},{"기록":"없음"}]}',   # 전부 지어냄
     '이건 JSON 이 아니에요',
     '',
 ])
-def test_지어낸_응답은_통째로_버린다(monkeypatch, 본문):
+def test_루틴이_안_되면_통째로_버린다(monkeypatch, 본문):
     _fake_sdk(monkeypatch, 본문)
-    assert air.refine(후보, {}, "성인") is None
+    assert air.compose(사용자, "성인") is None
+
+
+def test_세_줄이_안_되거나_본운동이_없으면_루틴이_아니다(monkeypatch):
+    두줄 = [{"코드": _코드("준비운동"), "단계": "준비운동"}, {"코드": _코드("본운동"), "단계": "본운동"}]
+    _fake_sdk(monkeypatch, _지은응답(동작=두줄))
+    assert air.compose(사용자, "성인") is None
+    본없음 = [{"코드": _코드("준비운동", i), "단계": "준비운동"} for i in range(3)]
+    _fake_sdk(monkeypatch, _지은응답(동작=본없음))
+    assert air.compose(사용자, "성인") is None
+
+
+def test_없는_목적이면_기본_목적으로(monkeypatch):
+    본문 = _지은응답().replace('"목적": "다이어트"', '"목적": "우주 정복"')
+    _fake_sdk(monkeypatch, 본문)
+    assert air.compose(사용자, "성인")["루틴"]["목적"] == "기초 체력 증진"
 
 
 def test_거절과_예외도_폴백한다(monkeypatch):
-    _fake_sdk(monkeypatch, '{"순서":[0]}', stop="refusal")
-    assert air.refine(후보, {}, "성인") is None
+    _fake_sdk(monkeypatch, _지은응답(), stop="refusal")
+    assert air.compose(사용자, "성인") is None
     _fake_sdk(monkeypatch, boom=RuntimeError("연결 실패"))
-    assert air.refine(후보, {}, "성인") is None
+    assert air.compose(사용자, "성인") is None
 
 
 def test_엔드포인트가_출처를_알려준다(monkeypatch):
@@ -126,11 +196,12 @@ def test_엔드포인트가_출처를_알려준다(monkeypatch):
 
 
 def test_엔드포인트가_AI를_쓴다(monkeypatch):
-    _fake_sdk(monkeypatch, '{"순서":[2,1,0],"이유":{"2":["이게 먼저예요"]}}')
+    _fake_sdk(monkeypatch, _지은응답())
     a = _paid(1000)
     d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
     assert d["출처"] == "ai"
-    assert d["추천"][0]["이유"] == ["이게 먼저예요"]
+    assert len(d["추천"]) == 1 and d["추천"][0]["구성"] == "ai"   # 후보 목록이 아니라 지은 루틴 하나
+    assert d["추천"][0]["이유"] == ["유연성이 뒤처져요"]
     assert d["잔액"] == 900                     # 서버가 100원 깎았다
     # ai=0 이면 부르지 않고 깎지도 않는다
     d2 = a.get("/recommend/routines",
@@ -233,7 +304,7 @@ def test_결제창은_카드정보를_묻지_않는다():
     assert "PG사 결제창이 받습니다" in 결제창
 
 
-def test_AI가_실제로_다듬었을_때만_값을_받는다():
+def test_AI가_실제로_지었을_때만_값을_받는다():
     """폴백(출처='점수')이면 차감하지 않는다 — 안 쓴 것에 돈을 받지 않는다.
 
     실결제로 옮기면서 차감이 서버로 갔다. 화면 쪽이 아니라 서버가 지켜야 한다
@@ -242,14 +313,14 @@ def test_AI가_실제로_다듬었을_때만_값을_받는다():
     import inspect
     from backend import main as m
     src = inspect.getsource(m._recommend)   # GET·POST 가 함께 쓰는 본체
-    # 다듬어졌을 때만 깎는다
-    조건 = 'if 다듬음 and 다듬음.get("추천"):'
+    # 지어졌을 때만 깎는다
+    조건 = 'if 지음 and 지음.get("루틴"):'
     assert 조건 in src
     깎는줄 = [l for l in src.splitlines() if "billing.spend" in l]
     assert len(깎는줄) == 1, 깎는줄
     assert src.index(조건) < src.index("billing.spend")
     # 잔액이 모자라면 부르지도 않는다
-    assert src.index('out["잔액"] < AI_PRICE') < src.index("air.refine")
+    assert src.index('out["잔액"] < AI_PRICE') < src.index("air.compose")
 
 
 def test_잔액이_모자라면_무료로_돌아간다():
@@ -305,7 +376,7 @@ def test_비는_칸을_프롬프트에_적어_보낸다(monkeypatch):
     class _Messages:
         def create(self, **kw):
             본["글"] = kw["messages"][0]["content"]
-            return _Msg('{"순서":[0]}')
+            return _Msg(_지은응답())
 
     class _Client:
         def __init__(self, **kw): self.messages = _Messages()
@@ -315,19 +386,23 @@ def test_비는_칸을_프롬프트에_적어_보낸다(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", mod)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
-    air.refine(후보, {}, "성인", 일정)
+    air.compose(dict(사용자, **{"하루의 모습": ["학생"]}), "성인", 종목ids=["running"], 일정=일정)
     글 = 본["글"]
     assert "비는 시간" in 글
     assert "월 0. 12:00–13:00 (60분) — 달리기 / 맨몸 근력" in 글
     assert "학생" in 글                      # 하루의 모습도 함께
+    # 이 사람의 데이터와 재료가 다 실린다
+    assert '"유연성": 52' in 글 and "재료" in 글
+    assert "★ 러닝" in 글                    # 고른 종목은 표시해 준다
+    assert _코드("본운동") in 글
 
 
 def test_그_칸에_없는_것을_고르면_그_줄만_버린다(monkeypatch):
     """지어낸 운동을 내보내지 않는다. 다만 한 줄 틀렸다고 나머지까지 잃지는 않는다."""
-    _fake_sdk(monkeypatch,
-              '{"순서":[0],"짬시간":{"월":[{"칸":0,"할것":"수영","한줄":"버려질 줄"},'
-              '{"칸":0,"할것":"달리기","한줄":"점심에 가볍게"}]}}')
-    r = air.refine(후보, {}, "성인", 일정)
+    _fake_sdk(monkeypatch, _지은응답(
+        ',"짬시간":{"월":[{"칸":0,"할것":"수영","한줄":"버려질 줄"},'
+        '{"칸":0,"할것":"달리기","한줄":"점심에 가볍게"}]}'))
+    r = air.compose(사용자, "성인", 일정=일정)
     assert [x["할것"] for x in r["짬시간"]["월"]] == ["달리기"]
     assert r["짬시간"]["월"][0]["한줄"] == "점심에 가볍게"
     assert r["짬시간"]["월"][0]["시작"] == "12:00"   # 시각은 서버 것을 쓴다
@@ -341,25 +416,26 @@ def test_그_칸에_없는_것을_고르면_그_줄만_버린다(monkeypatch):
     '"달리기"',                                # 통째로 엉뚱함
 ])
 def test_말이_안_되는_짬시간은_담지_않는다(monkeypatch, 고른것):
-    _fake_sdk(monkeypatch, '{"순서":[0],"짬시간":' + 고른것 + '}')
-    assert air.refine(후보, {}, "성인", 일정)["짬시간"] == {}
+    _fake_sdk(monkeypatch, _지은응답(',"짬시간":' + 고른것))
+    assert air.compose(사용자, "성인", 일정=일정)["짬시간"] == {}
 
 
 def test_일정을_안_주면_짬시간도_없다(monkeypatch):
     """안 적은 사람에게 비는 시간을 지어내 주지 않는다."""
-    _fake_sdk(monkeypatch, '{"순서":[0],"짬시간":{"월":[{"칸":0,"할것":"달리기"}]}}')
-    assert air.refine(후보, {}, "성인")["짬시간"] == {}
+    _fake_sdk(monkeypatch, _지은응답(',"짬시간":{"월":[{"칸":0,"할것":"달리기"}]}'))
+    assert air.compose(사용자, "성인")["짬시간"] == {}
 
 
 def test_POST로_보내면_일정까지_함께_본다(monkeypatch):
-    _fake_sdk(monkeypatch,
-              '{"순서":[2,1,0],"짬시간":{"월":[{"칸":0,"할것":"스트레칭","한줄":"짧게"}]}}')
+    _fake_sdk(monkeypatch, _지은응답(
+        ',"짬시간":{"월":[{"칸":0,"할것":"스트레칭","한줄":"짧게"}]}'))
     a = _paid(1000)
     d = a.post("/recommend/routines",
                json={"age_gbn": "성인", "limit": 3,
                      "바쁜시간": {"월": [{"시작": "09:00", "끝": "12:00"}]}},
                ).json()
     assert d["출처"] == "ai" and d["잔액"] == 900
+    assert d["추천"][0]["구성"] == "ai"
     assert d["짬시간"]["월"], "일정을 줬으면 비는 칸이 나와야 한다"
     골라둔 = d.get("짬시간계획", {}).get("월") or []
     assert all(x["할것"] for x in 골라둔)
@@ -634,3 +710,56 @@ def test_상태_확인은_로그인_없이도_된다(monkeypatch):
     d = TestClient(app).get("/recommend/ai-status").json()
     assert d["ai가능"] is True and d["이유"] is None
     assert d["잔액"] == 0 and d["로그인"] is False
+
+
+# ---------- 이 사람을 읽는다 ----------
+
+def test_POST의_사용자_데이터가_프롬프트에_실린다(monkeypatch):
+    """항목별 체력나이와 최근 기록이 없으면 '맞춤' 이 아니다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    a = _paid(1000)
+    d = a.post("/recommend/routines", json={
+        "age_gbn": "성인", "limit": 3, "sports": ["running"],
+        "항목별": {"유연성": 52.5, "근력": 41}, "체력나이": 44.2,
+        "최근기록": [{"date": "2026-09-08", "이름": "스쿼트", "값": "12횟수 3세트"}],
+        "상태": ["대학생", "알바생"]}).json()
+    assert d["출처"] == "ai"
+    글 = 본["글"]
+    assert "52.5" in 글 and "44.2" in 글
+    assert "스쿼트" in 글 and "12횟수 3세트" in 글
+    assert "대학생" in 글 and "알바생" in 글
+    assert "★ 러닝" in 글
+
+
+def test_사용자_데이터는_무료_추천을_바꾸지_않는다(monkeypatch):
+    """무료는 점수 규칙 그대로다. 같은 조건이면 같은 결과가 나와야 한다."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    기본 = client.post("/recommend/routines", json={"age_gbn": "성인", "limit": 5, "ai": False}).json()
+    같이 = client.post("/recommend/routines", json={
+        "age_gbn": "성인", "limit": 5, "ai": False,
+        "항목별": {"유연성": 60}, "체력나이": 55,
+        "최근기록": [{"date": "2026-09-08", "이름": "스쿼트", "값": "x"}]}).json()
+    assert [x["루틴명"] for x in 같이["추천"]] == [x["루틴명"] for x in 기본["추천"]]
+    assert 같이["출처"] == "점수" and len(같이["추천"]) == 5
+
+
+def test_지어낸_루틴의_한_줄에_영상_없는_것이_섞여도_전체가_산다(monkeypatch):
+    _fake_sdk(monkeypatch, _지은응답())
+    a = _paid(1000)
+    d = a.post("/recommend/routines", json={"age_gbn": "성인", "sports": ["running"]}).json()
+    steps = d["추천"][0]["steps"]
+    assert any(x["출처"] == "종목" for x in steps) and any(x["출처"] == "동작" for x in steps)

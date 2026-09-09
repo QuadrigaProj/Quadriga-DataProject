@@ -1298,6 +1298,12 @@ class RecommendIn(BaseModel):
                                         description="{요일: [{시작, 끝}, ...]} — 적은 사람만")
     상태: str | list[str] | None = Field(
         None, description="하루의 모습. 여럿 고를 수 있다 — 대학생이면서 알바생인 사람이 흔하다")
+    # AI 가 '이 사람' 을 읽는 데 쓰는 것. 무료 추천은 보지 않는다.
+    항목별: dict[str, float] = Field(default_factory=dict,
+                                   description="마지막 측정의 항목별 환산나이")
+    체력나이: float | None = Field(None, ge=5, le=110)
+    최근기록: list[dict] = Field(default_factory=list, max_length=30,
+                              description="[{date, 이름, 값}] 최근 2주. 화면이 추린다")
 
 
 @app.get("/recommend/routines")
@@ -1340,15 +1346,22 @@ def post_recommend_routines(body: RecommendIn,
         sports=body.sports, target_gap=body.target_gap, limit=body.limit,
         week=body.week, ai=body.ai, real_age=body.real_age,
         token=quadriga_session, busy=body.바쁜시간,
-        life_kind=_life_kinds(body.상태))
+        life_kind=_life_kinds(body.상태),
+        profile={"항목별": body.항목별, "체력나이": body.체력나이,
+                 "최근기록": body.최근기록[:30]})
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                sports: list[str], target_gap: float | None, limit: int,
                week: int, ai: bool, real_age: float | None,
                token: str | None, busy: dict | None = None,
-               life_kind: str | None = None) -> dict:
-    """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다."""
+               life_kind: list[str] | str | None = None,
+               profile: dict | None = None) -> dict:
+    """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
+
+    profile 은 AI 가 '이 사람' 을 읽는 재료(항목별 체력나이·최근 기록).
+    무료 추천은 보지 않는다 — 점수 규칙은 그대로다.
+    """
     if real_age is not None:
         try:
             age_gbn = rt.age_group(real_age)
@@ -1389,13 +1402,33 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
         elif out["잔액"] < AI_PRICE:
             out["안내"] = "이용권이 모자라요. 먼저 충전해 주세요."
         else:
-            다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn, 일정)
-            # 실제로 다듬어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
-            if 다듬음 and 다듬음.get("추천"):
-                out["추천"] = 다듬음["추천"]
+            # 무료 추천은 점수 순이라 맞춤이 아니다. AI 는 이 사람의 데이터를
+            # 전부 읽고 루틴 하나를 직접 짓는다 — 검증된 재료(공식 동작·고른
+            # 종목·기록 종목) 안에서만. 응답의 코드·id 는 서버가 대조한다.
+            참고 = out.get("참고") or {}
+            사용자 = {
+                "연령대": age_gbn,
+                "실제 나이": real_age,
+                "체력나이": (profile or {}).get("체력나이"),
+                "항목별 체력나이": (profile or {}).get("항목별") or {},
+                "뒤처지는 체력요인": parts,
+                "고른 종목": 참고.get("고른종목") or [],
+                "고른 종목이 쓰는 요인": 참고.get("종목요인") or [],
+                "조심할 부위": out.get("조심할부위") or [],
+                "운동 스타일 테스트가 고른 목적": style_purpose,
+                "목표 체력나이까지 남은 세": target_gap,
+                "프로그램 주차": week,
+                "강도": out.get("강도"),
+                "하루의 모습": life_kind or [],
+                "최근 기록": ((profile or {}).get("최근기록") or [])[:30],
+            }
+            지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
+            # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
+            if 지음 and 지음.get("루틴"):
+                out["추천"] = [지음["루틴"]]
                 out["출처"] = "ai"
-                if 다듬음.get("짬시간"):
-                    out["짬시간계획"] = 다듬음["짬시간"]
+                if 지음.get("짬시간"):
+                    out["짬시간계획"] = 지음["짬시간"]
                 out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
     return out
 

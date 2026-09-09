@@ -2388,16 +2388,19 @@ def test_루틴_추천에서_일정을_넣을_수_있다():
 
 # ---------- AI 추천이 일정까지 읽는다 ----------
 
-def test_일정을_적었으면_POST로_보낸다():
-    """요일별 시간표는 쿼리 문자열에 실을 수 없다."""
+def test_AI_추천은_늘_POST로_이_사람의_데이터를_보낸다():
+    """항목별 체력나이·최근 기록·일정은 쿼리 문자열에 실을 수 없다. 무료는 GET 그대로."""
     html = _index()
     본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "const r = ai" in 본문
     assert "API.recommendWithSchedule({" in 본문
-    assert "바쁜시간: 바쁜," in 본문
+    assert "바쁜시간: 바쁜 || {}," in 본문
     assert "상태: state.schedule?.상태 || []," in 본문
-    # 안 적은 사람은 예전 그대로 GET
+    assert "항목별: state.result?.항목별 || {}," in 본문
+    assert "체력나이: state.result?.체력나이 ?? null," in 본문
+    assert "최근기록: recentWorkouts(14)," in 본문
+    # 무료는 예전 그대로 GET
     assert "API.recommendRoutines({" in 본문
-    assert "Object.keys(바쁜).length" in 본문
 
 
 def test_AI가_고른_짬시간을_추천_카드에_그린다():
@@ -2743,3 +2746,71 @@ def test_AI_화면이_왜_못_쓰는지_말해_준다():
     assert "무료 추천 보기" in 본문
     # 값이 빠지는 버튼은 쓸 수 있을 때만 눌린다
     assert "${확인중 || 못씀 || 모자람 ? 'disabled' : ''}" in 본문
+
+
+# ---------- AI 가 지은 루틴 ----------
+
+def test_최근_기록은_읽을_만큼만_보낸다():
+    """통째로 보내지 않는다. 날짜·이름·값, 끝낸 루틴만, 30줄까지."""
+    html = _index()
+    본문 = html.split("function recentWorkouts(days)")[1].split("\n}")[0]
+    assert "w.date < 부터" in 본문
+    assert "!e.done" in 본문                 # 끝내지 않은 루틴은 기록이 아니다
+    assert ".slice(0, 30)" in 본문
+    assert "이름: x.이름" in 본문
+
+
+def test_지은_루틴에는_더_쉬운_더_어려운_버튼이_없다():
+    """후보 목록이 아니라 하나다. 갈 곳이 없는 버튼은 두지 않는다."""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "const 지은것 = x.구성 === 'ai';" in 본문
+    actions = 본문.split('<div class="reco-actions">')[1].split("</div>")[0]
+    assert actions.index("${지은것 ? '' : `<button") < actions.index("이전 루틴")
+    assert actions.index("더 어려운 루틴") < actions.index("`}")   # 셋이 한 묶음으로 빠진다
+    assert "이 루틴으로 시작" in actions.split("`}")[1]           # 시작은 늘 있다
+
+
+def test_지은_루틴은_왜_이_사람인지를_말한다():
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요" in 본문
+    assert "AI 가 지었어요 · 이용권" in 본문
+    assert "${s.왜 ? `<br/>${esc(s.왜)}` : ''}" in 본문          # 동작마다 왜
+    assert "(x.주의 || []).length" in 본문                          # 주의 한 줄
+
+
+def test_고른_종목은_표시가_붙고_영상이_없어도_그린다():
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "s.출처 === '종목'" in 본문 and "고른 종목</span>" in 본문
+    assert "${s.아이콘 ? s.아이콘 + ' ' : ''}" in 본문
+    assert ".rec-step-tag{" in html
+
+
+def test_지은_루틴으로_시작하면_그_루틴을_그대로_돈다():
+    """목적별 기본 루틴으로 바꿔치기하면 맞춤으로 지은 뜻이 없다."""
+    html = _index()
+    시작 = html.split("async function useRecommend()")[1].split("\n}")[0]
+    assert "state.aiRoutine = x.구성 === 'ai' ? x : null;" in 시작
+    불러오기 = html.split("async function loadRoutine()")[1].split("\n}")[0]
+    assert "if (state.aiRoutine?.steps?.length) { applyAiRoutine(); return; }" in 불러오기
+    assert 불러오기.index("applyAiRoutine()") < 불러오기.index("API.programRoutine")
+    적용 = html.split("function applyAiRoutine()")[1].split("\n}")[0]
+    assert "youtube_id: s.youtube_id || null" in 적용            # 영상 없는 줄은 버튼만 안 뜬다
+    assert "구성: 'ai'" in 적용
+    assert "설명: [s.수행량, s.왜].filter(Boolean).join(' · ')" in 적용
+
+
+def test_목적을_손수_고르면_지은_루틴에서_벗어난다():
+    html = _index()
+    # 줄바꿈(CRLF/LF)에 매이지 않게 앵커 다음 줄만 본다
+    다음줄 = html.split("state.purpose = p;")[1][:80]
+    assert "state.aiRoutine = null;" in 다음줄
+
+
+def test_지은_루틴은_계정에_남고_모양이_맞을_때만_읽힌다():
+    html = _index()
+    assert "aiRoutine: state.aiRoutine," in html
+    assert "saved?.aiRoutine?.구성 === 'ai'" in html
+    assert "saved.aiRoutine.steps.length) ? saved.aiRoutine : null;" in html

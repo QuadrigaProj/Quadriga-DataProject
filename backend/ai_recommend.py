@@ -1,8 +1,10 @@
-"""AI 루틴 추천 — 점수로 고른 후보를 Claude 가 다시 읽고 순서와 설명을 다듬는다.
+"""AI 루틴 추천 — 그 사람의 데이터를 전부 읽고 Claude 가 루틴 하나를 직접 짓는다.
 
-새 루틴을 만들지 않는다. backend/recommend.py 가 250개 고정 루틴에서 고른
-후보 **안에서만** 고르고, 왜 그 순서인지를 사용자 말로 다시 쓴다.
-모델이 없는 번호를 내면 그 응답을 통째로 버린다(지어낸 추천을 내보내지 않는다).
+무료 추천(backend/recommend.py, 점수 순)은 맞춤이 아니다. AI 추천은 항목별
+체력나이·고른 종목·최근 기록·일정·하루의 모습을 읽고 짠다. 다만 **재료는
+검증된 것뿐**이다 — 국민체력100 공식 동작, 배우고 싶다고 고른 종목, 당일
+기록에 적을 수 있는 운동. 영상이 있느냐는 조건이 아니다. 응답의 코드·id 를
+재료 목록에 대조해 없는 줄은 버린다(이름을 지어낼 수 없다).
 
 키가 없거나, SDK 가 없거나, 호출이 실패하거나, 응답 모양이 다르면 조용히
 None 을 돌려준다. 부르는 쪽은 점수 결과를 그대로 쓰면 된다 — 화면은 어떤
@@ -22,32 +24,6 @@ MODEL = "claude-opus-5"
 TIMEOUT_SEC = 20.0
 MAX_TOKENS = 8000
 
-SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하는 서비스의 코치입니다.
-
-아래 후보는 이미 정해진 250개 고정 루틴에서 규칙으로 골라낸 것입니다.
-당신이 할 일은 두 가지입니다.
-  1. 이 사용자에게 맞는 순서로 후보를 다시 배열한다
-  2. 각 후보를 왜 그 자리에 뒀는지 사용자에게 할 말로 쓴다
-
-일정을 함께 받으면 세 번째 일도 합니다.
-  3. 비는 시간(짬시간)마다 무엇을 할지 고르고 한 줄로 설명한다
-
-지켜야 할 것
-  - 후보에 없는 루틴을 만들지 마세요. 반드시 주어진 번호만 씁니다.
-  - **짬시간에 넣을 것도 그 칸에 주어진 '할 수 있는 것' 에서만 고릅니다.**
-    거기 없는 운동·종목을 쓰면 그 줄은 버려집니다.
-  - 측정하지 않은 값을 아는 척하지 마세요.
-  - 이유는 한국어 존댓말로, 한 줄에 하나씩, 각 40자 안팎으로 씁니다.
-  - 하루의 모습(고등학생·직장인·알바생 등)이 있으면 그에 맞게 말합니다.
-    이른 아침 칸에 무거운 운동을 넣지 않는 식으로요.
-    **여럿이면 다 겹쳐 놓고 봅니다** — 대학생이면서 알바생이면 둘 다 맞아야 합니다.
-  - 의학적 진단이나 치료를 말하지 마세요. 아프면 쉬라고 안내합니다.
-
-JSON 만 출력하세요. 다른 말은 쓰지 마세요.
-{"순서": [후보번호, ...], "이유": {"후보번호": ["문장", ...], ...}, "한마디": "한 문장",
- "짬시간": {"요일": [{"칸": 칸번호, "할것": "이름", "한줄": "문장"}, ...], ...}}"""
-
-
 def available() -> bool:
     """지금 AI 를 부를 수 있는지. 키와 SDK 가 모두 있어야 한다."""
     return why_unavailable() is None
@@ -66,35 +42,6 @@ def why_unavailable() -> str | None:
     except ImportError:
         return "서버에 anthropic 패키지가 없어요. 관리자가 설치하면 켜집니다."
     return None
-
-
-def _prompt(후보: list[dict], 참고: dict, 연령대: str,
-            일정: dict | None = None) -> str:
-    줄 = []
-    for i, x in enumerate(후보):
-        요인 = " · ".join((x.get("체력요인") or [])[:4])
-        줄.append(f"{i}. [{x.get('목적')}] {x.get('루틴명')} — 동작 {x.get('동작수')}개, {요인}")
-    사용자 = {
-        "연령대": 연령대,
-        "뒤처지는 체력요인": 참고.get("약점") or [],
-        "고른 종목": 참고.get("고른종목") or [],
-        "배우고 싶은 종목이 쓰는 요인": 참고.get("종목요인") or [],
-        "운동 스타일 테스트가 고른 목적": 참고.get("스타일목적"),
-        "목표 체력나이까지 남은 세": 참고.get("목표격차"),
-    }
-    if (일정 or {}).get("상태"):
-        사용자["하루의 모습"] = 일정["상태"]
-    본문 = ("사용자\n" + json.dumps(사용자, ensure_ascii=False, indent=1)
-          + "\n\n후보\n" + "\n".join(줄))
-
-    칸들 = (일정 or {}).get("요일별") or {}
-    if 칸들:
-        본문 += "\n\n비는 시간 (칸번호 · 시각 · 그 칸에서 할 수 있는 것)"
-        for 요일, 목록 in 칸들.items():
-            for i, c in enumerate(목록):
-                이름 = " / ".join(x["이름"] for x in (c.get("추천") or []))
-                본문 += f"\n{요일} {i}. {c['시작']}–{c['끝']} ({c['분']}분) — {이름}"
-    return 본문
 
 
 def _text(message) -> str:
@@ -118,67 +65,6 @@ def _json_only(s: str) -> dict | None:
     except (ValueError, TypeError):
         return None
     return d if isinstance(d, dict) else None
-
-
-def refine(후보: list[dict], 참고: dict, 연령대: str,
-           일정: dict | None = None) -> dict | None:
-    """후보를 다시 배열하고 이유를 다시 쓴다. 못 하면 None.
-
-    일정을 주면 비는 칸마다 무엇을 할지도 함께 고른다. 그 칸에 주어진
-    '할 수 있는 것' 밖의 이름은 버린다 — 지어낸 추천을 내보내지 않는다.
-    돌려주는 모양: {"추천": [...], "짬시간": {요일: [...]}}
-    """
-    if not 후보 or not available():
-        return None
-    try:
-        import anthropic
-
-        client = anthropic.Anthropic(timeout=TIMEOUT_SEC, max_retries=1)
-        message = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM,
-            output_config={"effort": "low"},   # 짧은 정리 작업이라 깊게 생각할 필요가 없다
-            messages=[{"role": "user",
-                       "content": _prompt(후보, 참고, 연령대, 일정)}],
-        )
-        if getattr(message, "stop_reason", None) == "refusal":
-            return None
-        d = _json_only(_text(message))
-    except Exception:                          # 키 오류·연결 실패·응답 이상 — 무엇이든 폴백
-        return None
-
-    if not d:
-        return None
-    순서 = d.get("순서")
-    if not isinstance(순서, list) or not 순서:
-        return None
-
-    이유표 = d.get("이유") if isinstance(d.get("이유"), dict) else {}
-    본것, 결과 = set(), []
-    for n in 순서:
-        try:
-            i = int(n)
-        except (TypeError, ValueError):
-            return None                        # 번호가 아닌 것이 섞였다 → 통째로 버린다
-        if not (0 <= i < len(후보)) or i in 본것:
-            return None                        # 없는 후보이거나 중복 → 지어낸 응답으로 본다
-        본것.add(i)
-        x = dict(후보[i])
-        새이유 = 이유표.get(str(i)) or 이유표.get(i)
-        if isinstance(새이유, list):
-            줄 = [str(y).strip() for y in 새이유 if str(y).strip()]
-            if 줄:
-                x["이유"] = 줄[:5]
-        x["출처"] = "ai"
-        결과.append(x)
-
-    한마디 = d.get("한마디")
-    if 결과 and isinstance(한마디, str) and 한마디.strip():
-        결과[0]["한마디"] = 한마디.strip()[:120]
-    for i, x in enumerate(결과, 1):
-        x["순위"] = i
-    return {"추천": 결과, "짬시간": _clean_slots(d.get("짬시간"), 일정)}
 
 
 def _clean_slots(고른것, 일정: dict | None) -> dict:
@@ -398,3 +284,232 @@ def read_schedule_photo(데이터: str, 미디어형: str) -> dict | None:
         if 줄:
             out[요일] = sorted(줄, key=lambda c: c["시작"])[:12]
     return out
+
+# ---------- AI 가 검증된 재료로 직접 짓는다 ----------
+#
+# 무료 추천은 점수 순이라 맞춤이 아니다. AI 추천은 그 사람의 데이터를 전부
+# 읽고 루틴 하나를 직접 짠다. 다만 **재료는 검증된 것뿐**이다 — 국민체력100
+# 공식 동작, 배우고 싶다고 고른 종목, 당일 기록에 적을 수 있는 운동.
+# 영상이 있느냐는 조건이 아니다. 고른 종목은 영상이 없지만 검증된 종목이다.
+# 응답의 코드·id 를 재료 목록에 대조해 없는 줄은 버린다. 이름을 지어낼 수 없다.
+
+PHASES = ("준비운동", "본운동", "정리운동")
+PURPOSES = ("다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화")
+COMPOSE_MIN_STEPS = 3
+COMPOSE_MAX_STEPS = 10
+
+COMPOSE_SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하는 서비스의 코치입니다.
+
+사용자 한 사람의 데이터를 전부 읽고, 그 사람을 위한 **오늘의 루틴 하나**를 직접 짭니다.
+무료 추천(점수 순)과 다릅니다 — 왜 이 사람에게 이 동작인지가 항목별 체력나이·기록·일정에서 나와야 합니다.
+
+재료는 아래 목록뿐입니다. 세 가지가 있습니다.
+  - 동작  국민체력100 공식 동작. 코드로 씁니다. (준비운동 / 본운동 / 정리운동)
+  - 종목  배우고 싶은 종목. id 로 씁니다. 영상은 없지만 검증된 종목입니다. ★ 는 사용자가 고른 것입니다.
+  - 기록  당일 기록에 적을 수 있는 운동. id 로 씁니다.
+
+지켜야 할 것
+  - **목록에 없는 코드·id 를 쓰면 그 줄은 버려집니다.** 이름을 지어내지 마세요.
+  - 준비운동 → 본운동 → 정리운동 순서. 본운동은 2~4개. 전체 4~8줄.
+  - ★ 고른 종목은 되도록 넣습니다. 그 종목이 쓰는 요인을 본운동이 받쳐 주게 짭니다.
+  - 뒤처지는 요인을 먼저 다룹니다. 항목별 체력나이가 실제 나이보다 많이 높은 것이 뒤처진 것입니다.
+  - 조심할 부위에 부담을 주는 동작은 피합니다.
+  - 수행량은 주어진 강도(세트·반복·시간초)를 기준으로 그 사람에게 맞게 조금 올리거나 내립니다. 숫자로 씁니다.
+  - 최근 기록이 있으면 이어갑니다 — 어제 한 것을 오늘 똑같이 시키지 않습니다.
+  - 하루의 모습(고등학생·직장인·알바생 …)과 비는 시간이 있으면 그에 맞춥니다. 여럿이면 다 겹쳐 봅니다.
+  - **짬시간에 넣을 것도 그 칸에 주어진 '할 수 있는 것' 에서만 고릅니다.**
+  - 측정하지 않은 값을 아는 척하지 마세요. 의학적 진단이나 치료를 말하지 마세요. 아프면 쉬라고 안내합니다.
+  - 한국어 존댓말. 한마디는 40자 안팎, 왜 는 각 40자 안팎으로 셋까지.
+
+JSON 만 출력하세요. 다른 말은 쓰지 마세요.
+{"목적": "다섯 목적 중 하나", "루틴명": "이 사람을 위한 이름", "한마디": "문장",
+ "왜": ["문장", ...],
+ "동작": [{"코드": "V…", "단계": "준비운동", "수행량": "…", "왜": "문장"},
+          {"종목": "id", "단계": "본운동", "수행량": "…", "왜": "문장"},
+          {"기록": "id", "단계": "본운동", "수행량": "…", "왜": "문장"}, ...],
+ "주의": ["문장", ...],
+ "짬시간": {"요일": [{"칸": 칸번호, "할것": "이름", "한줄": "문장"}, ...], ...}}"""
+
+
+def _catalogs():
+    """재료가 되는 세 카탈로그. 늦게 읽는다 — 서버가 뜰 때 다 읽을 필요는 없다."""
+    try:                                        # 저장소 루트에서 실행할 때
+        from backend import routines as rt, sports as sp, workout_items as wi
+    except ImportError:                         # backend/ 안에서 실행할 때
+        import routines as rt, sports as sp, workout_items as wi  # type: ignore
+    return rt, sp, wi
+
+
+def _materials(연령대: str, 종목ids=None) -> tuple[str, dict]:
+    """AI 에게 줄 재료 목록(글)과, 응답을 대조할 찾아보기 표.
+
+    재료가 곧 검증의 경계다 — 여기 없는 것은 응답에서 버린다.
+    """
+    rt, sp, wi = _catalogs()
+    고른 = set(종목ids or [])
+    줄, 표 = [], {"동작": {}, "종목": {}, "기록": {}}
+
+    줄.append("동작 (코드 | 단계 | 동작 | 요인 | 도구 | 부담부위)")
+    pools = rt.load()["pools"].get(연령대, {})
+    for 단계 in PHASES:
+        for 코드, info in (pools.get(단계) or {}).items():
+            if 코드 in 표["동작"]:
+                표["동작"][코드]["단계들"].add(단계)   # 같은 동작이 준비·정리 양쪽에 있을 수 있다
+                continue
+            표["동작"][코드] = {"info": info, "단계들": {단계}}
+            줄.append(f"{코드} | {단계} | {info.get('동작')} | "
+                      f"{'·'.join(info.get('체력요인') or []) or '-'} | "
+                      f"{info.get('도구') or '-'} | {'·'.join(info.get('부담부위') or []) or '-'}")
+
+    줄.append("")
+    줄.append("종목 (id | 이름 | 분류 | 요인 | 부담부위)   ★ = 사용자가 고른 것")
+    for x in sp.catalog().get("종목", []):
+        표["종목"][x["id"]] = x
+        별 = "★ " if x["id"] in 고른 else ""
+        줄.append(f"{x['id']} | {별}{x['이름']} | {x.get('분류') or '-'} | "
+                  f"{'·'.join(x.get('체력요인') or []) or '-'} | {'·'.join(x.get('부담부위') or []) or '-'}")
+
+    줄.append("")
+    줄.append("기록 (id | 이름 | 분류 | 요인)")
+    for x in wi.catalog().get("종목", []):
+        표["기록"][x["id"]] = x
+        줄.append(f"{x['id']} | {x['이름']} | {x.get('분류') or '-'} | {x.get('요인') or '-'}")
+    return "\n".join(줄), 표
+
+
+def _compose_prompt(사용자: dict, 재료: str, 일정: dict | None) -> str:
+    본문 = "사용자\n" + json.dumps(사용자, ensure_ascii=False, indent=1)
+    칸들 = (일정 or {}).get("요일별") or {}
+    if 칸들:
+        본문 += "\n\n비는 시간 (칸번호 · 시각 · 그 칸에서 할 수 있는 것)"
+        for 요일, 목록 in 칸들.items():
+            for i, c in enumerate(목록):
+                이름 = " / ".join(x["이름"] for x in (c.get("추천") or []))
+                본문 += f"\n{요일} {i}. {c['시작']}–{c['끝']} ({c['분']}분) — {이름}"
+    return 본문 + "\n\n재료\n" + 재료
+
+
+def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None = None) -> dict | None:
+    """사용자 데이터 전체로 루틴 하나를 짓는다. 못 하면 None.
+
+    돌려주는 모양: {"루틴": {...화면이 그대로 그리는 루틴...}, "짬시간": {...}}
+    재료에 없는 코드·id 는 줄 단위로 버리고, 남은 것이 너무 적으면 통째로
+    버린다 — 세 줄도 안 되는 루틴은 루틴이 아니다.
+    """
+    if not 사용자 or not available():
+        return None
+    try:
+        재료, 표 = _materials(연령대, 종목ids)
+    except Exception:                           # 데이터 파일이 없는 환경 — 조용히 폴백
+        return None
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=1)
+        message = client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            system=COMPOSE_SYSTEM,
+            output_config={"effort": "medium"},   # 한 사람을 읽고 짓는 일 — 정리 작업보다 깊다
+            messages=[{"role": "user",
+                       "content": _compose_prompt(사용자, 재료, 일정)}],
+        )
+        if getattr(message, "stop_reason", None) == "refusal":
+            return None
+        d = _json_only(_text(message))
+    except Exception:                           # 무엇이 잘못돼도 폴백
+        return None
+    if not d:
+        return None
+    루틴 = _clean_routine(d, 표, 사용자)
+    if not 루틴:
+        return None
+    return {"루틴": 루틴, "짬시간": _clean_slots(d.get("짬시간"), 일정)}
+
+
+def _clean_routine(d: dict, 표: dict, 사용자: dict) -> dict | None:
+    """응답을 재료 표에 대조해 검증된 줄만 남기고, 화면이 그릴 루틴 모양으로 만든다."""
+    from collections import Counter
+
+    줄들 = d.get("동작")
+    if not isinstance(줄들, list):
+        return None
+    steps, 본것 = [], set()
+    for x in 줄들:
+        if not isinstance(x, dict):
+            continue
+        step = _resolve_step(x, 표)
+        if not step:
+            continue                            # 재료에 없다 → 이 줄만 버린다
+        열쇠 = (step["출처"], step.get("코드") or step.get("id"))
+        if 열쇠 in 본것:
+            continue                            # 같은 것을 두 번 넣지 않는다
+        본것.add(열쇠)
+        steps.append(step)
+        if len(steps) >= COMPOSE_MAX_STEPS:
+            break
+    if len(steps) < COMPOSE_MIN_STEPS or not any(s["단계"] == "본운동" for s in steps):
+        return None                             # 루틴이라 부를 수 없다
+    차례 = {p: i for i, p in enumerate(PHASES)}
+    steps.sort(key=lambda s: 차례[s["단계"]])   # 준비 → 본 → 정리. 안정 정렬이라 그 안 순서는 그대로
+
+    목적 = str(d.get("목적") or "").strip()
+    if 목적 not in PURPOSES:
+        목적 = "기초 체력 증진"
+    요인 = Counter()
+    for s in steps:
+        요인.update(s.get("체력요인") or [])
+    왜 = [str(y).strip()[:80] for y in (d.get("왜") or []) if str(y).strip()][:5]
+    주의 = [str(y).strip()[:80] for y in (d.get("주의") or []) if str(y).strip()][:5]
+    n = len(steps)
+    return {
+        "목적": 목적, "표시목적": 목적,
+        "루틴명": (str(d.get("루틴명") or "").strip() or "나를 위한 오늘 루틴")[:40],
+        "한마디": str(d.get("한마디") or "").strip()[:120],
+        "이유": 왜 or ["내 측정값과 기록을 읽고 지었어요"],
+        "주의": 주의,
+        "steps": steps, "동작수": n,
+        "예상시간분": [n * 3, n * 5],
+        "체력요인": [f for f, _ in 요인.most_common(4)],
+        "강도": 사용자.get("강도"),
+        "구성": "ai", "출처": "ai", "순위": 1,
+        "루틴번호": None, "점수": None, "난이도": None, "난이도점수": None,
+    }
+
+
+def _resolve_step(x: dict, 표: dict) -> dict | None:
+    """응답 한 줄을 재료 표에서 찾아 화면 모양으로. 없으면 None."""
+    단계 = str(x.get("단계") or "").strip()
+    수행량 = str(x.get("수행량") or "").strip()[:40]
+    왜 = str(x.get("왜") or "").strip()[:80]
+    if x.get("코드"):
+        항 = 표["동작"].get(str(x["코드"]).strip())
+        if not 항:
+            return None
+        info = 항["info"]
+        if 단계 not in 항["단계들"]:
+            단계 = sorted(항["단계들"], key=PHASES.index)[0]
+        return {"출처": "동작", "단계": 단계, "코드": info["코드"], "동작": info.get("동작"),
+                "체력요인": list(info.get("체력요인") or []), "도구": info.get("도구"),
+                "유형": info.get("유형"), "부담부위": list(info.get("부담부위") or []),
+                "youtube_id": info.get("youtube_id"), "수행량": 수행량, "왜": 왜}
+    if x.get("종목"):
+        sp = 표["종목"].get(str(x["종목"]).strip())
+        if not sp:
+            return None
+        return {"출처": "종목", "단계": 단계 if 단계 in PHASES else "본운동",
+                "id": sp["id"], "동작": sp["이름"], "아이콘": sp.get("아이콘"),
+                "체력요인": list(sp.get("체력요인") or []), "도구": sp.get("분류"),
+                "유형": "시간", "부담부위": list(sp.get("부담부위") or []),
+                "youtube_id": None, "수행량": 수행량, "왜": 왜}
+    if x.get("기록"):
+        it = 표["기록"].get(str(x["기록"]).strip())
+        if not it:
+            return None
+        기본단계 = "정리운동" if it.get("분류") == "스트레칭" else "본운동"
+        return {"출처": "기록", "단계": 단계 if 단계 in PHASES else 기본단계,
+                "id": it["id"], "동작": it["이름"],
+                "체력요인": [it["요인"]] if it.get("요인") else [], "도구": it.get("분류"),
+                "유형": "시간" if "시간" in (it.get("입력") or []) else "횟수",
+                "부담부위": [], "youtube_id": None, "수행량": 수행량, "왜": 왜}
+    return None

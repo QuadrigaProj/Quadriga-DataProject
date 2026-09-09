@@ -49,6 +49,44 @@ const MOVE_ART = (() => {
   <symbol id="factor-근지구력" viewBox="0 0 64 64"><path d='M14 42 Q20 28 30 28 Q40 28 44 36'/><path d='M30 28 Q34 18 42 21 Q49 24 47 33'/><path d='M50 44 A14 14 0 1 1 44 52'/><path d='M50 38 V45 H43'/></symbol>
 </svg>`;
 
+  const SPRITE_B = `
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="poseb-squat" viewBox="0 0 64 64"><circle cx='30' cy='22' r='6'/><path d='M30 28 V42'/><path d='M30 42 L18 48 V56'/><path d='M30 42 L42 48 V56'/><path d='M30 32 L48 30'/></symbol>
+  <symbol id="poseb-pushup" viewBox="0 0 64 64"><circle cx='14' cy='34' r='6'/><path d='M20 36 L50 44'/><path d='M22 37 L18 44 V48 M47 43 V48'/><path d='M8 48 H58'/><path d='M33 24 V12 M29 18 L33 12 L37 18'/></symbol>
+  <symbol id="poseb-knee-pushup" viewBox="0 0 64 64"><circle cx='14' cy='34' r='6'/><path d='M20 36 L42 42'/><path d='M22 37 L18 44 V48'/><path d='M42 42 L45 46 H56'/><path d='M8 48 H58'/></symbol>
+  <symbol id="poseb-lunge" viewBox="0 0 64 64"><circle cx='30' cy='12' r='6'/><path d='M30 18 V32'/><path d='M30 32 L26 44 V56'/><path d='M30 32 L36 44 V56'/></symbol>
+  <symbol id="poseb-plank" viewBox="0 0 64 64"><circle cx='14' cy='27' r='6'/><path d='M20 30 L52 40'/><path d='M23 31 V47 H12'/><path d='M50 39 V48'/><path d='M8 48 H58'/></symbol>
+  <symbol id="poseb-crunch" viewBox="0 0 64 64"><circle cx='26' cy='20' r='6'/><path d='M30 25 L38 36'/><path d='M38 36 L48 30 V44'/><path d='M38 36 L44 46'/><path d='M8 48 H58'/></symbol>
+  <symbol id="poseb-bridge" viewBox="0 0 64 64"><circle cx='12' cy='44' r='6'/><path d='M18 44 Q32 44 42 44'/><path d='M42 44 V52'/><path d='M8 52 H58'/></symbol>
+  <symbol id="poseb-burpee" viewBox="0 0 64 64"><circle cx='32' cy='30' r='6'/><path d='M32 36 V46'/><path d='M32 46 L26 54 M32 46 L38 54'/><path d='M32 38 L20 28 M32 38 L44 28'/><path d='M8 56 H58'/></symbol>
+  <symbol id="poseb-bench-press" viewBox="0 0 64 64"><circle cx='16' cy='34' r='5'/><path d='M21 36 H44'/><path d='M28 36 V18 M40 36 V18'/><path d='M18 16 H50'/><path d='M18 12 V20 M50 12 V20'/><path d='M44 36 L52 48'/><path d='M12 48 H56'/></symbol>
+  <symbol id="poseb-deadlift" viewBox="0 0 64 64"><circle cx='30' cy='12' r='6'/><path d='M30 18 V34'/><path d='M30 34 V56'/><path d='M30 34 L28 40'/><path d='M14 36 H50'/><path d='M14 32 V40 M50 32 V40'/></symbol>
+  <symbol id="poseb-barbell-squat" viewBox="0 0 64 64"><circle cx='30' cy='24' r='6'/><path d='M14 32 H50'/><path d='M14 28 V36 M50 28 V36'/><path d='M30 32 V44'/><path d='M30 44 L20 50 V56'/><path d='M30 44 L40 50 V56'/></symbol>
+  <symbol id="poseb-lat-pulldown" viewBox="0 0 64 64"><circle cx='30' cy='26' r='6'/><path d='M30 32 V44'/><path d='M30 44 L22 56 M30 44 L38 56'/><path d='M20 30 H40'/><path d='M22 31 L30 30 M38 31 L30 30'/><path d='M30 12 V28'/></symbol>
+  <symbol id="poseb-leg-press" viewBox="0 0 64 64"><circle cx='16' cy='36' r='5'/><path d='M21 38 L32 42'/><path d='M32 42 L38 34 L34 26'/><path d='M28 18 L38 34'/><path d='M10 48 H40'/></symbol>
+  <symbol id="poseb-dumbbell-curl" viewBox="0 0 64 64"><circle cx='30' cy='14' r='6'/><path d='M30 20 V40 M30 40 L24 56 M30 40 L36 56'/><path d='M30 26 L40 34 L38 44'/><path d='M34 44 H42 M36 42 V50 M40 42 V50'/></symbol>
+  <symbol id="poseb-shoulder-press" viewBox="0 0 64 64"><circle cx='30' cy='24' r='6'/><path d='M30 30 V42 M30 42 L24 56 M30 42 L36 56'/><path d='M16 26 H44'/><path d='M16 22 V30 M44 22 V30'/><path d='M22 27 L28 30 M38 27 L32 30'/></symbol>
+  <symbol id="poseb-kettlebell-swing" viewBox="0 0 64 64"><circle cx='30' cy='12' r='6'/><path d='M30 18 V34'/><path d='M30 34 L26 46 V56 M30 34 L36 46 V56'/><path d='M30 24 L44 16'/><circle cx='48' cy='13' r='5'/></symbol>
+  <symbol id="poseb-walk" viewBox="0 0 64 64"><circle cx='30' cy='12' r='6'/><path d='M30 18 V36'/><path d='M30 36 L38 50 V56'/><path d='M30 36 L20 48 V56'/><path d='M30 24 L38 32 M30 24 L20 30'/></symbol>
+  <symbol id="poseb-run" viewBox="0 0 64 64"><circle cx='32' cy='12' r='6'/><path d='M32 18 L28 34'/><path d='M28 34 L42 42 L46 52'/><path d='M28 34 L16 42 L20 54'/><path d='M31 22 L44 26 M31 22 L18 20'/></symbol>
+  <symbol id="poseb-treadmill" viewBox="0 0 64 64"><circle cx='26' cy='14' r='5'/><path d='M26 19 L24 32'/><path d='M24 32 L32 42 M24 32 L16 40'/><path d='M25 24 L36 26'/><path d='M10 48 H50 M50 48 V26 H42'/></symbol>
+  <symbol id="poseb-cycle" viewBox="0 0 64 64"><circle cx='34' cy='12' r='5'/><path d='M34 17 L30 28'/><path d='M30 28 L26 42 M30 28 L36 38'/><circle cx='16' cy='46' r='8'/><circle cx='46' cy='46' r='8'/><path d='M16 46 L30 34 L46 46 M30 34 L38 28'/></symbol>
+  <symbol id="poseb-rowing" viewBox="0 0 64 64"><circle cx='26' cy='22' r='5'/><path d='M26 27 L28 38'/><path d='M28 38 L18 40 L10 36'/><path d='M28 38 L38 44'/><path d='M10 50 H54'/><path d='M14 44 H30'/></symbol>
+  <symbol id="poseb-jump-rope" viewBox="0 0 64 64"><circle cx='32' cy='12' r='6'/><path d='M32 18 V34 M32 34 L27 46 M32 34 L37 46'/><path d='M32 24 H20 M32 24 H44'/><path d='M20 24 Q32 6 44 24'/></symbol>
+  <symbol id="poseb-stair" viewBox="0 0 64 64"><circle cx='30' cy='10' r='6'/><path d='M30 16 V30'/><path d='M30 30 L24 42 V48'/><path d='M30 30 L40 34 L42 42'/><path d='M8 54 H30 V44 H42 V34 H56'/></symbol>
+  <symbol id="poseb-swim" viewBox="0 0 64 64"><circle cx='18' cy='30' r='5'/><path d='M23 32 H44'/><path d='M44 32 L54 26'/><path d='M20 34 Q28 46 38 40'/><path d='M8 46 Q18 42 28 46 T48 46'/></symbol>
+  <symbol id="poseb-hamstring-stretch" viewBox="0 0 64 64"><circle cx='24' cy='30' r='6'/><path d='M29 33 L36 34'/><path d='M36 34 H52'/><path d='M36 34 L48 32'/><path d='M52 34 V28'/><path d='M8 44 H58'/></symbol>
+  <symbol id="poseb-calf-stretch" viewBox="0 0 64 64"><circle cx='20' cy='20' r='6'/><path d='M20 26 L26 36'/><path d='M26 36 L18 48 V54'/><path d='M26 36 L42 48 L48 54'/><path d='M22 30 L46 24'/><path d='M50 8 V54'/></symbol>
+  <symbol id="poseb-shoulder-stretch" viewBox="0 0 64 64"><circle cx='30' cy='14' r='6'/><path d='M30 20 V40 M30 40 L24 56 M30 40 L36 56'/><path d='M30 26 H16'/><path d='M20 22 Q12 26 20 32'/></symbol>
+  <symbol id="poseb-hip-stretch" viewBox="0 0 64 64"><circle cx='26' cy='24' r='6'/><path d='M26 30 V40'/><path d='M26 40 L14 50 H26'/><path d='M26 40 L44 48 L52 52'/><path d='M8 52 H58'/></symbol>
+  <symbol id="poseb-twist" viewBox="0 0 64 64"><circle cx='14' cy='34' r='5'/><path d='M19 36 H36'/><path d='M36 36 Q44 36 44 26 L52 22'/><path d='M20 30 H30 M20 42 H34'/><path d='M8 52 H58'/></symbol>
+  <symbol id="poseb-neck-stretch" viewBox="0 0 64 64"><circle cx='32' cy='18' r='7'/><path d='M32 25 V42 M32 42 L26 56 M32 42 L38 56'/><path d='M32 30 L20 22 Q24 14 30 14'/><path d='M38 12 Q34 8 28 10'/></symbol>
+  <symbol id="poseb-deep-breath" viewBox="0 0 64 64"><circle cx='32' cy='14' r='6'/><path d='M32 20 V40'/><path d='M32 40 L18 50 H46 Z'/><path d='M32 24 L16 26 M32 24 L48 26'/><path d='M44 10 Q56 16 44 22 M50 6 Q64 14 50 22'/></symbol>
+  <symbol id="poseb-one-leg" viewBox="0 0 64 64"><circle cx='30' cy='12' r='6'/><path d='M30 18 V36'/><path d='M30 36 V56'/><path d='M30 36 L20 44 L18 32'/><path d='M30 24 L18 30 M30 24 L42 30'/><path d='M18 56 H46'/></symbol>
+  <symbol id="poseb-side-plank" viewBox="0 0 64 64"><circle cx='16' cy='30' r='5'/><path d='M20 33 L48 46'/><path d='M18 35 V44 H12'/><path d='M18 31 V18'/><path d='M8 48 H58'/></symbol>
+  <symbol id="poseb-dead-bug" viewBox="0 0 64 64"><circle cx='16' cy='38' r='5'/><path d='M21 40 H42'/><path d='M28 40 L30 26'/><path d='M42 40 L40 54'/><path d='M34 40 V52 L40 56'/><path d='M8 52 H58'/></symbol>
+</svg>`;
+
   const FACTOR_NAMES = ["유연성", "근력", "심폐지구력", "근지구력"];
 
   /* 문서에 한 번만 심는다 */
@@ -57,16 +95,43 @@ const MOVE_ART = (() => {
     const box = document.createElement('div');
     box.id = 'moveArtSprite';
     box.hidden = true;
-    box.innerHTML = SPRITE;
+    box.innerHTML = SPRITE + SPRITE_B;
     document.body.appendChild(box);
   }
 
-  /* 자세 그림 한 장. 모르는 id 면 빈 문자열 — 화면이 깨지지 않는다. */
+  /* 자세 그림 한 장. 모르는 id 면 빈 문자열 — 화면이 깨지지 않는다.
+   *
+   * 두 자세를 겹쳐 둔다. 평소에는 첫 자세만 보이고, 누르면 둘을 번갈아
+   * 보여 그 운동을 하는 것처럼 움직인다. 그림 하나로는 '어느 쪽이 시작이고
+   * 어디까지 가는지' 를 알 수 없어서, 아령만 보고 뭘 하라는 건지 몰랐다.
+   */
   function pose(id, cls){
     if (!id) return '';
-    return `<svg class="${cls || 'move-pose'}" viewBox="0 0 64 64" fill="none"
+    return `<span class="move-play" data-pose="${id}" role="button" tabindex="0"
+      aria-label="어떻게 하는 동작인지 보기" title="눌러서 움직여보기"
+      onclick="MOVE_ART.play(this)" onkeydown="MOVE_ART.onKey(event)"
+      ><svg class="${cls || 'move-pose'}" viewBox="0 0 64 64" fill="none"
       stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-      aria-hidden="true"><use href="#pose-${id}"/></svg>`;
+      aria-hidden="true"><use class="pose-a" href="#pose-${id}"/><use class="pose-b"
+      href="#poseb-${id}"/></svg></span>`;
+  }
+
+  /* 누르면 잠깐 움직인다. 다 돌면 원래 그림으로 돌아간다 —
+     여러 개가 동시에 계속 움직이면 화면이 어지럽다. */
+  const CYCLES = 4;                     // 왕복 횟수
+  const BEAT_MS = 520;                  // 한 왕복에 걸리는 시간
+
+  function play(el){
+    if (!el || el.classList.contains('playing')) return;   // 두 번 눌러도 겹치지 않는다
+    el.classList.add('playing');
+    window.setTimeout(() => el.classList.remove('playing'), CYCLES * BEAT_MS + 60);
+  }
+
+  /* 눌러서 쓰는 자리는 키보드로도 눌려야 한다 */
+  function onKey(ev){
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    ev.preventDefault();
+    play(ev.currentTarget);
   }
 
   /* 요인 아이콘 한 장 */
@@ -77,5 +142,5 @@ const MOVE_ART = (() => {
       role="img" aria-label="${name}"><title>${name}</title><use href="#factor-${name}"/></svg>`;
   }
 
-  return { install, pose, factor, FACTOR_NAMES };
+  return { install, pose, factor, play, onKey, FACTOR_NAMES, CYCLES, BEAT_MS };
 })();

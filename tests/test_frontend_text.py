@@ -2249,13 +2249,14 @@ def test_다시_받기는_반드시_한_번_묻는다():
     """값이 빠지는 일이다."""
     html = _index()
     본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
-    assert "confirm(물음)" in 본문
+    assert "값을치를까(물음)" in 본문
     assert "다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다." in 본문
     # 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다
     assert "AI 추천은 유료입니다. 이용하시겠습니까?" in 본문
     assert "fetchRecommend(true)" in 본문
-    # 잔액이 모자라면 묻기도 전에 막는다
-    assert 본문.index("이용권이 모자라요") < 본문.index("confirm(")
+    # 잔액을 보고 막는 일은 값을치를까() 가 한 자리에서 한다
+    # (test_유료_확인은_한_자리에서_한다 가 확인한다)
+    assert 본문.index("값을치를까(물음)") < 본문.index("fetchRecommend(true)")
 
 
 def test_받은_AI_추천은_남는다():
@@ -2434,11 +2435,9 @@ def test_값이_빠지기_전에_반드시_묻는다():
     """버튼만 눌러도 결제되는 일이 없어야 한다."""
     html = _index()
     본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
-    assert "confirm(" in 본문
+    assert "값을치를까(" in 본문
     assert "원이 결제됩니다" in 본문
-    assert 본문.index("confirm(") < 본문.index("API.recommendSeasons")
-    # 잔액이 모자라면 부르지도 않는다
-    assert 본문.index("(state.credit || 0) < AI_PRICE") < 본문.index("confirm(")
+    assert 본문.index("값을치를까(") < 본문.index("API.recommendSeasons")
 
 
 def test_이미_받아_둔_루틴이면_다시_부르지_않는다():
@@ -2525,10 +2524,9 @@ def test_저장은_고른_것과_적은_것을_함께_담는다():
 def test_사진_읽기는_묻고_나서_부른다():
     html = _index()
     본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
-    assert "confirm(" in 본문
+    assert "값을치를까(" in 본문
     assert "원이 결제됩니다" in 본문
-    assert 본문.index("confirm(") < 본문.index("API.schedulePhoto")
-    assert 본문.index("(state.credit || 0) < AI_PRICE") < 본문.index("confirm(")
+    assert 본문.index("값을치를까(") < 본문.index("API.schedulePhoto")
 
 
 def test_읽은_것을_곧바로_저장하지_않는다():
@@ -2659,3 +2657,51 @@ def test_게이지는_점만_옮기는_길을_따로_둔다():
     assert "svg(green," in 본문                  # 채움은 붙박이
     assert "duration > 0 ?" in 본문              # 0 이면 NaN 이 되어 점이 사라진다
     assert "moveDot" in art.split("return {")[-1]
+
+
+# ---------- 값이 빠지기 전 확인은 한 자리에서 ----------
+
+def test_유료_확인은_한_자리에서_한다():
+    """세 군데가 같은 순서로 물어야 한다 — 한 곳만 빠지면 그 버튼만 묻지 않고 돈이 빠진다."""
+    html = _index()
+    본문 = html.split("function 값을치를까(물음)")[1].split("\n}")[0]
+    assert "recoAiReady" in 본문                       # 쓸 수 있는지
+    assert "(state.credit || 0) < AI_PRICE" in 본문    # 이용권이 남았는지
+    assert "return confirm(물음);" in 본문             # 정말 할 것인지
+    # 부르는 곳은 셋. 각자 confirm 을 따로 부르지 않는다.
+    assert html.count("값을치를까(") == 4              # 정의 1 + 부르는 곳 3
+
+
+def test_자세히_도전하기는_AI_추천에서만_보인다():
+    """무료 추천에서는 눌러도 유료 안내만 뜬다 — 아예 없는 편이 낫다."""
+    html = _index()
+    actions = html.split("function paintRecommend()")[1]
+    actions = actions.split('<div class="reco-actions">')[1].split("</div>")[0]
+    도전 = actions.index("이 루틴으로 자세히 도전하기")
+    조건 = actions.index("recoBy === 'ai'")
+    assert 조건 < 도전, "AI 일 때만 그리는 조건 안에 있어야 한다"
+
+
+def test_후보가_모자라면_무료_추천을_다시_받는다():
+    """후보가 적으면 '더 쉬운·더 어려운 루틴' 이 갈 곳이 없다. 무료는 값이 들지 않는다."""
+    html = _index()
+    본문 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "state.freeReco?.추천?.length >= 5" in 본문
+
+
+# ---------- 안 보이는 창에서는 묻지 않는다 ----------
+
+def test_숨은_창에서는_채팅을_묻지_않는다():
+    """탭을 옮겨 두고 잊은 채팅방이 4초마다 서버를 두드릴 이유가 없다."""
+    html = _index()
+    본문 = html.split("async function pollChat()")[1].split("\n}")[0]
+    assert "if (document.hidden) return;" in 본문
+
+
+def test_창으로_돌아오면_바로_받아_온다():
+    """다음 4초를 기다리면 늦게 보인다."""
+    html = _index()
+    assert "visibilitychange" in html
+    본문 = html.split("visibilitychange")[1][:200]
+    assert "!document.hidden && COMM.room" in 본문
+    assert "pollChat()" in 본문

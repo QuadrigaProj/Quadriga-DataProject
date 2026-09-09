@@ -218,11 +218,6 @@ def _sport_candidate(age_gbn: str, factors: list[str], used_names: set[str],
     return None
 
 
-def _score(step: dict, prefer: list[str]) -> int:
-    """선호 요인 몇 개를 건드리는 동작인가. 순서를 정하는 데만 쓴다."""
-    return sum(1 for p in prefer if _has_factor(step, p))
-
-
 def _prefer_substitute(age_gbn: str, factor: str, exclude: set[str],
                        used: set[str]) -> dict | None:
     """그 요인을 쓰는 본운동을 풀에서 하나 찾는다. 안전 조건은 그대로 지킨다."""

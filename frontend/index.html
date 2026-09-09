@@ -4598,6 +4598,9 @@ function closeExerciseVideo(){
   exerciseVideoReturnFocus?.focus();
   exerciseVideoReturnFocus = null;
 }
+function closeExerciseVideoOnBackdrop(event){
+  if (event.target === event.currentTarget) closeExerciseVideo();
+}
 document.addEventListener('keydown', event => {
   const modal = $('exerciseVideoModal');
   if (!modal || modal.hidden) return;
@@ -6364,7 +6367,7 @@ function paintRecoMode(){
   else if (h.안내) setStatus(h.안내);
 })();
 </script>
-<div class="exercise-video-backdrop" id="exerciseVideoModal" hidden onclick="if(event.target === this) closeExerciseVideo()">
+<div class="exercise-video-backdrop" id="exerciseVideoModal" hidden onclick="closeExerciseVideoOnBackdrop(event)">
   <section class="exercise-video-modal" role="dialog" aria-modal="true" aria-labelledby="exerciseVideoTitle">
     <div class="exercise-video-head">
       <h2 id="exerciseVideoTitle"></h2>

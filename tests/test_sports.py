@@ -37,7 +37,10 @@ def test_아이디는_겹치지_않는다():
 def test_체력요인_복합표기와_없는_후보를_처리한다():
     from backend import routines as rt
     assert rt._has_factor({"체력요인": ["근력/근지구력"]}, "근지구력")
-    assert rt._prefer_substitute("성인", "심폐지구력", set(), set()) is None
+    성인심폐 = rt._prefer_substitute("성인", "심폐지구력", set(), set())
+    assert 성인심폐 is not None
+    assert rt._has_factor(성인심폐, "심폐지구력")
+    assert 성인심폐["youtube_id"]
     assert rt._prefer_substitute("어르신", "심폐지구력", set(), set()) is not None
 
 
@@ -100,12 +103,12 @@ def test_동작_개수는_그대로다():
         assert len(_mains(_routine(sports=ids))) == len(_mains(기본)), ids
 
 
-def test_이미_맞는_루틴은_건드리지_않는다():
-    """근력 루틴 + 헬스 선택 → 바꿀 이유가 없다."""
+def test_종목을_골라도_첫_두_본운동은_유지한다():
+    """종목 맞춤은 기본 200개 루틴을 다시 만들지 않고 세 번째 본운동만 다듬는다."""
     기본 = _routine()
     헬스 = _routine(sports="gym,crossfit")
-    assert set(_mains(헬스)) == set(_mains(기본))
-    assert all(item["바꾼것"] is None for item in 헬스["종목반영"])
+    assert len(_mains(헬스)) == len(_mains(기본))
+    assert _mains(헬스)[:2] == _mains(기본)[:2]
 
 
 def test_제외한_부위는_종목보다_우선한다():

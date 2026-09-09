@@ -192,8 +192,8 @@ def _sport_candidate(age_gbn: str, factors: list[str], used_names: set[str],
     except (OSError, ValueError, KeyError):
         return None
     from backend.generate_kspo_routines import eligible
-    wanted = set().union(*(factor_units(f) for f in factors))
-    candidates = []
+    wanted_by_priority = [factor_units(f) for f in factors if factor_units(f)]
+    candidates_by_priority = [[] for _ in wanted_by_priority]
     for raw in records:
         info = _official_info(raw)
         if info is None or info["kspo"]["aggrp_nm"] != age_gbn or not eligible(info["kspo"]):
@@ -201,14 +201,21 @@ def _sport_candidate(age_gbn: str, factors: list[str], used_names: set[str],
         name = re.sub(r"\s+", "", info["동작"]).casefold()
         if name in used_names or info["youtube_id"] in (used_video_ids or set()):
             continue
-        if not wanted & factor_units(info["kspo"]["ftns_fctr_nm"] or ""):
+        units = factor_units(info["kspo"]["ftns_fctr_nm"] or "")
+        for idx, wanted in enumerate(wanted_by_priority):
+            if wanted & units:
+                candidates_by_priority[idx].append(info)
+                break
+
+    # factor_weights가 넘긴 순서를 보존한다.
+    # 예: 러닝/마라톤에서 심폐지구력이 1순위면 심폐 후보가 있는 한 먼저 고른다.
+    for candidates in candidates_by_priority:
+        if not candidates:
             continue
-        candidates.append(info)
-    if not candidates:
-        return None
-    selected = min(candidates, key=lambda r: hashlib.sha256(
-        (str(day) + json.dumps(r, ensure_ascii=False, sort_keys=True)).encode()).hexdigest())
-    return dict(selected, 단계="본운동")
+        selected = min(candidates, key=lambda r: hashlib.sha256(
+            (str(day) + json.dumps(r, ensure_ascii=False, sort_keys=True)).encode()).hexdigest())
+        return dict(selected, 단계="본운동")
+    return None
 
 
 def _score(step: dict, prefer: list[str]) -> int:
@@ -275,6 +282,7 @@ def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
         video_ids = {step.get("youtube_id") for step in steps}
         video_ids.update(_step(age_gbn, "정리운동", code).get("youtube_id") for code in r["cool"])
         replacement = _sport_candidate(age_gbn, prefer, names, exclude, day, video_ids)
+
         if replacement:
             index = mains[2]
             tuned.append({"바꾼것": {"원래": steps[index]["동작"], "대체": replacement["동작"]},

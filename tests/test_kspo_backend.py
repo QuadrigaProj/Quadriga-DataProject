@@ -31,11 +31,11 @@ def test_all_sources_and_cycle():
     root = Path(__file__).resolve().parents[1]
     original = json.loads((root / "data/sample/routines_250.json").read_text(encoding="utf-8"))
     assert "유아기" in original["routines"]
-    source = json.loads((root / "data/generated/routines_200_kspo.json").read_text(encoding="utf-8"))
+    source = json.loads((root / "data/generated/routines_200_kspo_official_video.json").read_text(encoding="utf-8"))
     for entry in source["routines"]:
         age, purpose, day = entry["aggrp_nm"], entry["purpose"].replace("기초체력", "기초 체력"), entry["day"]-1
         routine = rt.build_program_routine(age,purpose,day=day)
-        assert [s["동작"] for s in routine["steps"]] == [s["kspo"]["trng_nm"] for s in entry["steps"]]
+        assert [s["동작"] for s in routine["steps"]] == [s["official_video"]["title"] for s in entry["steps"]]
         assert len({s["동작"] for s in routine["steps"]}) == 5
         assert rt.routine_for(age,purpose,day) == rt.routine_for(age,purpose,day+10)
 

@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -153,13 +155,18 @@ def test_화면에_네_버튼이_순서대로_있다():
     assert 자리 == sorted(자리), "버튼 순서가 요구와 다르다"
 
 
-def test_네_버튼이_같은_크기_같은_모양이다():
-    """I2: 넷 다 .reco-btn 한 클래스만 쓴다 — 폭·높이·모서리가 같아진다."""
+def test_버튼이_모두_같은_크기_같은_모양이다():
+    """I2: 다 .reco-btn 한 클래스만 쓴다 — 폭·높이·모서리가 같아진다.
+
+    처음엔 네 개였고 그 뒤로 '자세히 도전하기'·'AI 추천 다시 받기' 가 붙었다.
+    개수를 못 박아 두면 버튼이 늘 때마다 이 테스트가 깨진다. 지키려는 것은
+    개수가 아니라 '크기·모양을 정하는 클래스가 하나뿐인가' 다.
+    """
     html = client.get("/").text
     card = html.split("function paintRecommend()")[1]
     actions = card.split('<div class="reco-actions">')[1].split("</div>")[0]
     btns = re.findall(r'class="([^"]*reco-btn[^"]*)"', actions)
-    assert len(btns) == 4, btns
+    assert len(btns) >= 4, btns
     # 색만 다르고(마지막 go) 크기·모양을 정하는 클래스는 하나뿐이다
     assert {c.replace(" go", "").strip() for c in btns} == {"reco-btn"}
     assert "wide" not in actions            # 한 칸을 통째로 먹던 버튼이 없다
@@ -171,3 +178,42 @@ def test_기록_화면_버튼과_이름이_겹치지_않는다():
     html = client.get("/").text
     assert html.count(".reco-actions{") == 1
     assert html.count(".rec-actions{") == 1
+
+
+# ---------- 목적 수보다 많이 달라고 해도 끝난다 ----------
+
+@pytest.mark.parametrize("limit", [1, 5, 6, 12, 30, 999])
+def test_어떤_개수를_달라고_해도_끝난다(limit):
+    """목적은 다섯인데 화면은 12개를 부른다.
+
+    한때 '이미 나온 목적' 을 골고루 전체에서 다시 뽑는 바람에, 목적이 한 번씩
+    다 나온 뒤로는 아무것도 못 담으면서 남은 것도 그대로라 while 이 영영
+    끝나지 않았다. 추천이 통째로 멈춰 있었다.
+    """
+    시작 = time.time()
+    결과 = rc.score("성인", limit=limit)
+    걸린시간 = time.time() - 시작
+    assert 걸린시간 < 5, f"{걸린시간:.1f}초나 걸렸다 — 멈춘 것과 다름없다"
+    assert 결과, "하나도 못 골랐다"
+    assert len(결과) <= limit
+    assert [x["순위"] for x in 결과] == list(range(1, len(결과) + 1))
+
+
+def test_달라는_만큼_채운다():
+    """다섯 개까지만 나오면 '더 쉬운 루틴' 으로 옮겨 갈 자리가 없다."""
+    assert len(rc.score("성인", limit=12)) == 12
+
+
+def test_같은_목적이_이어서_나오지_않는다():
+    """한 바퀴에 목적마다 하나씩 — 같은 목적이 셋씩 이어지면 고를 맛이 없다."""
+    목적들 = [x["목적"] for x in rc.score("성인", limit=12)]
+    이어짐 = [i for i in range(1, len(목적들)) if 목적들[i] == 목적들[i - 1]]
+    assert not 이어짐, 목적들
+
+
+def test_더_달라고_해도_있는_만큼만():
+    """없는 루틴을 지어내지 않는다."""
+    전부 = rc.score("성인", limit=999)
+    assert len(전부) == len(rc.score("성인", limit=len(전부) + 50))
+    번호 = [(x["목적"], x["루틴번호"]) for x in 전부]
+    assert len(번호) == len(set(번호)), "같은 루틴이 두 번 나왔다"

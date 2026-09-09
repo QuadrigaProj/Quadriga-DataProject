@@ -185,19 +185,32 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
     # 앞자리를 몰아 줄 이유가 없다 — 그때는 예전처럼 목적을 골고루 보여 준다.
     TOP_AS_IS = 2 if (weak or 무게 or style_purpose) else 0
     골고루 = out[:min(TOP_AS_IS, limit)]
-    남은 = [x for x in out if x not in 골고루]
+    앞자리 = {id(x) for x in 골고루}
+    남은 = [x for x in out if id(x) not in 앞자리]
+    # 한 바퀴에 목적마다 하나씩 세운다. 같은 목적이 셋씩 이어지면 고를 맛이
+    # 없어서다. 다음 바퀴에서 다시 처음부터 — 그래야 목적 수보다 많이
+    # 달라고 해도 채워진다.
+    #
+    # 예전에는 본 목적을 골고루 전체에서 다시 뽑았다. 그러면 목적이 한 번씩
+    # 다 나온 뒤로는 아무것도 못 담으면서 남은 것은 그대로라, limit 이 목적
+    # 수(5)보다 크면 이 while 이 영영 끝나지 않았다. 화면은 limit=12 로
+    # 부른다 — 추천이 통째로 멈춰 있었다.
+    첫바퀴 = True
     while 남은 and len(골고루) < limit:
-        본목적 = set()
+        # 첫 바퀴만 앞자리(TOP_AS_IS)에 나온 목적을 피한다. 앞에 두 개가 같은
+        # 목적이면 바로 뒤에 또 세울 이유가 없다. 두 바퀴째부터는 비우고
+        # 다시 시작한다 — 그래야 목적 수보다 많이 달라고 해도 채워진다.
+        본목적: set[str] = {y["목적"] for y in 골고루} if 첫바퀴 else set()
+        첫바퀴 = False
         나머지 = []
-        # 앞자리에 이미 나온 목적은 다시 세우지 않는다. 같은 목적이 셋씩
-        # 이어지면 그것대로 고를 맛이 없다.
-        본목적 = {y["목적"] for y in 골고루}
         for x in 남은:
             if x["목적"] in 본목적 or len(골고루) >= limit:
                 나머지.append(x)
             else:
                 본목적.add(x["목적"])
                 골고루.append(x)
+        if len(나머지) == len(남은):
+            break                         # 한 바퀴 돌고 아무것도 안 담겼다면 더 담을 것이 없다
         남은 = 나머지
     for i, x in enumerate(골고루, 1):
         x["순위"] = i

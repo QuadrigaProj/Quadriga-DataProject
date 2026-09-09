@@ -2246,6 +2246,8 @@ const state = {
   history: [],         // F3/F4: 재측정으로 닫힌 지난 기간들 [{start, end, routineLog:[…], result:{…}, first:{…}}]
   measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 날짜당 한 줄 (같은 날 다시 재면 이전 것을 덮는다)
   dayAges: {},         // 규칙2·3: 운동 기록이 있는 날의 체력나이 { 'yyyy-mm-dd': {값, 기준나이, 당김, 일수, 잰체성분, 소급} }
+  aiReco: null,        // 값을 치르고 받은 AI 추천 {추천, 조심할부위, 자리, 되돌아갈자리, 받은시각}
+  freeReco: null,      // 무료 추천도 같은 모양으로 남긴다 — 창을 옮겨도 보던 것이 그대로 있게
   pinnedRooms: [],     // '내 채팅' 에서 위에 붙여 둔 방 id — 사람마다 다른 취향이라 스냅샷에 담는다
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
@@ -2473,9 +2475,9 @@ function renderAcctCredit(){
   if (!box) return;
   const 원 = state.credit || 0;
   const 횟수 = creditTimes();
+  // 남은 값만 적는다. 설명은 프로필 화면에 이미 있어서 여기서 또 하면 겹친다.
   box.innerHTML = `
-    <span class="k"><span>AI 추천 선결제</span><b>${won(원)}</b></span>
-    <span class="s">${원 ? `선결제됨 · ${횟수}회 남음` : '선결제 안 함 · 무료 추천은 그대로'}</span>`;
+    <span class="k"><span>AI 추천 선결제</span><b>${won(원)}</b></span>`;
 }
 
 /* 계정 패널에서 프로필 화면으로 (J3 — 헤더 아바타·패널 아바타 둘 다 이 길로 온다) */
@@ -2798,6 +2800,8 @@ function snapshot(){
     sports: state.sports, sportsDone: state.sportsDone,
     history: state.history, measureLog: state.measureLog, workoutLog: state.workoutLog,
     dayAges: state.dayAges,
+    aiReco: state.aiReco,
+    freeReco: state.freeReco,
     pinnedRooms: state.pinnedRooms,
     activityAge: state.activityAge,
     commute: state.commute,
@@ -2841,6 +2845,8 @@ function applyProfile(saved){
   state.measureLog = Array.isArray(saved?.measureLog) ? saved.measureLog : [];
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
   state.dayAges = (saved?.dayAges && typeof saved.dayAges === 'object') ? saved.dayAges : {};
+  state.aiReco = 되살린추천(saved?.aiReco);
+  state.freeReco = 되살린추천(saved?.freeReco);
   state.pinnedRooms = Array.isArray(saved?.pinnedRooms) ? saved.pinnedRooms.map(Number) : [];
   dedupeMeasureLog();          // 예전 저장본에는 같은 날짜가 여러 줄 있을 수 있다 (규칙 4)
   state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
@@ -2979,6 +2985,8 @@ async function doDelete(){
   state.measureLog = [];
   state.workoutLog = [];
   state.dayAges = {};
+  state.aiReco = null;
+  state.freeReco = null;
   state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
@@ -3006,6 +3014,8 @@ async function logout(){
   state.measureLog = [];
   state.workoutLog = [];
   state.dayAges = {};
+  state.aiReco = null;
+  state.freeReco = null;
   state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
@@ -3045,6 +3055,8 @@ async function resetSettings(){
   state.measureLog = [];
   state.workoutLog = [];
   state.dayAges = {};
+  state.aiReco = null;
+  state.freeReco = null;
   state.pinnedRooms = [];
   state.credit = 0;
   state.creditLog = [];
@@ -6684,27 +6696,105 @@ async function renderRecommend(){
     box.innerHTML = '<div class="rec-empty">먼저 첫 점검에서 나이를 넣어주세요.</div>';
     return;
   }
-  box.innerHTML = '<div class="rec-empty">추천을 고르는 중이에요…</div>';
-  const 약점 = weakFactors();
-  const 목표격차 = (state.result?.체력나이 != null && state.targetAge != null)
-    ? Math.max(0, state.result.체력나이 - state.targetAge) : null;
-
-  // AI 방식은 이용권을 한 번 쓴다. 모자라면 무료로 내려간다 (I1).
-  let ai쓰기 = false;
+  // AI 방식은 값을 치른다. **화면에 들어왔다는 이유로 부르지 않는다.**
+  // 예전에는 여기서 바로 불러서, 다른 창에 갔다 돌아올 때마다 100원이 빠졌다.
   if (recoMode === 'ai') {
     if (!recoAiReady) {
       recoMode = 'free';
-    } else if ((state.credit || 0) < AI_PRICE) {
-      recoMode = 'free';
-      paintRecoMode();
-      box.innerHTML = `<div class="rec-empty">이용권이 모자라요.<br/>
-        프로필에서 충전하면 AI 추천을 쓸 수 있어요.</div>`;
+    } else if (state.aiReco?.추천?.length) {
+      showAiReco();                 // 받아 둔 것을 그대로 — 다시 부르지 않는다
       return;
     } else {
-      ai쓰기 = true;
+      paintRecoMode();
+      box.innerHTML = aiIntroHtml();  // 누르기 전에는 아무것도 치르지 않는다
+      return;
     }
   }
+  // 무료 추천도 한 번 받으면 그대로 둔다. 창을 옮겼다 왔다고 다른 루틴이
+  // 떠 있으면, 보던 것을 다시 찾을 방법이 없다.
+  if (state.freeReco?.추천?.length) {
+    $('recoSub').textContent = '먼저 받은 추천이에요. 다른 루틴은 아래 버튼으로 볼 수 있어요.';
+    추천되살리기(state.freeReco, '점수');
+    return;
+  }
+  box.innerHTML = '<div class="rec-empty">추천을 고르는 중이에요…</div>';
+  await fetchRecommend(false);
+}
 
+/* 저장해 둔 추천을 되살린다. 모양이 안 맞으면 없는 것으로 본다. */
+function 되살린추천(x){
+  return (x && Array.isArray(x.추천) && x.추천.length) ? x : null;
+}
+
+/* 지금 보고 있는 추천을 그 자리 그대로 남긴다.
+   '더 쉬운 루틴' 으로 옮긴 자리까지 기억해서, 창을 옮겼다 와도 그대로다. */
+function 추천저장(){
+  const 담을것 = { 추천: recoList, 조심할부위: recoCare,
+                자리: recoAt, 되돌아갈자리: [...recoBack], 받은시각: Date.now() };
+  if (recoBy === 'ai') state.aiReco = 담을것;
+  else state.freeReco = 담을것;
+  saveProfile();
+}
+
+/* 남겨 둔 것을 화면에 올린다 */
+function 추천되살리기(저장본, 출처){
+  recoList = 저장본.추천 || [];
+  recoCare = 저장본.조심할부위 || [];
+  recoBy = 출처;
+  recoAt = Math.min(저장본.자리 || 0, Math.max(0, recoList.length - 1));
+  recoBack = Array.isArray(저장본.되돌아갈자리) ? [...저장본.되돌아갈자리] : [];
+  paintRecoMode();
+  paintRecommend();
+}
+
+/* 받아 둔 AI 추천을 그대로 보여 준다. 값은 이미 치렀다. */
+function showAiReco(){
+  $('recoSub').textContent = 'AI 가 다듬은 추천이에요. 다시 받으려면 아래 버튼을 눌러주세요.';
+  추천되살리기(state.aiReco, 'ai');
+}
+
+/* 아직 AI 추천을 받은 적이 없을 때. 값을 치르는 일은 버튼을 눌러야 시작한다. */
+function aiIntroHtml(){
+  const 모자람 = (state.credit || 0) < AI_PRICE;
+  return `<div class="rec-card">
+    <div class="rec-purpose">AI 추천</div>
+    <div class="rec-title">AI 가 후보를 다시 읽고 순서와 설명을 다듬어요</div>
+    <div class="rec-meta">새 루틴을 만들지 않아요. 무료 추천이 고른 후보 안에서만 고릅니다.</div>
+    <div class="rec-by">${모자람
+      ? '이용권이 모자라요. 프로필에서 선결제하면 쓸 수 있어요.'
+      : `한 번 받을 때 ${AI_PRICE}원이 결제돼요. 받고 나면 다시 받기 전까지 그대로 남아요.`}</div>
+    <div class="reco-actions">
+      <button type="button" class="reco-btn go" onclick="askAiRecommend()"
+              ${모자람 ? 'disabled' : ''}>AI 추천 받기</button>
+    </div>
+  </div>`;
+}
+
+/* 다시 받기 — 값이 빠지는 일이라 반드시 한 번 묻는다. */
+async function askAiRecommend(){
+  if (!recoAiReady) { showToast(recoAiWhy || 'AI 추천은 지금 쓸 수 없어요'); return; }
+  if ((state.credit || 0) < AI_PRICE) {
+    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
+    return;
+  }
+  // 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다. 값이 빠지고 나서
+  // 알게 되면 늦다.
+  const 다시 = !!state.aiReco?.추천?.length;
+  const 물음 = 다시
+    ? `AI 추천을 다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다.`
+    : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${AI_PRICE}원이 결제됩니다.`;
+  if (!confirm(물음)) return;
+  $('recoBody').innerHTML = '<div class="rec-empty">AI 가 다듬는 중이에요…</div>';
+  await fetchRecommend(true);
+}
+
+/* 실제 호출. ai=true 일 때만 값이 빠진다 — 서버가 뺀다. */
+async function fetchRecommend(ai){
+  const box = $('recoBody');
+  const pg = programAgeGroup(state.age);
+  const 약점 = weakFactors();
+  const 목표격차 = (state.result?.체력나이 != null && state.targetAge != null)
+    ? Math.max(0, state.result.체력나이 - state.targetAge) : null;
   try {
     const r = await API.recommendRoutines({
       age_gbn: pg,
@@ -6714,7 +6804,7 @@ async function renderRecommend(){
       target_gap: 목표격차,
       week: programWeek(),
       limit: 12,
-      ai: ai쓰기 ? 1 : 0,
+      ai: ai ? 1 : 0,
     });
     recoList = r.추천 || [];
     recoCare = r.조심할부위 || [];
@@ -6725,10 +6815,13 @@ async function renderRecommend(){
     // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
     // 바꿔 공짜로 쓸 수 있다.
     if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
-    if (ai쓰기 && recoBy !== 'ai') recoMode = 'free';
+    if (ai && recoBy !== 'ai') recoMode = 'free';
     paintRecoMode();
     recoAt = 0;
     recoBack = [];
+    // 받은 것을 남긴다. 다음에 들어올 때 다시 부르지 않는다 —
+    // AI 는 그때마다 값이 빠지고, 무료도 보던 것이 바뀌어 버린다.
+    추천저장();
   } catch (e) {
     box.innerHTML = '<div class="rec-empty">추천을 불러오지 못했어요.<br/>잠시 뒤 다시 시도해주세요.</div>';
     return;
@@ -6790,6 +6883,8 @@ function paintRecommend(){
         <button type="button" class="reco-btn" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
         <button type="button" class="reco-btn" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
+        ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
+          onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
     </div>`;
 }
@@ -6799,6 +6894,7 @@ function goRecommend(i){
   if (i < 0 || i === recoAt) return;
   recoBack.push(recoAt);
   recoAt = i;
+  추천저장();
   paintRecommend();
 }
 
@@ -6808,6 +6904,7 @@ function harderRecommend(){ goRecommend(recoStep(1)); }
 function backRecommend(){
   if (!recoBack.length) return;
   recoAt = recoBack.pop();
+  추천저장();
   paintRecommend();
 }
 
@@ -7152,7 +7249,8 @@ function paintRecoMode(){
     ? '확인하는 중…'
     : !recoAiReady
       ? '관리자가 키를 등록하면 켜져요'
-      : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음` : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 싸요`);
+      : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음`
+              : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 저렴하게 이용 가능해요`);
 }
 
 /* ---- 시작 ---- */

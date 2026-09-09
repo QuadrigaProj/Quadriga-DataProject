@@ -54,7 +54,9 @@ def test_고른_종목이_점수와_주의부위에_반영된다():
     d = rc.for_user("성인", sports=["running", "tennis"], limit=5)
     assert d["참고"]["종목요인"]                  # 종목 → 체력요인
     assert d["조심할부위"]                        # 종목 → 조심할 부위
-    assert any("고른 종목" in y for x in d["추천"] for y in x["이유"])
+    # 이제는 '고른 종목' 대신 고른 종목의 이름을 그대로 적는다
+    이유들 = " ".join(y for x in d["추천"] for y in x["이유"])
+    assert "러닝" in 이유들 or "테니스" in 이유들
 
 
 def test_종목_반영은_목적_전체가_아니라_그_요인을_다루는_루틴에_실제로_붙는다():

@@ -738,3 +738,65 @@ def test_까닭에_키_값은_담지_않는다(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-비밀값123")
     까닭 = air.why_unavailable()
     assert 까닭 is None or "비밀값123" not in 까닭
+
+
+# ---------- 고른 종목이 추천에 반영되는가 ----------
+
+def _추천(sports, limit=5):
+    from backend import recommend as rc
+    return rc.for_user("성인", weak=[], sports=sports, limit=limit)
+
+
+def _종목id(*이름들):
+    from backend import sports as sp
+    return [s["id"] for s in sp.catalog()["종목"] if s["이름"] in 이름들]
+
+
+def test_고른_종목이_추천을_바꾼다():
+    """예전에는 무엇을 골라도 목적마다 하나씩이라 결과가 거의 같았다."""
+    없이 = [x["루틴명"] for x in _추천([])["추천"]]
+    러닝 = [x["루틴명"] for x in _추천(_종목id("러닝", "마라톤"))["추천"]]
+    요가 = [x["루틴명"] for x in _추천(_종목id("요가", "필라테스"))["추천"]]
+    assert 없이 != 러닝
+    assert 러닝 != 요가
+
+
+def test_여러_종목이_같은_요인을_요구하면_더_무겁다():
+    """러닝과 마라톤을 함께 골랐으면 심폐지구력이 두 배로 중요하다.
+    예전에는 무게를 버리고 요인 이름만 써서 하나로 셌다."""
+    한개 = _추천(_종목id("러닝"))
+    두개 = _추천(_종목id("러닝", "마라톤"))
+    assert 한개["참고"]["종목요인무게"]["심폐지구력"] == 1
+    assert 두개["참고"]["종목요인무게"]["심폐지구력"] == 2
+    # 무게가 크면 점수도 커진다
+    assert 두개["추천"][0]["점수"] > 한개["추천"][0]["점수"]
+
+
+def test_고른_종목_이름을_이유에_적는다():
+    out = _추천(_종목id("수영", "등산"))
+    assert out["참고"]["고른종목"] == ["수영", "등산"] or set(out["참고"]["고른종목"]) == {"수영", "등산"}
+    이유들 = " ".join(x for r in out["추천"] for x in r["이유"])
+    assert "수영" in 이유들 and "등산" in 이유들
+
+
+def test_근거가_있으면_앞자리는_점수순이다():
+    """목적마다 한 줄씩 세우느라 점수가 묻히던 것을 푼다."""
+    out = _추천(_종목id("러닝", "마라톤"))
+    점수 = [x["점수"] for x in out["추천"]]
+    assert 점수[0] >= 점수[1]
+    # 앞 두 자리는 같은 목적이 될 수 있다
+    assert len({x["목적"] for x in out["추천"][:2]}) <= 2
+
+
+def test_근거가_없으면_목적을_골고루_보여준다():
+    """점수가 고만고만할 때 앞자리를 몰아 줄 이유가 없다."""
+    out = _추천([])
+    목적들 = [x["목적"] for x in out["추천"]]
+    assert len(set(목적들)) == len(목적들)
+
+
+def test_같은_목적이_셋씩_이어지지_않는다():
+    for 종목 in ([], _종목id("러닝", "마라톤"), _종목id("수영", "등산"), _종목id("요가")):
+        목적들 = [x["목적"] for x in _추천(종목)["추천"]]
+        for m in set(목적들):
+            assert 목적들.count(m) <= 2, (종목, 목적들)

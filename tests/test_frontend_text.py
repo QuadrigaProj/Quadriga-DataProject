@@ -588,9 +588,9 @@ def test_계정_패널에_이용권_줄이_있다():
     assert "function renderAcctCredit()" in html
     본문 = html.split("function renderAcctCredit()")[1].split("\n}")[0]
     assert "AI 추천 선결제" in 본문
-    # 결제 여부와 남은 금액을 둘 다 적어야 한다
-    assert "선결제됨" in 본문 and "선결제 안 함" in 본문
+    # 남은 값만 적는다. 설명은 프로필 화면에 이미 있어서 여기서 또 하면 겹친다
     assert "won(원)" in 본문
+    assert "선결제 안 함" not in 본문
 
 
 def test_패널을_열_때마다_이용권을_다시_그린다():
@@ -2177,3 +2177,84 @@ def test_입력칸도_적어_둔_값도_같은_말을_쓴다():
     칸 = html.split('class="wlog-unit"')[1].split("</span>")[0]
     assert "wlogUnit(k, x.입력, cat.단위)" in 칸
     assert html.count("wlogUnit(k, 열쇠)") == 2      # 공유용·상세용 둘 다
+
+
+# ---------- AI 추천은 눌러야 값을 치른다 ----------
+
+def test_화면에_들어왔다고_AI를_부르지_않는다():
+    """예전에는 추천 화면에 들어올 때마다 불러서, 다른 창에 갔다 돌아오면
+    그때마다 100원이 빠졌다."""
+    html = _index()
+    본문 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "state.aiReco?.추천?.length" in 본문
+    assert "showAiReco();" in 본문                 # 받아 둔 것을 그대로 보여 준다
+    assert "aiIntroHtml()" in 본문                 # 없으면 안내만, 부르지 않는다
+    assert "API.recommendRoutines" not in 본문     # 여기서 직접 부르지 않는다
+
+
+def test_다시_받기는_반드시_한_번_묻는다():
+    """값이 빠지는 일이다."""
+    html = _index()
+    본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
+    assert "confirm(물음)" in 본문
+    assert "다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다." in 본문
+    # 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다
+    assert "AI 추천은 유료입니다. 이용하시겠습니까?" in 본문
+    assert "fetchRecommend(true)" in 본문
+    # 잔액이 모자라면 묻기도 전에 막는다
+    assert 본문.index("이용권이 모자라요") < 본문.index("confirm(")
+
+
+def test_받은_AI_추천은_남는다():
+    """창을 옮겼다 와도 그대로 있어야 한다."""
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "추천저장();" in 본문
+    저장 = html.split("function 추천저장()")[1].split("\n}")[0]
+    assert "state.aiReco = 담을것" in 저장 and "state.freeReco = 담을것" in 저장
+    assert "saveProfile();" in 저장
+    assert "aiReco: state.aiReco," in html          # 스냅샷에 담고
+    assert "state.aiReco = 되살린추천(saved?.aiReco);" in html   # 되돌린다
+    assert html.count("state.aiReco = null;") >= 3  # 초기화 자리마다
+
+
+def test_AI_카드에도_같은_버튼이_있다():
+    """무료 추천과 같은 자리에서 고르고, 거기에 다시 받기만 더한다."""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    for 버튼 in ("이전 루틴", "더 쉬운 루틴", "더 어려운 루틴", "이 루틴으로 시작"):
+        assert 버튼 in 본문, 버튼
+    assert "recoBy === 'ai' ?" in 본문
+    assert "AI 추천 다시 받기" in 본문
+
+
+def test_받은_적_없으면_받기_버튼만_보여준다():
+    html = _index()
+    본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "askAiRecommend()" in 본문
+    assert "원이 결제돼요" in 본문
+    assert "모자람 ? 'disabled' : ''" in 본문 or "${모자람 ? 'disabled' : ''}" in 본문
+
+
+def test_받은_추천은_창을_옮겨도_그대로다():
+    """무료든 AI든, 창을 옮겼다 왔다고 다른 루틴이 떠 있으면
+    보던 것을 다시 찾을 방법이 없다."""
+    html = _index()
+    본문 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "state.freeReco?.추천?.length" in 본문
+    assert "추천되살리기(state.freeReco, '점수')" in 본문
+    assert "freeReco: state.freeReco," in html
+    assert "state.freeReco = 되살린추천(saved?.freeReco);" in html
+
+
+def test_보던_자리까지_기억한다():
+    """'더 쉬운 루틴' 으로 옮긴 자리도 그대로여야 한다."""
+    html = _index()
+    저장 = html.split("function 추천저장()")[1].split("\n}")[0]
+    assert "자리: recoAt" in 저장 and "되돌아갈자리: [...recoBack]" in 저장
+    되살리기 = html.split("function 추천되살리기(저장본, 출처)")[1].split("\n}")[0]
+    assert "저장본.자리" in 되살리기
+    assert "Math.min(" in 되살리기                  # 목록이 짧아졌어도 벗어나지 않게
+    for 옮기기 in ("function goRecommend(i)", "function backRecommend()"):
+        옮김 = html.split(옮기기)[1].split("\n}")[0]
+        assert "추천저장();" in 옮김, 옮기기

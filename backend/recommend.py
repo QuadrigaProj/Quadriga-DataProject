@@ -96,13 +96,22 @@ def step_amount(step: dict, 강도: dict) -> str:
 
 
 def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
-          target_gap=None, limit: int = 5) -> list[dict]:
-    """목적 × 루틴 후보에 점수를 매겨 높은 순으로 돌려준다."""
+          target_gap=None, limit: int = 5, sport_names=None) -> list[dict]:
+    """목적 × 루틴 후보에 점수를 매겨 높은 순으로 돌려준다.
+
+    sport_factors 는 {요인: 몇 개 종목이 요구하는지} 다. 목록으로 줘도 받는다
+    (그때는 전부 1로 본다). 여러 종목이 같은 요인을 요구하면 그만큼 무겁게
+    센다 — 러닝과 수영을 함께 골랐으면 심폐지구력이 두 배로 중요하다.
+    """
     d = rt.load()
     purpose_factors = d["config"]["purpose_factors"]
     reframe = d["config"]["reframe"].get(age_gbn, {})
     weak = [w for w in (weak or []) if w]
-    sport_factors = [f for f in (sport_factors or []) if f]
+    무게 = (dict(sport_factors) if isinstance(sport_factors, dict)
+          else {f: 1 for f in (sport_factors or []) if f})
+    무게 = {f: max(1, int(w or 1)) for f, w in 무게.items() if f}
+    sport_factors = list(무게)
+    종목이름 = " · ".join(sport_names or [])
 
     out = []
     for purpose in rt.PURPOSES:
@@ -122,8 +131,10 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
 
         맞은종목 = sorted({f for f in sport_factors if any(_factor_hit(f, u) for u in 우선)})
         if 맞은종목:
-            점수 += 1.5 * len(맞은종목)
-            이유.append(f"고른 종목이 많이 쓰는 {' · '.join(맞은종목)}이(가) 들어 있어요")
+            # 여러 종목이 함께 요구하는 요인일수록 무겁게 센다
+            점수 += 1.5 * sum(무게[f] for f in 맞은종목)
+            누가 = f"{종목이름}이(가) " if 종목이름 else "고른 종목이 "
+            이유.append(f"{누가}많이 쓰는 {' · '.join(맞은종목)}이(가) 들어 있어요")
 
         if target_gap is not None and target_gap >= GAP_THRESHOLD:
             if any(any(_factor_hit(g, f) for f in 우선) for g in GAP_FACTORS):
@@ -141,12 +152,14 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
             # 자리에서 이 루틴 자체의 체력요인을 보고 한 번 더 매겨서, 종목이 필요로
             # 하는 요인을 실제로 다루는 루틴이 그 목적 안에서도 앞에 오게 한다.
             덮은종목요인 = sorted({s for s in sport_factors if any(_factor_hit(s, f) for f in factors)})
-            루틴점수 = 점수 + 1.0 * len(덮은약점) + 0.8 * len(덮은종목요인) + 0.1 * len(factors)
+            루틴점수 = (점수 + 1.0 * len(덮은약점)
+                    + 0.8 * sum(무게[f] for f in 덮은종목요인) + 0.1 * len(factors))
             루틴이유 = list(이유)
             if 덮은약점:
                 루틴이유.append(f"오늘 동작에 {' · '.join(덮은약점)} 운동이 들어 있어요")
             if 덮은종목요인:
-                루틴이유.append(f"고른 종목에 필요한 {' · '.join(덮은종목요인)} 동작이 오늘 루틴에 있어요")
+                누가 = f"{종목이름}에" if 종목이름 else "고른 종목에"
+                루틴이유.append(f"{누가} 필요한 {' · '.join(덮은종목요인)} 동작이 오늘 루틴에 있어요")
             if not 루틴이유:
                 루틴이유.append("먼저 기본을 고르게 채우는 구성이에요")
             out.append({
@@ -163,12 +176,22 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
                 "steps": steps,
             })
 
-    # 같은 목적이 연달아 나오면 고를 맛이 없다 — 목적별로 가장 높은 것부터 번갈아 낸다
+    # 목적이 다섯인데 다섯 개를 뽑으면, 목적마다 한 줄씩 세우느라 점수가 묻힌다.
+    # 무엇을 골라도 같은 다섯 개가 나오는 것처럼 보였다. 그래서 **가장 높은
+    # 두 개는 목적과 상관없이 그대로** 내고, 나머지만 목적이 겹치지 않게 채운다.
+    # 고른 종목이 뚜렷하면 그 목적이 두 자리를 가져갈 수 있다.
     out.sort(key=lambda x: (-x["점수"], x["목적"], x["루틴번호"] or 0))
-    골고루, 남은 = [], list(out)
+    # 고를 근거가 있을 때만 두 자리를 내준다. 근거가 없으면 점수가 고만고만해서
+    # 앞자리를 몰아 줄 이유가 없다 — 그때는 예전처럼 목적을 골고루 보여 준다.
+    TOP_AS_IS = 2 if (weak or 무게 or style_purpose) else 0
+    골고루 = out[:min(TOP_AS_IS, limit)]
+    남은 = [x for x in out if x not in 골고루]
     while 남은 and len(골고루) < limit:
         본목적 = set()
         나머지 = []
+        # 앞자리에 이미 나온 목적은 다시 세우지 않는다. 같은 목적이 셋씩
+        # 이어지면 그것대로 고를 맛이 없다.
+        본목적 = {y["목적"] for y in 골고루}
         for x in 남은:
             if x["목적"] in 본목적 or len(골고루) >= limit:
                 나머지.append(x)
@@ -185,10 +208,13 @@ def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
              target_gap=None, limit: int = 5, week: int = 1) -> dict:
     """화면이 그대로 그릴 수 있는 형태. sports 는 종목 id 목록."""
     ids = [s for s in (sports or []) if s]
-    factors = list(sp.factor_weights(ids)) if ids else []
+    무게 = sp.factor_weights(ids) if ids else {}
+    factors = list(무게)
+    이름 = [s.get("이름") for s in sp.resolve(ids)] if ids else []
     care = sp.care_parts(ids) if ids else []
     후보 = score(age_gbn, weak=weak, style_purpose=style_purpose,
-                sport_factors=factors, target_gap=target_gap, limit=limit)
+                sport_factors=무게, target_gap=target_gap, limit=limit,
+                sport_names=이름)
     # 오늘 얼마나 하는지를 동작마다 붙인다 (H2). 주차는 프로그램 경과에서 온다.
     강도 = rt.intensity_for(age_gbn, max(1, min(13, int(week or 1))))
     분 = rt.load()["config"]["age_minutes"].get(age_gbn)
@@ -201,6 +227,7 @@ def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
         "추천": 후보,
         "강도": 강도,
         "참고": {"약점": list(weak or []), "종목요인": factors,
+                "종목요인무게": 무게, "고른종목": 이름,
                 "스타일목적": style_purpose, "목표격차": target_gap},
         "조심할부위": care,
         "샘플": rt.is_sample(),

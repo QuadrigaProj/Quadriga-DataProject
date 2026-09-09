@@ -38,8 +38,9 @@ SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하는 서비
     거기 없는 운동·종목을 쓰면 그 줄은 버려집니다.
   - 측정하지 않은 값을 아는 척하지 마세요.
   - 이유는 한국어 존댓말로, 한 줄에 하나씩, 각 40자 안팎으로 씁니다.
-  - 하루의 모습(학생·직장인·알바생 등)이 있으면 그에 맞게 말합니다.
+  - 하루의 모습(고등학생·직장인·알바생 등)이 있으면 그에 맞게 말합니다.
     이른 아침 칸에 무거운 운동을 넣지 않는 식으로요.
+    **여럿이면 다 겹쳐 놓고 봅니다** — 대학생이면서 알바생이면 둘 다 맞아야 합니다.
   - 의학적 진단이나 치료를 말하지 마세요. 아프면 쉬라고 안내합니다.
 
 JSON 만 출력하세요. 다른 말은 쓰지 마세요.
@@ -229,8 +230,9 @@ SEASON_SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하는
 지켜야 할 것
   - 루틴을 바꾸지 마세요. 같은 루틴을 계절에 맞게 **어떻게** 할지만 씁니다.
     (실내로 옮긴다, 준비운동을 늘린다, 물을 더 마신다, 횟수를 조금 올린다 …)
-  - 하루의 모습(학생·직장인·알바생 등)이 있으면 그 사람 생활에 맞게 씁니다.
+  - 하루의 모습(고등학생·직장인·알바생 등)이 있으면 그 사람 생활에 맞게 씁니다.
     시험 기간, 교대 근무, 방학처럼 그 사람에게 실제로 있는 일로요.
+    **여럿이면 다 겹쳐 놓고 봅니다** — 대학생이면서 알바생이면 둘 다 맞아야 합니다.
   - 계절은 봄·여름·가을·겨울 네 개를 모두, 이 순서로 씁니다.
   - 측정하지 않은 값을 아는 척하지 마세요.
   - 한국어 존댓말. 한줄은 40자 안팎, 할것은 각 25자 안팎으로 셋까지.
@@ -241,7 +243,7 @@ JSON 만 출력하세요. 다른 말은 쓰지 마세요.
 {"계절": [{"계절": "봄", "한줄": "문장", "할것": ["문장", ...], "조심": "문장"}, ...]}"""
 
 
-def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태: str | None) -> str:
+def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태) -> str:
     사용자 = {
         "연령대": 연령대,
         "하루의 모습": 상태,
@@ -261,7 +263,7 @@ def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태: str | Non
 
 
 def seasons(루틴: dict, 참고: dict, 연령대: str,
-            상태: str | None = None) -> list[dict] | None:
+            상태: list[str] | str | None = None) -> list[dict] | None:
     """고른 루틴을 계절마다 어떻게 이어갈지. 못 하면 None.
 
     네 계절이 다 나오지 않으면 통째로 버린다. 봄·여름만 있는 1년 계획은
@@ -307,4 +309,92 @@ def seasons(루틴: dict, 참고: dict, 연령대: str,
         return None                            # 네 계절이 다 있어야 1년이 된다
     순서 = {이름: i for i, 이름 in enumerate(SEASONS)}
     out.sort(key=lambda x: 순서[x["계절"]])
+    return out
+
+# ---------- 사진으로 시간표 읽기 ----------
+
+PHOTO_MAX_BYTES = 4 * 1024 * 1024          # 4MB. 그 이상은 부르기 전에 막는다
+PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp", "image/gif")
+
+PHOTO_SYSTEM = """당신은 사진 속 시간표를 읽어 주는 도우미입니다.
+
+사진에 있는 **바쁜 시간**(수업·근무·학원·정해진 일정)만 요일별로 옮겨 적으세요.
+
+지켜야 할 것
+  - 사진에 **적혀 있는 것만** 옮깁니다. 안 보이는 칸을 채우지 마세요.
+  - 요일은 월·화·수·목·금·토·일 만 씁니다. 없는 요일은 아예 빼세요.
+  - 시각은 24시간 "HH:MM" 로 씁니다. 09:00 처럼 두 자리로요.
+  - 끝나는 시각이 시작보다 빠르면 안 됩니다. 자정을 넘기는 칸은 빼세요.
+  - 시간이 안 적혀 있거나 못 읽겠으면 그 칸은 빼세요. 짐작해서 넣지 마세요.
+  - 사진이 시간표가 아니면 {"바쁜시간": {}} 만 내세요.
+
+JSON 만 출력하세요. 다른 말은 쓰지 마세요.
+{"바쁜시간": {"월": [{"시작": "09:00", "끝": "12:00"}, ...], ...}}"""
+
+
+def _hhmm(v) -> str | None:
+    """"9:5" 같은 것도 "09:05" 로. 시각이 아니면 None."""
+    if not isinstance(v, str):
+        return None
+    부분 = v.strip().split(":")
+    if len(부분) != 2:
+        return None
+    try:
+        시, 분 = int(부분[0]), int(부분[1])
+    except ValueError:
+        return None
+    if not (0 <= 시 <= 23 and 0 <= 분 <= 59):
+        return None
+    return f"{시:02d}:{분:02d}"
+
+
+def read_schedule_photo(데이터: str, 미디어형: str) -> dict | None:
+    """시간표 사진에서 요일별 바쁜 시간을 읽는다. 못 하면 None.
+
+    ``데이터`` 는 base64 문자열이다. 읽어 낸 것은 그대로 쓰지 않고 한 번 더
+    거른다 — 자정을 넘기거나 거꾸로 된 칸은 빈 시간을 엉뚱하게 만든다.
+    사진이 시간표가 아니면 빈 dict 가 나온다(None 과 다르다. 부른 건 성공했다).
+    """
+    if not 데이터 or 미디어형 not in PHOTO_TYPES or not available():
+        return None
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=1)
+        message = client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            system=PHOTO_SYSTEM,
+            output_config={"effort": "low"},
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64",
+                                             "media_type": 미디어형,
+                                             "data": 데이터}},
+                {"type": "text", "text": "이 시간표에서 바쁜 시간을 옮겨 적어주세요."},
+            ]}],
+        )
+        if getattr(message, "stop_reason", None) == "refusal":
+            return None
+        d = _json_only(_text(message))
+    except Exception:                          # 무엇이 잘못돼도 폴백
+        return None
+
+    if not d or not isinstance(d.get("바쁜시간"), dict):
+        return None
+    요일들 = ("월", "화", "수", "목", "금", "토", "일")
+    out = {}
+    for 요일, 목록 in d["바쁜시간"].items():
+        if 요일 not in 요일들 or not isinstance(목록, list):
+            continue
+        줄 = []
+        for x in 목록:
+            if not isinstance(x, dict):
+                continue
+            시작, 끝 = _hhmm(x.get("시작")), _hhmm(x.get("끝"))
+            # 거꾸로 된 칸은 담지 않는다 — 빈 시간을 엉뚱하게 만든다
+            if not 시작 or not 끝 or 시작 >= 끝:
+                continue
+            줄.append({"시작": 시작, "끝": 끝})
+        if 줄:
+            out[요일] = sorted(줄, key=lambda c: c["시작"])[:12]
     return out

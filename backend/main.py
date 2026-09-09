@@ -1246,8 +1246,8 @@ class RecommendIn(BaseModel):
     real_age: float | None = Field(None, ge=5, le=110)
     바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
                                         description="{요일: [{시작, 끝}, ...]} — 적은 사람만")
-    상태: str | None = Field(None, max_length=20,
-                           description="하루의 모습. 학생·직장인·알바생 …")
+    상태: str | list[str] | None = Field(
+        None, description="하루의 모습. 여럿 고를 수 있다 — 대학생이면서 알바생인 사람이 흔하다")
 
 
 @app.get("/recommend/routines")
@@ -1289,7 +1289,8 @@ def post_recommend_routines(body: RecommendIn,
         age_gbn=body.age_gbn, weak=body.weak, style_purpose=body.style_purpose,
         sports=body.sports, target_gap=body.target_gap, limit=body.limit,
         week=body.week, ai=body.ai, real_age=body.real_age,
-        token=quadriga_session, busy=body.바쁜시간, life_kind=body.상태)
+        token=quadriga_session, busy=body.바쁜시간,
+        life_kind=_life_kinds(body.상태))
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
@@ -1349,6 +1350,80 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
     return out
 
 
+class SchedulePhotoIn(BaseModel):
+    """시간표 사진 한 장. data URL 그대로 받는다 — 화면이 FileReader 로 읽은 모양."""
+    사진: str = Field(..., max_length=7_000_000,
+                    description="data:image/...;base64,... 또는 base64 그 자체")
+    미디어형: str | None = Field(None, description="사진에 형식이 안 붙어 있을 때만")
+
+
+@app.post("/schedule/photo")
+def post_schedule_photo(body: SchedulePhotoIn,
+                        quadriga_session: str | None = Cookie(None)) -> dict:
+    """시간표 사진에서 요일별 바쁜 시간을 읽는다 (유료).
+
+    읽은 것을 곧바로 저장하지 않는다. 화면이 사용자에게 보여 주고 고치게
+    한다 — 사진을 잘못 읽었는데 그대로 저장되면 손댈 곳이 없다.
+    """
+    if not air.available():
+        raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
+    누구 = _require_user(quadriga_session)
+    if billing.balance(누구["id"]) < AI_PRICE:
+        raise HTTPException(402, "이용권이 모자라요. 먼저 충전해 주세요.")
+
+    데이터, 형식 = _split_data_url(body.사진, body.미디어형)
+    if 형식 not in air.PHOTO_TYPES:
+        raise HTTPException(415, "JPG · PNG · WEBP · GIF 사진만 읽을 수 있어요.")
+    # base64 는 원본보다 4/3 크다. 부르기 전에 막는다 — 부르고 나서 실패하면
+    # 우리만 값을 치른다.
+    if len(데이터) * 3 // 4 > air.PHOTO_MAX_BYTES:
+        raise HTTPException(413, "사진이 너무 커요. 4MB 아래로 줄여주세요.")
+
+    읽은것 = air.read_schedule_photo(데이터, 형식)
+    if 읽은것 is None:
+        raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
+    if not 읽은것:
+        # 부르긴 했지만 시간표가 아니었다. 값은 받되 왜 비었는지는 알려준다.
+        잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")
+        return {"바쁜시간": {}, "잔액": 잔액,
+                "안내": "사진에서 시간표를 찾지 못했어요. 직접 적어주세요."}
+    잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")
+    return {"바쁜시간": 읽은것, "잔액": 잔액}
+
+
+def _split_data_url(값: str, 기본형: str | None) -> tuple[str, str | None]:
+    """data URL 이면 형식과 알맹이로 가른다. 그냥 base64 면 기본형을 쓴다."""
+    값 = (값 or "").strip()
+    if 값.startswith("data:") and "," in 값:
+        머리, _, 몸 = 값.partition(",")
+        형식 = 머리[5:].split(";")[0].strip().lower()
+        return 몸, (형식 or 기본형)
+    return 값, (기본형 or "").strip().lower() or None
+
+
+def _life_kinds(값) -> list[str]:
+    """하루의 모습을 목록 하나로 다듬는다.
+
+    예전에는 하나만 골랐다(문자열). 그때 저장해 둔 것도 그대로 읽힌다.
+    직접 적은 것이 섞여 오므로 길이를 자른다 — 프롬프트에 긴 글이 통째로
+    실리면 안 된다.
+    """
+    if 값 is None:
+        값 = []
+    elif isinstance(값, str):
+        값 = [값]
+    elif not isinstance(값, list):
+        return []
+    out = []
+    for x in 값:
+        if not isinstance(x, (str, int, float)):
+            continue
+        한줄 = str(x).strip()[:20]
+        if 한줄 and 한줄 not in out:
+            out.append(한줄)
+    return out[:6]
+
+
 class SeasonIn(BaseModel):
     """고른 루틴 하나를 1년 동안 어떻게 이어갈지 물을 때."""
     age_gbn: ProgramAge
@@ -1356,8 +1431,8 @@ class SeasonIn(BaseModel):
     약점: list[str] = Field(default_factory=list, max_length=10)
     고른종목: list[str] = Field(default_factory=list, max_length=100)
     조심할부위: list[str] = Field(default_factory=list, max_length=20)
-    상태: str | None = Field(None, max_length=20,
-                           description="하루의 모습. 학생·직장인·알바생 …")
+    상태: str | list[str] | None = Field(
+        None, description="하루의 모습. 여럿 고를 수 있다")
 
 
 @app.post("/recommend/seasons")
@@ -1376,7 +1451,7 @@ def post_recommend_seasons(body: SeasonIn,
 
     참고 = {"약점": body.약점, "고른종목": body.고른종목,
           "조심할부위": body.조심할부위}
-    계절 = air.seasons(body.루틴, 참고, body.age_gbn, body.상태)
+    계절 = air.seasons(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태))
     # 못 받았으면 한 푼도 받지 않는다. 안 쓴 것에 돈을 받지 않는다.
     if not 계절:
         raise HTTPException(503, "지금은 계절별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")

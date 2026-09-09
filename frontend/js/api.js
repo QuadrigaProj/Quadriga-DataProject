@@ -94,6 +94,8 @@ const API = (() => {
     // --- 커뮤니티 ---
     // 짬시간 — 적어 둔 일정에서 남는 칸과 거기서 할 것
     sparePlan: (b) => post('/spare-time/plan', b),
+    // 시간표 사진에서 바쁜 시간을 읽는다 (유료). 저장은 사용자가 확인한 뒤에
+    schedulePhoto: (b) => post('/schedule/photo', b),
     commMeta: () => call('/community/meta'),
     commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),
     commPost: (b) => post('/community/posts', b),

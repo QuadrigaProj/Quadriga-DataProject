@@ -87,10 +87,14 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
   created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at INTEGER NOT NULL
 );
+/* last_read_id — 이 사람이 이 방에서 어디까지 읽었는지(마지막으로 본 메시지 id).
+   안 읽은 수는 이 값보다 뒤에 온 남의 글을 센다. 사람마다 다르므로 방이
+   아니라 멤버 줄에 둔다. */
 CREATE TABLE IF NOT EXISTS chat_members (
-  room_id   INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
-  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  joined_at INTEGER NOT NULL,
+  room_id      INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at    INTEGER NOT NULL,
+  last_read_id INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (room_id, user_id)
 );
 /* 답장도 메시지다. reply_to 로 어떤 글에 단 것인지만 적어 둔다.
@@ -175,6 +179,7 @@ def init_db() -> None:
         for table in ("community_posts", "community_comments", "chat_messages"):
             _add_columns(con, table, ["edited_at INTEGER"])
         _add_columns(con, "chat_messages", ["reply_to INTEGER"])
+        _add_columns(con, "chat_members", ["last_read_id INTEGER NOT NULL DEFAULT 0"])
         _add_columns(con, "community_posts", ["audience TEXT", "record_date TEXT"])
         _move_replies_into_messages(con)
 
@@ -702,6 +707,13 @@ def list_rooms(me: int) -> list[dict]:
             "SELECT r.*, "
             " (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id) AS 인원,"
             " (SELECT COUNT(*) FROM chat_messages g WHERE g.room_id=r.id) AS 메시지수,"
+            # 안 읽은 수 — 내가 마지막으로 본 뒤에 온 **남의** 글만 센다.
+            # 내가 쓴 글은 쓰는 순간 읽은 것이라 세면 늘 안 읽은 것이 남는다.
+            " (SELECT COUNT(*) FROM chat_messages g"
+            "  WHERE g.room_id=r.id AND g.user_id<>?"
+            "    AND g.id > COALESCE((SELECT m.last_read_id FROM chat_members m"
+            "                         WHERE m.room_id=r.id AND m.user_id=?), 0)"
+            " ) AS 안읽음,"
             " (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?) AS 참여"
             " FROM chat_rooms r"
             # Postgres 는 OR 의 피연산자가 boolean 이어야 한다. 스칼라 서브쿼리
@@ -710,14 +722,16 @@ def list_rooms(me: int) -> list[dict]:
             " WHERE r.room_type <> 'direct'"
             "  OR EXISTS (SELECT 1 FROM chat_members m"
             "             WHERE m.room_id=r.id AND m.user_id=?)"
-            " ORDER BY r.id DESC", (me, me)).fetchall()
+            " ORDER BY r.id DESC", (me, me, me, me)).fetchall()
     out = []
     with auth.db() as con:
         for r in rows:
             방 = {"id": r["id"], "이름": r["name"], "주제": r["topic"],
                  "종류": r["room_type"], "비공개": bool(r["is_private"]),
                  "방장": r["created_by"] == me, "인원": r["인원"],
-                 "메시지수": r["메시지수"], "참여중": bool(r["참여"])}
+                 "메시지수": r["메시지수"], "참여중": bool(r["참여"]),
+                 # 안 들어간 방에는 '안 읽음' 이 없다. 아직 내 대화가 아니다.
+                 "안읽음": (r["안읽음"] if r["참여"] else 0)}
             if r["room_type"] == "direct":
                 # 개인 채팅은 방 이름이 아니라 상대 이름으로 보여 준다
                 상대 = con.execute(
@@ -1073,6 +1087,29 @@ def _is_member(con, room_id: int, user_id: int) -> bool:
                             (room_id, user_id)).fetchone())
 
 
+def mark_read(user_id: int, room_id: int, upto: int | None = None) -> int:
+    """이 방을 어디까지 읽었는지 적는다. 적힌 자리를 돌려준다.
+
+    ``upto`` 를 안 주면 그 방의 마지막 메시지까지 읽은 것으로 본다.
+    뒤로 되돌리지 않는다 — 예전 글을 다시 봤다고 안 읽은 수가 늘어나면
+    사용자는 읽지도 않은 글이 생겼다고 여긴다.
+    """
+    with auth.db() as con:
+        if not _is_member(con, room_id, user_id):
+            return 0
+        if upto is None:
+            끝 = con.execute("SELECT MAX(id) AS m FROM chat_messages WHERE room_id=?",
+                            (room_id,)).fetchone()
+            upto = (끝["m"] if 끝 else 0) or 0
+        con.execute(
+            "UPDATE chat_members SET last_read_id=? WHERE room_id=? AND user_id=?"
+            "  AND last_read_id < ?", (upto, room_id, user_id, upto))
+        줄 = con.execute(
+            "SELECT last_read_id FROM chat_members WHERE room_id=? AND user_id=?",
+            (room_id, user_id)).fetchone()
+    return (줄["last_read_id"] if 줄 else 0) or 0
+
+
 def messages(user_id: int, room_id: int, after: int = 0, limit: int = 50) -> list[dict]:
     """after 를 주면 그 뒤로 온 것, 안 주면 **가장 최근** 것부터 limit 개.
 
@@ -1411,8 +1448,15 @@ def room_destroy(room_id: int, quadriga_session: str | None = Cookie(None)) -> d
 @router.get("/rooms/{room_id}/messages")
 def room_messages(room_id: int, after: int = 0,
                   quadriga_session: str | None = Cookie(None)) -> dict:
+    """방을 열어 메시지를 받아 가면 거기까지 읽은 것으로 본다.
+
+    따로 '읽음' 을 누르게 하지 않는다. 화면에 띄운 것이 곧 읽은 것이다.
+    """
     me = _uid(quadriga_session)
-    return {"messages": messages(me, room_id, after)}
+    목록 = messages(me, room_id, after)
+    본데까지 = max((m["id"] for m in 목록), default=None)
+    읽은자리 = mark_read(me, room_id, 본데까지)
+    return {"messages": 목록, "읽은자리": 읽은자리}
 
 
 @router.post("/rooms/{room_id}/messages")

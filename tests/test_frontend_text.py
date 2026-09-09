@@ -2546,6 +2546,37 @@ def test_이미_적어_둔_시간을_지우지_않는다():
     assert "const 있음 = (SCH.바쁜시간[d] || []).some" in 본문
     assert "if (!있음)" in 본문
 
+# ---------- 채팅방 안 읽은 글 ----------
+
+def test_내_채팅은_안_읽은_수를_보여_준다():
+    """'지금까지 나눈 대화 수' 보다 '내가 안 읽은 수' 가 쓸모 있다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "const 안읽음 = 내채팅 ? (rm['안읽음'] || 0) : 0;" in 본문
+    assert "안 읽음 ${안읽음}" in 본문
+    # 새 글이 없으면 아무 말도 하지 않는다 — 못 본 연락만 알려 준다
+    assert "새 글 없음" not in 본문
+    # 안 들어간 방은 그대로 전체 수
+    assert "메시지 ${rm['메시지수']}" in 본문
+
+
+def test_안_읽은_글이_있으면_빨간_점():
+    html = _index()
+    assert ".room-card .rc-dot{" in html
+    assert "background:var(--clay)" in html.split(".room-card .rc-dot{")[1].split("}")[0]
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert 'class="rc-dot"' in 본문
+    assert "안 읽은 글이 있어요" in 본문
+
+
+def test_방에서_나오면_점이_사라진다():
+    """서버는 읽은 것으로 적어 뒀지만 손에 든 목록은 들어가기 전 것이다."""
+    html = _index()
+    본문 = html.split("function closeRoom()")[1].split("\n}")[0]
+    assert "rm['안읽음'] = 0" in 본문
+    assert "renderRoomList()" in 본문
+    assert "loadRooms()" in 본문
+
 
 # ---------- 퀘스트 클리어 (체력나이가 어려졌을 때) ----------
 

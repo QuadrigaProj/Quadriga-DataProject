@@ -1235,3 +1235,18 @@ def test_사람마다_아이디가_다르다():
     b = _login(app, "b@x.com", "나")
     assert (a.get("/community/me/handle").json()["아이디"]
             != b.get("/community/me/handle").json()["아이디"])
+
+
+def test_채팅_메시지에도_글쓴이_아이디가_실린다():
+    """프로필을 열려면 아이디가 있어야 한다. 닉네임은 겹칠 수 있다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    b.post(f"/community/rooms/{rid}/join")
+    a.post(f"/community/rooms/{rid}/messages", json={"body": "7시에 만나요"})
+
+    m = b.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]
+    assert m["작성자"] == "가" and m["작성자아이디"] == ha
+    # 그 아이디로 프로필을 열 수 있어야 한다
+    assert b.get(f"/community/users/{m['작성자아이디']}").json()["닉네임"] == "가"

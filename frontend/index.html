@@ -1264,6 +1264,11 @@
     background:var(--bg); }
   .chat-msg{ margin-top:8px; font-size:13.5px; }
   .chat-msg .cm-who{ font-size:11px; color:var(--muted); }
+  /* 게시판처럼 글쓴이 프로필을 띄운다 — 눌러서 프로필을 연다 */
+  .chat-msg .who-avatar{ width:20px; height:20px; font-size:10px; }
+  .chat-msg .post-author{ font-size:11.5px; font-weight:600; }
+  .chat-msg .who-btn{ gap:5px; vertical-align:middle; }
+  .chat-msg.mine .cm-who{ display:flex; justify-content:flex-end; align-items:center; gap:6px; }
   .chat-msg .react-bar{ margin-top:4px; }
   /* 꾹 눌렀을 때 뜨는 자리 (L) */
   .cm-menu{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
@@ -4591,7 +4596,7 @@ function chatMsgHtml(m){
   const 열림 = openMsgMenus.has(m.id);
   return `<div class="chat-msg${m['내글'] ? ' mine' : ''}" id="msg-${m.id}" data-mid="${m.id}">
     ${replyQuoteHtml(m)}
-    <div class="cm-who">${esc(m['작성자'])}${수정됨(m)}</div>
+    <div class="cm-who">${whoHtml(m['작성자'], m['작성자아이디'])}${수정됨(m)}</div>
     <div class="cm-body">${esc(m['본문'])}</div>
     ${reactBar('message', m.id, m['반응'], { opener: false })}
     ${열림 ? `<div class="cm-menu">

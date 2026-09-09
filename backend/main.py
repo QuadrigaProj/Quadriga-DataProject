@@ -1349,6 +1349,41 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
     return out
 
 
+class SeasonIn(BaseModel):
+    """고른 루틴 하나를 1년 동안 어떻게 이어갈지 물을 때."""
+    age_gbn: ProgramAge
+    루틴: dict = Field(..., description="추천에서 고른 그 루틴 (목적·루틴명·체력요인 …)")
+    약점: list[str] = Field(default_factory=list, max_length=10)
+    고른종목: list[str] = Field(default_factory=list, max_length=100)
+    조심할부위: list[str] = Field(default_factory=list, max_length=20)
+    상태: str | None = Field(None, max_length=20,
+                           description="하루의 모습. 학생·직장인·알바생 …")
+
+
+@app.post("/recommend/seasons")
+def post_recommend_seasons(body: SeasonIn,
+                           quadriga_session: str | None = Cookie(None)) -> dict:
+    """'이 루틴으로 자세히 도전하기' — 계절마다 어떻게 이어갈지 (유료).
+
+    루틴을 바꾸지 않는다. 이미 고른 루틴 하나를 계절에 맞게 어떻게 할지만
+    쓴다. 네 계절이 다 나오지 않으면 버리고, 버렸으면 값을 받지 않는다.
+    """
+    if not air.available():
+        raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
+    누구 = _require_user(quadriga_session)
+    if billing.balance(누구["id"]) < AI_PRICE:
+        raise HTTPException(402, "이용권이 모자라요. 먼저 충전해 주세요.")
+
+    참고 = {"약점": body.약점, "고른종목": body.고른종목,
+          "조심할부위": body.조심할부위}
+    계절 = air.seasons(body.루틴, 참고, body.age_gbn, body.상태)
+    # 못 받았으면 한 푼도 받지 않는다. 안 쓴 것에 돈을 받지 않는다.
+    if not 계절:
+        raise HTTPException(503, "지금은 계절별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
+    잔액 = billing.spend(누구["id"], AI_PRICE, "계절별 도전 계획")
+    return {"계절": 계절, "잔액": 잔액, "루틴명": body.루틴.get("루틴명")}
+
+
 # ---------- 11. 당일 기록 종목 ----------
 
 class SpareTimeIn(BaseModel):

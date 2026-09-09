@@ -219,6 +219,15 @@
   }
   .prescribe-label{ font-size:13px; color:var(--muted); }
   .prescribe-text{ font-size:15.5px; font-weight:600; margin-top:6px; line-height:1.5; }
+  /* 계절별 도전 계획 — 고른 루틴을 1년 동안 어떻게 이어갈지 */
+  .rec-season{ border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
+  .season-box{ border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:11px 13px; margin-top:8px; background:var(--paper); }
+  .season-name{ font-size:12.5px; font-weight:700; color:var(--pine-deep); }
+  .season-line{ font-size:13px; margin-top:4px; line-height:1.55; }
+  .season-do{ margin:7px 0 0; padding-left:17px; font-size:12.5px;
+    color:var(--ink); line-height:1.7; }
+  .season-care{ font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5; }
   /* 추천 카드 안, AI 가 요일별로 골라 준 짬시간 */
   .rec-spare{ border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
   .rec-spare-day{ display:flex; gap:10px; margin-top:8px; }
@@ -6931,6 +6940,7 @@ let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
 let recoSpare = null;     // AI 가 비는 칸마다 골라 준 것 {요일: [{시작,끝,분,할것,한줄}]}
+let recoSeason = null;    // '자세히 도전하기' 로 받은 계절 계획 {루틴명, 계절:[...]}
 let recoAiReady = null;   // 서버에 키가 있는지 (I1) — null=아직 확인 전, true/false=확인됨
 let recoAiWhy = null;     // 못 쓰면 그 까닭 (서버가 준 한 줄)
 
@@ -6986,6 +6996,7 @@ function 되살린추천(x){
    '더 쉬운 루틴' 으로 옮긴 자리까지 기억해서, 창을 옮겼다 와도 그대로다. */
 function 추천저장(){
   const 담을것 = { 추천: recoList, 조심할부위: recoCare, 짬시간계획: recoSpare,
+                계절계획: recoSeason,
                 자리: recoAt, 되돌아갈자리: [...recoBack], 받은시각: Date.now() };
   if (recoBy === 'ai') state.aiReco = 담을것;
   else state.freeReco = 담을것;
@@ -6997,6 +7008,7 @@ function 추천되살리기(저장본, 출처){
   recoList = 저장본.추천 || [];
   recoCare = 저장본.조심할부위 || [];
   recoSpare = 저장본.짬시간계획 || null;
+  recoSeason = 저장본.계절계획 || null;
   recoBy = 출처;
   recoAt = Math.min(저장본.자리 || 0, Math.max(0, recoList.length - 1));
   recoBack = Array.isArray(저장본.되돌아갈자리) ? [...저장본.되돌아갈자리] : [];
@@ -7081,6 +7093,7 @@ async function fetchRecommend(ai){
         });
     recoList = r.추천 || [];
     recoSpare = r.짬시간계획 || null;
+    recoSeason = null;          // 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
     recoCare = r.조심할부위 || [];
     recoBy = r.출처 || '점수';
     recoAiReady = !!r.ai가능;
@@ -7151,6 +7164,7 @@ function paintRecommend(){
       </div>
       ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
       ${spareRecoHtml()}
+      ${seasonHtml()}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
       <div class="rec-by">${recoBy === 'ai' ? `AI 가 다듬었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
@@ -7158,6 +7172,8 @@ function paintRecommend(){
         <button type="button" class="reco-btn" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
         <button type="button" class="reco-btn" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
+        <button type="button" class="reco-btn" onclick="askSeasons()"
+                ${recoAiReady ? '' : 'disabled'}>이 루틴으로 자세히 도전하기</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
           onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
@@ -7181,6 +7197,55 @@ function spareRecoHtml(){
         </div>`).join('')}</div>
     </div>`).join('')}
   </div>`;
+}
+
+/* 계절별 도전 계획. 지금 보고 있는 루틴의 것일 때만 그린다 —
+   '더 쉬운 루틴' 으로 옮겨 놓고 예전 루틴의 계획을 보고 있으면 안 된다. */
+function seasonHtml(){
+  const x = recoList[recoAt];
+  if (!x || !recoSeason || recoSeason.루틴명 !== x.루틴명) return '';
+  return `<div class="rec-season">
+    <div class="rec-why-head">계절마다 이렇게 이어가요</div>
+    ${(recoSeason.계절 || []).map(c => `
+      <div class="season-box">
+        <div class="season-name">${esc(c.계절)}</div>
+        ${c.한줄 ? `<div class="season-line">${esc(c.한줄)}</div>` : ''}
+        ${(c.할것 || []).length ? `<ul class="season-do">${
+          c.할것.map(y => `<li>${esc(y)}</li>`).join('')}</ul>` : ''}
+        ${c.조심 ? `<div class="season-care">${esc(c.조심)}</div>` : ''}
+      </div>`).join('')}
+  </div>`;
+}
+
+/* '이 루틴으로 자세히 도전하기' — AI 를 한 번 더 부른다. 값이 빠지는 일이라
+   반드시 묻는다. 이미 받아 둔 루틴이면 다시 부르지 않는다. */
+async function askSeasons(){
+  const x = recoList[recoAt];
+  if (!x) return;
+  if (!recoAiReady) { showToast(recoAiWhy || 'AI 추천은 지금 쓸 수 없어요'); return; }
+  if (recoSeason?.루틴명 === x.루틴명) { showToast('이미 받아 둔 계획이에요'); return; }
+  if ((state.credit || 0) < AI_PRICE) {
+    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
+    return;
+  }
+  if (!confirm(`이 루틴을 계절마다 어떻게 이어갈지 받아볼까요?\n${AI_PRICE}원이 결제됩니다.`)) return;
+  try {
+    const r = await API.recommendSeasons({
+      age_gbn: programAgeGroup(state.age),
+      루틴: x,
+      약점: weakFactors(),
+      고른종목: state.sports || [],
+      조심할부위: recoCare,
+      상태: state.schedule?.상태 || null,
+    });
+    recoSeason = { 루틴명: r.루틴명 || x.루틴명, 계절: r.계절 || [] };
+    // 차감은 서버가 한다. 화면은 서버가 준 잔액을 그대로 받아 적는다.
+    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    추천저장();
+    paintRecommend();
+  } catch (e) {
+    showToast(e.message || '계절별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요');
+  }
 }
 
 /* 지금 것을 기억해 두고 자리를 옮긴다 — '이전 루틴' 이 되돌아갈 곳이다. */

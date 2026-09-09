@@ -2420,3 +2420,53 @@ def test_홈_카드는_AI가_고른_말을_먼저_쓴다():
     본문 = html.split("function renderSpareCard()")[1].split("\n}")[0]
     assert "state.aiReco?.짬시간계획?.[todayDow()]" in 본문
     assert "x.시작 === 칸.시작 && x.끝 === 칸.끝" in 본문
+
+
+# ---------- 계절별로 자세히 도전하기 ----------
+
+def test_자세히_도전하기_버튼이_있다():
+    html = _index()
+    assert "이 루틴으로 자세히 도전하기" in html
+    assert 'onclick="askSeasons()"' in html
+
+
+def test_값이_빠지기_전에_반드시_묻는다():
+    """버튼만 눌러도 결제되는 일이 없어야 한다."""
+    html = _index()
+    본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
+    assert "confirm(" in 본문
+    assert "원이 결제됩니다" in 본문
+    assert 본문.index("confirm(") < 본문.index("API.recommendSeasons")
+    # 잔액이 모자라면 부르지도 않는다
+    assert 본문.index("(state.credit || 0) < AI_PRICE") < 본문.index("confirm(")
+
+
+def test_이미_받아_둔_루틴이면_다시_부르지_않는다():
+    html = _index()
+    본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
+    assert "recoSeason?.루틴명 === x.루틴명" in 본문
+    assert "이미 받아 둔 계획이에요" in 본문
+
+
+def test_다른_루틴으로_옮기면_그_계획을_안_그린다():
+    """'더 쉬운 루틴' 으로 옮겨 놓고 예전 루틴의 계획을 보고 있으면 안 된다."""
+    html = _index()
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "recoSeason.루틴명 !== x.루틴명" in 본문
+    assert "계절마다 이렇게 이어가요" in 본문
+
+
+def test_계절_계획도_추천과_함께_남는다():
+    html = _index()
+    assert "계절계획: recoSeason," in html
+    assert "recoSeason = 저장본.계절계획 || null;" in html
+    # 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "recoSeason = null;" in 본문
+
+
+def test_차감은_서버가_준_잔액을_받아_적는다():
+    html = _index()
+    본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
+    assert "state.credit = r['잔액']" in 본문
+    assert "state.credit -=" not in 본문      # 화면이 스스로 깎지 않는다

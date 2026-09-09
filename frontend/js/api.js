@@ -61,6 +61,8 @@ const API = (() => {
     recommendRoutines: (q) => call('/recommend/routines?' + qs(q)),
     // 일정까지 함께 보낼 때. 요일별 시간표는 쿼리 문자열에 실을 수 없다
     recommendWithSchedule: (b) => post('/recommend/routines', b),
+    // '이 루틴으로 자세히 도전하기' — 계절마다 어떻게 이어갈지 (유료)
+    recommendSeasons: (b) => post('/recommend/seasons', b),
     activityAge: (b) => post('/fitness-age/activity', b),
     activityAgeDays: (b) => post('/fitness-age/activity/days', b),
     // 이용권 결제 (J2). 카드번호 같은 건 오가지 않는다 — 금액과 주문번호뿐이다.

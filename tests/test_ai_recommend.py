@@ -372,3 +372,112 @@ def test_없는_요일은_그냥_버린다():
                           "바쁜시간": {"먼데이": [{"시작": "09:00", "끝": "12:00"}]}}).json()
     assert len(d["추천"]) == 3
     assert "짬시간" not in d
+
+
+# ---------- 계절별로 자세히 도전하기 ----------
+
+루틴 = {"목적": "다이어트", "루틴명": "전신 HIIT", "동작수": 5,
+      "체력요인": ["심폐지구력"], "난이도": "보통"}
+
+
+def _네계절(꼬리: str = "") -> str:
+    안 = ", ".join(
+        '{"계절":"%s","한줄":"%s에는 이렇게","할것":["가볍게"],"조심":"무리 마세요"}' % (c, c)
+        for c in ("봄", "여름", "가을", "겨울"))
+    return '{"계절":[' + 안 + ']' + 꼬리 + '}'
+
+
+def test_네_계절을_순서대로_돌려준다(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    r = air.seasons(루틴, {}, "성인", "학생")
+    assert [x["계절"] for x in r] == ["봄", "여름", "가을", "겨울"]
+    assert r[0]["한줄"] == "봄에는 이렇게"
+    assert r[0]["할것"] == ["가볍게"]
+
+
+def test_계절이_섞여_와도_봄부터_그린다(monkeypatch):
+    """받은 순서가 아니라 1년 순서로 읽혀야 한다."""
+    안 = ", ".join('{"계절":"%s","한줄":"x"}' % c for c in ("겨울", "봄", "가을", "여름"))
+    _fake_sdk(monkeypatch, '{"계절":[' + 안 + ']}')
+    assert [x["계절"] for x in air.seasons(루틴, {}, "성인")] == ["봄", "여름", "가을", "겨울"]
+
+
+@pytest.mark.parametrize("본문", [
+    '{"계절":[{"계절":"봄","한줄":"x"},{"계절":"여름","한줄":"x"}]}',   # 두 계절뿐
+    '{"계절":[{"계절":"장마","한줄":"x"}]}',                          # 없는 계절
+    '{"계절":[{"계절":"봄"},{"계절":"봄"},{"계절":"봄"},{"계절":"봄"}]}',  # 중복
+    '{"계절":"봄부터 시작해요"}',                                     # 목록이 아님
+    '{"순서":[0]}',                                                  # 계절이 없음
+    "이건 JSON 이 아니에요",
+    "",
+])
+def test_1년이_안_되면_통째로_버린다(monkeypatch, 본문):
+    """봄·여름만 있는 1년 계획은 받아 든 사람이 나머지를 채워야 해서 없느니만 못하다."""
+    _fake_sdk(monkeypatch, 본문)
+    assert air.seasons(루틴, {}, "성인") is None
+
+
+def test_하루의_모습을_프롬프트에_적어_보낸다(monkeypatch):
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["시스템"] = kw["system"]
+            return _Msg(_네계절())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    air.seasons(루틴, {"약점": ["유연성"]}, "성인", "알바생")
+    assert "알바생" in 본["글"]
+    assert "전신 HIIT" in 본["글"]
+    assert "유연성" in 본["글"]
+    assert "루틴을 바꾸지 마세요" in 본["시스템"]
+
+
+def test_계절_엔드포인트가_값을_받는다(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    a = _paid(1000)
+    d = a.post("/recommend/seasons",
+               json={"age_gbn": "성인", "루틴": 루틴, "상태": "학생"}).json()
+    assert [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"]
+    assert d["잔액"] == 900
+    assert d["루틴명"] == "전신 HIIT"
+
+
+def test_못_받았으면_한_푼도_안_깎는다(monkeypatch):
+    """안 쓴 것에 돈을 받지 않는다."""
+    _fake_sdk(monkeypatch, "이건 JSON 이 아니다")
+    a = _paid(1000)
+    r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
+    assert r.status_code == 503
+    assert a.get("/credit").json()["잔액"] == 1000
+
+
+def test_이용권이_모자라면_부르지_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    a = _paid(0)
+    r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
+    assert r.status_code == 402
+    assert "이용권" in r.json()["detail"]
+
+
+def test_로그인하지_않으면_부르지_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    r = TestClient(app).post("/recommend/seasons",
+                             json={"age_gbn": "성인", "루틴": 루틴})
+    assert r.status_code in (401, 403)
+
+
+def test_키가_없으면_계절도_잠긴다(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    a = _paid(1000)
+    r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
+    assert r.status_code == 503
+    assert a.get("/credit").json()["잔액"] == 1000

@@ -2392,7 +2392,7 @@ def test_일정을_적었으면_POST로_보낸다():
     본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
     assert "API.recommendWithSchedule({" in 본문
     assert "바쁜시간: 바쁜," in 본문
-    assert "상태: state.schedule?.상태 || null," in 본문
+    assert "상태: state.schedule?.상태 || []," in 본문
     # 안 적은 사람은 예전 그대로 GET
     assert "API.recommendRoutines({" in 본문
     assert "Object.keys(바쁜).length" in 본문
@@ -2472,6 +2472,80 @@ def test_차감은_서버가_준_잔액을_받아_적는다():
     assert "state.credit -=" not in 본문      # 화면이 스스로 깎지 않는다
 
 
+# ---------- 일정은 AI 추천에서만 ----------
+
+def test_일정_넣는_자리는_AI_추천에서만_보인다():
+    """무료 추천은 비는 시간을 읽지 않는다 — 넣어도 아무 일이 없다."""
+    html = _index()
+    assert 'id="schOpen" onclick="openSchedule()" hidden' in html
+    본문 = html.split("function paintRecoMode()")[1].split("\n}")[0]
+    assert "sch.hidden = recoMode !== 'ai'" in 본문
+
+
+def test_무료_추천은_일정을_보내지_않는다():
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "const 바쁜 = ai ? (state.schedule?.바쁜시간 || null) : null;" in 본문
+
+
+# ---------- 하루의 모습은 여럿 ----------
+
+def test_학생을_학교별로_나눠_놓았다():
+    """같은 '학생' 이라도 중학생과 대학원생은 하루가 아주 다르다."""
+    html = _index()
+    본문 = html.split("const LIFE_KINDS = ")[1].split("];")[0]
+    for k in ("중학생", "고등학생", "대학생", "대학원생", "직장인", "알바생"):
+        assert k in 본문, k
+
+
+def test_여러_개_고를_수_있고_직접_적을_수도_있다():
+    html = _index()
+    고르기 = html.split("function pickLifeKind(k)")[1].split("\n}")[0]
+    assert "SCH.상태.indexOf(k)" in 고르기
+    assert "splice(i, 1)" in 고르기            # 다시 누르면 빠진다
+    assert "LIFE_MAX" in 고르기
+    assert 'id="schOther"' in html
+    assert "그 밖이라면 어떤 하루인지 적어주세요" in html
+    assert "function lifeKinds()" in html
+
+
+def test_예전에_하나만_골랐던_것도_읽힌다():
+    html = _index()
+    본문 = html.split("function scheduleDraft()")[1].split("\n}")[0]
+    assert "Array.isArray(예전) ? [...예전] : (예전 ? [예전] : [])" in 본문
+
+
+def test_저장은_고른_것과_적은_것을_함께_담는다():
+    html = _index()
+    assert "state.schedule = { 상태: lifeKinds(), 바쁜시간: 담을것 };" in html
+
+
+# ---------- 시간표 사진 ----------
+
+def test_사진_읽기는_묻고_나서_부른다():
+    html = _index()
+    본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
+    assert "confirm(" in 본문
+    assert "원이 결제됩니다" in 본문
+    assert 본문.index("confirm(") < 본문.index("API.schedulePhoto")
+    assert 본문.index("(state.credit || 0) < AI_PRICE") < 본문.index("confirm(")
+
+
+def test_읽은_것을_곧바로_저장하지_않는다():
+    """잘못 읽었는데 그대로 저장되면 손댈 곳이 없다."""
+    html = _index()
+    본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
+    assert "renderSchedule()" in 본문
+    assert "saveProfile()" not in 본문        # 저장은 사용자가 누른다
+    assert "맞는지 보고 고쳐주세요" in 본문
+
+
+def test_이미_적어_둔_시간을_지우지_않는다():
+    html = _index()
+    본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
+    assert "const 있음 = (SCH.바쁜시간[d] || []).some" in 본문
+    assert "if (!있음)" in 본문
+
 # ---------- 채팅방 안 읽은 글 ----------
 
 def test_내_채팅은_안_읽은_수를_보여_준다():
@@ -2480,7 +2554,8 @@ def test_내_채팅은_안_읽은_수를_보여_준다():
     본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
     assert "const 안읽음 = 내채팅 ? (rm['안읽음'] || 0) : 0;" in 본문
     assert "안 읽음 ${안읽음}" in 본문
-    assert "새 글 없음" in 본문
+    # 새 글이 없으면 아무 말도 하지 않는다 — 못 본 연락만 알려 준다
+    assert "새 글 없음" not in 본문
     # 안 들어간 방은 그대로 전체 수
     assert "메시지 ${rm['메시지수']}" in 본문
 

@@ -219,6 +219,10 @@
   }
   .prescribe-label{ font-size:13px; color:var(--muted); }
   .prescribe-text{ font-size:15.5px; font-weight:600; margin-top:6px; line-height:1.5; }
+  /* AI 가 지은 루틴 안, 고른 종목 표시 */
+  .rec-step-tag{ display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px;
+    font-size:10.5px; font-weight:700; color:var(--pine-deep); background:var(--pine-tint);
+    vertical-align:middle; }
   /* 계절별 도전 계획 — 고른 루틴을 1년 동안 어떻게 이어갈지 */
   .rec-season{ border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
   .season-box{ border:1px solid var(--line); border-radius:var(--radius-lg);
@@ -2375,6 +2379,7 @@ const state = {
   freeReco: null,      // 무료 추천도 같은 모양으로 남긴다 — 창을 옮겨도 보던 것이 그대로 있게
   pinnedRooms: [],     // '내 채팅' 에서 위에 붙여 둔 방 id — 사람마다 다른 취향이라 스냅샷에 담는다
   schedule: null,      // 짬시간: {상태, 바쁜시간:{월:[{시작,끝}], ...}} — 적은 사람만 쓴다
+  aiRoutine: null,     // AI 가 지어 준 루틴으로 시작했을 때 그 루틴 (플레이어가 이걸 돈다)
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
@@ -2996,6 +3001,7 @@ function snapshot(){
     pinnedRooms: state.pinnedRooms,
     activityAge: state.activityAge,
     schedule: state.schedule,
+    aiRoutine: state.aiRoutine,
     commute: state.commute,
     styleTest: state.styleTest,
     updated: new Date().toISOString().slice(0, 10),
@@ -3056,6 +3062,8 @@ function applyProfile(saved){
   }
   state.schedule = (saved?.schedule && typeof saved.schedule === 'object'
                     && saved.schedule.바쁜시간) ? saved.schedule : null;
+  state.aiRoutine = (saved?.aiRoutine?.구성 === 'ai' && Array.isArray(saved.aiRoutine.steps)
+                     && saved.aiRoutine.steps.length) ? saved.aiRoutine : null;
   state.commute = (saved?.commute && saved.commute.from && saved.commute.to)
     ? { from: String(saved.commute.from), to: String(saved.commute.to) } : null;
   state.styleTest = (saved?.styleTest && typeof saved.styleTest === 'object' && saved.styleTest.result) ? saved.styleTest : null;
@@ -5363,6 +5371,7 @@ function renderPeerComparison(r){
 /* ---- 화면 2 : 목적 ---- */
 function selectPurpose(p){
   state.purpose = p;
+  state.aiRoutine = null;   // 목적을 손수 골랐으면 AI 가 지은 루틴에서 벗어난 것이다
   saveProfile();
   renderPurpose();
 }
@@ -5474,7 +5483,24 @@ async function renderCommute(){
   }
 }
 
+/* AI 가 지은 루틴을 플레이어가 도는 모양으로. 영상이 없는 줄(고른 종목·기록
+   종목)은 영상 버튼이 안 뜰 뿐, 나머지는 같다. */
+function applyAiRoutine(){
+  const x = state.aiRoutine;
+  state.routineError = null;
+  state.routineMeta = { 루틴명: x.루틴명, 강도: x.강도 || null, 구성: 'ai' };
+  state.intensity = x.강도 || null;
+  state.routine = (x.steps || []).map(s => ({
+    단계: s.단계, 운동명: s.동작, youtube_id: s.youtube_id || null,
+    체력요인: (s.체력요인 || []).join('·'), 도구: s.도구 || '', 유형: s.유형 || '',
+    부담부위: s.부담부위 || [], 부위: '',
+    설명: [s.수행량, s.왜].filter(Boolean).join(' · '),
+  }));
+}
+
 async function loadRoutine(){
+  // AI 가 지어 준 루틴으로 시작했으면 그것을 돈다.
+  if (state.aiRoutine?.steps?.length) { applyAiRoutine(); return; }
   const pg = programAgeGroup(state.age);
   const purpose = PURPOSE_TO_KO[state.purpose] || null;
   try {
@@ -7316,6 +7342,24 @@ async function askAiRecommend(){
   await fetchRecommend(true);
 }
 
+/* 최근 n일 안의 운동 기록 — 날짜·이름·값만. AI 가 '어제 한 것을 오늘 또'
+   시키지 않으려면 이것이 있어야 한다. 통째로 보내지 않는다. */
+function recentWorkouts(days){
+  const 경계 = new Date(); 경계.setDate(경계.getDate() - days);
+  const 부터 = 경계.toISOString().slice(0, 10);
+  const out = [];
+  (state.workoutLog || []).forEach(w => {
+    if (!w?.date || w.date < 부터) return;
+    (w.items || []).forEach(x => out.push({ date: w.date, 이름: x.이름,
+      값: Object.entries(x.값 || {}).map(([k, v]) => `${v}${k}`).join(' ') }));
+  });
+  (state.routineLog || []).forEach(e => {
+    if (!e?.date || e.date < 부터 || !e.done) return;
+    out.push({ date: e.date, 이름: e.name || '루틴', 값: '완료' });
+  });
+  return out.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
+}
+
 /* 실제 호출. ai=true 일 때만 값이 빠진다 — 서버가 뺀다. */
 async function fetchRecommend(ai){
   const box = $('recoBody');
@@ -7328,7 +7372,9 @@ async function fetchRecommend(ai){
     // 실을 수 없고, AI 는 그 칸에서 무엇을 할지까지 함께 골라 준다.
     // 일정은 AI 추천에서만 쓴다 — 무료 추천은 예전 그대로 GET 이다.
     const 바쁜 = ai ? (state.schedule?.바쁜시간 || null) : null;
-    const r = (바쁜 && Object.keys(바쁜).length)
+    // AI 는 늘 POST 다. 이 사람을 읽을 재료(항목별 체력나이·최근 기록·일정)를
+    // 쿼리 문자열에 실을 수 없다. 무료는 그런 걸 보지 않으니 GET 그대로.
+    const r = ai
       ? await API.recommendWithSchedule({
           age_gbn: pg,
           weak: 약점,
@@ -7337,9 +7383,12 @@ async function fetchRecommend(ai){
           target_gap: 목표격차,
           week: programWeek(),
           limit: 12,
-          ai: !!ai,
-          바쁜시간: 바쁜,
+          ai: true,
+          바쁜시간: 바쁜 || {},
           상태: state.schedule?.상태 || [],
+          항목별: state.result?.항목별 || {},
+          체력나이: state.result?.체력나이 ?? null,
+          최근기록: recentWorkouts(14),
         })
       : await API.recommendRoutines({
           age_gbn: pg,
@@ -7403,9 +7452,12 @@ function paintRecommend(){
   const x = recoList[recoAt];
   const 쉬움 = recoStep(-1), 어려움 = recoStep(1);
   const lv = x.난이도 === '어려움' ? 'hard' : (x.난이도 === '쉬움' ? 'easy' : '');
+  // AI 가 지은 루틴은 후보 목록이 아니라 하나다. '더 쉬운·더 어려운' 이 갈 곳이 없다.
+  const 지은것 = x.구성 === 'ai';
   box.innerHTML = `
     <div class="rec-card">
-      <div class="rec-rank">${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서</div>
+      <div class="rec-rank">${지은것 ? 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요'
+        : `${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서`}</div>
       <div class="rec-purpose">${x.표시목적 || x.목적}</div>
       <div class="rec-title">${x.루틴명}<span class="rec-level ${lv}">${x.난이도 || ''}</span></div>
       <div class="rec-meta">동작 ${x.동작수}개 · ${(x.예상시간분 || []).join('~')}분 · ${(x.체력요인 || []).slice(0, 3).join(' · ')}</div>
@@ -7413,8 +7465,9 @@ function paintRecommend(){
         <div class="rec-step">
           <div class="rec-step-phase">${s.단계}</div>
           <div class="rec-step-main">
-            <div class="rec-step-name">${s.동작}</div>
-            <div class="rec-step-sub">${(s.체력요인 || []).join(' · ')}${s.도구 && s.도구 !== '맨몸' ? ` · ${s.도구}` : ''}${(s.부담부위 || []).length ? ` · ${s.부담부위.join('·')} 주의` : ''}</div>
+            <div class="rec-step-name">${s.아이콘 ? s.아이콘 + ' ' : ''}${s.동작}${s.출처 === '종목'
+              ? ' <span class="rec-step-tag">고른 종목</span>' : ''}</div>
+            <div class="rec-step-sub">${(s.체력요인 || []).join(' · ')}${s.도구 && s.도구 !== '맨몸' ? ` · ${s.도구}` : ''}${(s.부담부위 || []).length ? ` · ${s.부담부위.join('·')} 주의` : ''}${s.왜 ? `<br/>${esc(s.왜)}` : ''}</div>
           </div>
           <div class="rec-step-amt">${s.수행량 || ''}</div>
         </div>`).join('')}</div>
@@ -7423,14 +7476,15 @@ function paintRecommend(){
         <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
       </div>
       ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
+      ${(x.주의 || []).length ? `<div class="rec-care">${x.주의.map(esc).join('<br/>')}</div>` : ''}
       ${spareRecoHtml()}
       ${seasonHtml()}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
-      <div class="rec-by">${recoBy === 'ai' ? `AI 가 다듬었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
+      <div class="rec-by">${recoBy === 'ai' ? `AI 가 지었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
-        <button type="button" class="reco-btn" onclick="backRecommend()" ${recoBack.length ? '' : 'disabled'}>이전 루틴</button>
+        ${지은것 ? '' : `<button type="button" class="reco-btn" onclick="backRecommend()" ${recoBack.length ? '' : 'disabled'}>이전 루틴</button>
         <button type="button" class="reco-btn" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
-        <button type="button" class="reco-btn" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>
+        <button type="button" class="reco-btn" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>`}
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
           onclick="askSeasons()">이 루틴으로 자세히 도전하기</button>
@@ -7527,10 +7581,11 @@ async function useRecommend(){
   const x = recoList[recoAt];
   if (!x) return;
   const key = Object.keys(PURPOSE_TO_KO).find(k => PURPOSE_TO_KO[k] === x.목적);
-  if (key) {
-    state.purpose = key;
-    await saveProfile();
-  }
+  if (key) state.purpose = key;
+  // AI 가 지은 루틴은 그 루틴을 그대로 돈다. 목적별 기본 루틴으로 바꿔치기하면
+  // 맞춤으로 지은 뜻이 없다. 무료 추천으로 시작하면 원래대로 돌아간다.
+  state.aiRoutine = x.구성 === 'ai' ? x : null;
+  await saveProfile();
   goTo('s3');
 }
 

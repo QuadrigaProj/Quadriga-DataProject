@@ -253,6 +253,14 @@
     font-family:inherit; font-size:12.5px; color:var(--pine-deep);
     text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
   /* 스케줄 적는 자리 */
+  .sch-hint{ font-weight:400; font-size:11.5px; color:var(--muted); margin-left:4px; }
+  .sch-other{ width:100%; box-sizing:border-box; margin-top:8px;
+    border:1.5px solid var(--line); border-radius:12px; padding:9px 11px;
+    font-family:inherit; font-size:13px; }
+  .sch-photo{ width:100%; box-sizing:border-box; margin-bottom:8px;
+    background:none; border:1px dashed var(--line); border-radius:12px;
+    padding:9px 11px; font-family:inherit; font-size:12.5px;
+    color:var(--pine-deep); cursor:pointer; }
   .sch-day{ border-top:1px solid var(--line); padding:10px 0; }
   .sch-day:first-child{ border-top:none; }
   .sch-name{ font-weight:700; font-size:13.5px; margin-bottom:6px; }
@@ -2071,7 +2079,7 @@
         <button type="button" data-mode="ai" onclick="setRecoMode('ai')">
           AI 추천<span class="mode-sub">1회 100원</span></button>
       </div>
-      <button type="button" class="spare-set" id="schOpen" onclick="openSchedule()">
+      <button type="button" class="spare-set" id="schOpen" onclick="openSchedule()" hidden>
         내 일정 넣기 — 비는 시간에 할 것을 홈에 띄워요</button>
       <div id="recoBody"></div>
     </div>
@@ -6808,7 +6816,13 @@ function wlogUnit(k, keys, 단위){
    안 적은 사람에게 온종일 운동하라고 하는 셈이다.
    --------------------------------------------------------------------------- */
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
-const LIFE_KINDS = ['학생', '직장인', '알바생', '자영업', '그 밖'];
+/* 하루의 모습. 같은 '학생' 이라도 중학생과 대학원생은 하루가 아주 다르다.
+   여러 개 고를 수 있다 — 대학생이면서 알바생인 사람이 흔하다.
+   여기 없는 하루는 '그 밖' 에 직접 적는다. */
+const LIFE_KINDS = ['중학생', '고등학생', '대학생', '대학원생', '수험생',
+                    '직장인', '교대 근무', '재택근무', '알바생', '프리랜서',
+                    '자영업', '주부', '육아 중', '군 복무', '쉬는 중'];
+const LIFE_MAX = 5;                      // 다섯 개를 넘으면 '맞춤' 이 아니게 된다
 let sparePlan = null;        // 서버가 준 요일별 빈 칸
 
 /* 오늘 요일 — WEEKDAYS 는 월요일부터다 */
@@ -6872,7 +6886,20 @@ function scheduleDraft(){
   const 바쁜 = state.schedule?.바쁜시간 || {};
   const out = {};
   WEEKDAYS.forEach(d => { out[d] = (바쁜[d] || []).map(x => ({ ...x })); });
-  return { 상태: state.schedule?.상태 || null, 바쁜시간: out };
+  // 예전에는 하나만 골랐다. 그때 저장해 둔 것도 그대로 읽힌다.
+  const 예전 = state.schedule?.상태;
+  const 고른것 = Array.isArray(예전) ? [...예전] : (예전 ? [예전] : []);
+  return {
+    상태: 고른것.filter(k => LIFE_KINDS.includes(k)),
+    직접: 고른것.find(k => !LIFE_KINDS.includes(k)) || '',
+    바쁜시간: out,
+  };
+}
+
+/* 고른 것과 직접 적은 것을 하나로. 저장·전송은 늘 이 모양이다. */
+function lifeKinds(){
+  const 적은것 = (SCH.직접 || '').trim().slice(0, 20);
+  return [...SCH.상태, ...(적은것 ? [적은것] : [])];
 }
 
 let SCH = null;
@@ -6887,11 +6914,21 @@ function renderSchedule(){
   const box = $('sheetBody');
   if (!box) return;
   box.innerHTML = `
-    <div class="share-field"><label>어떤 하루를 보내세요?</label>
+    <div class="share-field">
+      <label>어떤 하루를 보내세요? <span class="sch-hint">여러 개 고를 수 있어요</span></label>
       <div class="share-pick" id="schKind">${LIFE_KINDS.map(k =>
-        `<button type="button" class="${SCH.상태 === k ? 'on' : ''}"
-           onclick="pickLifeKind('${k}')">${k}</button>`).join('')}</div></div>
-    <div class="share-field"><label>바쁜 시간을 적어주세요 (적은 요일만 씁니다)</label>
+        `<button type="button" class="${SCH.상태.includes(k) ? 'on' : ''}"
+           onclick="pickLifeKind('${k}')">${k}</button>`).join('')}</div>
+      <input type="text" id="schOther" class="sch-other" maxlength="20"
+             placeholder="그 밖이라면 어떤 하루인지 적어주세요"
+             value="${esc(SCH.직접 || '')}" oninput="setLifeOther(this.value)" />
+    </div>
+    <div class="share-field">
+      <label>바쁜 시간을 적어주세요 (적은 요일만 씁니다)</label>
+      <button type="button" class="sch-photo" onclick="$('schPhotoFile').click()">
+        시간표 사진에서 읽어오기 · ${AI_PRICE}원</button>
+      <input type="file" id="schPhotoFile" accept="image/*" hidden
+             onchange="onSchedulePhoto(event)" />
       ${WEEKDAYS.map(d => `
         <div class="sch-day">
           <div class="sch-name">${d}</div>
@@ -6910,7 +6947,55 @@ function renderSchedule(){
     </div>`;
 }
 
-function pickLifeKind(k){ SCH.상태 = SCH.상태 === k ? null : k; renderSchedule(); }
+/* ---- 시간표 사진에서 읽어오기 ----
+   읽은 것을 곧바로 저장하지 않는다. 화면에 채워 놓고 사용자가 보고 고친 뒤
+   저장을 누른다 — 사진을 잘못 읽었는데 그대로 저장되면 손댈 곳이 없다. */
+async function onSchedulePhoto(ev){
+  const f = ev.target.files?.[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (f.size > 4 * 1024 * 1024) { showToast('사진이 너무 커요. 4MB 아래로 줄여주세요'); return; }
+  if ((state.credit || 0) < AI_PRICE) {
+    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
+    return;
+  }
+  if (!confirm(`사진에서 시간표를 읽어올까요?\n${AI_PRICE}원이 결제됩니다.`
+             + '\n읽은 뒤에 직접 고칠 수 있어요.')) return;
+  const 사진 = await new Promise((ok, no) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result);
+    r.onerror = () => no(new Error('사진을 읽지 못했어요'));
+    r.readAsDataURL(f);
+  }).catch(() => null);
+  if (!사진) { showToast('사진을 읽지 못했어요'); return; }
+  showToast('사진을 읽는 중이에요…');
+  try {
+    const r = await API.schedulePhoto({ 사진 });
+    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    const 읽은것 = r.바쁜시간 || {};
+    // 이미 적어 둔 것을 지우지 않는다. 읽어 온 것을 얹기만 한다.
+    WEEKDAYS.forEach(d => {
+      (읽은것[d] || []).forEach(c => {
+        const 있음 = (SCH.바쁜시간[d] || []).some(x => x.시작 === c.시작 && x.끝 === c.끝);
+        if (!있음) (SCH.바쁜시간[d] ||= []).push({ 시작: c.시작, 끝: c.끝 });
+      });
+      (SCH.바쁜시간[d] || []).sort((a, b) => (a.시작 || '').localeCompare(b.시작 || ''));
+    });
+    renderSchedule();
+    showToast(r.안내 || '읽어왔어요. 맞는지 보고 고쳐주세요');
+  } catch (e) { showToast(e.message); }
+}
+
+function pickLifeKind(k){
+  const i = SCH.상태.indexOf(k);
+  if (i >= 0) { SCH.상태.splice(i, 1); }
+  else if (SCH.상태.length >= LIFE_MAX) { showToast(`${LIFE_MAX}개까지 고를 수 있어요`); return; }
+  else { SCH.상태.push(k); }
+  renderSchedule();
+}
+
+/* 직접 적은 것은 글자를 칠 때마다 다시 그리지 않는다 — 커서가 튄다. */
+function setLifeOther(v){ SCH.직접 = v; }
 function addSch(d){ (SCH.바쁜시간[d] ||= []).push({ 시작: '09:00', 끝: '18:00' }); renderSchedule(); }
 function dropSch(d, i){ SCH.바쁜시간[d].splice(i, 1); renderSchedule(); }
 function setSch(d, i, k, v){ SCH.바쁜시간[d][i][k] = v; }
@@ -6922,7 +7007,7 @@ async function saveSchedule(){
     const 줄 = (SCH.바쁜시간[d] || []).filter(x => x.시작 && x.끝 && x.시작 < x.끝);
     if (줄.length) 담을것[d] = 줄;
   });
-  state.schedule = { 상태: SCH.상태 || null, 바쁜시간: 담을것 };
+  state.schedule = { 상태: lifeKinds(), 바쁜시간: 담을것 };
   await saveProfile();
   closeSheet();
   await loadSparePlan();
@@ -7067,7 +7152,8 @@ async function fetchRecommend(ai){
   try {
     // 일정을 적어 둔 사람은 POST 로 보낸다. 요일별 시간표는 쿼리 문자열에
     // 실을 수 없고, AI 는 그 칸에서 무엇을 할지까지 함께 골라 준다.
-    const 바쁜 = state.schedule?.바쁜시간 || null;
+    // 일정은 AI 추천에서만 쓴다 — 무료 추천은 예전 그대로 GET 이다.
+    const 바쁜 = ai ? (state.schedule?.바쁜시간 || null) : null;
     const r = (바쁜 && Object.keys(바쁜).length)
       ? await API.recommendWithSchedule({
           age_gbn: pg,
@@ -7079,7 +7165,7 @@ async function fetchRecommend(ai){
           limit: 12,
           ai: !!ai,
           바쁜시간: 바쁜,
-          상태: state.schedule?.상태 || null,
+          상태: state.schedule?.상태 || [],
         })
       : await API.recommendRoutines({
           age_gbn: pg,
@@ -7236,7 +7322,7 @@ async function askSeasons(){
       약점: weakFactors(),
       고른종목: state.sports || [],
       조심할부위: recoCare,
-      상태: state.schedule?.상태 || null,
+      상태: state.schedule?.상태 || [],
     });
     recoSeason = { 루틴명: r.루틴명 || x.루틴명, 계절: r.계절 || [] };
     // 차감은 서버가 한다. 화면은 서버가 준 잔액을 그대로 받아 적는다.
@@ -7604,6 +7690,10 @@ function paintRecoMode(){
   if (!ai) return;
   ai.disabled = recoAiReady !== true;
   const 횟수 = creditTimes();
+  // 일정은 AI 추천에서만 쓴다. 무료 추천은 점수만으로 고르고 비는 시간을
+  // 읽지 않으니, 무료 쪽에 일정 넣는 자리를 두면 넣어도 아무 일이 없다.
+  const sch = $('schOpen');
+  if (sch) sch.hidden = recoMode !== 'ai';
   ai.querySelector('.mode-sub').textContent = recoAiReady === null
     ? '확인하는 중…'
     : !recoAiReady

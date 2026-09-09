@@ -481,3 +481,124 @@ def test_키가_없으면_계절도_잠긴다(monkeypatch):
     r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
     assert r.status_code == 503
     assert a.get("/credit").json()["잔액"] == 1000
+
+
+# ---------- 사진으로 시간표 읽기 ----------
+
+사진 = "data:image/png;base64," + "A" * 400
+
+
+def _시간표(본문: str):
+    return 본문
+
+
+def test_사진에서_읽은_시간을_두_자리로_맞춘다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"바쁜시간":{"월":[{"시작":"9:5","끝":"12:00"}]}}')
+    r = air.read_schedule_photo("A" * 400, "image/png")
+    assert r == {"월": [{"시작": "09:05", "끝": "12:00"}]}
+
+
+def test_거꾸로거나_못_읽은_칸은_담지_않는다(monkeypatch):
+    """그런 줄은 빈 시간을 엉뚱하게 만든다."""
+    _fake_sdk(monkeypatch,
+              '{"바쁜시간":{"월":[{"시작":"18:00","끝":"09:00"},'          # 거꾸로
+              '{"시작":"09:00","끝":"09:00"},'                            # 길이가 0
+              '{"시작":"25:00","끝":"26:00"},'                            # 시각이 아님
+              '{"시작":"09:00"},'                                         # 끝이 없음
+              '{"시작":"13:00","끝":"14:00"}]}}')                          # 이것만 남는다
+    assert air.read_schedule_photo("A" * 400, "image/png") == {
+        "월": [{"시작": "13:00", "끝": "14:00"}]}
+
+
+def test_없는_요일과_시간표가_아닌_사진(monkeypatch):
+    _fake_sdk(monkeypatch, '{"바쁜시간":{"먼데이":[{"시작":"09:00","끝":"12:00"}]}}')
+    assert air.read_schedule_photo("A" * 400, "image/png") == {}
+    _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
+    assert air.read_schedule_photo("A" * 400, "image/png") == {}
+
+
+@pytest.mark.parametrize("본문", ['{"바쁜시간":"월요일 9시"}', '{"순서":[0]}',
+                                "JSON 이 아니에요", ""])
+def test_모양이_다르면_None(monkeypatch, 본문):
+    _fake_sdk(monkeypatch, 본문)
+    assert air.read_schedule_photo("A" * 400, "image/png") is None
+
+
+def test_안_되는_형식은_부르지도_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
+    assert air.read_schedule_photo("A" * 400, "image/heic") is None
+    assert air.read_schedule_photo("", "image/png") is None
+
+
+def test_사진_엔드포인트가_값을_받는다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"바쁜시간":{"월":[{"시작":"09:00","끝":"12:00"}]}}')
+    a = _paid(1000)
+    d = a.post("/schedule/photo", json={"사진": 사진}).json()
+    assert d["바쁜시간"] == {"월": [{"시작": "09:00", "끝": "12:00"}]}
+    assert d["잔액"] == 900
+
+
+def test_시간표가_아니면_왜_비었는지_알려준다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
+    a = _paid(1000)
+    d = a.post("/schedule/photo", json={"사진": 사진}).json()
+    assert d["바쁜시간"] == {}
+    assert "직접 적어주세요" in d["안내"]
+
+
+def test_못_읽었으면_한_푼도_안_깎는다(monkeypatch):
+    _fake_sdk(monkeypatch, "이건 JSON 이 아니다")
+    a = _paid(1000)
+    assert a.post("/schedule/photo", json={"사진": 사진}).status_code == 503
+    assert a.get("/credit").json()["잔액"] == 1000
+
+
+def test_큰_사진과_안_되는_형식은_부르기_전에_막는다(monkeypatch):
+    """부르고 나서 실패하면 우리만 값을 치른다."""
+    _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
+    a = _paid(1000)
+    큰것 = "data:image/png;base64," + "A" * 6_000_000
+    assert a.post("/schedule/photo", json={"사진": 큰것}).status_code == 413
+    assert a.post("/schedule/photo",
+                  json={"사진": "data:image/heic;base64,AAAA"}).status_code == 415
+    assert a.get("/credit").json()["잔액"] == 1000
+
+
+def test_사진도_로그인과_이용권이_있어야_한다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
+    assert TestClient(app).post("/schedule/photo",
+                                json={"사진": 사진}).status_code in (401, 403)
+    assert _paid(0).post("/schedule/photo", json={"사진": 사진}).status_code == 402
+
+
+# ---------- 하루의 모습은 여럿 ----------
+
+def test_하루의_모습을_목록_하나로_다듬는다():
+    from backend import main as m
+    assert m._life_kinds("학생") == ["학생"]                    # 예전에 하나만 골랐던 것
+    assert m._life_kinds(["대학생", "알바생", "대학생"]) == ["대학생", "알바생"]
+    assert m._life_kinds(None) == [] and m._life_kinds({"a": 1}) == []
+    assert m._life_kinds(["가" * 40]) == ["가" * 20]            # 직접 적은 것은 자른다
+    assert len(m._life_kinds([str(i) for i in range(20)])) == 6
+
+
+def test_여러_모습이_프롬프트에_다_실린다(monkeypatch):
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            return _Msg(_네계절())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    a = _paid(1000)
+    a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴,
+                                       "상태": ["대학생", "알바생"]})
+    assert "대학생" in 본["글"] and "알바생" in 본["글"]

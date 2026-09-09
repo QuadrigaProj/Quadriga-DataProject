@@ -1228,6 +1228,28 @@ def post_activity_days(body: list[ActivityDayIn]) -> list[dict]:
 
 # ---------- 12. 루틴 추천 ----------
 
+class RecommendIn(BaseModel):
+    """일정까지 함께 보낼 때 쓴다.
+
+    GET 은 쿼리 문자열이라 요일별 시간표를 실을 수 없다. 그래서 같은 추천을
+    POST 로도 받는다. 추천 내용은 GET 과 다르지 않다 — 아래 ``_recommend``
+    하나를 같이 쓴다.
+    """
+    age_gbn: ProgramAge
+    weak: list[str] = Field(default_factory=list, max_length=10)
+    style_purpose: str | None = None
+    sports: list[str] = Field(default_factory=list, max_length=100)
+    target_gap: float | None = None
+    limit: int = Field(12, ge=1, le=30)
+    week: int = Field(1, ge=1, le=13)
+    ai: bool = True
+    real_age: float | None = Field(None, ge=5, le=110)
+    바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
+                                        description="{요일: [{시작, 끝}, ...]} — 적은 사람만")
+    상태: str | None = Field(None, max_length=20,
+                           description="하루의 모습. 학생·직장인·알바생 …")
+
+
 @app.get("/recommend/routines")
 def get_recommend_routines(
     age_gbn: ProgramAge,
@@ -1246,13 +1268,43 @@ def get_recommend_routines(
     루틴을 새로 만들지 않는다. 이미 있는 것 중에서 고르고 왜 골랐는지를 함께 낸다.
     아무 정보가 없어도 안전한 기본 순위를 돌려준다.
     """
+    return _recommend(
+        age_gbn=age_gbn,
+        weak=[w.strip() for w in (weak or "").split(",") if w.strip()],
+        style_purpose=style_purpose,
+        sports=[s.strip() for s in (sports or "").split(",") if s.strip()],
+        target_gap=target_gap, limit=limit, week=week, ai=ai,
+        real_age=real_age, token=quadriga_session)
+
+
+@app.post("/recommend/routines")
+def post_recommend_routines(body: RecommendIn,
+                            quadriga_session: str | None = Cookie(None)) -> dict:
+    """GET 과 같은 추천에 일정을 얹는다.
+
+    일정은 선택 사항이다. 적어 보내면 비는 칸을 함께 계산하고, AI 를 쓸 때는
+    그 칸에서 무엇을 할지까지 고른다. 안 보내면 GET 과 결과가 같다.
+    """
+    return _recommend(
+        age_gbn=body.age_gbn, weak=body.weak, style_purpose=body.style_purpose,
+        sports=body.sports, target_gap=body.target_gap, limit=body.limit,
+        week=body.week, ai=body.ai, real_age=body.real_age,
+        token=quadriga_session, busy=body.바쁜시간, life_kind=body.상태)
+
+
+def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
+               sports: list[str], target_gap: float | None, limit: int,
+               week: int, ai: bool, real_age: float | None,
+               token: str | None, busy: dict | None = None,
+               life_kind: str | None = None) -> dict:
+    """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다."""
     if real_age is not None:
         try:
             age_gbn = rt.age_group(real_age)
         except ValueError as error:
             raise HTTPException(422, str(error)) from None
-    parts = [w.strip() for w in (weak or "").split(",") if w.strip()]
-    picked = [s.strip() for s in (sports or "").split(",") if s.strip()]
+    parts = list(weak)
+    picked = list(sports)
     try:
         out = rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
                           sports=picked, target_gap=target_gap, limit=limit, week=week)
@@ -1268,19 +1320,31 @@ def get_recommend_routines(
 
     # 이용권 차감은 서버에서 한다. 화면에서 빼면 브라우저에서 숫자만 바꿔
     # 공짜로 무제한 쓸 수 있다.
-    누구 = auth.user_for_token(quadriga_session)
+    누구 = auth.user_for_token(token)
     out["잔액"] = billing.balance(누구["id"]) if 누구 else 0
+    # 일정을 줬으면 비는 칸도 함께 계산해 둔다. AI 가 그 칸에서 무엇을
+    # 할지 고르고, AI 를 안 써도 화면이 그대로 쓸 수 있다.
+    일정 = None
+    바쁜 = {k: v for k, v in (busy or {}).items() if k in spare.WEEKDAYS}
+    if 바쁜:
+        일정 = {"상태": life_kind,
+              "요일별": spare.plan(바쁜, sports_ids=picked,
+                                weak=parts, limit=3)}
+        out["짬시간"] = 일정["요일별"]
+
     if ai and out["ai가능"]:
         if not 누구:
             out["안내"] = "AI 추천은 로그인 후 이용할 수 있어요."
         elif out["잔액"] < AI_PRICE:
             out["안내"] = "이용권이 모자라요. 먼저 충전해 주세요."
         else:
-            다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn)
+            다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn, 일정)
             # 실제로 다듬어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
-            if 다듬음:
-                out["추천"] = 다듬음
+            if 다듬음 and 다듬음.get("추천"):
+                out["추천"] = 다듬음["추천"]
                 out["출처"] = "ai"
+                if 다듬음.get("짬시간"):
+                    out["짬시간계획"] = 다듬음["짬시간"]
                 out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
     return out
 

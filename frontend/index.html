@@ -219,6 +219,17 @@
   }
   .prescribe-label{ font-size:13px; color:var(--muted); }
   .prescribe-text{ font-size:15.5px; font-weight:600; margin-top:6px; line-height:1.5; }
+  /* 추천 카드 안, AI 가 요일별로 골라 준 짬시간 */
+  .rec-spare{ border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
+  .rec-spare-day{ display:flex; gap:10px; margin-top:8px; }
+  .rec-spare-name{ flex:none; width:20px; font-weight:700; font-size:13px;
+    color:var(--pine-deep); padding-top:2px; }
+  .rec-spare-rows{ flex:1; min-width:0; }
+  .rec-spare-row{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px;
+    font-size:12.5px; line-height:1.6; }
+  .rec-spare-when{ color:var(--muted); font-variant-numeric:tabular-nums; }
+  .rec-spare-what{ font-weight:600; }
+  .rec-spare-why{ flex-basis:100%; color:var(--muted); }
   /* 짬시간 카드 — 지금 비는 시간에 할 것 (경로 안내 위) */
   .spare-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:14px 16px; margin-top:14px; background:var(--pine-tint); }
@@ -6831,14 +6842,19 @@ function renderSpareCard(){
   card.hidden = false;
   const 지금 = nowHm();
   const 안 = 칸.시작 <= 지금 && 지금 < 칸.끝;
+  // AI 추천에서 이 칸을 이미 골라 놨으면 그 말을 그대로 쓴다.
+  // 홈과 추천 화면이 서로 다른 것을 말하면 어느 쪽을 믿을지 알 수 없다.
+  const 골라둔 = (state.aiReco?.짬시간계획?.[todayDow()] || [])
+    .find(x => x.시작 === 칸.시작 && x.끝 === 칸.끝);
   card.innerHTML = `
     <div class="spare-head">
       <span class="spare-label">${안 ? '지금 비는 시간' : '오늘 비는 시간'}</span>
       <span class="spare-when">${칸.시작}–${칸.끝} · ${칸.분}분</span>
     </div>
-    <div class="spare-list">${(칸.추천 || []).map(x =>
+    <div class="spare-list">${(골라둔 ? [{ 이름: 골라둔.할것 }] : (칸.추천 || [])).map(x =>
       `<span class="spare-item">${x.아이콘 ? x.아이콘 + ' ' : ''}${esc(x.이름)}</span>`).join('')}</div>
-    ${칸.추천?.[0]?.왜 ? `<div class="spare-why">${esc(칸.추천[0].왜)}</div>` : ''}
+    ${골라둔?.한줄 ? `<div class="spare-why">${esc(골라둔.한줄)}</div>`
+      : (칸.추천?.[0]?.왜 ? `<div class="spare-why">${esc(칸.추천[0].왜)}</div>` : '')}
     <button type="button" class="spare-set" onclick="openSchedule()">일정 고치기</button>`;
 }
 
@@ -6914,6 +6930,7 @@ let recoAt = 0;
 let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
+let recoSpare = null;     // AI 가 비는 칸마다 골라 준 것 {요일: [{시작,끝,분,할것,한줄}]}
 let recoAiReady = null;   // 서버에 키가 있는지 (I1) — null=아직 확인 전, true/false=확인됨
 let recoAiWhy = null;     // 못 쓰면 그 까닭 (서버가 준 한 줄)
 
@@ -6968,7 +6985,7 @@ function 되살린추천(x){
 /* 지금 보고 있는 추천을 그 자리 그대로 남긴다.
    '더 쉬운 루틴' 으로 옮긴 자리까지 기억해서, 창을 옮겼다 와도 그대로다. */
 function 추천저장(){
-  const 담을것 = { 추천: recoList, 조심할부위: recoCare,
+  const 담을것 = { 추천: recoList, 조심할부위: recoCare, 짬시간계획: recoSpare,
                 자리: recoAt, 되돌아갈자리: [...recoBack], 받은시각: Date.now() };
   if (recoBy === 'ai') state.aiReco = 담을것;
   else state.freeReco = 담을것;
@@ -6979,6 +6996,7 @@ function 추천저장(){
 function 추천되살리기(저장본, 출처){
   recoList = 저장본.추천 || [];
   recoCare = 저장본.조심할부위 || [];
+  recoSpare = 저장본.짬시간계획 || null;
   recoBy = 출처;
   recoAt = Math.min(저장본.자리 || 0, Math.max(0, recoList.length - 1));
   recoBack = Array.isArray(저장본.되돌아갈자리) ? [...저장본.되돌아갈자리] : [];
@@ -7035,17 +7053,34 @@ async function fetchRecommend(ai){
   const 목표격차 = (state.result?.체력나이 != null && state.targetAge != null)
     ? Math.max(0, state.result.체력나이 - state.targetAge) : null;
   try {
-    const r = await API.recommendRoutines({
-      age_gbn: pg,
-      weak: 약점.join(','),
-      style_purpose: state.styleTest?.result?.추천목적 || null,
-      sports: (state.sports || []).join(','),
-      target_gap: 목표격차,
-      week: programWeek(),
-      limit: 12,
-      ai: ai ? 1 : 0,
-    });
+    // 일정을 적어 둔 사람은 POST 로 보낸다. 요일별 시간표는 쿼리 문자열에
+    // 실을 수 없고, AI 는 그 칸에서 무엇을 할지까지 함께 골라 준다.
+    const 바쁜 = state.schedule?.바쁜시간 || null;
+    const r = (바쁜 && Object.keys(바쁜).length)
+      ? await API.recommendWithSchedule({
+          age_gbn: pg,
+          weak: 약점,
+          style_purpose: state.styleTest?.result?.추천목적 || null,
+          sports: state.sports || [],
+          target_gap: 목표격차,
+          week: programWeek(),
+          limit: 12,
+          ai: !!ai,
+          바쁜시간: 바쁜,
+          상태: state.schedule?.상태 || null,
+        })
+      : await API.recommendRoutines({
+          age_gbn: pg,
+          weak: 약점.join(','),
+          style_purpose: state.styleTest?.result?.추천목적 || null,
+          sports: (state.sports || []).join(','),
+          target_gap: 목표격차,
+          week: programWeek(),
+          limit: 12,
+          ai: ai ? 1 : 0,
+        });
     recoList = r.추천 || [];
+    recoSpare = r.짬시간계획 || null;
     recoCare = r.조심할부위 || [];
     recoBy = r.출처 || '점수';
     recoAiReady = !!r.ai가능;
@@ -7115,6 +7150,7 @@ function paintRecommend(){
         <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
       </div>
       ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
+      ${spareRecoHtml()}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
       <div class="rec-by">${recoBy === 'ai' ? `AI 가 다듬었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
@@ -7126,6 +7162,25 @@ function paintRecommend(){
           onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
     </div>`;
+}
+
+/* AI 가 비는 칸마다 골라 준 것. 일정을 적어 보낸 사람에게만 나온다.
+   칸과 할 것은 서버가 이미 걸러 냈다 — 그 칸에 없는 이름은 오지 않는다. */
+function spareRecoHtml(){
+  const 요일들 = Object.keys(recoSpare || {});
+  if (!요일들.length) return '';
+  return `<div class="rec-spare">
+    <div class="rec-why-head">비는 시간에는 이걸 해보세요</div>
+    ${요일들.map(d => `<div class="rec-spare-day">
+      <span class="rec-spare-name">${esc(d)}</span>
+      <div class="rec-spare-rows">${(recoSpare[d] || []).map(c => `
+        <div class="rec-spare-row">
+          <span class="rec-spare-when">${esc(c.시작)}–${esc(c.끝)}</span>
+          <span class="rec-spare-what">${esc(c.할것)}</span>
+          ${c.한줄 ? `<span class="rec-spare-why">${esc(c.한줄)}</span>` : ''}
+        </div>`).join('')}</div>
+    </div>`).join('')}
+  </div>`;
 }
 
 /* 지금 것을 기억해 두고 자리를 옮긴다 — '이전 루틴' 이 되돌아갈 곳이다. */

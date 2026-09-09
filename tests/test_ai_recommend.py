@@ -87,7 +87,7 @@ def test_키가_없으면_부르지_않는다(monkeypatch):
 
 def test_붙으면_순서와_이유를_다듬는다(monkeypatch):
     _fake_sdk(monkeypatch, '{"순서":[1,0],"이유":{"1":["유연성이 급해요"]},"한마디":"천천히"}')
-    r = air.refine(후보, {"약점": ["유연성"]}, "성인")
+    r = air.refine(후보, {"약점": ["유연성"]}, "성인")["추천"]
     assert [x["루틴명"] for x in r] == ["온몸 늘리기", "전신 HIIT"]
     assert r[0]["이유"] == ["유연성이 급해요"]
     assert r[0]["한마디"] == "천천히"
@@ -241,12 +241,13 @@ def test_AI가_실제로_다듬었을_때만_값을_받는다():
     """
     import inspect
     from backend import main as m
-    src = inspect.getsource(m.get_recommend_routines)
+    src = inspect.getsource(m._recommend)   # GET·POST 가 함께 쓰는 본체
     # 다듬어졌을 때만 깎는다
-    assert "if 다듬음:" in src
+    조건 = 'if 다듬음 and 다듬음.get("추천"):'
+    assert 조건 in src
     깎는줄 = [l for l in src.splitlines() if "billing.spend" in l]
     assert len(깎는줄) == 1, 깎는줄
-    assert src.index("if 다듬음:") < src.index("billing.spend")
+    assert src.index(조건) < src.index("billing.spend")
     # 잔액이 모자라면 부르지도 않는다
     assert src.index('out["잔액"] < AI_PRICE') < src.index("air.refine")
 
@@ -279,3 +280,95 @@ def test_확인되기_전에는_눌러도_조용히_무시하지_않는다():
     # 화면에 들어오자마자(첫 fetch 전에) 한 번 그려서, 정적 HTML 그대로 눌리는 창을 없앤다
     reco = html.split("async function renderRecommend(){")[1].split("\n}")[0]
     assert re.search(r"recoBody['\"]\);\s*\r?\n\s*paintRecoMode\(\);", reco)
+
+# ---------- 일정을 함께 읽는다 ----------
+
+일정 = {"상태": "학생",
+      "요일별": {"월": [{"시작": "12:00", "끝": "13:00", "분": 60,
+                     "추천": [{"이름": "달리기"}, {"이름": "맨몸 근력"}]}]}}
+
+
+def test_비는_칸을_프롬프트에_적어_보낸다(monkeypatch):
+    """AI 가 고를 수 있는 칸과 거기서 할 수 있는 것을 알려주지 않으면 지어낸다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            return _Msg('{"순서":[0]}')
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    air.refine(후보, {}, "성인", 일정)
+    글 = 본["글"]
+    assert "비는 시간" in 글
+    assert "월 0. 12:00–13:00 (60분) — 달리기 / 맨몸 근력" in 글
+    assert "학생" in 글                      # 하루의 모습도 함께
+
+
+def test_그_칸에_없는_것을_고르면_그_줄만_버린다(monkeypatch):
+    """지어낸 운동을 내보내지 않는다. 다만 한 줄 틀렸다고 나머지까지 잃지는 않는다."""
+    _fake_sdk(monkeypatch,
+              '{"순서":[0],"짬시간":{"월":[{"칸":0,"할것":"수영","한줄":"버려질 줄"},'
+              '{"칸":0,"할것":"달리기","한줄":"점심에 가볍게"}]}}')
+    r = air.refine(후보, {}, "성인", 일정)
+    assert [x["할것"] for x in r["짬시간"]["월"]] == ["달리기"]
+    assert r["짬시간"]["월"][0]["한줄"] == "점심에 가볍게"
+    assert r["짬시간"]["월"][0]["시작"] == "12:00"   # 시각은 서버 것을 쓴다
+
+
+@pytest.mark.parametrize("고른것", [
+    '{"월":[{"칸":9,"할것":"달리기"}]}',        # 없는 칸
+    '{"월":[{"칸":"점심","할것":"달리기"}]}',    # 번호가 아님
+    '{"화":[{"칸":0,"할것":"달리기"}]}',        # 안 적은 요일
+    '{"월":"달리기"}',                         # 줄이 아님
+    '"달리기"',                                # 통째로 엉뚱함
+])
+def test_말이_안_되는_짬시간은_담지_않는다(monkeypatch, 고른것):
+    _fake_sdk(monkeypatch, '{"순서":[0],"짬시간":' + 고른것 + '}')
+    assert air.refine(후보, {}, "성인", 일정)["짬시간"] == {}
+
+
+def test_일정을_안_주면_짬시간도_없다(monkeypatch):
+    """안 적은 사람에게 비는 시간을 지어내 주지 않는다."""
+    _fake_sdk(monkeypatch, '{"순서":[0],"짬시간":{"월":[{"칸":0,"할것":"달리기"}]}}')
+    assert air.refine(후보, {}, "성인")["짬시간"] == {}
+
+
+def test_POST로_보내면_일정까지_함께_본다(monkeypatch):
+    _fake_sdk(monkeypatch,
+              '{"순서":[2,1,0],"짬시간":{"월":[{"칸":0,"할것":"스트레칭","한줄":"짧게"}]}}')
+    a = _paid(1000)
+    d = a.post("/recommend/routines",
+               json={"age_gbn": "성인", "limit": 3,
+                     "바쁜시간": {"월": [{"시작": "09:00", "끝": "12:00"}]}},
+               ).json()
+    assert d["출처"] == "ai" and d["잔액"] == 900
+    assert d["짬시간"]["월"], "일정을 줬으면 비는 칸이 나와야 한다"
+    골라둔 = d.get("짬시간계획", {}).get("월") or []
+    assert all(x["할것"] for x in 골라둔)
+
+
+def test_일정을_안_넣은_POST는_GET과_같다(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    g = client.get("/recommend/routines",
+                   params={"age_gbn": "성인", "limit": 3}).json()
+    p = client.post("/recommend/routines",
+                    json={"age_gbn": "성인", "limit": 3}).json()
+    assert [x["루틴명"] for x in p["추천"]] == [x["루틴명"] for x in g["추천"]]
+    assert "짬시간" not in p          # 안 적었으면 지어내지 않는다
+
+
+def test_없는_요일은_그냥_버린다():
+    """엉뚱한 키 하나로 추천 전체가 죽으면 안 된다."""
+    d = client.post("/recommend/routines",
+                    json={"age_gbn": "성인", "limit": 3,
+                          "바쁜시간": {"먼데이": [{"시작": "09:00", "끝": "12:00"}]}}).json()
+    assert len(d["추천"]) == 3
+    assert "짬시간" not in d

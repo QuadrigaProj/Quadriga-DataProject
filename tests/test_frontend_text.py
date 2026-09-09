@@ -2382,3 +2382,41 @@ def test_루틴_추천에서_일정을_넣을_수_있다():
     html = _index()
     assert 'id="schOpen"' in html
     assert 'onclick="openSchedule()"' in html
+
+
+# ---------- AI 추천이 일정까지 읽는다 ----------
+
+def test_일정을_적었으면_POST로_보낸다():
+    """요일별 시간표는 쿼리 문자열에 실을 수 없다."""
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "API.recommendWithSchedule({" in 본문
+    assert "바쁜시간: 바쁜," in 본문
+    assert "상태: state.schedule?.상태 || null," in 본문
+    # 안 적은 사람은 예전 그대로 GET
+    assert "API.recommendRoutines({" in 본문
+    assert "Object.keys(바쁜).length" in 본문
+
+
+def test_AI가_고른_짬시간을_추천_카드에_그린다():
+    html = _index()
+    assert "function spareRecoHtml()" in html
+    본문 = html.split("function spareRecoHtml()")[1].split("\n}")[0]
+    assert "비는 시간에는 이걸 해보세요" in 본문
+    assert "c.할것" in 본문
+
+
+def test_AI_짬시간도_추천과_함께_남는다():
+    """다른 창 갔다 와도 그대로여야 한다 — AI 추천은 값을 치른 것이다."""
+    html = _index()
+    assert "짬시간계획: recoSpare," in html
+    assert "recoSpare = 저장본.짬시간계획 || null;" in html
+    assert "recoSpare = r.짬시간계획 || null;" in html
+
+
+def test_홈_카드는_AI가_고른_말을_먼저_쓴다():
+    """홈과 추천 화면이 서로 다른 것을 말하면 어느 쪽을 믿을지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function renderSpareCard()")[1].split("\n}")[0]
+    assert "state.aiReco?.짬시간계획?.[todayDow()]" in 본문
+    assert "x.시작 === 칸.시작 && x.끝 === 칸.끝" in 본문

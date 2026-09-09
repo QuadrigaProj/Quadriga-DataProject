@@ -29,14 +29,22 @@ SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하는 서비
   1. 이 사용자에게 맞는 순서로 후보를 다시 배열한다
   2. 각 후보를 왜 그 자리에 뒀는지 사용자에게 할 말로 쓴다
 
+일정을 함께 받으면 세 번째 일도 합니다.
+  3. 비는 시간(짬시간)마다 무엇을 할지 고르고 한 줄로 설명한다
+
 지켜야 할 것
   - 후보에 없는 루틴을 만들지 마세요. 반드시 주어진 번호만 씁니다.
+  - **짬시간에 넣을 것도 그 칸에 주어진 '할 수 있는 것' 에서만 고릅니다.**
+    거기 없는 운동·종목을 쓰면 그 줄은 버려집니다.
   - 측정하지 않은 값을 아는 척하지 마세요.
   - 이유는 한국어 존댓말로, 한 줄에 하나씩, 각 40자 안팎으로 씁니다.
+  - 하루의 모습(학생·직장인·알바생 등)이 있으면 그에 맞게 말합니다.
+    이른 아침 칸에 무거운 운동을 넣지 않는 식으로요.
   - 의학적 진단이나 치료를 말하지 마세요. 아프면 쉬라고 안내합니다.
 
 JSON 만 출력하세요. 다른 말은 쓰지 마세요.
-{"순서": [후보번호, ...], "이유": {"후보번호": ["문장", ...], ...}, "한마디": "한 문장"}"""
+{"순서": [후보번호, ...], "이유": {"후보번호": ["문장", ...], ...}, "한마디": "한 문장",
+ "짬시간": {"요일": [{"칸": 칸번호, "할것": "이름", "한줄": "문장"}, ...], ...}}"""
 
 
 def available() -> bool:
@@ -59,7 +67,8 @@ def why_unavailable() -> str | None:
     return None
 
 
-def _prompt(후보: list[dict], 참고: dict, 연령대: str) -> str:
+def _prompt(후보: list[dict], 참고: dict, 연령대: str,
+            일정: dict | None = None) -> str:
     줄 = []
     for i, x in enumerate(후보):
         요인 = " · ".join((x.get("체력요인") or [])[:4])
@@ -67,12 +76,24 @@ def _prompt(후보: list[dict], 참고: dict, 연령대: str) -> str:
     사용자 = {
         "연령대": 연령대,
         "뒤처지는 체력요인": 참고.get("약점") or [],
+        "고른 종목": 참고.get("고른종목") or [],
         "배우고 싶은 종목이 쓰는 요인": 참고.get("종목요인") or [],
         "운동 스타일 테스트가 고른 목적": 참고.get("스타일목적"),
         "목표 체력나이까지 남은 세": 참고.get("목표격차"),
     }
-    return ("사용자\n" + json.dumps(사용자, ensure_ascii=False, indent=1)
-            + "\n\n후보\n" + "\n".join(줄))
+    if (일정 or {}).get("상태"):
+        사용자["하루의 모습"] = 일정["상태"]
+    본문 = ("사용자\n" + json.dumps(사용자, ensure_ascii=False, indent=1)
+          + "\n\n후보\n" + "\n".join(줄))
+
+    칸들 = (일정 or {}).get("요일별") or {}
+    if 칸들:
+        본문 += "\n\n비는 시간 (칸번호 · 시각 · 그 칸에서 할 수 있는 것)"
+        for 요일, 목록 in 칸들.items():
+            for i, c in enumerate(목록):
+                이름 = " / ".join(x["이름"] for x in (c.get("추천") or []))
+                본문 += f"\n{요일} {i}. {c['시작']}–{c['끝']} ({c['분']}분) — {이름}"
+    return 본문
 
 
 def _text(message) -> str:
@@ -98,8 +119,14 @@ def _json_only(s: str) -> dict | None:
     return d if isinstance(d, dict) else None
 
 
-def refine(후보: list[dict], 참고: dict, 연령대: str) -> list[dict] | None:
-    """후보를 다시 배열하고 이유를 다시 쓴다. 못 하면 None."""
+def refine(후보: list[dict], 참고: dict, 연령대: str,
+           일정: dict | None = None) -> dict | None:
+    """후보를 다시 배열하고 이유를 다시 쓴다. 못 하면 None.
+
+    일정을 주면 비는 칸마다 무엇을 할지도 함께 고른다. 그 칸에 주어진
+    '할 수 있는 것' 밖의 이름은 버린다 — 지어낸 추천을 내보내지 않는다.
+    돌려주는 모양: {"추천": [...], "짬시간": {요일: [...]}}
+    """
     if not 후보 or not available():
         return None
     try:
@@ -111,7 +138,8 @@ def refine(후보: list[dict], 참고: dict, 연령대: str) -> list[dict] | Non
             max_tokens=MAX_TOKENS,
             system=SYSTEM,
             output_config={"effort": "low"},   # 짧은 정리 작업이라 깊게 생각할 필요가 없다
-            messages=[{"role": "user", "content": _prompt(후보, 참고, 연령대)}],
+            messages=[{"role": "user",
+                       "content": _prompt(후보, 참고, 연령대, 일정)}],
         )
         if getattr(message, "stop_reason", None) == "refusal":
             return None
@@ -149,4 +177,42 @@ def refine(후보: list[dict], 참고: dict, 연령대: str) -> list[dict] | Non
         결과[0]["한마디"] = 한마디.strip()[:120]
     for i, x in enumerate(결과, 1):
         x["순위"] = i
-    return 결과
+    return {"추천": 결과, "짬시간": _clean_slots(d.get("짬시간"), 일정)}
+
+
+def _clean_slots(고른것, 일정: dict | None) -> dict:
+    """AI 가 고른 짬시간 계획에서, 실제로 있는 칸과 있는 이름만 남긴다.
+
+    칸 번호가 없거나 그 칸에 못 넣는 것을 골랐으면 그 줄만 버린다.
+    통째로 버리지 않는 까닭은, 한 줄이 틀렸다고 나머지 요일까지 잃을
+    필요는 없어서다.
+    """
+    칸들 = (일정 or {}).get("요일별") or {}
+    if not isinstance(고른것, dict) or not 칸들:
+        return {}
+    out = {}
+    for 요일, 목록 in 고른것.items():
+        원본 = 칸들.get(요일)
+        if not 원본 or not isinstance(목록, list):
+            continue
+        줄 = []
+        for x in 목록:
+            if not isinstance(x, dict):
+                continue
+            try:
+                i = int(x.get("칸"))
+            except (TypeError, ValueError):
+                continue
+            if not (0 <= i < len(원본)):
+                continue
+            할것 = str(x.get("할것") or "").strip()
+            있는것 = {y["이름"] for y in (원본[i].get("추천") or [])}
+            if 할것 not in 있는것:
+                continue                       # 그 칸에 없는 것을 골랐다 → 그 줄만 버린다
+            c = 원본[i]
+            줄.append({"시작": c["시작"], "끝": c["끝"], "분": c["분"],
+                      "할것": 할것,
+                      "한줄": str(x.get("한줄") or "").strip()[:80]})
+        if 줄:
+            out[요일] = 줄
+    return out

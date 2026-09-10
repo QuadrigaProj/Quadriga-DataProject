@@ -1516,30 +1516,52 @@ class SeasonIn(BaseModel):
     조심할부위: list[str] = Field(default_factory=list, max_length=20)
     상태: str | list[str] | None = Field(
         None, description="하루의 모습. 여럿 고를 수 있다")
+    바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
+                                        description="시간대별로 볼 때 비는 시간을 알려면")
 
 
-@app.post("/recommend/seasons")
-def post_recommend_seasons(body: SeasonIn,
-                           quadriga_session: str | None = Cookie(None)) -> dict:
-    """'이 루틴 자세히 알아보기' — 계절마다 어떻게 이어갈지.
+class PeriodIn(SeasonIn):
+    축: Literal["계절", "시간대"] = "계절"
+
+
+def _periods(body: "SeasonIn", 축: str, token: str | None) -> dict:
+    """'이 루틴 자세히 알아보기' — 구간(계절 | 시간대)마다 어떻게 이어갈지.
 
     **값을 받지 않는다.** AI 추천을 받을 때 이미 치렀다. 이건 그 루틴을
     더 알아보는 선택 사항이라, 누를지는 사용자가 정하고 돈은 다시 들지 않는다.
     로그인은 있어야 한다 — 남의 이름으로 AI 를 부를 수는 없다.
 
-    루틴을 바꾸지 않는다. 이미 고른 루틴 하나를 계절에 맞게 어떻게 할지만
-    쓴다. 네 계절이 다 나오지 않으면 버린다.
+    루틴을 바꾸지 않는다. 이미 고른 루틴 하나를 구간에 맞게 어떻게 할지만
+    쓴다. 네 구간이 다 나오지 않으면 버린다.
     """
     if not air.available():
         raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
-    _require_user(quadriga_session)
+    _require_user(token)
 
     참고 = {"약점": body.약점, "고른종목": body.고른종목,
           "조심할부위": body.조심할부위}
-    계절 = air.seasons(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태))
-    if not 계절:
-        raise HTTPException(503, "지금은 계절별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
-    return {"계절": 계절, "루틴명": body.루틴.get("루틴명")}
+    일정 = None
+    바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
+    if 바쁜:
+        일정 = {"요일별": spare.plan(바쁜, sports_ids=body.고른종목, weak=body.약점, limit=3)}
+    구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정)
+    if not 구간:
+        raise HTTPException(503, f"지금은 {축}별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
+    return {"축": 축, 축: 구간, "루틴명": body.루틴.get("루틴명")}
+
+
+@app.post("/recommend/periods")
+def post_recommend_periods(body: PeriodIn,
+                           quadriga_session: str | None = Cookie(None)) -> dict:
+    """구간을 골라 본다 — 계절별 또는 시간대별."""
+    return _periods(body, body.축, quadriga_session)
+
+
+@app.post("/recommend/seasons")
+def post_recommend_seasons(body: SeasonIn,
+                           quadriga_session: str | None = Cookie(None)) -> dict:
+    """계절 축. /recommend/periods 의 예전 주소다."""
+    return _periods(body, "계절", quadriga_session)
 
 
 # ---------- 11. 당일 기록 종목 ----------

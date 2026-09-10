@@ -773,3 +773,82 @@ def test_지어낸_루틴의_한_줄에_영상_없는_것이_섞여도_전체가
     d = a.post("/recommend/routines", json={"age_gbn": "성인", "sports": ["running"]}).json()
     steps = d["추천"][0]["steps"]
     assert any(x["출처"] == "종목" for x in steps) and any(x["출처"] == "동작" for x in steps)
+
+
+# ---------- 자세히 알아보기: 계절 | 시간대 ----------
+
+def _네시간대() -> str:
+    안 = ", ".join(
+        '{"시간대":"%s","한줄":"%s에는 이렇게","할것":["가볍게"],"조심":"무리 마세요"}' % (c, c)
+        for c in ("아침", "낮", "저녁", "밤"))
+    return '{"시간대":[' + 안 + ']}'
+
+
+def test_시간대별로도_네_구간을_순서대로_돌려준다(monkeypatch):
+    _fake_sdk(monkeypatch, _네시간대())
+    r = air.periods(루틴, {}, "성인", ["직장인"], 축="시간대")
+    assert [x["시간대"] for x in r] == ["아침", "낮", "저녁", "밤"]
+    assert r[0]["한줄"] == "아침에는 이렇게"
+
+
+def test_시간대_프롬프트는_하루를_말한다():
+    글 = air._period_system("시간대")
+    assert "하루 동안" in 글 and "아침·낮·저녁·밤" in 글
+    assert "루틴을 바꾸지 마세요" in 글
+    assert '"시간대": [' in 글                     # JSON 열쇠도 축을 따른다
+    assert air.SEASON_SYSTEM == air._period_system("계절")   # 예전 이름은 계절 축
+
+
+@pytest.mark.parametrize("본문", [
+    '{"시간대":[{"시간대":"아침","한줄":"x"},{"시간대":"밤","한줄":"x"}]}',   # 둘뿐
+    '{"시간대":[{"시간대":"새벽","한줄":"x"}]}',                              # 없는 구간
+    '{"계절":[{"계절":"봄","한줄":"x"}]}',                                    # 축이 다르다
+])
+def test_시간대가_다_안_나오면_통째로_버린다(monkeypatch, 본문):
+    _fake_sdk(monkeypatch, 본문)
+    assert air.periods(루틴, {}, "성인", None, 축="시간대") is None
+
+
+def test_없는_축은_부르지도_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, _네시간대())
+    assert air.periods(루틴, {}, "성인", None, 축="분기") is None
+
+
+def test_periods_엔드포인트_시간대(monkeypatch):
+    """값을 받지 않고, 비는 시간을 주면 프롬프트에 실린다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["시스템"] = kw["system"]
+            return _Msg(_네시간대())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    a = _paid(0)                                   # 이용권이 없어도 된다
+    d = a.post("/recommend/periods", json={
+        "age_gbn": "성인", "루틴": 루틴, "축": "시간대", "상태": ["직장인"],
+        "바쁜시간": {"월": [{"시작": "09:00", "끝": "18:00"}]}}).json()
+    assert d["축"] == "시간대"
+    assert [x["시간대"] for x in d["시간대"]] == ["아침", "낮", "저녁", "밤"]
+    assert "잔액" not in d and a.get("/credit").json()["잔액"] == 0
+    assert "하루 동안" in 본["시스템"]
+    assert "비는 시간" in 본["글"] and "18:00" in 본["글"]   # 비는 칸이 재료로 실렸다
+
+
+def test_periods_축은_둘뿐이다():
+    r = client.post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "분기"})
+    assert r.status_code == 422
+
+
+def test_seasons_주소는_계절_축_그대로(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    d = _paid(0).post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴}).json()
+    assert d["축"] == "계절" and [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"]

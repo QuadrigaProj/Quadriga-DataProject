@@ -2432,26 +2432,26 @@ def test_홈_카드는_AI가_고른_말을_먼저_쓴다():
 def test_자세히_도전하기_버튼이_있다():
     html = _index()
     assert "이 루틴 자세히 알아보기" in html
-    assert 'onclick="askSeasons()"' in html
+    assert 'onclick="askDetail()"' in html
 
 
 def test_자세히_알아보기는_값을_받지_않고_묻지도_않는다():
     """AI 추천을 받을 때 이미 치렀다. 돈이 들지 않으니 결제 확인창이 없다."""
     html = _index()
-    본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
+    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
     assert "값을치를까(" not in 본문
     assert "confirm(" not in 본문
     assert "원이 결제됩니다" not in 본문
-    assert "API.recommendSeasons" in 본문
+    assert "API.recommendPeriods" in 본문
     assert "state.credit" not in 본문                 # 잔액을 만지지 않는다
     assert "recoAiReady" in 본문                      # 쓸 수 있는지는 본다
 
 
 def test_이미_받아_둔_루틴이면_다시_부르지_않는다():
     html = _index()
-    본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
-    assert "recoSeason?.루틴명 === x.루틴명" in 본문
-    assert "이미 받아 둔 계획이에요" in 본문
+    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    assert "recoSeason?.루틴명 === x.루틴명 && (recoSeason[축] || []).length" in 본문
+    assert "별 계획은 이미 받아 뒀어요" in 본문
 
 
 def test_다른_루틴으로_옮기면_그_계획을_안_그린다():
@@ -2459,7 +2459,7 @@ def test_다른_루틴으로_옮기면_그_계획을_안_그린다():
     html = _index()
     본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
     assert "recoSeason.루틴명 !== x.루틴명" in 본문
-    assert "계절마다 이렇게 이어가요" in 본문
+    assert "PERIOD_AXES[축].머리" in 본문          # 머리말은 축 표(계절·시간대)에서 온다
 
 
 def test_계절_계획도_추천과_함께_남는다():
@@ -2479,18 +2479,21 @@ def test_차감은_서버가_준_잔액을_받아_적는다():
         본문 = html.split(함수)[1].split("\n}")[0]
         assert "state.credit = r['잔액']" in 본문, 함수
         assert "state.credit -=" not in 본문, 함수
-    계절 = html.split("async function askSeasons()")[1].split("\n}")[0]
+    계절 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
     assert "state.credit" not in 계절
 
 
 # ---------- 일정은 AI 추천에서만 ----------
 
-def test_일정_넣는_자리는_AI_추천에서만_보인다():
-    """무료 추천은 비는 시간을 읽지 않는다 — 넣어도 아무 일이 없다."""
+def test_일정_넣는_자리는_AI_소개_카드_안에_있다():
+    """붙박이 버튼이 아니라 AI 소개 카드 안에 있다 — 그래서 무료 탭에는 저절로 없다.
+    받고 난 뒤에는 '자세히 알아보기' 메뉴의 '짬시간도 이용하고 싶어요' 로 간다."""
     html = _index()
-    assert 'id="schOpen" onclick="openSchedule()" hidden' in html
-    본문 = html.split("function paintRecoMode()")[1].split("\n}")[0]
-    assert "sch.hidden = recoMode !== 'ai'" in 본문
+    assert 'id="schOpen" onclick="openSchedule()" hidden' not in html
+    assert "sch.hidden" not in html
+    소개 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert 'id="schOpen" onclick="openSchedule()"' in 소개
+    assert "내 일정 넣기 (선택)" in 소개 and "내 일정 고치기" in 소개
 
 
 def test_무료_추천은_일정을_보내지_않는다():
@@ -2868,3 +2871,39 @@ def test_새_추천을_받으면_전체_얹음_표시가_풀린다():
     html = _index()
     본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
     assert "전체받음 = false;" in 본문
+
+
+# ---------- 자세히 알아보기 메뉴 ----------
+
+def test_자세히_알아보기는_메뉴를_연다():
+    html = _index()
+    본문 = html.split("function askDetail()")[1].split("\n}")[0]
+    assert "openSheet('이 루틴 자세히 알아보기'" in 본문
+    assert "별로 추천받기" in 본문
+    assert "짬시간도 이용하고 싶어요" in 본문
+    assert "openSchedule()" in 본문                          # 짬시간 = 일정 넣기
+    assert "fetchPeriods('${축}')" in 본문
+
+
+def test_축은_계절과_시간대_둘이다():
+    html = _index()
+    본문 = html.split("const PERIOD_AXES = {")[1].split("};")[0]
+    assert "계절:" in 본문 and "시간대:" in 본문
+    assert "계절마다 이렇게 이어가요" in 본문 and "하루 중 이 시간엔 이렇게" in 본문
+
+
+def test_축을_받으면_같은_루틴에_얹고_다른_루틴이면_비운다():
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    assert "const 같은루틴 = recoSeason?.루틴명 === x.루틴명 ? recoSeason : { 루틴명: x.루틴명 };" in 본문
+    assert "[축]: r[축] || []" in 본문
+    assert "바쁜시간: state.schedule?.바쁜시간 || {}," in 본문    # 시간대별엔 비는 시간이 재료다
+    assert "closeSheet();" in 본문                              # 메뉴는 닫고 받는다
+
+
+def test_받아_둔_축만_그린다():
+    html = _index()
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "Object.keys(PERIOD_AXES).filter(축 => (recoSeason[축] || []).length)" in 본문
+    assert "PERIOD_AXES[축].머리" in 본문
+    assert "esc(c[축])" in 본문

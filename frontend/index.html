@@ -223,7 +223,16 @@
   .rec-step-tag{ display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px;
     font-size:10.5px; font-weight:700; color:var(--pine-deep); background:var(--pine-tint);
     vertical-align:middle; }
-  /* 계절별 도전 계획 — 고른 루틴을 1년 동안 어떻게 이어갈지 */
+  /* '자세히 알아보기' 메뉴 */
+  .detail-menu{ display:flex; flex-direction:column; gap:8px; }
+  .detail-item{ text-align:left; background:var(--paper); border:1px solid var(--line);
+    border-radius:var(--radius-lg); padding:12px 14px; font-family:inherit; cursor:pointer; }
+  .detail-item:hover{ background:var(--pine-tint); }
+  .detail-name{ font-size:14px; font-weight:700; }
+  .detail-sub{ font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5; }
+  .detail-done{ font-size:11px; font-weight:700; color:var(--pine-deep); background:var(--pine-tint);
+    border-radius:999px; padding:1px 7px; margin-left:4px; vertical-align:middle; }
+  /* 구간별(계절·시간대) 도전 계획 — 고른 루틴을 어떻게 이어갈지 */
   .rec-season{ border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
   .season-box{ border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:11px 13px; margin-top:8px; background:var(--paper); }
@@ -2142,8 +2151,6 @@
         <button type="button" data-mode="ai" onclick="setRecoMode('ai')">
           AI 추천<span class="mode-sub">1회 100원</span></button>
       </div>
-      <button type="button" class="spare-set" id="schOpen" onclick="openSchedule()" hidden>
-        내 일정 넣기 — 비는 시간에 할 것을 홈에 띄워요</button>
       <div id="recoBody"></div>
     </div>
   </section>
@@ -7205,7 +7212,11 @@ let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
 let recoSpare = null;     // AI 가 비는 칸마다 골라 준 것 {요일: [{시작,끝,분,할것,한줄}]}
-let recoSeason = null;    // '이 루틴 자세히 알아보기' 로 받은 계절 계획 {루틴명, 계절:[...]}
+let recoSeason = null;    // '이 루틴 자세히 알아보기' 로 받은 것 {루틴명, 계절:[...], 시간대:[...]}
+const PERIOD_AXES = {
+  계절: { 머리: '계절마다 이렇게 이어가요', 설명: '봄·여름·가을·겨울, 1년을 어떻게 이어갈지' },
+  시간대: { 머리: '하루 중 이 시간엔 이렇게', 설명: '아침·낮·저녁·밤, 언제 무엇을 얼마나' },
+};
 let recoAiReady = null;   // 서버에 키가 있는지 (I1) — null=아직 확인 전, true/false=확인됨
 let aiStatusInFlight = null;   // 확인 요청이 겹치지 않게
 
@@ -7332,6 +7343,10 @@ function aiIntroHtml(){
     <div class="rec-meta">새 루틴을 만들지 않아요. 무료 추천이 고른 후보 안에서만 고릅니다.
       일정을 적어 두면 비는 시간에 무엇을 할지도 함께 골라요.</div>
     <div class="rec-by">${안내}</div>
+    <button type="button" class="spare-set" id="schOpen" onclick="openSchedule()">${
+      state.schedule?.바쁜시간 && Object.keys(state.schedule.바쁜시간).length
+        ? '내 일정 고치기 — 비는 시간까지 함께 짜 드려요'
+        : '내 일정 넣기 (선택) — 비는 시간까지 함께 짜 드려요'}</button>
     <div class="reco-actions">
       <button type="button" class="reco-btn go" onclick="askAiRecommend()"
               ${확인중 || 못씀 || 모자람 ? 'disabled' : ''}>AI 추천 받기</button>
@@ -7501,7 +7516,7 @@ function paintRecommend(){
         <button type="button" class="reco-btn" onclick="harderRecommend()">더 어려운 루틴</button>`}
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
-          onclick="askSeasons()">이 루틴 자세히 알아보기</button>
+          onclick="askDetail()">이 루틴 자세히 알아보기</button>
         <button type="button" class="reco-btn"
           onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
@@ -7532,43 +7547,71 @@ function spareRecoHtml(){
 function seasonHtml(){
   const x = recoList[recoAt];
   if (!x || !recoSeason || recoSeason.루틴명 !== x.루틴명) return '';
-  return `<div class="rec-season">
-    <div class="rec-why-head">계절마다 이렇게 이어가요</div>
-    ${(recoSeason.계절 || []).map(c => `
+  // 받아 둔 축만 그린다. 계절만 받았으면 계절만, 둘 다 받았으면 둘 다.
+  return Object.keys(PERIOD_AXES).filter(축 => (recoSeason[축] || []).length).map(축 => `
+  <div class="rec-season">
+    <div class="rec-why-head">${PERIOD_AXES[축].머리}</div>
+    ${recoSeason[축].map(c => `
       <div class="season-box">
-        <div class="season-name">${esc(c.계절)}</div>
+        <div class="season-name">${esc(c[축])}</div>
         ${c.한줄 ? `<div class="season-line">${esc(c.한줄)}</div>` : ''}
         ${(c.할것 || []).length ? `<ul class="season-do">${
           c.할것.map(y => `<li>${esc(y)}</li>`).join('')}</ul>` : ''}
         ${c.조심 ? `<div class="season-care">${esc(c.조심)}</div>` : ''}
       </div>`).join('')}
-  </div>`;
+  </div>`).join('');
 }
 
-/* '이 루틴 자세히 알아보기' — 계절마다 어떻게 이어갈지 AI 에게 더 물어본다.
+/* '이 루틴 자세히 알아보기' — 무엇을 더 볼지 고르는 메뉴.
    값은 받지 않는다. AI 추천을 받을 때 이미 치렀고, 이건 그 루틴을 더
-   알아보는 선택 사항이다. 돈이 들지 않으니 묻지 않고 바로 받아 온다.
-   이미 받아 둔 루틴이면 다시 부르지 않는다. */
-async function askSeasons(){
+   알아보는 선택 사항이다. 돈이 들지 않으니 묻지 않고 바로 받아 온다. */
+function askDetail(){
   const x = recoList[recoAt];
   if (!x) return;
+  const 받음 = 축 => (recoSeason?.루틴명 === x.루틴명 && (recoSeason[축] || []).length);
+  const 일정있음 = !!(state.schedule?.바쁜시간 && Object.keys(state.schedule.바쁜시간).length);
+  openSheet('이 루틴 자세히 알아보기', `
+    <div class="detail-menu">
+      ${Object.entries(PERIOD_AXES).map(([축, a]) => `
+        <button type="button" class="detail-item" onclick="fetchPeriods('${축}')">
+          <div class="detail-name">${축}별로 추천받기${받음(축) ? ' <span class="detail-done">받아 둠</span>' : ''}</div>
+          <div class="detail-sub">${a.설명}</div>
+        </button>`).join('')}
+      <button type="button" class="detail-item" onclick="closeSheet(); openSchedule();">
+        <div class="detail-name">짬시간도 이용하고 싶어요${일정있음 ? ' <span class="detail-done">일정 있음</span>' : ''}</div>
+        <div class="detail-sub">바쁜 시간을 적어 두면 비는 시간에 할 것을 홈에 띄우고, 다음 AI 추천부터 함께 짜 드려요</div>
+      </button>
+    </div>`);
+}
+
+/* 축(계절 | 시간대) 하나를 받아 온다. 이미 받아 둔 축이면 다시 부르지 않는다. */
+async function fetchPeriods(축){
+  const x = recoList[recoAt];
+  if (!x || !PERIOD_AXES[축]) return;
+  closeSheet();
   if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return; }
-  if (recoSeason?.루틴명 === x.루틴명) { showToast('이미 받아 둔 계획이에요'); return; }
-  showToast('계절별 계획을 받는 중이에요…');
+  if (recoSeason?.루틴명 === x.루틴명 && (recoSeason[축] || []).length) {
+    showToast(`${축}별 계획은 이미 받아 뒀어요`); return;
+  }
+  showToast(`${축}별 계획을 받는 중이에요…`);
   try {
-    const r = await API.recommendSeasons({
+    const r = await API.recommendPeriods({
       age_gbn: programAgeGroup(state.age),
       루틴: x,
       약점: weakFactors(),
       고른종목: state.sports || [],
       조심할부위: recoCare,
       상태: state.schedule?.상태 || [],
+      바쁜시간: state.schedule?.바쁜시간 || {},
+      축,
     });
-    recoSeason = { 루틴명: r.루틴명 || x.루틴명, 계절: r.계절 || [] };
+    // 다른 루틴의 것을 이어 담지 않는다. 같은 루틴이면 축을 하나 더 얹는다.
+    const 같은루틴 = recoSeason?.루틴명 === x.루틴명 ? recoSeason : { 루틴명: x.루틴명 };
+    recoSeason = { ...같은루틴, 루틴명: r.루틴명 || x.루틴명, [축]: r[축] || [] };
     추천저장();
     paintRecommend();
   } catch (e) {
-    showToast(e.message || '계절별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요');
+    showToast(e.message || `${축}별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요`);
   }
 }
 
@@ -7985,10 +8028,6 @@ function paintRecoMode(){
   const ai = document.querySelector('#recoMode button[data-mode="ai"]');
   if (!ai) return;
   const 횟수 = creditTimes();
-  // 일정은 AI 추천에서만 쓴다. 무료 추천은 점수만으로 고르고 비는 시간을
-  // 읽지 않으니, 무료 쪽에 일정 넣는 자리를 두면 넣어도 아무 일이 없다.
-  const sch = $('schOpen');
-  if (sch) sch.hidden = recoMode !== 'ai';
   ai.querySelector('.mode-sub').textContent = recoAiReady === null
     ? '확인하는 중…'
     : !recoAiReady

@@ -108,28 +108,50 @@ def _clean_slots(고른것, 일정: dict | None) -> dict:
 
 SEASONS = ("봄", "여름", "가을", "겨울")
 
-SEASON_SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하는 서비스의 코치입니다.
+# '이 루틴 자세히 알아보기' 의 축. 같은 루틴을 어떤 구간으로 나눠 볼지다.
+#   계절   1년 — 봄·여름·가을·겨울
+#   시간대 하루 — 아침·낮·저녁·밤
+# 축을 더할 때는 여기에 한 줄 더하면 된다. 프롬프트와 검증이 같은 표를 본다.
+AXES = {
+    "계절": {"구간": SEASONS, "기간": "1년 동안",
+           "맞춤": "계절에 맞게",
+           "한마디": "더위·추위로 위험할 수 있는 날은 무리하지 말라고 한마디 넣습니다."},
+    "시간대": {"구간": ("아침", "낮", "저녁", "밤"), "기간": "하루 동안",
+             "맞춤": "그 시간대에 맞게",
+             "한마디": "이른 아침엔 준비운동을 더 길게, 늦은 밤엔 세게 하지 말라고 한마디 넣습니다."},
+}
 
-사용자가 루틴 하나를 골라 "이 루틴으로 자세히 도전하기" 를 눌렀습니다.
-그 루틴을 **1년 동안 어떻게 이어갈지** 계절마다 한 덩이씩 써 주세요.
+
+def _period_system(축: str) -> str:
+    a = AXES[축]
+    구간 = "·".join(a["구간"])
+    return f"""당신은 국민체력100 데이터로 운동을 처방하는 서비스의 코치입니다.
+
+사용자가 루틴 하나를 골라 "이 루틴 자세히 알아보기" 를 눌렀습니다.
+그 루틴을 **{a['기간']} 어떻게 이어갈지** {축}마다 한 덩이씩 써 주세요.
 
 지켜야 할 것
-  - 루틴을 바꾸지 마세요. 같은 루틴을 계절에 맞게 **어떻게** 할지만 씁니다.
+  - 루틴을 바꾸지 마세요. 같은 루틴을 {a['맞춤']} **어떻게** 할지만 씁니다.
     (실내로 옮긴다, 준비운동을 늘린다, 물을 더 마신다, 횟수를 조금 올린다 …)
   - 하루의 모습(고등학생·직장인·알바생 등)이 있으면 그 사람 생활에 맞게 씁니다.
     시험 기간, 교대 근무, 방학처럼 그 사람에게 실제로 있는 일로요.
     **여럿이면 다 겹쳐 놓고 봅니다** — 대학생이면서 알바생이면 둘 다 맞아야 합니다.
-  - 계절은 봄·여름·가을·겨울 네 개를 모두, 이 순서로 씁니다.
+  - 비는 시간이 있으면 그 시간에 할 수 있는 만큼으로 씁니다.
+  - {축}은 {구간} 네 개를 모두, 이 순서로 씁니다.
   - 측정하지 않은 값을 아는 척하지 마세요.
   - 한국어 존댓말. 한줄은 40자 안팎, 할것은 각 25자 안팎으로 셋까지.
   - 의학적 진단이나 치료를 말하지 마세요. 아프면 쉬라고 안내합니다.
-  - 더위·추위로 위험할 수 있는 날은 무리하지 말라고 한마디 넣습니다.
+  - {a['한마디']}
 
 JSON 만 출력하세요. 다른 말은 쓰지 마세요.
-{"계절": [{"계절": "봄", "한줄": "문장", "할것": ["문장", ...], "조심": "문장"}, ...]}"""
+{{"{축}": [{{"{축}": "{a['구간'][0]}", "한줄": "문장", "할것": ["문장", ...], "조심": "문장"}}, ...]}}"""
 
 
-def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태) -> str:
+# 예전 이름. 계절 축의 프롬프트다.
+SEASON_SYSTEM = _period_system("계절")
+
+
+def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태, 일정: dict | None = None) -> str:
     사용자 = {
         "연령대": 연령대,
         "하루의 모습": 상태,
@@ -137,6 +159,11 @@ def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태) -> str:
         "고른 종목": 참고.get("고른종목") or [],
         "조심할 부위": 참고.get("조심할부위") or [],
     }
+    # 시간대별로 볼 때는 비는 시간이 곧 재료다. 있으면 같이 준다.
+    칸들 = (일정 or {}).get("요일별") or {}
+    if 칸들:
+        사용자["비는 시간"] = {요일: [f"{c['시작']}–{c['끝']} ({c['분']}분)" for c in 목록]
+                        for 요일, 목록 in 칸들.items()}
     골른것 = {
         "목적": 루틴.get("목적"),
         "루틴명": 루틴.get("루틴명"),
@@ -148,15 +175,17 @@ def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태) -> str:
             + "\n\n고른 루틴\n" + json.dumps(골른것, ensure_ascii=False, indent=1))
 
 
-def seasons(루틴: dict, 참고: dict, 연령대: str,
-            상태: list[str] | str | None = None) -> list[dict] | None:
-    """고른 루틴을 계절마다 어떻게 이어갈지. 못 하면 None.
+def periods(루틴: dict, 참고: dict, 연령대: str,
+            상태: list[str] | str | None = None, 축: str = "계절",
+            일정: dict | None = None) -> list[dict] | None:
+    """고른 루틴을 구간(계절 | 시간대)마다 어떻게 이어갈지. 못 하면 None.
 
-    네 계절이 다 나오지 않으면 통째로 버린다. 봄·여름만 있는 1년 계획은
+    네 구간이 다 나오지 않으면 통째로 버린다. 봄·여름만 있는 1년 계획은
     받아 든 사람이 나머지를 알아서 채워야 해서, 없느니만 못하다.
     """
-    if not 루틴 or not available():
+    if not 루틴 or 축 not in AXES or not available():
         return None
+    구간들 = AXES[축]["구간"]
     try:
         import anthropic
 
@@ -164,10 +193,10 @@ def seasons(루틴: dict, 참고: dict, 연령대: str,
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=SEASON_SYSTEM,
+            system=_period_system(축),
             output_config={"effort": "low"},
             messages=[{"role": "user",
-                       "content": _season_prompt(루틴, 참고, 연령대, 상태)}],
+                       "content": _season_prompt(루틴, 참고, 연령대, 상태, 일정)}],
         )
         if getattr(message, "stop_reason", None) == "refusal":
             return None
@@ -175,27 +204,33 @@ def seasons(루틴: dict, 참고: dict, 연령대: str,
     except Exception:                          # 무엇이 잘못돼도 폴백
         return None
 
-    if not d or not isinstance(d.get("계절"), list):
+    if not d or not isinstance(d.get(축), list):
         return None
     본것, out = set(), []
-    for x in d["계절"]:
+    for x in d[축]:
         if not isinstance(x, dict):
             return None
-        이름 = str(x.get("계절") or "").strip()
-        if 이름 not in SEASONS or 이름 in 본것:
-            return None                        # 없는 계절이거나 중복 → 지어낸 응답
+        이름 = str(x.get(축) or "").strip()
+        if 이름 not in 구간들 or 이름 in 본것:
+            return None                        # 없는 구간이거나 중복 → 지어낸 응답
         본것.add(이름)
         할것 = [str(y).strip()[:40] for y in (x.get("할것") or [])
               if isinstance(y, (str, int, float)) and str(y).strip()]
-        out.append({"계절": 이름,
+        out.append({축: 이름,
                     "한줄": str(x.get("한줄") or "").strip()[:80],
                     "할것": 할것[:3],
                     "조심": str(x.get("조심") or "").strip()[:80]})
-    if 본것 != set(SEASONS):
-        return None                            # 네 계절이 다 있어야 1년이 된다
-    순서 = {이름: i for i, 이름 in enumerate(SEASONS)}
-    out.sort(key=lambda x: 순서[x["계절"]])
+    if 본것 != set(구간들):
+        return None                            # 네 구간이 다 있어야 한 바퀴가 된다
+    순서 = {이름: i for i, 이름 in enumerate(구간들)}
+    out.sort(key=lambda x: 순서[x[축]])
     return out
+
+
+def seasons(루틴: dict, 참고: dict, 연령대: str,
+            상태: list[str] | str | None = None) -> list[dict] | None:
+    """계절 축. periods 의 예전 이름이다."""
+    return periods(루틴, 참고, 연령대, 상태, 축="계절")
 
 # ---------- 사진으로 시간표 읽기 ----------
 

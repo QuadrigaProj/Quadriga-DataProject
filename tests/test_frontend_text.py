@@ -2814,3 +2814,48 @@ def test_지은_루틴은_계정에_남고_모양이_맞을_때만_읽힌다():
     assert "aiRoutine: state.aiRoutine," in html
     assert "saved?.aiRoutine?.구성 === 'ai'" in html
     assert "saved.aiRoutine.steps.length) ? saved.aiRoutine : null;" in html
+
+
+# ---------- 더 쉬운 · 더 어려운 루틴은 잠그지 않는다 ----------
+
+def test_더_쉬운_더_어려운_버튼을_잠그지_않는다():
+    """잠긴 버튼은 왜 안 되는지 말해 주지 않는다."""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    actions = 본문.split('<div class="reco-actions">')[1].split("</div>")[0]
+    assert "onclick=\"easierRecommend()\">더 쉬운 루틴" in actions
+    assert "onclick=\"harderRecommend()\">더 어려운 루틴" in actions
+    assert "쉬움 < 0" not in actions and "어려움 < 0" not in actions
+
+
+def test_지금_목록에_없으면_전체를_받아_와서_찾는다():
+    """12개는 화면이 넉넉하라고 자른 것이지, 더 어려운 루틴이 없다는 뜻이 아니다."""
+    html = _index()
+    본문 = html.split("async function stepRecommend(dir)")[1].split("\n}")[0]
+    assert "let i = recoStep(dir);" in 본문
+    assert "if (i < 0 && !전체받음)" in 본문
+    assert "await 전체추천얹기();" in 본문
+    assert 본문.index("전체추천얹기") < 본문.index("showToast")      # 받아 보고 나서야 없다고 한다
+    얹기 = html.split("async function 전체추천얹기()")[1].split("\n}")[0]
+    assert "limit: 60," in 얹기 and "ai: 0," in 얹기                  # 무료라 값이 안 든다
+    assert "recoList.push(x)" in 얹기 and "if (!있음.has(열쇠))" in 얹기   # 보던 자리가 밀리지 않는다
+    assert "추천저장();" in 얹기
+
+
+def test_정말_없으면_그렇다고_말한다():
+    html = _index()
+    본문 = html.split("async function stepRecommend(dir)")[1].split("\n}")[0]
+    assert "지금이 가장 어려운 루틴이에요" in 본문
+    assert "지금이 가장 쉬운 루틴이에요" in 본문
+
+
+def test_지은_루틴에서는_옮기지_않는다():
+    html = _index()
+    본문 = html.split("async function stepRecommend(dir)")[1].split("\n}")[0]
+    assert "recoList[recoAt]?.구성 === 'ai'" in 본문
+
+
+def test_새_추천을_받으면_전체_얹음_표시가_풀린다():
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "전체받음 = false;" in 본문

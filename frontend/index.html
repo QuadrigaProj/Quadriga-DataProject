@@ -608,11 +608,17 @@
   .rec-step:last-child{ border-bottom:none; }
   .rec-step-phase{ width:52px; flex-shrink:0; font-size:11.5px; color:var(--muted);
                    padding-top:2px; }
-  .rec-step-main{ flex:1; min-width:0; }
-  .rec-step-name{ font-size:14.5px; }
-  .rec-step-sub{ font-size:12px; color:var(--muted); margin-top:3px; }
-  .rec-step-amt{ flex-shrink:0; font-size:13px; font-weight:700; color:var(--pine-deep);
-                 padding-top:2px; }
+  .rec-step-main{ flex:1 1 0; min-width:0; }
+  .rec-step-name{ font-size:14.5px; word-break:keep-all; }
+  .rec-step-sub{ font-size:12px; color:var(--muted); margin-top:3px; word-break:keep-all; }
+  /* 수행량은 오른쪽에 짧게. AI 가 긴 문장을 써도 이름 칸을 밀어내지 않게
+     폭을 잡아 두고 줄을 바꾼다 — 전에는 줄어들지 않아 이름이 한 글자씩
+     세로로 찌그러졌다. */
+  .rec-step-amt{ flex:0 0 auto; max-width:38%; font-size:13px; font-weight:700;
+                 color:var(--pine-deep); padding-top:2px; text-align:right;
+                 line-height:1.4; word-break:normal; overflow-wrap:anywhere; }
+  /* 짧으면 제 폭만큼, 길어도 38% 까지만. 글자 사이에서도 줄을 바꾼다 —
+     몸통의 keep-all 을 물려받으면 낱말마다 한 줄이 되어 더 길어진다. */
   /* 추천 방식 고르기 · 이용권 (I1) */
   .reco-mode{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; }
   .reco-mode button{
@@ -7199,7 +7205,7 @@ let recoBack = [];        // '이전 루틴' 으로 되돌아갈 자리 (H4)
 let recoCare = [];
 let recoBy = '점수';
 let recoSpare = null;     // AI 가 비는 칸마다 골라 준 것 {요일: [{시작,끝,분,할것,한줄}]}
-let recoSeason = null;    // '자세히 도전하기' 로 받은 계절 계획 {루틴명, 계절:[...]}
+let recoSeason = null;    // '이 루틴 자세히 알아보기' 로 받은 계절 계획 {루틴명, 계절:[...]}
 let recoAiReady = null;   // 서버에 키가 있는지 (I1) — null=아직 확인 전, true/false=확인됨
 let aiStatusInFlight = null;   // 확인 요청이 겹치지 않게
 
@@ -7495,7 +7501,7 @@ function paintRecommend(){
         <button type="button" class="reco-btn" onclick="harderRecommend()">더 어려운 루틴</button>`}
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
-          onclick="askSeasons()">이 루틴으로 자세히 도전하기</button>
+          onclick="askSeasons()">이 루틴 자세히 알아보기</button>
         <button type="button" class="reco-btn"
           onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
@@ -7539,7 +7545,7 @@ function seasonHtml(){
   </div>`;
 }
 
-/* '이 루틴으로 자세히 도전하기' — AI 를 한 번 더 부른다. 값이 빠지는 일이라
+/* '이 루틴 자세히 알아보기' — AI 를 한 번 더 부른다. 값이 빠지는 일이라
    반드시 묻는다. 이미 받아 둔 루틴이면 다시 부르지 않는다. */
 async function askSeasons(){
   const x = recoList[recoAt];

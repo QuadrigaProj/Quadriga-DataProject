@@ -246,10 +246,9 @@
   .season-do{ margin:7px 0 0; padding-left:17px; font-size:12.5px;
     color:var(--ink); line-height:1.7; }
   .season-care{ font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5; }
-  /* 계절·시간대가 따로 남아 있을 때 — 한 덩이로 다시 받기 */
+  /* 계절·시간대가 따로 남아 있을 때 — 알아서 섞는 동안의 안내 */
   .season-refuse{ font-size:12.5px; color:var(--muted); line-height:1.5; margin:6px 0 10px;
     padding:10px 12px; background:var(--pine-tint); border-radius:12px; }
-  .season-refuse .reco-btn{ display:block; margin-top:8px; }
   /* 계절 안의 시간대 — 아침·낮·저녁·밤 한 줄씩 */
   .season-times{ margin-top:8px; border-top:1px dashed var(--line); padding-top:6px; }
   .season-time{ font-size:12.5px; line-height:1.6; }
@@ -7649,6 +7648,7 @@ async function refreshAiStatus(){
     try {
       const r = await API.aiStatus();
       recoAiReady = !!r.ai가능;
+      if (recoAiReady) autoFuseSeasonTime();
       recoAiWhy = r.이유 || null;
       if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
     } catch (e) {
@@ -8001,6 +8001,7 @@ function paintRecommend(){
           onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
       </div>
     </div>`;
+  autoFuseSeasonTime();     // 계절·시간대가 따로 남아 있으면 알아서 섞는다
 }
 
 /* "시작 9/12 · 가을 · 맑음 18~26℃ · 습도 60% (서울 기준)" */
@@ -8047,6 +8048,23 @@ function separateSeasonAndTime(){
   return 계절.length > 0 && 시간대.length > 0 && !중첩있음;
 }
 
+/* 계절과 시간대가 따로 남아 있으면(예전에 따로 받은 것) 버튼을 기다리지 않고
+   알아서 섞는다 — 계절 안에 아침·낮·저녁·밤을 넣어 다시 받는다. 자세히
+   알아보기는 값을 치르지 않으니 결제도 없다. 루틴마다 한 번만 시도한다. */
+let recoFusing = null;                 // 지금 섞는 중인 루틴명
+const recoFuseTried = new Set();       // 이번에 이미 시도한 루틴명
+async function autoFuseSeasonTime(){
+  const x = recoList[recoAt];
+  if (!x || !separateSeasonAndTime() || !recoAiReady) return;
+  if (recoFusing === x.루틴명 || recoFuseTried.has(x.루틴명)) return;
+  recoFuseTried.add(x.루틴명); recoFusing = x.루틴명;
+  paintRecommend();                                            // "섞는 중" 표시
+  const 됨 = await fetchPeriods('계절', { 조용히: true, 시간대포함: true });
+  recoFusing = null;
+  if (됨 && !separateSeasonAndTime()) showToast('계절마다 아침·낮·저녁·밤을 넣어 다시 정리했어요');
+  paintRecommend();
+}
+
 function seasonHtml(){
   const x = recoList[recoAt];
   if (!x || !recoSeason || recoSeason.루틴명 !== x.루틴명) return '';
@@ -8056,8 +8074,9 @@ function seasonHtml(){
   <div class="rec-season">
     <div class="rec-why-head">${PERIOD_AXES[축].머리}${축 === '계절' && recoSeason.시작?.계절
       ? ` <span class="rec-start-note">${esc(recoSeason.시작.시작일.slice(5).replace('-', '/'))} ${esc(recoSeason.시작.계절)}부터</span>` : ''}</div>
-    ${축 === '계절' && 따로 ? `<div class="season-refuse">계절과 시간대가 따로 있어요. 같은 시간대라도 계절마다 온습도·날씨가 달라 지침이 달라져요.
-      <button type="button" class="reco-btn" onclick="fetchPeriods('계절', { 시간대포함: true })">시간대까지 넣어 한 덩이로 다시 받기</button></div>` : ''}
+    ${축 === '계절' && 따로 ? `<div class="season-refuse">${recoFusing === x.루틴명
+      ? '계절마다 아침·낮·저녁·밤을 넣어 다시 정리하는 중이에요…'
+      : '계절과 시간대가 따로 있어요. 같은 시간대라도 계절마다 온습도·날씨가 달라 지침이 달라져요. 알아서 한 덩이로 정리해요.'}</div>` : ''}
     ${recoSeason[축].map(c => `
       <div class="season-box">
         <div class="season-name">${esc(c[축])}</div>

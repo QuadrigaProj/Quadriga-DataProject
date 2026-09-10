@@ -3220,14 +3220,22 @@ def test_홈_히어로는_AI_루틴도_그린다():
     assert 본문.index("if (m?.구성 === 'ai') {") < 본문.index("m.예상시간분[0]")
 
 
-def test_계절과_시간대가_따로_남아_있으면_한_덩이로_다시_받는_버튼():
-    """예전엔 따로 받았다. 따로 나와 있는 걸 그대로 두지 않는다."""
+def test_계절과_시간대가_따로_남아_있으면_버튼_없이_알아서_섞는다():
+    """예전엔 따로 받았다. 따로 나와 있는 걸 그대로 두지 않고, 버튼도 기다리지 않는다."""
     html = _index()
     판단 = html.split("function separateSeasonAndTime()")[1].split("\n}")[0]
     assert "Array.isArray(c.시간대) && c.시간대.length" in 판단        # 이미 중첩이면 아니다
     assert "계절.length > 0 && 시간대.length > 0 && !중첩있음" in 판단
+    섞기 = html.split("async function autoFuseSeasonTime()")[1].split("\n}")[0]
+    assert "if (!x || !separateSeasonAndTime() || !recoAiReady) return;" in 섞기
+    assert "recoFuseTried.has(x.루틴명)" in 섞기                        # 루틴마다 한 번만
+    assert "await fetchPeriods('계절', { 조용히: true, 시간대포함: true })" in 섞기
+    assert "값을치를까" not in 섞기                                     # 결제 없음
+    assert "값을치를까" not in html.split("async function fetchPeriods(")[1].split("\n}")[0]
     본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
-    assert "축 === '계절' && 따로" in 본문
-    assert "onclick=\"fetchPeriods('계절', { 시간대포함: true })\"" in 본문
-    assert "시간대까지 넣어 한 덩이로 다시 받기" in 본문
+    assert "<button" not in 본문.split("season-refuse")[1].split("</div>")[0]   # 버튼이 아니다
+    assert "다시 정리하는 중이에요" in 본문
+    그리기 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "autoFuseSeasonTime();" in 그리기                            # 그릴 때마다 살핀다
+    assert "if (recoAiReady) autoFuseSeasonTime();" in html             # AI 가능이 나중에 확인돼도
 

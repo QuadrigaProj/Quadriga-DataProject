@@ -1024,3 +1024,52 @@ def test_구간_묶음이_그_축의_것이_아니면_None(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
     assert air.periods(루틴, {}, "성인", None, 축="계절", 구간들=("봄", "여름")) is None
     assert air.periods(루틴, {}, "성인", None, 축="계절", 구간들=("아침", "낮", "저녁", "밤")) is None
+
+
+# ---------- 계절 안에 시간대 ----------
+
+def _계절안시간대(빠뜨림: str | None = None, 엉뚱=False) -> str:
+    import json as _j
+    out = []
+    for c in ("봄", "여름", "가을", "겨울"):
+        시간 = [{"시간대": t, "한줄": f"{c} {t}엔 이렇게"} for t in ("아침", "낮", "저녁", "밤") if t != 빠뜨림]
+        if 엉뚱:
+            시간 = [{"시간대": "새벽", "한줄": "x"}, {"시간대": "아침", "한줄": "아침"}, {"시간대": "아침", "한줄": "또"}]
+        out.append({"계절": c, "한줄": f"{c}에는", "할것": ["가볍게"], "조심": "", "시간대": 시간})
+    return _j.dumps({"계절": out}, ensure_ascii=False)
+
+
+def test_둘_다_고르면_계절_안에_시간대가_들어온다(monkeypatch):
+    본 = _잡는_sdk(monkeypatch, _계절안시간대())
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
+    가을 = next(x for x in d["계절"] if x["계절"] == "가을")
+    assert [t["시간대"] for t in 가을["시간대"]] == ["아침", "낮", "저녁", "밤"]
+    assert 가을["시간대"][0]["한줄"] == "가을 아침엔 이렇게"
+    assert "계절마다 안에 시간대를 넣습니다" in 본["시스템"]
+    assert '"시간대": [{"시간대": "아침"' in 본["시스템"]
+
+
+def test_시간대가_빠져도_그_계절을_버리지_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, _계절안시간대(빠뜨림="밤"))
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
+    assert len(d["계절"]) == 4
+    assert [t["시간대"] for t in d["계절"][0]["시간대"]] == ["아침", "낮", "저녁"]
+
+
+def test_없는_시간대와_겹친_시간대는_거른다(monkeypatch):
+    _fake_sdk(monkeypatch, _계절안시간대(엉뚱=True))
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
+    assert d["계절"][0]["시간대"] == [{"시간대": "아침", "한줄": "아침"}]
+
+
+def test_시간대포함은_계절_축에서만(monkeypatch):
+    본 = _잡는_sdk(monkeypatch, _네시간대())
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "시간대", "시간대포함": True}).json()
+    assert "시간대" not in d["시간대"][0] or isinstance(d["시간대"][0]["시간대"], str)
+    assert "계절마다 안에 시간대를 넣습니다" not in 본["시스템"]
+
+
+def test_시간대포함_없이_받으면_계절만(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
+    assert "시간대" not in d["계절"][0]

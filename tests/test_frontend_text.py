@@ -2438,7 +2438,7 @@ def test_자세히_도전하기_버튼이_있다():
 def test_자세히_알아보기는_값을_받지_않고_묻지도_않는다():
     """AI 추천을 받을 때 이미 치렀다. 돈이 들지 않으니 결제 확인창이 없다."""
     html = _index()
-    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "값을치를까(" not in 본문
     assert "confirm(" not in 본문
     assert "원이 결제됩니다" not in 본문
@@ -2451,7 +2451,7 @@ def test_이미_받아_둔_축도_다시_누르면_새로_받는다():
     """값이 들지 않으니 마음에 안 들면 한 번 더 — 새것이 옛것을 덮는다.
     (예전엔 '이미 받아 뒀어요' 로 막았다.)"""
     html = _index()
-    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "이미 받아 뒀어요" not in 본문
     assert "'다시 ' : ''" in 본문                       # 받아 둔 축이면 '다시 받는 중' 이라 말한다
     assert "API.recommendPeriods" in 본문
@@ -2482,7 +2482,7 @@ def test_차감은_서버가_준_잔액을_받아_적는다():
         본문 = html.split(함수)[1].split("\n}")[0]
         assert "state.credit = r['잔액']" in 본문, 함수
         assert "state.credit -=" not in 본문, 함수
-    계절 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    계절 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "state.credit" not in 계절
 
 
@@ -2882,10 +2882,11 @@ def test_자세히_알아보기는_메뉴를_연다():
     html = _index()
     본문 = html.split("function askDetail()")[1].split("\n}")[0]
     assert "openSheet('이 루틴 자세히 알아보기'" in 본문
-    assert "별로 추천받기" in 본문
-    assert "짬시간도 이용하고 싶어요" in 본문
-    assert "openSchedule()" in 본문                          # 짬시간 = 일정 넣기
-    assert "fetchPeriods('${축}')" in 본문
+    메뉴 = html.split("function renderDetailMenu()")[1].split("\n}")[0]
+    assert "별로 추천받기" in 메뉴
+    assert "짬시간도 이용하고 싶어요" in 메뉴
+    assert "toggleDetail('${key}')" in 메뉴                  # 누르면 고르는 것이지 바로 받는 게 아니다
+    assert "fetchDetail()" in 메뉴                           # 받기는 아래 버튼 하나
 
 
 def test_축은_계절과_시간대_둘이다():
@@ -2897,7 +2898,7 @@ def test_축은_계절과_시간대_둘이다():
 
 def test_축을_받으면_같은_루틴에_얹고_다른_루틴이면_비운다():
     html = _index()
-    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "const 같은루틴 = recoSeason?.루틴명 === x.루틴명 ? recoSeason : { 루틴명: x.루틴명 };" in 본문
     assert "[축]: r[축] || []" in 본문
     assert "바쁜시간: state.schedule?.바쁜시간 || {}," in 본문    # 시간대별엔 비는 시간이 재료다
@@ -2927,7 +2928,7 @@ def test_고른_것과_직접_적은_것을_하나로_보낸다():
     assert "h.항목" in 본문 and "h.직접" in 본문
     assert ".slice(0, 20)" in 본문                       # 낱말은 20자
     assert "new Set(" in 본문                            # 겹치면 하나
-    for 곳 in ("async function fetchRecommend(ai)", "async function fetchPeriods(축)"):
+    for 곳 in ("async function fetchRecommend(ai)", "async function fetchPeriods(축,"):
         assert "건강상태: healthList()," in html.split(곳)[1].split("\n}")[0], 곳
 
 
@@ -3002,7 +3003,7 @@ def test_시작일과_위치를_AI_에_보낸다():
     받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
     assert "시작일: state.routineStart || tomorrowIso()," in 받기
     assert "...(await myLocation() || {})," in 받기
-    구간 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    구간 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "시작일: state.routineStart || tomorrowIso()," in 구간
     위치 = html.split("function myLocation()")[1].split("\n}")[0]
     assert "navigator.geolocation" in 위치 and "3000" in 위치        # 3초 안에 못 받으면 서울 기준
@@ -3011,10 +3012,10 @@ def test_시작일과_위치를_AI_에_보낸다():
 def test_같은_축을_다시_누르면_새로_받는다():
     """값이 들지 않으니 마음에 안 들면 한 번 더 — 새것이 옛것을 덮는다."""
     html = _index()
-    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "이미 받아 뒀어요" not in 본문
     assert "'다시 ' : ''" in 본문
-    assert "받아 둠 · 다시 받기" in html.split("function askDetail()")[1].split("\n}")[0]
+    assert "받아 둠 · 다시 받기" in html.split("function renderDetailMenu()")[1].split("\n}")[0]
 
 
 def test_카드에_시작일_계절_날씨_한_줄():
@@ -3071,3 +3072,56 @@ def test_플레이어에도_지금_동작의_대안_한_줄():
     본문 = html.split("function renderPlayerAlt()")[1].split("\n}")[0]
     assert "x.동작 === step.운동명" in 본문
     assert "renderPlayerAlt();" in html.split("function renderStep()")[1].split("\n}")[0]
+
+
+# ---------- 자세히 알아보기: 여러 개를 한 번에 ----------
+
+def test_여러_개_골라서_한_번에_받는다():
+    html = _index()
+    고르기 = html.split("function toggleDetail(key)")[1].split("\n}")[0]
+    assert "DETAIL_PICK.delete(key)" in 고르기 and "DETAIL_PICK.add(key)" in 고르기
+    메뉴 = html.split("function renderDetailMenu()")[1].split("\n}")[0]
+    assert 'aria-pressed="${DETAIL_PICK.has(key)}"' in 메뉴
+    assert "고른 ${DETAIL_PICK.size}개 받기" in 메뉴 and "받을 것을 골라주세요" in 메뉴
+    받기 = html.split("async function fetchDetail()")[1].split("\n}")[0]
+    assert "Promise.all(부를것.map(축 => fetchPeriods(축, { 조용히: true, 시간대포함: 둘다 })))" in 받기   # 나란히 받는다
+    assert "if (고른것.includes('짬시간')) openSchedule();" in 받기                    # 짬시간은 일정 창
+    assert "계획을 받았어요" in 받기 and "계획은 못 받았어요" in 받기
+
+
+def test_고르기_전에는_아무것도_그리지_않는다():
+    """고른 축만 그린다 — 메뉴를 열었다고 계절·시간대가 미리 뜨지 않는다."""
+    html = _index()
+    assert "DETAIL_PICK = new Set();" in html.split("function askDetail()")[1].split("\n}")[0]
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "filter(축 => (recoSeason[축] || []).length)" in 본문
+
+
+def test_조용히_받을_때는_창과_알림을_부르는_쪽이_맡는다():
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축, { 조용히 = false, 시간대포함 = false } = {})")[1].split("\n}")[0]
+    assert "if (!조용히) closeSheet();" in 본문
+    assert "return true;" in 본문 and "return false;" in 본문
+
+
+# ---------- 계절 안에 시간대 ----------
+
+def test_둘_다_고르면_한_번에_계절_안에_시간대():
+    """따로 두 덩이가 아니다 — "가을 아침엔 이렇게" 가 되어야 자세히 안내하는 것이다."""
+    html = _index()
+    받기 = html.split("async function fetchDetail()")[1].split("\n}")[0]
+    assert "const 둘다 = 축들.includes('계절') && 축들.includes('시간대');" in 받기
+    assert "const 부를것 = 둘다 ? ['계절'] : 축들;" in 받기               # AI 를 한 번만 부른다
+    assert "시간대포함: 둘다" in 받기
+    축 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "시간대포함: !!(시간대포함 && 축 === '계절')," in 축
+    assert "delete recoSeason.시간대;" in 축                             # 두 번 말하지 않는다
+
+
+def test_계절_상자_안에_시간대_줄을_그린다():
+    html = _index()
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    # 시간대 블록에선 c.시간대 가 문자열("아침")이다 — 배열일 때만 계절 안의 중첩으로 본다
+    assert "Array.isArray(c.시간대) && c.시간대.length" in 본문
+    assert 'class="season-time-name"' in 본문 and "esc(t.시간대)" in 본문 and "esc(t.한줄)" in 본문
+    assert ".season-times{" in html

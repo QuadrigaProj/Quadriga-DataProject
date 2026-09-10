@@ -5880,7 +5880,7 @@ function show3dForStep(step){
   const box = $('exercise3d');
   if (!box) return;
   const pose = poseForStep(step);
-  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose)) { MOVE_3D.stop(); box.hidden = true; return; }
+  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose, { sex: state.sex })) { MOVE_3D.stop(); box.hidden = true; return; }
   box.hidden = false;
 }
 

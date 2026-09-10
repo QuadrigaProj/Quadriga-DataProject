@@ -2334,13 +2334,15 @@ def test_짬시간_카드는_경로_안내_위에_있다():
     assert 앞 < 뒤, "경로 안내보다 위에 있어야 한다"
 
 
-def test_일정을_안_적었으면_아무것도_띄우지_않는다():
-    """하루가 통째로 빈다고 단정하면 안 적은 사람에게 온종일 운동하라고 하는 셈이다."""
+def test_일정을_안_적었으면_비워_두지_않고_무엇을_하면_되는지_말한다():
+    """빈 칸은 무엇을 해야 하는지 말해 주지 않는다. 하루가 통째로 빈다고 단정하지도 않는다."""
     html = _index()
     본문 = html.split("async function loadSparePlan()")[1].split("\n}")[0]
-    assert "if (!state.schedule?.바쁜시간) { sparePlan = null; card.hidden = true; return; }" in 본문
+    assert "if (!state.schedule?.바쁜시간) { sparePlan = null; renderSpareCard(); return; }" in 본문
     카드 = html.split("function renderSpareCard()")[1].split("\n}")[0]
-    assert "if (!칸) { card.hidden = true; return; }" in 카드
+    assert "일정을 주시면 AI가 짬시간에 맞게 루틴을 짜줘요" in 카드
+    assert 'onclick="openSchedule()">일정 넣기</button>' in 카드
+    assert "if (!칸) { card.hidden = true; return; }" in 카드         # 적었는데 비는 칸이 없으면 조용히
 
 
 def test_지금_들어와_있는_칸을_먼저_고른다():
@@ -3126,3 +3128,94 @@ def test_계절_상자_안에_시간대_줄을_그린다():
     assert "Array.isArray(c.시간대) && c.시간대.length" in 본문
     assert 'class="season-time-name"' in 본문 and "esc(t.시간대)" in 본문 and "esc(t.한줄)" in 본문
     assert ".season-times{" in html
+
+
+# ---------- 시간대 흐름 (홈 · 플레이어) ----------
+
+def test_하루를_네_시간대로_가른다():
+    html = _index()
+    표 = html.split("const DAYPARTS = [")[1].split("];")[0]
+    assert "{ 이름: '아침', 시작: '04:00', 끝: '11:00' }" in 표
+    assert "{ 이름: '낮',   시작: '11:00', 끝: '17:00' }" in 표
+    assert "{ 이름: '저녁', 시작: '17:00', 끝: '21:00' }" in 표
+    assert "{ 이름: '밤',   시작: '21:00', 끝: '04:00' }" in 표
+    본문 = html.split("function daypartOf(hm)")[1].split("\n}")[0]
+    assert "|| DAYPARTS[3]" in 본문                                  # 자정을 넘긴 밤은 나머지 전부
+
+
+def test_그_시간대에_어떻게_할지는_계절_안의_말이_먼저():
+    html = _index()
+    본문 = html.split("function daypartGuide(이름)")[1].split("\n}")[0]
+    assert "c.계절 === todaySeason()" in 본문
+    assert "(계절?.시간대 || []).find(t => t.시간대 === 이름)" in 본문
+    assert "(계획.시간대 || []).find(t => t.시간대 === 이름)" in 본문      # 없으면 시간대별 말
+
+
+def test_끝냈으면_다음_것을_바로_띄우지_않는다():
+    """"끝났어요!" 를 띄우고, 미리 하고 싶은 사람만 버튼을 누른다."""
+    html = _index()
+    assert "이 시간대에 할 루틴이 끝났어요!" in html
+    본문 = html.split("function renderDaypartRow()")[1].split("\n}")[0]
+    assert "const 끝남 = daypartDone(지금);" in 본문
+    assert "$('daypartDone').hidden = !끝남;" in 본문
+    assert "nextBtn.hidden = !끝남;" in 본문
+    assert "루틴 미리하기" in 본문
+    미리 = html.split("function previewNextDaypart()")[1].split("\n}")[0]
+    assert "state.previewDaypart = { date: isoDate(new Date()), 시간대: 다음 };" in 미리
+    assert "goTo('s4');" in 미리
+
+
+def test_시계가_다음_시간대로_넘어가면_누르든_말든_그_시간대():
+    html = _index()
+    본문 = html.split("function effectiveDaypart()")[1].split("\n}")[0]
+    assert "p?.date === 오늘" in 본문                                  # 오늘 것만
+    assert "> DAYPARTS.findIndex(d => d.이름 === daypartOf())" in 본문   # 앞으로만, 시계가 닿으면 뜻이 없다
+    assert "return daypartOf();" in 본문
+
+
+def test_완료는_시간대마다_한_번씩_남는다():
+    """아침에 끝냈다고 낮 것까지 끝난 게 아니다."""
+    html = _index()
+    본문 = html.split("function logRoutineDone()")[1].split("\n}")[0]
+    assert "const 시간대 = state.routineMeta?.구성 === 'ai' ? effectiveDaypart() : null;" in 본문
+    assert "(e.시간대 || null) === 시간대" in 본문
+    assert "date: today, no, done: true, 시간대," in 본문
+
+
+def test_플레이어_위에_시간대_한_줄():
+    html = _index()
+    assert 'id="playerDaypart"' in html
+    본문 = html.split("function renderPlayerDaypart()")[1].split("\n}")[0]
+    assert "const 미리 = 이름 !== daypartOf();" in 본문 and "'미리 하는 '" in 본문
+    assert "renderPlayerDaypart();" in html.split("function renderStep()")[1].split("\n}")[0]
+
+
+def test_오늘의_스케줄_미리보기():
+    """시간대별로 몇 시부터 몇 시까지 무엇을 할지. 짬시간을 쓰면 바쁜 시간과 비는 칸도 같은 줄로."""
+    html = _index()
+    assert 'onclick="openTodayPreview()">오늘의 스케줄 미리보기</button>' in html
+    본문 = html.split("function openTodayPreview()")[1].split("\n}")[0]
+    assert "openSheet('오늘의 스케줄 미리보기'" in 본문
+    assert "DAYPARTS.map(d =>" in 본문
+    assert "state.schedule?.바쁜시간?.[요일]" in 본문 and "종류: 'busy'" in 본문
+    assert "sparePlan?.[요일]" in 본문 and "종류: 'spare'" in 본문
+    assert "state.aiReco?.짬시간계획?.[요일]" in 본문                   # AI 가 고른 것을 먼저
+    assert "줄.sort(" in 본문
+    assert "일정을 적어 두면 바쁜 시간과 비는 시간도 여기에 함께 보여요" in 본문
+
+
+def test_미리하기는_계정에_남고_홈_로딩에_잇는다():
+    html = _index()
+    assert "previewDaypart: null," in html and "previewDaypart: state.previewDaypart," in html
+    assert "state.previewDaypart = (saved?.previewDaypart?.date && saved.previewDaypart.시간대)" in html
+    assert "renderDaypartRow();" in html.split("async function loadHome()")[1].split("\n}")[0]
+
+
+def test_홈_히어로는_AI_루틴도_그린다():
+    """AI 루틴엔 루틴번호·주기·예상시간이 없다. 예전 줄을 그대로 쓰면 홈이 첫 점검 안내인 채로 남았다."""
+    html = _index()
+    본문 = html.split("async function loadHome()")[1].split(chr(10) + "}")[0]
+    assert "if (m?.구성 === 'ai') {" in 본문
+    assert "AI 가 지은 루틴 · " in 본문
+    assert 본문.index("if (m?.구성 === 'ai') {") < 본문.index("m.예상시간분[0]")
+

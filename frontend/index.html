@@ -246,6 +246,10 @@
   .season-do{ margin:7px 0 0; padding-left:17px; font-size:12.5px;
     color:var(--ink); line-height:1.7; }
   .season-care{ font-size:12px; color:var(--muted); margin-top:6px; line-height:1.5; }
+  /* 계절·시간대가 따로 남아 있을 때 — 한 덩이로 다시 받기 */
+  .season-refuse{ font-size:12.5px; color:var(--muted); line-height:1.5; margin:6px 0 10px;
+    padding:10px 12px; background:var(--pine-tint); border-radius:12px; }
+  .season-refuse .reco-btn{ display:block; margin-top:8px; }
   /* 계절 안의 시간대 — 아침·낮·저녁·밤 한 줄씩 */
   .season-times{ margin-top:8px; border-top:1px dashed var(--line); padding-top:6px; }
   .season-time{ font-size:12.5px; line-height:1.6; }
@@ -8035,14 +8039,25 @@ function spareRecoHtml(){
 
 /* 계절별 도전 계획. 지금 보고 있는 루틴의 것일 때만 그린다 —
    '더 쉬운 루틴' 으로 옮겨 놓고 예전 루틴의 계획을 보고 있으면 안 된다. */
+/* 예전엔 계절과 시간대를 따로 받았다. 그 둘이 따로 남아 있으면 한 덩이로
+   다시 받는 길을 카드에 바로 둔다 — 따로 나와 있는 걸 그대로 두지 않는다. */
+function separateSeasonAndTime(){
+  const 계절 = recoSeason?.계절 || [], 시간대 = recoSeason?.시간대 || [];
+  const 중첩있음 = 계절.some(c => Array.isArray(c.시간대) && c.시간대.length);
+  return 계절.length > 0 && 시간대.length > 0 && !중첩있음;
+}
+
 function seasonHtml(){
   const x = recoList[recoAt];
   if (!x || !recoSeason || recoSeason.루틴명 !== x.루틴명) return '';
+  const 따로 = separateSeasonAndTime();
   // 받아 둔 축만 그린다. 계절만 받았으면 계절만, 둘 다 받았으면 둘 다.
   return Object.keys(PERIOD_AXES).filter(축 => (recoSeason[축] || []).length).map(축 => `
   <div class="rec-season">
     <div class="rec-why-head">${PERIOD_AXES[축].머리}${축 === '계절' && recoSeason.시작?.계절
       ? ` <span class="rec-start-note">${esc(recoSeason.시작.시작일.slice(5).replace('-', '/'))} ${esc(recoSeason.시작.계절)}부터</span>` : ''}</div>
+    ${축 === '계절' && 따로 ? `<div class="season-refuse">계절과 시간대가 따로 있어요. 같은 시간대라도 계절마다 온습도·날씨가 달라 지침이 달라져요.
+      <button type="button" class="reco-btn" onclick="fetchPeriods('계절', { 시간대포함: true })">시간대까지 넣어 한 덩이로 다시 받기</button></div>` : ''}
     ${recoSeason[축].map(c => `
       <div class="season-box">
         <div class="season-name">${esc(c[축])}</div>

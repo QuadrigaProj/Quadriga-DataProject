@@ -3026,3 +3026,48 @@ def test_카드에_시작일_계절_날씨_한_줄():
     assert "startLine(x.시작)" in 카드
     계절 = html.split("function seasonHtml()")[1].split("\n}")[0]
     assert "recoSeason.시작.계절" in 계절 and "부터</span>" in 계절
+
+
+# ---------- 오늘 날씨에 맞춘 대안 ----------
+
+def test_AI_루틴의_동작에_출처와_id_를_남긴다():
+    """밖에서 하는 동작인지 알려면 이게 있어야 한다."""
+    html = _index()
+    본문 = html.split("function applyAiRoutine()")[1].split("\n}")[0]
+    assert "출처: s.출처 || null, id: s.id || null," in 본문
+    assert "checkTodayWeather();" in 본문
+
+
+def test_밖에서_하는_동작이_없으면_묻지도_않는다():
+    html = _index()
+    본문 = html.split("async function checkTodayWeather()")[1].split("\n}")[0]
+    assert "if (!steps.length) { weatherCheck = null;" in 본문
+    assert "if (weatherCheck?.열쇠 === 열쇠)" in 본문         # 같은 날·같은 동작 묶음이면 한 번
+    assert "오늘 + '|' + steps.map(s => s.출처 + ':' + s.id).join(',')" in 본문
+    assert "API.weatherCheck({ steps, ...(await myLocation() || {}) })" in 본문
+    고르기 = html.split("function outdoorSteps()")[1].split("\n}")[0]
+    assert "s.출처 === '종목' || s.출처 === '기록'" in 고르기
+
+
+def test_홈_카드는_홈에_들어올_때_그린다():
+    html = _index()
+    assert 'id="weatherCard"' in html
+    assert html.index('id="weatherCard"') < html.index('id="spareCard"')     # 짬시간 카드 위
+    assert "loadSparePlan(); checkTodayWeather(); }" in html
+
+
+def test_카드는_바꿔치기하지_않고_안내만_한다():
+    html = _index()
+    본문 = html.split("function renderWeatherCard()")[1].split("\n}")[0]
+    for 글 in ("오늘은 실내로", "오늘은 조심해서", "오늘 밖에서 해도 좋아요", "오늘 날씨를 못 받았어요"):
+        assert 글 in 본문, 글
+    assert "그대로 하셔도 돼요" in 본문                          # 괜찮으면 대안 없이
+    assert 'class="weather-from"' in 본문 and 'class="weather-to"' in 본문
+
+
+def test_플레이어에도_지금_동작의_대안_한_줄():
+    html = _index()
+    assert 'id="playerAlt"' in html
+    본문 = html.split("function renderPlayerAlt()")[1].split("\n}")[0]
+    assert "x.동작 === step.운동명" in 본문
+    assert "renderPlayerAlt();" in html.split("function renderStep()")[1].split("\n}")[0]

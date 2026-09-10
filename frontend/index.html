@@ -255,6 +255,15 @@
   .rec-spare-when{ color:var(--muted); font-variant-numeric:tabular-nums; }
   .rec-spare-what{ font-weight:600; }
   .rec-spare-why{ flex-basis:100%; color:var(--muted); }
+  /* 오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있을 때만 */
+  .weather-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
+    padding:14px 16px; margin-top:14px; background:var(--paper); }
+  .weather-alt{ font-size:13px; margin-top:8px; line-height:1.6; }
+  .weather-from{ color:var(--muted); text-decoration:line-through; }
+  .weather-to{ font-weight:700; color:var(--pine-deep); }
+  .weather-or{ display:block; font-size:12px; color:var(--muted); }
+  .player-alt{ margin-top:8px; font-size:13px; line-height:1.5; color:var(--pine-deep);
+    background:var(--pine-tint); border-radius:10px; padding:8px 10px; }
   /* 짬시간 카드 — 지금 비는 시간에 할 것 (경로 안내 위) */
   .spare-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:14px 16px; margin-top:14px; background:var(--pine-tint); }
@@ -1817,6 +1826,7 @@
       <div class="hero-arrow">▶</div>
     </button>
 
+    <div class="weather-card" id="weatherCard" hidden></div>
     <div class="spare-card" id="spareCard" hidden></div>
 
     <div class="prescribe-card">
@@ -1852,6 +1862,7 @@
           <div class="player-name" id="playerName">의자에 앉았다 일어서기</div>
         </div>
         <div class="player-set" id="playerSet">10회씩 2세트</div>
+      <div class="player-alt" id="playerAlt" hidden></div>
       </div>
       <div class="cond-row" id="condRow">
         <button type="button" class="cond-btn heavy" id="heavyBtn" aria-pressed="false" onclick="toggleHeavy()">몸이 무거운 날</button>
@@ -3633,7 +3644,7 @@ function goTo(id){
   const content = $(id).querySelector('.content');
   if(content) content.scrollTop = 0;
   if(id === 's2') renderPurpose();
-  if(id === 's3') { loadHome(); paintGauges({ animate: true }); loadSparePlan(); }
+  if(id === 's3') { loadHome(); paintGauges({ animate: true }); loadSparePlan(); checkTodayWeather(); }
   if(id === 's4') resetRoutine();
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
   if(id === 's7') renderRecords();
@@ -5626,7 +5637,9 @@ function applyAiRoutine(){
     체력요인: (s.체력요인 || []).join('·'), 도구: s.도구 || '', 유형: s.유형 || '',
     부담부위: s.부담부위 || [], 부위: '',
     설명: [s.수행량, s.왜].filter(Boolean).join(' · '),
+    출처: s.출처 || null, id: s.id || null,      // 밖에서 하는 동작인지 알려면 있어야 한다
   }));
+  checkTodayWeather();
 }
 
 async function loadRoutine(){
@@ -5827,6 +5840,7 @@ function renderStep(){
   const dots = $('stepsDots');
   dots.innerHTML = list.map((_,i)=>`<div class="d${i<=currentStep?' on':''}"></div>`).join('');
   $('stepBtn').textContent = (currentStep === list.length-1) ? '루틴 완료' : '다음 동작';
+  renderPlayerAlt();
 }
 
 function nextStep(){
@@ -7119,6 +7133,78 @@ function wlogUnit(k, keys, 단위){
   return 표[k] || k;
 }
 
+
+/* ---------------------------------------------------------------------------
+   오늘 날씨에 맞춘 대안 — 루틴에 밖에서 하는 동작이 있으면, 당일 아침 날씨를
+   보고 실내·비슷한 것으로 안내한다. 루틴을 바꿔치기하지 않는다. 어떻게 할지는
+   사용자가 정한다. 밖에서 하는 동작이 없으면 아무 말도 하지 않는다.
+   하루에 한 번만 묻는다 — 서버도 같은 날은 한 번만 바깥에 묻는다.
+   --------------------------------------------------------------------------- */
+let weatherCheck = null;          // {날짜, 날씨, 판정, 실외동작, 대안}
+
+function outdoorSteps(){
+  // AI 가 지은 루틴만 출처·id 를 안다. 목적별 기본 루틴은 집에서 하는 공식 동작뿐이다.
+  const steps = state.aiRoutine?.steps || [];
+  return steps.filter(s => s.출처 === '종목' || s.출처 === '기록')
+              .map(s => ({ 출처: s.출처, id: s.id, 동작: s.동작 }));
+}
+
+async function checkTodayWeather(){
+  const steps = outdoorSteps();
+  const 오늘 = isoDate(new Date());
+  if (!steps.length) { weatherCheck = null; renderWeatherCard(); renderPlayerAlt(); return; }
+  // 같은 날, 같은 동작 묶음이면 다시 묻지 않는다. 루틴이 바뀌면 다시 본다.
+  const 열쇠 = 오늘 + '|' + steps.map(s => s.출처 + ':' + s.id).join(',');
+  if (weatherCheck?.열쇠 === 열쇠) { renderWeatherCard(); renderPlayerAlt(); return; }
+  try {
+    weatherCheck = { ...(await API.weatherCheck({ steps, ...(await myLocation() || {}) })), 열쇠 };
+  } catch (e) { weatherCheck = null; }
+  renderWeatherCard();
+  renderPlayerAlt();
+}
+
+function weatherLine(w){
+  if (!w) return '';
+  const 조각 = [];
+  if (w.하늘) 조각.push(esc(w.하늘));
+  if (w.최저 != null && w.최고 != null) 조각.push(`${Math.round(w.최저)}~${Math.round(w.최고)}℃`);
+  if (w.습도 != null) 조각.push(`습도 ${Math.round(w.습도)}%`);
+  if (w.강수확률 != null && w.강수확률 >= 30) 조각.push(`비 ${Math.round(w.강수확률)}%`);
+  return 조각.join(' · ') + (w.기준 === '서울' ? ' <span class="rec-start-note">(서울 기준)</span>' : '');
+}
+
+function renderWeatherCard(){
+  const card = $('weatherCard');
+  if (!card) return;
+  const r = weatherCheck;
+  if (!r || !(r.실외동작 || []).length) { card.hidden = true; return; }
+  card.hidden = false;
+  const 실외 = r.판정?.실외;
+  const 머리 = 실외 === '실내' ? '오늘은 실내로' : 실외 === '조심' ? '오늘은 조심해서' : 실외 === '괜찮음' ? '오늘 밖에서 해도 좋아요' : '오늘 날씨를 못 받았어요';
+  const 대안 = (r.대안 || []).map(a => `
+    <div class="weather-alt">
+      <span class="weather-from">${esc(a.동작)}</span> → <span class="weather-to">${esc(a.대신)}</span>
+      ${(a.또는 || []).length ? `<span class="weather-or">또는 ${a.또는.map(esc).join(' / ')}</span>` : ''}
+    </div>`).join('');
+  card.innerHTML = `
+    <div class="spare-head">
+      <span class="spare-label">${머리}</span>
+      <span class="spare-when">${weatherLine(r.날씨)}</span>
+    </div>
+    ${(r.판정?.이유 || []).length ? `<div class="spare-why">${r.판정.이유.map(esc).join(' · ')}</div>` : ''}
+    ${대안 || `<div class="spare-why">${(r.실외동작 || []).map(x => esc(x.동작)).join(' · ')} 그대로 하셔도 돼요</div>`}`;
+}
+
+/* 플레이어: 지금 동작에 오늘 대안이 있으면 한 줄 */
+function renderPlayerAlt(){
+  const el = $('playerAlt');
+  if (!el) return;
+  const step = activeRoutine()[currentStep];
+  const a = (weatherCheck?.대안 || []).find(x => step && x.동작 === step.운동명);
+  if (!a) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `오늘은 <b>${esc(a.대신)}</b>${(a.또는 || []).length ? ` (또는 ${a.또는.map(esc).join(' / ')})` : ''} — ${esc(a.왜)}`;
+}
 
 /* ---------------------------------------------------------------------------
    짬시간 — 적어 둔 일정에서 남는 칸을 찾아, 지금 할 것을 홈에 띄운다.

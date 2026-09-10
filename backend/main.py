@@ -48,6 +48,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import community
     from backend import spare_time as spare
     from backend import season as ssn
+    from backend import outdoor
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -71,6 +72,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import community                        # noqa: E402
     import spare_time as spare              # noqa: E402
     import season as ssn  # type: ignore
+    import outdoor  # type: ignore
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -1636,6 +1638,24 @@ def post_recommend_seasons(body: SeasonIn,
 
 
 # ---------- 11. 당일 기록 종목 ----------
+
+class WeatherCheckIn(BaseModel):
+    """오늘 루틴의 동작들. 밖에서 하는 것만 본다 — 출처(종목·기록)와 id 가 있어야 안다."""
+    steps: list[dict] = Field(default_factory=list, max_length=20)
+    위도: float | None = Field(None, ge=-90, le=90)
+    경도: float | None = Field(None, ge=-180, le=180)
+
+
+@app.post("/routine/weather-check")
+def post_weather_check(body: WeatherCheckIn) -> dict:
+    """오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있으면 실내·비슷한 것으로 안내.
+
+    AI 를 부르지 않는다. 규칙이다. 값이 들지 않고 로그인도 필요 없다 —
+    오늘 날씨와 동작 이름뿐, 누구의 것인지 알 필요가 없다.
+    루틴을 바꿔치기하지 않는다. 어떻게 할지는 사용자가 정한다.
+    """
+    return outdoor.check(body.steps, body.위도, body.경도)
+
 
 class SpareTimeIn(BaseModel):
     """짬시간 계산에 필요한 것만. 일정은 저장하지 않는다 — 화면이 갖고 있다."""

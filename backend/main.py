@@ -1304,6 +1304,8 @@ class RecommendIn(BaseModel):
     체력나이: float | None = Field(None, ge=5, le=110)
     최근기록: list[dict] = Field(default_factory=list, max_length=30,
                               description="[{date, 이름, 값}] 최근 2주. 화면이 추린다")
+    건강상태: list[str] = Field(default_factory=list, max_length=20,
+                             description="사용자가 적어 둔 건강 상태. AI 가 해로운 동작을 뺀다")
 
 
 @app.get("/recommend/routines")
@@ -1348,7 +1350,8 @@ def post_recommend_routines(body: RecommendIn,
         token=quadriga_session, busy=body.바쁜시간,
         life_kind=_life_kinds(body.상태),
         profile={"항목별": body.항목별, "체력나이": body.체력나이,
-                 "최근기록": body.최근기록[:30]})
+                 "최근기록": body.최근기록[:30],
+                 "건강상태": _short_list(body.건강상태)})
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
@@ -1421,6 +1424,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 "강도": out.get("강도"),
                 "하루의 모습": life_kind or [],
                 "최근 기록": ((profile or {}).get("최근기록") or [])[:30],
+                "건강 상태": (profile or {}).get("건강상태") or [],
             }
             지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
             # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
@@ -1431,6 +1435,49 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                     out["짬시간계획"] = 지음["짬시간"]
                 out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
     return out
+
+
+def _short_list(값) -> list[str]:
+    """건강 상태처럼 사용자가 적은 짧은 낱말 목록을 다듬는다. 길면 자르고 겹치면 뺀다."""
+    out = []
+    for x in (값 or []):
+        if not isinstance(x, (str, int, float)):
+            continue
+        한줄 = str(x).strip()[:20]
+        if 한줄 and 한줄 not in out:
+            out.append(한줄)
+    return out[:20]
+
+
+class HealthPhotoIn(BaseModel):
+    """약봉지·처방전 사진 한 장. 저장하지 않는다 — 읽은 후보만 돌려준다."""
+    사진: str = Field(..., max_length=7_000_000)
+    미디어형: str | None = None
+
+
+@app.post("/health/photo")
+def post_health_photo(body: HealthPhotoIn,
+                      quadriga_session: str | None = Cookie(None)) -> dict:
+    """약봉지·처방전 사진에서 건강 상태 **후보**를 읽는다.
+
+    값을 받지 않는다 — 건강 상태는 AI 추천을 맞추는 재료이지 상품이 아니다.
+    읽은 것을 저장하지 않는다. 화면이 사용자에게 보여 주고, 고쳐서 저장할지는
+    사용자가 정한다. 사진도 남기지 않는다. 로그인은 있어야 한다.
+    """
+    if not air.available():
+        raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
+    _require_user(quadriga_session)
+    데이터, 형식 = _split_data_url(body.사진, body.미디어형)
+    if 형식 not in air.PHOTO_TYPES:
+        raise HTTPException(415, "JPG · PNG · WEBP · GIF 사진만 읽을 수 있어요.")
+    if len(데이터) * 3 // 4 > air.PHOTO_MAX_BYTES:
+        raise HTTPException(413, "사진이 너무 커요. 4MB 아래로 줄여주세요.")
+    읽은것 = air.read_health_photo(데이터, 형식)
+    if 읽은것 is None:
+        raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
+    if not 읽은것["건강상태"]:
+        읽은것["안내"] = "사진에서 건강 상태를 찾지 못했어요. 직접 골라주세요."
+    return 읽은것
 
 
 class SchedulePhotoIn(BaseModel):
@@ -1518,6 +1565,7 @@ class SeasonIn(BaseModel):
         None, description="하루의 모습. 여럿 고를 수 있다")
     바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
                                         description="시간대별로 볼 때 비는 시간을 알려면")
+    건강상태: list[str] = Field(default_factory=list, max_length=20)
 
 
 class PeriodIn(SeasonIn):
@@ -1539,7 +1587,7 @@ def _periods(body: "SeasonIn", 축: str, token: str | None) -> dict:
     _require_user(token)
 
     참고 = {"약점": body.약점, "고른종목": body.고른종목,
-          "조심할부위": body.조심할부위}
+          "조심할부위": body.조심할부위, "건강상태": _short_list(body.건강상태)}
     일정 = None
     바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
     if 바쁜:

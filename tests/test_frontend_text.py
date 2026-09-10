@@ -2907,3 +2907,62 @@ def test_받아_둔_축만_그린다():
     assert "Object.keys(PERIOD_AXES).filter(축 => (recoSeason[축] || []).length)" in 본문
     assert "PERIOD_AXES[축].머리" in 본문
     assert "esc(c[축])" in 본문
+
+
+# ---------- 건강 상태 ----------
+
+def test_건강_상태는_계정에_남고_모양이_맞을_때만_읽힌다():
+    html = _index()
+    assert "health: null," in html
+    assert "health: state.health," in html
+    assert "state.health = (saved?.health && typeof saved.health === 'object'" in html
+
+
+def test_고른_것과_직접_적은_것을_하나로_보낸다():
+    html = _index()
+    본문 = html.split("function healthList(src)")[1].split("\n}")[0]
+    assert "h.항목" in 본문 and "h.직접" in 본문
+    assert ".slice(0, 20)" in 본문                       # 낱말은 20자
+    assert "new Set(" in 본문                            # 겹치면 하나
+    for 곳 in ("async function fetchRecommend(ai)", "async function fetchPeriods(축)"):
+        assert "건강상태: healthList()," in html.split(곳)[1].split("\n}")[0], 곳
+
+
+def test_건강_상태_창은_고르고_적고_사진으로_채운다():
+    html = _index()
+    assert "const HEALTH_KINDS = [" in html
+    목록 = html.split("const HEALTH_KINDS = [")[1].split("];")[0]
+    for k in ("무릎 통증", "허리 통증", "고혈압", "당뇨", "임신·출산 후", "수술·부상 회복 중"):
+        assert k in 목록, k
+    창 = html.split("function renderHealth()")[1].split("\n}")[0]
+    assert 'id="healthOther"' in 창
+    assert "약봉지·처방전 사진으로 채우기" in 창
+    assert "진단이 아니며, 심한 상태면 의사와 먼저 상의하세요" in 창
+
+
+def test_사진은_채워_줄_뿐_저장은_사용자가_한다():
+    """잘못 읽었는데 그대로 저장되면 손댈 곳이 없다."""
+    html = _index()
+    본문 = html.split("async function onHealthPhoto(ev)")[1].split("\n}")[0]
+    assert "API.healthPhoto" in 본문
+    assert "renderHealth()" in 본문
+    assert "saveProfile()" not in 본문 and "saveHealth()" not in 본문
+    assert "값을치를까(" not in 본문                     # 무료다
+    assert "if (!HEALTH.항목.includes(x)" in 본문         # 이미 고른 것을 지우지 않는다
+
+
+def test_건강_상태는_AI_소개_카드와_프로필에서_적을_수_있다():
+    html = _index()
+    소개 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert 'id="healthOpen" onclick="openHealth()"' in 소개
+    assert "내 건강 상태 적기 (선택)" in 소개 and "내 건강 상태 고치기" in 소개
+    assert 'id="editHealth"' in html and 'onclick="openHealth()">적기</button>' in html
+    assert "paintHealthSummary();" in html.split("function renderEdit(){")[1][:60]
+
+
+def test_저장하면_추천_화면이면_다시_그린다():
+    html = _index()
+    본문 = html.split("async function saveHealth()")[1].split("\n}")[0]
+    assert "await saveProfile();" in 본문
+    assert "renderRecommend()" in 본문
+    assert "다음 AI 추천부터 반영돼요" in 본문

@@ -1577,7 +1577,6 @@
       <div class="player-video">
         <div id="exerciseVideoFrame" class="exercise-video-inline" hidden></div>
         <div class="player-tag" id="playerTag">1 / 5</div>
-        <button type="button" class="play" id="exerciseVideoButton" onclick="openExerciseVideo()" style="font-size:16px;border:0;cursor:pointer;">영상 보기</button>
       </div>
       <div class="player-meta">
         <div class="player-name-row">
@@ -4608,13 +4607,10 @@ function openExerciseVideo(){
   iframe.src = `https://www.youtube.com/embed/${video_id}?${params}`;
   $("exerciseVideoFrame").replaceChildren(iframe);
   $("exerciseVideoFrame").hidden = false;
-  $("exerciseVideoButton").hidden = true;
 }
 function stopExerciseVideo(){
   $("exerciseVideoFrame").replaceChildren();
   $("exerciseVideoFrame").hidden = true;
-  const step = activeRoutine()[currentStep];
-  $("exerciseVideoButton").hidden = !youtubeVideoId(step?.youtube_id);
 }
 
 function renderStep(){
@@ -4626,13 +4622,11 @@ function renderStep(){
     $('playerTag').textContent = '';
     $('stepsDots').innerHTML = '';
     $('stepBtn').disabled = true;
-    $('exerciseVideoButton').hidden = true;
     return;
   }
   $('stepBtn').disabled = false;
   if (currentStep > list.length - 1) currentStep = list.length - 1;
   const step = list[currentStep];
-  $('exerciseVideoButton').hidden = !youtubeVideoId(step.youtube_id);
   const it = state.intensity || { 세트: 2, 반복: 10, 시간초: 30 };
   $('playerTag').textContent = `${step.단계} · ${currentStep+1} / ${list.length}`;
   $('playerName').textContent = step.운동명;
@@ -4651,6 +4645,8 @@ function renderStep(){
   const dots = $('stepsDots');
   dots.innerHTML = list.map((_,i)=>`<div class="d${i<=currentStep?' on':''}"></div>`).join('');
   $('stepBtn').textContent = (currentStep === list.length-1) ? '루틴 완료' : '다음 동작';
+  // 루틴 화면에서만 플레이어를 바로 표시하고 자동재생을 요청한다.
+  if ($("s4").classList.contains("active")) openExerciseVideo();
 }
 
 function nextStep(){

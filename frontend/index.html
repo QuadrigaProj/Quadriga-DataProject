@@ -7949,8 +7949,13 @@ async function fetchPeriods(축, { 조용히 = false, 시간대포함 = false } 
     // 다른 루틴의 것을 이어 담지 않는다. 같은 루틴이면 축을 하나 더 얹는다.
     const 같은루틴 = recoSeason?.루틴명 === x.루틴명 ? recoSeason : { 루틴명: x.루틴명 };
     recoSeason = { ...같은루틴, 루틴명: r.루틴명 || x.루틴명, [축]: r[축] || [], ...(r.시작 ? { 시작: r.시작 } : {}) };
-    // 계절 안에 시간대를 넣어 받았으면, 따로 받아 둔 시간대 블록은 접는다 — 두 번 말하지 않는다
-    if (시간대포함 && 축 === '계절') delete recoSeason.시간대;
+    // 계절 안에 시간대를 넣어 받았으면, 따로 받아 둔 시간대 블록은 접는다 — 두 번 말하지 않는다.
+    // 넣어 달라고 했는데 안 왔으면 옛 것을 지우지 않는다. 있던 것마저 없애면 방치다.
+    if (시간대포함 && 축 === '계절') {
+      const 융합됨 = (r.계절 || []).some(c => Array.isArray(c.시간대) && c.시간대.length);
+      if (융합됨) delete recoSeason.시간대;
+      else showToast('계절 안에 시간대까지는 못 받았어요. 한 번 더 받아 보세요');
+    }
     추천저장();
     paintRecommend();
     return true;

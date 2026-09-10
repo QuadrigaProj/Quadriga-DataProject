@@ -119,6 +119,24 @@ async def 시간_제한(request: Request, call_next):
             status_code=503)
 
 
+# 화면 파일(index.html · js · css)은 받을 때마다 서버에 "바뀌었나" 를 묻게 한다.
+#
+# 여태 Cache-Control 이 없어서 브라우저가 알아서 오래 들고 있었다. 배포를 해도
+# 사람마다 옛 화면이 남아 "고쳤다는데 안 바뀌었다" 가 되풀이됐고, 그때마다
+# 강력 새로고침을 부탁했다. no-cache 는 "쓰지 말라" 가 아니라 "쓰기 전에
+# 물어보라" 다 — ETag 가 있으니 안 바뀌었으면 304 한 줄로 끝난다.
+NO_CACHE_SUFFIXES = (".html", ".js", ".css")
+
+
+@app.middleware("http")
+async def 화면은_늘_다시_확인(request: Request, call_next):
+    response = await call_next(request)
+    경로 = request.url.path
+    if 경로 == "/" or 경로.endswith(NO_CACHE_SUFFIXES):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
 # 배포(Cloudflare)는 알아서 압축하지만 로컬 개발 서버는 아니다.
 # index.html 이 380KB 라 켜고 끄고가 눈에 띄게 다르다.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
@@ -1707,8 +1725,7 @@ def terms() -> FileResponse:
 # 모든 API 라우트를 정의한 뒤 마운트해야 "/" 가 API 를 가리지 않는다.
 
 if paths.FRONTEND.exists():
-    @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(paths.FRONTEND / "index.html")
-
-    app.mount("/", StaticFiles(directory=paths.FRONTEND), name="frontend")
+    # html=True 가 "/" 에 index.html 을 준다. 직접 만든 라우트로 주면 If-None-Match 를
+    # 보지 않아 늘 200 이라, no-cache 와 만나면 매번 116KB 를 다시 받게 된다.
+    # StaticFiles 는 ETag 로 304 를 낸다 — 안 바뀌었으면 한 줄로 끝난다.
+    app.mount("/", StaticFiles(directory=paths.FRONTEND, html=True), name="frontend")

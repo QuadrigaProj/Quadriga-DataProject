@@ -58,3 +58,20 @@ def test_작은_응답까지_압축하지는_않는다():
 
 def test_평소_요청은_그대로_지나간다():
     assert client.get("/health").status_code == 200
+
+
+def test_화면_파일은_늘_다시_확인하게_한다():
+    """배포해도 사람마다 옛 화면이 남아 "고쳤다는데 안 바뀌었다" 가 되풀이됐다.
+    no-cache 는 쓰기 전에 물어보라는 뜻이다 — ETag 가 있으니 안 바뀌었으면 304 다."""
+    for 경로 in ("/", "/js/api.js"):
+        r = client.get(경로)
+        assert r.status_code == 200, 경로
+        assert r.headers.get("cache-control") == "no-cache, must-revalidate", 경로
+        assert r.headers.get("etag"), 경로
+        # 안 바뀌었으면 304 한 줄 — no-cache 가 "매번 다시 받기" 가 되지 않는다
+        assert client.get(경로, headers={"If-None-Match": r.headers["etag"]}).status_code == 304, 경로
+
+
+def test_API_응답에는_붙이지_않는다():
+    r = client.get("/health")
+    assert "cache-control" not in {k.lower() for k in r.headers.keys()}

@@ -3115,7 +3115,8 @@ def test_둘_다_고르면_한_번에_계절_안에_시간대():
     assert "시간대포함: 둘다" in 받기
     축 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
     assert "시간대포함: !!(시간대포함 && 축 === '계절')," in 축
-    assert "delete recoSeason.시간대;" in 축                             # 두 번 말하지 않는다
+    assert "if (융합됨) delete recoSeason.시간대;" in 축                   # 두 번 말하지 않는다
+    assert "계절 안에 시간대까지는 못 받았어요" in 축                    # 안 왔으면 옛 것을 지우지 않고 말한다
 
 
 def test_계절_상자_안에_시간대_줄을_그린다():

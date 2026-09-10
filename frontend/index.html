@@ -495,7 +495,7 @@
 
   /* ===================== SCREEN 4 : 루틴 플레이어 ===================== */
   .player-video{
-    margin:0 22px; margin-top:18px; aspect-ratio:4/3; border-radius:18px; background:linear-gradient(160deg,#2C4B3E,#1F3830);
+    margin:0 22px; margin-top:18px; aspect-ratio:16/9; border-radius:18px; background:linear-gradient(160deg,#2C4B3E,#1F3830);
     display:flex; align-items:center; justify-content:center; position:relative;
   }
   .player-video .play{ width:58px; height:58px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; }
@@ -1429,13 +1429,9 @@
   .notice-modal{ text-align:center; padding:28px 42px 24px; }
   .notice-modal .comm-modal-close{ position:absolute; top:12px; right:12px; }
   .notice-modal p{ margin:0; font-size:15px; font-weight:600; line-height:1.55; }
-  .exercise-video-backdrop{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.65);}
-  .exercise-video-backdrop[hidden]{display:none;}
-  .exercise-video-modal{width:min(100%,800px);max-height:calc(100dvh - 32px);overflow:auto;background:var(--paper);border-radius:18px;padding:16px;}
-  .exercise-video-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;}
-  .exercise-video-head h2{margin:0;font-size:18px;}
-  .exercise-video-frame{width:100%;aspect-ratio:16/9;background:#000;}
-  .exercise-video-frame iframe{display:block;width:100%;height:100%;border:0;}
+  .exercise-video-inline{position:absolute;inset:0;overflow:hidden;border-radius:inherit;background:#000;z-index:1;}
+  .exercise-video-inline[hidden]{display:none;}
+  .exercise-video-inline iframe{display:block;width:100%;height:100%;border:0;}
 </style>
 </head>
 <body>
@@ -1826,6 +1822,7 @@
   <section class="screen" id="s4">
     <div class="content" style="padding:0 0 20px;">
       <div class="player-video">
+        <div id="exerciseVideoFrame" class="exercise-video-inline" hidden></div>
         <div class="player-tag" id="playerTag">1 / 5</div>
         <button type="button" class="play" id="exerciseVideoButton" onclick="openExerciseVideo()" style="font-size:16px;border:0;cursor:pointer;">영상 보기</button>
       </div>
@@ -3598,6 +3595,7 @@ function editSports(){
 
 /* ---- 화면 전환 ---- */
 function goTo(id){
+  if (id !== "s4") stopExerciseVideo();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
   renderMenu(id);
@@ -5618,43 +5616,52 @@ function activeRoutine(){
   return state.routine.filter(s => s.단계 !== '본운동' || ++main <= 2);
 }
 
-// 닫을 때 iframe 자체를 제거하여 재생과 오디오를 중지한다.
-let exerciseVideoReturnFocus = null;
+// 현재 카드 안에서 재생하며 운동이나 화면이 바뀌면 플레이어를 제거한다.
+// 저장된 값은 변경하지 않고 공식 YouTube URL 형식에서 ID만 읽는다.
+function youtubeVideoId(value){
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
+  try {
+    const url = new URL(text);
+    if (!["https:", "http:"].includes(url.protocol)) return null;
+    const host = url.hostname.toLowerCase();
+    const parts = url.pathname.split("/").filter(Boolean);
+    let id = null;
+    if (host === "youtu.be") id = parts[0];
+    else if (["youtube.com", "www.youtube.com", "m.youtube.com", "www.youtube-nocookie.com", "youtube-nocookie.com"].includes(host)) {
+      if (url.pathname === "/watch") id = url.searchParams.get("v");
+      else if (["embed", "shorts", "live"].includes(parts[0])) id = parts[1];
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(id || "") ? id : null;
+  } catch { return null; }
+}
+
 function openExerciseVideo(){
   const step = activeRoutine()[currentStep];
-  if (!step || !/^[A-Za-z0-9_-]{11}$/.test(step.youtube_id || '')) return;
-  exerciseVideoReturnFocus = document.activeElement;
-  $('exerciseVideoTitle').textContent = step.운동명;
-  const iframe = document.createElement('iframe');
+  const video_id = youtubeVideoId(step?.youtube_id);
+  if (!video_id) return;
+  const iframe = document.createElement("iframe");
   iframe.title = step.운동명;
-  iframe.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+  iframe.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
   iframe.allowFullscreen = true;
-  iframe.referrerPolicy = 'strict-origin-when-cross-origin';
-  iframe.src = `https://www.youtube.com/embed/${step.youtube_id}`;
-  $('exerciseVideoFrame').replaceChildren(iframe);
-  $('exerciseVideoModal').hidden = false;
-  $('exerciseVideoClose').focus();
+  iframe.referrerPolicy = "strict-origin-when-cross-origin";
+  // Referer를 차단하지 않으며 실제 서비스 origin을 플레이어에 전달한다.
+  const params = new URLSearchParams({autoplay: "1", controls: "1", playsinline: "1", origin: location.origin});
+  iframe.src = `https://www.youtube.com/embed/${video_id}?${params}`;
+  $("exerciseVideoFrame").replaceChildren(iframe);
+  $("exerciseVideoFrame").hidden = false;
+  $("exerciseVideoButton").hidden = true;
 }
-function closeExerciseVideo(){
-  $('exerciseVideoFrame').replaceChildren();
-  $('exerciseVideoModal').hidden = true;
-  exerciseVideoReturnFocus?.focus();
-  exerciseVideoReturnFocus = null;
+function stopExerciseVideo(){
+  $("exerciseVideoFrame").replaceChildren();
+  $("exerciseVideoFrame").hidden = true;
+  const step = activeRoutine()[currentStep];
+  $("exerciseVideoButton").hidden = !youtubeVideoId(step?.youtube_id);
 }
-function closeExerciseVideoOnBackdrop(event){
-  if (event.target === event.currentTarget) closeExerciseVideo();
-}
-document.addEventListener('keydown', event => {
-  const modal = $('exerciseVideoModal');
-  if (!modal || modal.hidden) return;
-  if (event.key === 'Escape') closeExerciseVideo();
-  if (event.key === 'Tab' && (event.shiftKey || document.activeElement !== $('exerciseVideoClose'))) {
-    event.preventDefault();
-    $('exerciseVideoClose').focus();
-  }
-});
 
 function renderStep(){
+  stopExerciseVideo();
   const list = activeRoutine();
   if (!list.length) {
     $('playerName').textContent = state.routineError || '나이와 목적을 먼저 선택해주세요.';
@@ -5668,7 +5675,7 @@ function renderStep(){
   $('stepBtn').disabled = false;
   if (currentStep > list.length - 1) currentStep = list.length - 1;
   const step = list[currentStep];
-  $('exerciseVideoButton').hidden = !/^[A-Za-z0-9_-]{11}$/.test(step.youtube_id || '');
+  $('exerciseVideoButton').hidden = !youtubeVideoId(step.youtube_id);
   const it = state.intensity || { 세트: 2, 반복: 10, 시간초: 30 };
   $('playerTag').textContent = `${step.단계} · ${currentStep+1} / ${list.length}`;
   $('playerName').textContent = step.운동명;
@@ -7977,14 +7984,5 @@ function paintRecoMode(){
   else if (h.안내) setStatus(h.안내);
 })();
 </script>
-<div class="exercise-video-backdrop" id="exerciseVideoModal" hidden onclick="closeExerciseVideoOnBackdrop(event)">
-  <section class="exercise-video-modal" role="dialog" aria-modal="true" aria-labelledby="exerciseVideoTitle">
-    <div class="exercise-video-head">
-      <h2 id="exerciseVideoTitle"></h2>
-      <button type="button" class="comm-modal-close" id="exerciseVideoClose" onclick="closeExerciseVideo()" aria-label="닫기">×</button>
-    </div>
-    <div class="exercise-video-frame" id="exerciseVideoFrame"></div>
-  </section>
-</div>
 </body>
 </html>

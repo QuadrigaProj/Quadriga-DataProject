@@ -2431,7 +2431,7 @@ def test_홈_카드는_AI가_고른_말을_먼저_쓴다():
 
 def test_자세히_도전하기_버튼이_있다():
     html = _index()
-    assert "이 루틴으로 자세히 도전하기" in html
+    assert "이 루틴 자세히 알아보기" in html
     assert 'onclick="askSeasons()"' in html
 
 
@@ -2681,7 +2681,7 @@ def test_자세히_도전하기는_AI_추천에서만_보인다():
     html = _index()
     actions = html.split("function paintRecommend()")[1]
     actions = actions.split('<div class="reco-actions">')[1].split("</div>")[0]
-    도전 = actions.index("이 루틴으로 자세히 도전하기")
+    도전 = actions.index("이 루틴 자세히 알아보기")
     조건 = actions.index("recoBy === 'ai'")
     assert 조건 < 도전, "AI 일 때만 그리는 조건 안에 있어야 한다"
 

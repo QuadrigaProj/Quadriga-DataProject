@@ -1906,7 +1906,7 @@
           </button>
           <div class="player-name" id="playerName">의자에 앉았다 일어서기</div>
         </div>
-        <div class="player-set" id="playerSet">10회씩 2세트</div>
+        <div class="player-set" id="playerSet">2세트</div>
       <div class="player-alt" id="playerAlt" hidden></div>
       </div>
       <div class="cond-row" id="condRow">
@@ -3500,11 +3500,7 @@ function routineDetailHtml(e){
     .map(p => `<div class="rec-detail-row"><b>${p}</b><span>${묶음[p].join(', ')}</span></div>`)
     .join('');
   const g = e.강도 || {};
-  const 강도 = [
-    g.반복 != null ? `${g.반복}회${g.세트 != null ? `씩 ${g.세트}세트` : ''}` : null,
-    g.시간초 != null ? `시간형 ${g.시간초}초` : null,
-    g.라운드 != null ? `${g.라운드}라운드` : null,
-  ].filter(Boolean).join(' · ');
+  const 강도 = g.세트 != null ? `${g.세트}세트` : '';
   return 단계행 + (강도
     ? `<div class="rec-detail-row"><b>강도</b><span>${강도}</span></div>` : '');
 }
@@ -5904,18 +5900,16 @@ function renderStep(){
   if (currentStep > list.length - 1) currentStep = list.length - 1;
   const step = list[currentStep];
   $('exerciseVideoButton').hidden = !youtubeVideoId(step.youtube_id);
-  const it = state.intensity || { 세트: 2, 반복: 10, 시간초: 30 };
+  const it = state.intensity || { 세트: 2 };
   $('playerTag').textContent = `${step.단계} · ${currentStep+1} / ${list.length}`;
   $('playerName').textContent = step.운동명;
   renderStepPicto(step);
   if (step.단계 === '본운동') {
-    const amount = step.유형 === '시간'
-      ? `${it.시간초 ?? 30}초`
-      : (it.반복 != null ? `${it.반복}회` : (it.라운드 != null ? `${it.라운드}라운드` : '10회'));
-    $('playerSet').textContent = `${amount}씩 ${it.세트 ?? 2}세트` +
+    // 영상을 따라 하는 구조라 횟수·시간은 쓰지 않고 세트 수만 보여준다.
+    $('playerSet').textContent = `${it.세트 ?? 2}세트` +
       (step.도구 && step.도구 !== '맨몸' ? ` · ${step.도구}` : '');
   } else {
-    $('playerSet').textContent = `${it.시간초 ?? 30}초씩 1세트 · ${step.체력요인 || ''}`;
+    $('playerSet').textContent = `${step.단계} · ${step.체력요인 || ''}`;
   }
 
   if (step.부위) $('playerSet').textContent += ` · ${step.부위}`;
@@ -6034,7 +6028,7 @@ function toggleTimer(id){
 
 /* ---- 화면 4 : 오늘 컨디션 ----
    선택지는 "몸이 무거운 날" 토글 하나뿐이다(C9). 아무것도 안 누르면 오늘의 원래 루틴.
-   켜면 서버(/program/routine?heavy=true)가 본운동 2개 · 1세트 · 시간 절반으로 돌려준다.
+   켜면 서버(/program/routine?heavy=true)가 본운동 2개 · 기본보다 한 세트 줄여 돌려준다.
    효과는 아래 안내줄(condHint)에 바로 보여준다. */
 
 function showToast(msg){
@@ -6047,7 +6041,7 @@ function showToast(msg){
 /* "몸이 무거운 날" 토글 상태에 맞는 안내 한 줄. 기본 문구는 마크업(#condHint)의 초기 문구와 같아야 한다. */
 function updateCondHint(){
   $('condHint').textContent = heavyOn
-    ? '본운동을 2개로 줄이고, 세트는 1세트·시간은 절반으로 안내해요.'
+    ? '본운동을 2개로 줄이고, 세트도 한 세트 줄여서 안내해요.'
     : '아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요. 몸이 무거운 날엔 위 버튼을 눌러주세요.';
 }
 
@@ -6058,7 +6052,7 @@ async function toggleHeavy(){
   $('heavyBtn').setAttribute('aria-pressed', String(heavyOn));
   $('heavyBtn').textContent = heavyOn ? '가볍게 진행 중' : '몸이 무거운 날';
   updateCondHint();
-  showToast(heavyOn ? '오늘은 가볍게 — 본운동 2개 · 1세트 · 시간 절반' : '원래 강도로 되돌렸어요');
+  showToast(heavyOn ? '오늘은 가볍게 — 본운동 2개 · 세트 하나 줄임' : '원래 강도로 되돌렸어요');
   try { await loadRoutine(); } catch (e) {}
   currentStep = 0;
   renderStep();

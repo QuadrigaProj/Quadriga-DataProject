@@ -118,11 +118,11 @@ def test_추천에_동작이_자세히_들어온다():
         assert "체력요인" in s and "도구" in s
 
 
-def test_수행량은_주차에_따라_늘어난다():
+def test_수행량은_주차에_따라_세트가_늘어난다():
     앞 = rc.for_user("성인", limit=1, week=1)["강도"]
     뒤 = rc.for_user("성인", limit=1, week=10)["강도"]
-    assert 뒤["세트"] >= 앞["세트"]
-    assert 뒤["반복"] > 앞["반복"]
+    assert 앞["세트"] == 2
+    assert 뒤["세트"] == 3
 
 
 def test_난이도가_붙고_쉬움과_어려움이_모두_나온다():

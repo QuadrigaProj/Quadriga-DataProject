@@ -7545,13 +7545,16 @@ function seasonHtml(){
   </div>`;
 }
 
-/* '이 루틴 자세히 알아보기' — AI 를 한 번 더 부른다. 값이 빠지는 일이라
-   반드시 묻는다. 이미 받아 둔 루틴이면 다시 부르지 않는다. */
+/* '이 루틴 자세히 알아보기' — 계절마다 어떻게 이어갈지 AI 에게 더 물어본다.
+   값은 받지 않는다. AI 추천을 받을 때 이미 치렀고, 이건 그 루틴을 더
+   알아보는 선택 사항이다. 돈이 들지 않으니 묻지 않고 바로 받아 온다.
+   이미 받아 둔 루틴이면 다시 부르지 않는다. */
 async function askSeasons(){
   const x = recoList[recoAt];
   if (!x) return;
+  if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return; }
   if (recoSeason?.루틴명 === x.루틴명) { showToast('이미 받아 둔 계획이에요'); return; }
-  if (!값을치를까(`이 루틴을 계절마다 어떻게 이어갈지 받아볼까요?\n${AI_PRICE}원이 결제됩니다.`)) return;
+  showToast('계절별 계획을 받는 중이에요…');
   try {
     const r = await API.recommendSeasons({
       age_gbn: programAgeGroup(state.age),
@@ -7562,8 +7565,6 @@ async function askSeasons(){
       상태: state.schedule?.상태 || [],
     });
     recoSeason = { 루틴명: r.루틴명 || x.루틴명, 계절: r.계절 || [] };
-    // 차감은 서버가 한다. 화면은 서버가 준 잔액을 그대로 받아 적는다.
-    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
     추천저장();
     paintRecommend();
   } catch (e) {

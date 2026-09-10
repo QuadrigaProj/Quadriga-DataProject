@@ -1521,25 +1521,25 @@ class SeasonIn(BaseModel):
 @app.post("/recommend/seasons")
 def post_recommend_seasons(body: SeasonIn,
                            quadriga_session: str | None = Cookie(None)) -> dict:
-    """'이 루틴으로 자세히 도전하기' — 계절마다 어떻게 이어갈지 (유료).
+    """'이 루틴 자세히 알아보기' — 계절마다 어떻게 이어갈지.
+
+    **값을 받지 않는다.** AI 추천을 받을 때 이미 치렀다. 이건 그 루틴을
+    더 알아보는 선택 사항이라, 누를지는 사용자가 정하고 돈은 다시 들지 않는다.
+    로그인은 있어야 한다 — 남의 이름으로 AI 를 부를 수는 없다.
 
     루틴을 바꾸지 않는다. 이미 고른 루틴 하나를 계절에 맞게 어떻게 할지만
-    쓴다. 네 계절이 다 나오지 않으면 버리고, 버렸으면 값을 받지 않는다.
+    쓴다. 네 계절이 다 나오지 않으면 버린다.
     """
     if not air.available():
         raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
-    누구 = _require_user(quadriga_session)
-    if billing.balance(누구["id"]) < AI_PRICE:
-        raise HTTPException(402, "이용권이 모자라요. 먼저 충전해 주세요.")
+    _require_user(quadriga_session)
 
     참고 = {"약점": body.약점, "고른종목": body.고른종목,
           "조심할부위": body.조심할부위}
     계절 = air.seasons(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태))
-    # 못 받았으면 한 푼도 받지 않는다. 안 쓴 것에 돈을 받지 않는다.
     if not 계절:
         raise HTTPException(503, "지금은 계절별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
-    잔액 = billing.spend(누구["id"], AI_PRICE, "계절별 도전 계획")
-    return {"계절": 계절, "잔액": 잔액, "루틴명": body.루틴.get("루틴명")}
+    return {"계절": 계절, "루틴명": body.루틴.get("루틴명")}
 
 
 # ---------- 11. 당일 기록 종목 ----------

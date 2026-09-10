@@ -527,14 +527,16 @@ def test_하루의_모습을_프롬프트에_적어_보낸다(monkeypatch):
     assert "루틴을 바꾸지 마세요" in 본["시스템"]
 
 
-def test_계절_엔드포인트가_값을_받는다(monkeypatch):
+def test_계절_엔드포인트는_값을_받지_않는다(monkeypatch):
+    """AI 추천을 받을 때 이미 치렀다. 더 알아보는 건 선택 사항이고 돈이 다시 들지 않는다."""
     _fake_sdk(monkeypatch, _네계절())
     a = _paid(1000)
     d = a.post("/recommend/seasons",
                json={"age_gbn": "성인", "루틴": 루틴, "상태": "학생"}).json()
     assert [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"]
-    assert d["잔액"] == 900
     assert d["루틴명"] == "전신 HIIT"
+    assert "잔액" not in d                                # 잔액을 건드리지 않는다
+    assert a.get("/credit").json()["잔액"] == 1000        # 한 푼도 안 빠졌다
 
 
 def test_못_받았으면_한_푼도_안_깎는다(monkeypatch):
@@ -546,12 +548,20 @@ def test_못_받았으면_한_푼도_안_깎는다(monkeypatch):
     assert a.get("/credit").json()["잔액"] == 1000
 
 
-def test_이용권이_모자라면_부르지_않는다(monkeypatch):
+def test_이용권이_없어도_알아볼_수_있다(monkeypatch):
+    """무료라서 이용권이 0 이어도 된다."""
     _fake_sdk(monkeypatch, _네계절())
     a = _paid(0)
     r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
-    assert r.status_code == 402
-    assert "이용권" in r.json()["detail"]
+    assert r.status_code == 200
+    assert len(r.json()["계절"]) == 4
+
+
+def test_계절_경로에는_차감이_없다():
+    import inspect
+    from backend import main as m
+    src = inspect.getsource(m.post_recommend_seasons)
+    assert "billing.spend" not in src and "AI_PRICE" not in src
 
 
 def test_로그인하지_않으면_부르지_않는다(monkeypatch):

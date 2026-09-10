@@ -65,6 +65,8 @@ const API = (() => {
     recommendWithSchedule: (b) => post('/recommend/routines', b),
     // '이 루틴으로 자세히 도전하기' — 계절마다 어떻게 이어갈지 (유료)
     recommendSeasons: (b) => post('/recommend/seasons', b),
+    // 구간을 골라 본다 — 계절별 | 시간대별. 값이 들지 않는다
+    recommendPeriods: (b) => post('/recommend/periods', b),
     activityAge: (b) => post('/fitness-age/activity', b),
     activityAgeDays: (b) => post('/fitness-age/activity/days', b),
     // 이용권 결제 (J2). 카드번호 같은 건 오가지 않는다 — 금액과 주문번호뿐이다.

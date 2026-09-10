@@ -1905,6 +1905,9 @@
         <label class="edit-row"><span>목표 체력나이</span>
           <input id="editTarget" type="number" min="5" max="100" inputmode="numeric"
                  oninput="markDirty()" /></label>
+        <div class="edit-row"><span>건강 상태</span>
+          <span class="my-id" id="editHealth" style="font-family:inherit">없음</span>
+          <button type="button" class="friend-copy" onclick="openHealth()">적기</button></div>
         <div class="edit-note">
           로고와 홈 화면의 게이지는 이 값을 그립니다.
           <b>초록</b>은 0세부터 목표까지, <b>주황 점</b>은 현재 체력나이,
@@ -2390,6 +2393,7 @@ const state = {
   pinnedRooms: [],     // '내 채팅' 에서 위에 붙여 둔 방 id — 사람마다 다른 취향이라 스냅샷에 담는다
   schedule: null,      // 짬시간: {상태, 바쁜시간:{월:[{시작,끝}], ...}} — 적은 사람만 쓴다
   aiRoutine: null,     // AI 가 지어 준 루틴으로 시작했을 때 그 루틴 (플레이어가 이걸 돈다)
+  health: null,        // 건강 상태 {항목:[...], 직접:''} — AI 가 해로운 동작을 빼는 데 쓴다. 적은 사람만
   commute: null,       // F2: {from, to} 마지막 입력 (기기 간 이어보기용)
   styleTest: null,     // F1: {answers:[…], result:{…}, date}
   workoutLog: [],      // G3/G4: 루틴 말고 직접 적은 운동 [{date, items:[{id, 이름, 값:{세트,횟수,…}}]}]
@@ -2784,6 +2788,7 @@ function pickSex(sex){
 }
 
 function renderEdit(){
+  paintHealthSummary();
   $('editName').value = state.user || '';
   showMyHandle();
   $('editAge').value = state.age ?? '';
@@ -3012,6 +3017,7 @@ function snapshot(){
     activityAge: state.activityAge,
     schedule: state.schedule,
     aiRoutine: state.aiRoutine,
+    health: state.health,
     commute: state.commute,
     styleTest: state.styleTest,
     updated: new Date().toISOString().slice(0, 10),
@@ -3074,6 +3080,8 @@ function applyProfile(saved){
                     && saved.schedule.바쁜시간) ? saved.schedule : null;
   state.aiRoutine = (saved?.aiRoutine?.구성 === 'ai' && Array.isArray(saved.aiRoutine.steps)
                      && saved.aiRoutine.steps.length) ? saved.aiRoutine : null;
+  state.health = (saved?.health && typeof saved.health === 'object'
+                  && (Array.isArray(saved.health.항목) || saved.health.직접)) ? saved.health : null;
   state.commute = (saved?.commute && saved.commute.from && saved.commute.to)
     ? { from: String(saved.commute.from), to: String(saved.commute.to) } : null;
   state.styleTest = (saved?.styleTest && typeof saved.styleTest === 'object' && saved.styleTest.result) ? saved.styleTest : null;
@@ -4783,6 +4791,112 @@ async function leaveFromMembers(){
   } catch (e) { showToast(e.message); }
 }
 function stopChatPoll(){ if (COMM.poll) { clearInterval(COMM.poll); COMM.poll = null; } }
+
+/* ---------------------------------------------------------------------------
+   건강 상태 — AI 가 해로운 동작을 빼고 도움이 되는 쪽을 고르는 데 쓴다.
+
+   진단이 아니다. 사용자가 스스로 아는 것을 적는 자리다. 약봉지·처방전 사진은
+   후보를 채워 주는 보조일 뿐 — 읽은 것을 곧바로 저장하지 않고, 사용자가 보고
+   고친 뒤 저장을 누른다. 사진은 서버에도 남지 않는다.
+   --------------------------------------------------------------------------- */
+const HEALTH_KINDS = ['무릎 통증', '허리 통증', '어깨·목 통증', '손목·발목 통증',
+                      '고혈압', '당뇨', '심장 질환', '천식·호흡기', '골다공증', '관절염',
+                      '임신·출산 후', '수술·부상 회복 중', '어지럼·빈혈', '비만'];
+const HEALTH_MAX = 8;
+let HEALTH = null;
+
+/* 저장·전송에 쓰는 한 목록 — 고른 것 + 직접 적은 것(쉼표로 여럿) */
+function healthList(src){
+  const h = src || state.health;
+  if (!h) return [];
+  const 적은것 = String(h.직접 || '').split(/[,،、\n]/).map(x => x.trim().slice(0, 20)).filter(Boolean);
+  return [...new Set([...(h.항목 || []), ...적은것])].slice(0, 20);
+}
+
+function openHealth(){
+  HEALTH = { 항목: [...(state.health?.항목 || [])], 직접: state.health?.직접 || '' };
+  openSheet('내 건강 상태', '');
+  renderHealth();
+}
+
+function renderHealth(){
+  const box = $('sheetBody');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="share-field">
+      <label>운동할 때 신경 써야 할 몸 상태가 있나요? <span class="sch-hint">여러 개 고를 수 있어요</span></label>
+      <div class="share-pick" id="healthKind">${HEALTH_KINDS.map(k =>
+        `<button type="button" class="${HEALTH.항목.includes(k) ? 'on' : ''}"
+           onclick="pickHealth('${k}')">${k}</button>`).join('')}</div>
+      <input type="text" id="healthOther" class="sch-other" maxlength="80"
+             placeholder="그 밖의 상태 (쉼표로 여러 개)"
+             value="${esc(HEALTH.직접 || '')}" oninput="setHealthOther(this.value)" />
+    </div>
+    <div class="share-field">
+      <button type="button" class="sch-photo" onclick="$('healthPhotoFile').click()">
+        약봉지·처방전 사진으로 채우기</button>
+      <input type="file" id="healthPhotoFile" accept="image/*" hidden onchange="onHealthPhoto(event)" />
+      <div class="edit-note">사진은 고르는 걸 도울 뿐이에요. 읽은 것은 저장 전에 고칠 수 있고, 사진은 남지 않아요.
+        진단이 아니며, 심한 상태면 의사와 먼저 상의하세요.</div>
+    </div>
+    <div class="prof-actions">
+      <button type="button" onclick="saveHealth()">저장</button>
+    </div>`;
+}
+
+function pickHealth(k){
+  const i = HEALTH.항목.indexOf(k);
+  if (i >= 0) { HEALTH.항목.splice(i, 1); }
+  else if (HEALTH.항목.length >= HEALTH_MAX) { showToast(`${HEALTH_MAX}개까지 고를 수 있어요`); return; }
+  else { HEALTH.항목.push(k); }
+  renderHealth();
+}
+function setHealthOther(v){ HEALTH.직접 = v; }
+
+async function saveHealth(){
+  const 목록 = healthList(HEALTH);
+  state.health = 목록.length ? { 항목: HEALTH.항목, 직접: (HEALTH.직접 || '').trim() } : null;
+  await saveProfile();
+  closeSheet();
+  paintHealthSummary();
+  if ($('s12')?.classList.contains('active')) renderRecommend();
+  showToast(목록.length ? '건강 상태를 저장했어요. 다음 AI 추천부터 반영돼요' : '건강 상태를 비웠어요');
+}
+
+/* 약봉지·처방전 사진 → 후보를 채운다. 저장은 사용자가 누른다. */
+async function onHealthPhoto(ev){
+  const f = ev.target.files?.[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (f.size > 4 * 1024 * 1024) { showToast('사진이 너무 커요. 4MB 아래로 줄여주세요'); return; }
+  if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return; }
+  const 사진 = await new Promise((ok, no) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result);
+    r.onerror = () => no(new Error('사진을 읽지 못했어요'));
+    r.readAsDataURL(f);
+  }).catch(() => null);
+  if (!사진) { showToast('사진을 읽지 못했어요'); return; }
+  showToast('사진을 읽는 중이에요…');
+  try {
+    const r = await API.healthPhoto({ 사진 });
+    // 이미 고른 것을 지우지 않는다. 읽어 온 것을 얹기만 한다.
+    (r.건강상태 || []).forEach(x => {
+      if (HEALTH_KINDS.includes(x)) { if (!HEALTH.항목.includes(x) && HEALTH.항목.length < HEALTH_MAX) HEALTH.항목.push(x); }
+      else if (!(HEALTH.직접 || '').includes(x)) HEALTH.직접 = [HEALTH.직접, x].filter(Boolean).join(', ');
+    });
+    renderHealth();
+    showToast(r.안내 || '읽어왔어요. 맞는지 보고 고친 뒤 저장해주세요');
+  } catch (e) { showToast(e.message); }
+}
+
+/* 프로필 화면의 한 줄 요약 */
+function paintHealthSummary(){
+  const el = $('editHealth');
+  if (!el) return;
+  const 목록 = healthList();
+  el.textContent = 목록.length ? 목록.join(' · ') : '없음';
+}
 
 /* 창으로 돌아오면 밀린 대화를 바로 받아 온다 — 다음 4초를 기다리지 않는다. */
 document.addEventListener('visibilitychange', () => {
@@ -7347,6 +7461,10 @@ function aiIntroHtml(){
       state.schedule?.바쁜시간 && Object.keys(state.schedule.바쁜시간).length
         ? '내 일정 고치기 — 비는 시간까지 함께 짜 드려요'
         : '내 일정 넣기 (선택) — 비는 시간까지 함께 짜 드려요'}</button>
+    <button type="button" class="spare-set" id="healthOpen" onclick="openHealth()">${
+      healthList().length
+        ? `내 건강 상태 고치기 — ${esc(healthList().join(' · '))}`
+        : '내 건강 상태 적기 (선택) — 해로운 동작은 빼고 짜 드려요'}</button>
     <div class="reco-actions">
       <button type="button" class="reco-btn go" onclick="askAiRecommend()"
               ${확인중 || 못씀 || 모자람 ? 'disabled' : ''}>AI 추천 받기</button>
@@ -7417,6 +7535,7 @@ async function fetchRecommend(ai){
           항목별: state.result?.항목별 || {},
           체력나이: state.result?.체력나이 ?? null,
           최근기록: recentWorkouts(14),
+          건강상태: healthList(),
         })
       : await API.recommendRoutines({
           age_gbn: pg,
@@ -7603,6 +7722,7 @@ async function fetchPeriods(축){
       조심할부위: recoCare,
       상태: state.schedule?.상태 || [],
       바쁜시간: state.schedule?.바쁜시간 || {},
+      건강상태: healthList(),
       축,
     });
     // 다른 루틴의 것을 이어 담지 않는다. 같은 루틴이면 축을 하나 더 얹는다.

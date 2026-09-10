@@ -852,3 +852,113 @@ def test_seasons_주소는_계절_축_그대로(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
     d = _paid(0).post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴}).json()
     assert d["축"] == "계절" and [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"]
+
+
+# ---------- 건강 상태 ----------
+
+def _잡는_sdk(monkeypatch, 응답: str):
+    """프롬프트를 잡아 두는 가짜 SDK. 잡은 것은 dict 로 돌려준다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"] if isinstance(kw["messages"][0]["content"], str) else ""
+            본["시스템"] = kw["system"]
+            return _Msg(응답)
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    return 본
+
+
+def test_건강_상태가_짓는_프롬프트에_실린다(monkeypatch):
+    """무릎이 아픈 사람에게 점프를 시키지 않으려면 AI 가 그걸 알아야 한다."""
+    본 = _잡는_sdk(monkeypatch, _지은응답())
+    a = _paid(1000)
+    d = a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3,
+                                           "건강상태": ["무릎 통증", "고혈압", " 고혈압 ", "x" * 50]}).json()
+    assert d["출처"] == "ai"
+    assert "무릎 통증" in 본["글"] and "고혈압" in 본["글"]
+    assert 본["글"].count("고혈압") == 1                 # 겹치면 하나
+    assert "x" * 21 not in 본["글"]                     # 길면 자른다
+    assert "건강 상태가 있으면 그에 맞춥니다" in 본["시스템"]
+    assert "의사와 상의하세요" in 본["시스템"]
+
+
+def test_건강_상태가_구간별_프롬프트에도_실린다(monkeypatch):
+    본 = _잡는_sdk(monkeypatch, _네계절())
+    _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
+                                              "건강상태": ["허리 통증"]})
+    assert "허리 통증" in 본["글"]
+    assert "건강 상태가 있으면 그에 맞춥니다" in 본["시스템"]
+
+
+def test_건강_상태가_없으면_빈_목록이다(monkeypatch):
+    본 = _잡는_sdk(monkeypatch, _지은응답())
+    _paid(1000).post("/recommend/routines", json={"age_gbn": "성인", "limit": 3})
+    assert '"건강 상태": []' in 본["글"]
+
+
+# ---------- 약봉지 사진 → 후보 ----------
+
+def test_약봉지_사진에서_후보를_읽는다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"건강상태":["고혈압","무릎 통증","고혈압",7,"x"],"메모":"무릎에 무리 가는 동작은 피하세요"}')
+    r = air.read_health_photo("A" * 400, "image/png")
+    assert r["건강상태"] == ["고혈압", "무릎 통증", "x"]        # 겹침 제거, 문자열만
+    assert r["메모"] == "무릎에 무리 가는 동작은 피하세요"
+
+
+def test_후보는_여덟_개까지(monkeypatch):
+    _fake_sdk(monkeypatch, '{"건강상태":' + str([f"상태{i}" for i in range(12)]).replace("'", '"') + '}')
+    assert len(air.read_health_photo("A" * 400, "image/png")["건강상태"]) == air.HEALTH_MAX_ITEMS
+
+
+@pytest.mark.parametrize("본문", ['{"건강상태":"고혈압"}', '{"메모":"x"}', "JSON 아님", ""])
+def test_모양이_다르면_None(monkeypatch, 본문):
+    _fake_sdk(monkeypatch, 본문)
+    assert air.read_health_photo("A" * 400, "image/png") is None
+
+
+def test_약봉지가_아니면_빈_목록(monkeypatch):
+    _fake_sdk(monkeypatch, '{"건강상태":[],"메모":""}')
+    assert air.read_health_photo("A" * 400, "image/png") == {"건강상태": [], "메모": ""}
+
+
+def test_사진_프롬프트는_개인_정보를_옮기지_말라고_한다():
+    assert "약 이름·용량·병원 이름·사람 이름은 옮기지 마세요" in air.HEALTH_PHOTO_SYSTEM
+    assert "진단을 내리지 않습니다" in air.HEALTH_PHOTO_SYSTEM
+
+
+def test_건강_사진_엔드포인트는_값을_받지_않는다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"건강상태":["당뇨"],"메모":"식후에 가볍게"}')
+    a = _paid(0)                                     # 이용권이 없어도 된다
+    d = a.post("/health/photo", json={"사진": 사진}).json()
+    assert d["건강상태"] == ["당뇨"] and d["메모"] == "식후에 가볍게"
+    assert "잔액" not in d and a.get("/credit").json()["잔액"] == 0
+
+
+def test_건강_사진이_아니면_왜_비었는지_알려준다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"건강상태":[],"메모":""}')
+    d = _paid(0).post("/health/photo", json={"사진": 사진}).json()
+    assert d["건강상태"] == [] and "직접 골라주세요" in d["안내"]
+
+
+def test_건강_사진도_크기와_형식과_로그인을_본다(monkeypatch):
+    _fake_sdk(monkeypatch, '{"건강상태":[]}')
+    a = _paid(0)
+    assert a.post("/health/photo", json={"사진": "data:image/png;base64," + "A" * 6_000_000}).status_code == 413
+    assert a.post("/health/photo", json={"사진": "data:image/heic;base64,AAAA"}).status_code == 415
+    assert TestClient(app).post("/health/photo", json={"사진": 사진}).status_code in (401, 403)
+
+
+def test_건강_사진은_저장하지_않는다():
+    """읽은 후보를 서버가 어디에도 남기지 않는다 — 화면이 보여 주고 사용자가 정한다."""
+    import inspect
+    from backend import main as m
+    src = inspect.getsource(m.post_health_photo)
+    assert "con.execute" not in src and "billing." not in src and "saveProfile" not in src

@@ -100,6 +100,8 @@ const API = (() => {
     sparePlan: (b) => post('/spare-time/plan', b),
     // 시간표 사진에서 바쁜 시간을 읽는다 (유료). 저장은 사용자가 확인한 뒤에
     schedulePhoto: (b) => post('/schedule/photo', b),
+    // 약봉지·처방전 사진에서 건강 상태 후보를 읽는다. 값이 들지 않고 저장하지 않는다
+    healthPhoto: (b) => post('/health/photo', b),
     commMeta: () => call('/community/meta'),
     commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),
     commPost: (b) => post('/community/posts', b),

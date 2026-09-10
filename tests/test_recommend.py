@@ -217,3 +217,13 @@ def test_더_달라고_해도_있는_만큼만():
     assert len(전부) == len(rc.score("성인", limit=len(전부) + 50))
     번호 = [(x["목적"], x["루틴번호"]) for x in 전부]
     assert len(번호) == len(set(번호)), "같은 루틴이 두 번 나왔다"
+
+
+def test_limit_60_이면_전부_준다():
+    """'더 어려운 루틴' 이 지금 목록 밖에 있을 때 화면이 전체를 받아 온다."""
+    d = client.get("/recommend/routines", params={"age_gbn": "성인", "limit": 60, "ai": 0}).json()
+    전부 = rc.score("성인", limit=999)
+    assert len(d["추천"]) == len(전부)
+    assert max(x["난이도점수"] for x in d["추천"]) == max(x["난이도점수"] for x in 전부)
+    assert client.get("/recommend/routines",
+                      params={"age_gbn": "성인", "limit": 61}).status_code == 422

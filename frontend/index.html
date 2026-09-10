@@ -7408,6 +7408,7 @@ async function fetchRecommend(ai){
           ai: ai ? 1 : 0,
         });
     recoList = r.추천 || [];
+    전체받음 = false;
     recoSpare = r.짬시간계획 || null;
     recoSeason = null;          // 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
     recoCare = r.조심할부위 || [];
@@ -7490,8 +7491,8 @@ function paintRecommend(){
       <div class="rec-by">${recoBy === 'ai' ? `AI 가 지었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
         ${지은것 ? '' : `<button type="button" class="reco-btn" onclick="backRecommend()" ${recoBack.length ? '' : 'disabled'}>이전 루틴</button>
-        <button type="button" class="reco-btn" onclick="easierRecommend()" ${쉬움 < 0 ? 'disabled' : ''}>더 쉬운 루틴</button>
-        <button type="button" class="reco-btn" onclick="harderRecommend()" ${어려움 < 0 ? 'disabled' : ''}>더 어려운 루틴</button>`}
+        <button type="button" class="reco-btn" onclick="easierRecommend()">더 쉬운 루틴</button>
+        <button type="button" class="reco-btn" onclick="harderRecommend()">더 어려운 루틴</button>`}
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
           onclick="askSeasons()">이 루틴으로 자세히 도전하기</button>
@@ -7573,8 +7574,57 @@ function goRecommend(i){
   paintRecommend();
 }
 
-function easierRecommend(){ goRecommend(recoStep(-1)); }
-function harderRecommend(){ goRecommend(recoStep(1)); }
+/* 더 쉬운·더 어려운 루틴. 버튼은 잠그지 않는다 — 잠긴 버튼은 왜 안 되는지
+   말해 주지 않는다.
+
+   지금 목록(12개)에 갈 곳이 없으면 무료 추천 전체를 받아 와 목록에 얹고
+   다시 찾는다. 12개는 화면이 넉넉하라고 자른 것이지, 더 어려운 루틴이
+   없다는 뜻이 아니다. 전체를 받아도 없으면 그때 정말 없는 것이니 그렇게
+   말한다. 무료라서 더 받아 오는 데 값이 들지 않는다. */
+let 전체받음 = false;          // 이번 목록에 이미 전체를 얹었는지
+
+async function stepRecommend(dir){
+  if (recoList[recoAt]?.구성 === 'ai') return;          // 지은 루틴은 하나다
+  let i = recoStep(dir);
+  if (i < 0 && !전체받음) {
+    await 전체추천얹기();
+    i = recoStep(dir);
+  }
+  if (i < 0) {
+    showToast(dir > 0 ? '이보다 어려운 루틴은 없어요. 지금이 가장 어려운 루틴이에요'
+                      : '이보다 쉬운 루틴은 없어요. 지금이 가장 쉬운 루틴이에요');
+    return;
+  }
+  goRecommend(i);
+}
+
+/* 무료 추천 전체를 받아 지금 목록 뒤에 얹는다. 이미 있는 루틴은 건너뛴다 —
+   보고 있던 자리가 밀리면 안 된다. */
+async function 전체추천얹기(){
+  전체받음 = true;
+  const 약점 = weakFactors();
+  try {
+    const r = await API.recommendRoutines({
+      age_gbn: programAgeGroup(state.age),
+      weak: 약점.join(','),
+      style_purpose: state.styleTest?.result?.추천목적 || null,
+      sports: (state.sports || []).join(','),
+      week: programWeek(),
+      limit: 60,
+      ai: 0,
+    });
+    const 있음 = new Set(recoList.map(x => `${x.목적}|${x.루틴번호}`));
+    (r.추천 || []).forEach(x => {
+      const 열쇠 = `${x.목적}|${x.루틴번호}`;
+      if (!있음.has(열쇠)) { 있음.add(열쇠); recoList.push(x); }
+    });
+    추천저장();
+  } catch (e) { /* 못 받았으면 지금 목록으로만 판단한다 */ }
+}
+
+/* 기다릴 수 있게 약속을 돌려준다 — 전체를 받아 오는 동안 누가 기다려야 할 수 있다 */
+function easierRecommend(){ return stepRecommend(-1); }
+function harderRecommend(){ return stepRecommend(1); }
 
 function backRecommend(){
   if (!recoBack.length) return;

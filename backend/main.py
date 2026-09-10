@@ -1290,7 +1290,7 @@ class RecommendIn(BaseModel):
     style_purpose: str | None = None
     sports: list[str] = Field(default_factory=list, max_length=100)
     target_gap: float | None = None
-    limit: int = Field(12, ge=1, le=30)
+    limit: int = Field(12, ge=1, le=60)
     week: int = Field(1, ge=1, le=13)
     ai: bool = True
     real_age: float | None = Field(None, ge=5, le=110)
@@ -1313,7 +1313,7 @@ def get_recommend_routines(
     style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
-    limit: int = Query(12, ge=1, le=30, description="난이도를 오갈 수 있게 넉넉히 준다"),
+    limit: int = Query(12, ge=1, le=60, description="난이도를 오갈 수 있게 넉넉히 준다. 60이면 전부다"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
     quadriga_session: str | None = Cookie(None),

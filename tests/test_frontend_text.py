@@ -2435,13 +2435,16 @@ def test_자세히_도전하기_버튼이_있다():
     assert 'onclick="askSeasons()"' in html
 
 
-def test_값이_빠지기_전에_반드시_묻는다():
-    """버튼만 눌러도 결제되는 일이 없어야 한다."""
+def test_자세히_알아보기는_값을_받지_않고_묻지도_않는다():
+    """AI 추천을 받을 때 이미 치렀다. 돈이 들지 않으니 결제 확인창이 없다."""
     html = _index()
     본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
-    assert "값을치를까(" in 본문
-    assert "원이 결제됩니다" in 본문
-    assert 본문.index("값을치를까(") < 본문.index("API.recommendSeasons")
+    assert "값을치를까(" not in 본문
+    assert "confirm(" not in 본문
+    assert "원이 결제됩니다" not in 본문
+    assert "API.recommendSeasons" in 본문
+    assert "state.credit" not in 본문                 # 잔액을 만지지 않는다
+    assert "recoAiReady" in 본문                      # 쓸 수 있는지는 본다
 
 
 def test_이미_받아_둔_루틴이면_다시_부르지_않는다():
@@ -2469,10 +2472,15 @@ def test_계절_계획도_추천과_함께_남는다():
 
 
 def test_차감은_서버가_준_잔액을_받아_적는다():
+    """값이 빠지는 곳(AI 추천 · 시간표 사진)은 서버가 준 잔액을 받아 적을 뿐,
+    화면이 스스로 깎지 않는다. 자세히 알아보기는 무료라 잔액을 만지지 않는다."""
     html = _index()
-    본문 = html.split("async function askSeasons()")[1].split("\n}")[0]
-    assert "state.credit = r['잔액']" in 본문
-    assert "state.credit -=" not in 본문      # 화면이 스스로 깎지 않는다
+    for 함수 in ("async function fetchRecommend(ai)", "async function onSchedulePhoto(ev)"):
+        본문 = html.split(함수)[1].split("\n}")[0]
+        assert "state.credit = r['잔액']" in 본문, 함수
+        assert "state.credit -=" not in 본문, 함수
+    계절 = html.split("async function askSeasons()")[1].split("\n}")[0]
+    assert "state.credit" not in 계절
 
 
 # ---------- 일정은 AI 추천에서만 ----------
@@ -2666,14 +2674,15 @@ def test_게이지는_점만_옮기는_길을_따로_둔다():
 # ---------- 값이 빠지기 전 확인은 한 자리에서 ----------
 
 def test_유료_확인은_한_자리에서_한다():
-    """세 군데가 같은 순서로 물어야 한다 — 한 곳만 빠지면 그 버튼만 묻지 않고 돈이 빠진다."""
+    """값이 빠지는 곳은 같은 순서로 물어야 한다 — 한 곳만 빠지면 그 버튼만 묻지 않고 돈이 빠진다.
+    (자세히 알아보기는 무료라 여기 없다.)"""
     html = _index()
     본문 = html.split("function 값을치를까(물음)")[1].split("\n}")[0]
     assert "recoAiReady" in 본문                       # 쓸 수 있는지
     assert "(state.credit || 0) < AI_PRICE" in 본문    # 이용권이 남았는지
     assert "return confirm(물음);" in 본문             # 정말 할 것인지
     # 부르는 곳은 셋. 각자 confirm 을 따로 부르지 않는다.
-    assert html.count("값을치를까(") == 4              # 정의 1 + 부르는 곳 3
+    assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2 (AI 추천 · 시간표 사진)
 
 
 def test_자세히_도전하기는_AI_추천에서만_보인다():

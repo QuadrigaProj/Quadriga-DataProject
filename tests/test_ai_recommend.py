@@ -962,3 +962,65 @@ def test_건강_사진은_저장하지_않는다():
     from backend import main as m
     src = inspect.getsource(m.post_health_photo)
     assert "con.execute" not in src and "billing." not in src and "saveProfile" not in src
+
+
+# ---------- 시작일 — 그날의 계절·날씨에 맞춘다, 계절은 거기서 출발한다 ----------
+
+def _네계절_순서(순서) -> str:
+    안 = ", ".join('{"계절":"%s","한줄":"%s에는 이렇게","할것":["가볍게"],"조심":""}' % (c, c) for c in 순서)
+    return '{"계절":[' + 안 + ']}'
+
+
+def test_시작일이_짓는_프롬프트에_실리고_응답에도_돌아온다(monkeypatch):
+    본 = _잡는_sdk(monkeypatch, _지은응답())
+    from backend import season as ssn
+    monkeypatch.setattr(ssn, "fetch_weather", lambda *a, **k: {"최고": 8, "최저": -2, "하늘": "눈", "습도": 40, "강수확률": 70, "기준": "서울"})
+    a = _paid(1000)
+    d = a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3, "시작일": "2027-01-20"}).json()
+    assert d["출처"] == "ai"
+    assert '"시작일": "2027-01-20"' in 본["글"] and '"계절": "겨울"' in 본["글"] and '"하늘": "눈"' in 본["글"]
+    assert "시작일과 그날의 계절·날씨(예보)가 있으면 그에 맞춥니다" in 본["시스템"]
+    assert d["추천"][0]["시작"]["계절"] == "겨울" and d["추천"][0]["시작"]["날씨"]["하늘"] == "눈"
+
+
+def test_시작일이_없으면_시작_없이_짓는다(monkeypatch):
+    본 = _잡는_sdk(monkeypatch, _지은응답())
+    d = _paid(1000).post("/recommend/routines", json={"age_gbn": "성인", "limit": 3}).json()
+    assert '"시작": null' in 본["글"] and "시작" not in d["추천"][0]
+
+
+def test_계절_계획은_시작_계절부터_한_바퀴(monkeypatch):
+    """봄에 받았다고 봄부터가 아니다. 가을에 시작하면 가을·겨울·봄·여름."""
+    본 = _잡는_sdk(monkeypatch, _네계절_순서(["가을", "겨울", "봄", "여름"]))
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
+                                                  "시작일": "2027-10-05"}).json()
+    assert [x["계절"] for x in d["계절"]] == ["가을", "겨울", "봄", "여름"]
+    assert d["시작"]["계절"] == "가을"
+    assert "가을·겨울·봄·여름 네 개를 모두, **이 순서로**" in 본["시스템"]
+    assert '"계절": "가을"' in 본["글"]                       # 첫 구간이 어디서 출발하는지 AI 도 안다
+
+
+def test_봄부터_돌려줘도_시작_계절_순서로_다시_세운다(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절_순서(["봄", "여름", "가을", "겨울"]))
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
+                                                  "시작일": "2027-07-01"}).json()
+    assert [x["계절"] for x in d["계절"]] == ["여름", "가을", "겨울", "봄"]
+
+
+def test_시작일이_없으면_계절은_봄부터(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
+    assert [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"] and "시작" not in d
+
+
+def test_시간대는_시작일과_상관없이_아침부터(monkeypatch):
+    _fake_sdk(monkeypatch, _네시간대())
+    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "시간대",
+                                                  "시작일": "2027-10-05"}).json()
+    assert [x["시간대"] for x in d["시간대"]] == ["아침", "낮", "저녁", "밤"]
+
+
+def test_구간_묶음이_그_축의_것이_아니면_None(monkeypatch):
+    _fake_sdk(monkeypatch, _네계절())
+    assert air.periods(루틴, {}, "성인", None, 축="계절", 구간들=("봄", "여름")) is None
+    assert air.periods(루틴, {}, "성인", None, 축="계절", 구간들=("아침", "낮", "저녁", "밤")) is None

@@ -47,6 +47,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import billing
     from backend import community
     from backend import spare_time as spare
+    from backend import season as ssn
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -69,6 +70,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import billing                          # noqa: E402
     import community                        # noqa: E402
     import spare_time as spare              # noqa: E402
+    import season as ssn  # type: ignore
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -1306,6 +1308,9 @@ class RecommendIn(BaseModel):
                               description="[{date, 이름, 값}] 최근 2주. 화면이 추린다")
     건강상태: list[str] = Field(default_factory=list, max_length=20,
                              description="사용자가 적어 둔 건강 상태. AI 가 해로운 동작을 뺀다")
+    시작일: str | None = Field(None, description="루틴을 시작할 날 (YYYY-MM-DD). 그날의 계절·날씨에 맞춘다")
+    위도: float | None = Field(None, ge=-90, le=90)
+    경도: float | None = Field(None, ge=-180, le=180)
 
 
 @app.get("/recommend/routines")
@@ -1351,7 +1356,8 @@ def post_recommend_routines(body: RecommendIn,
         life_kind=_life_kinds(body.상태),
         profile={"항목별": body.항목별, "체력나이": body.체력나이,
                  "최근기록": body.최근기록[:30],
-                 "건강상태": _short_list(body.건강상태)})
+                 "건강상태": _short_list(body.건강상태),
+                 "시작": ssn.start_info(body.시작일, body.위도, body.경도)})
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
@@ -1425,10 +1431,13 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 "하루의 모습": life_kind or [],
                 "최근 기록": ((profile or {}).get("최근기록") or [])[:30],
                 "건강 상태": (profile or {}).get("건강상태") or [],
+                "시작": (profile or {}).get("시작"),   # {시작일, 계절, 날씨(예보)} 또는 None
             }
             지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
             # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
             if 지음 and 지음.get("루틴"):
+                if (profile or {}).get("시작"):
+                    지음["루틴"]["시작"] = profile["시작"]
                 out["추천"] = [지음["루틴"]]
                 out["출처"] = "ai"
                 if 지음.get("짬시간"):
@@ -1566,6 +1575,9 @@ class SeasonIn(BaseModel):
     바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
                                         description="시간대별로 볼 때 비는 시간을 알려면")
     건강상태: list[str] = Field(default_factory=list, max_length=20)
+    시작일: str | None = Field(None, description="계절별로 볼 때 첫 계절은 이 날의 계절이다")
+    위도: float | None = Field(None, ge=-90, le=90)
+    경도: float | None = Field(None, ge=-180, le=180)
 
 
 class PeriodIn(SeasonIn):
@@ -1588,14 +1600,25 @@ def _periods(body: "SeasonIn", 축: str, token: str | None) -> dict:
 
     참고 = {"약점": body.약점, "고른종목": body.고른종목,
           "조심할부위": body.조심할부위, "건강상태": _short_list(body.건강상태)}
+    # 계절은 시작일의 계절부터 한 바퀴다. 봄에 받았다고 봄부터가 아니다.
+    시작 = ssn.start_info(body.시작일, body.위도, body.경도)
+    구간들 = None
+    if 시작:
+        참고["시작"] = 시작
+        if 축 == "계절":
+            구간들 = ssn.order_from(시작["계절"])
     일정 = None
     바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
     if 바쁜:
         일정 = {"요일별": spare.plan(바쁜, sports_ids=body.고른종목, weak=body.약점, limit=3)}
-    구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정)
+    구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정,
+                       구간들=구간들)
     if not 구간:
         raise HTTPException(503, f"지금은 {축}별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
-    return {"축": 축, 축: 구간, "루틴명": body.루틴.get("루틴명")}
+    out = {"축": 축, 축: 구간, "루틴명": body.루틴.get("루틴명")}
+    if 시작:
+        out["시작"] = 시작
+    return out
 
 
 @app.post("/recommend/periods")

@@ -122,10 +122,21 @@ AXES = {
 }
 
 
-def _period_system(축: str, 구간들=None) -> str:
+def _period_system(축: str, 구간들=None, 시간대포함: bool = False) -> str:
     a = AXES[축]
     구간들 = tuple(구간들 or a["구간"])
     구간 = "·".join(구간들)
+    # 계절 안에 시간대를 넣는다 — 계절별로 따로, 시간대별로 따로가 아니라
+    # "가을 아침엔 이렇게, 가을 밤엔 이렇게". 그래야 자세히 안내하는 것이 된다.
+    안쪽 = ""
+    안쪽모양 = ""
+    if 시간대포함 and 축 == "계절":
+        시간대들 = "·".join(AXES["시간대"]["구간"])
+        안쪽 = f"""
+  - **계절마다 안에 시간대를 넣습니다.** {시간대들} 네 개를 모두, 이 순서로.
+    그 계절의 그 시간대에 이 루틴을 어떻게 할지 한 줄씩 (예: 여름 낮은 실내에서 짧게,
+    가을 아침은 밖에서 준비운동을 길게). 계절 한줄과 겹치지 않게 씁니다."""
+        안쪽모양 = ', "시간대": [{"시간대": "아침", "한줄": "문장"}, ...]'
     return f"""당신은 국민체력100 데이터로 운동을 처방하는 서비스의 코치입니다.
 
 사용자가 루틴 하나를 골라 "이 루틴 자세히 알아보기" 를 눌렀습니다.
@@ -140,14 +151,14 @@ def _period_system(축: str, 구간들=None) -> str:
   - 비는 시간이 있으면 그 시간에 할 수 있는 만큼으로 씁니다.
   - 건강 상태가 있으면 그에 맞춥니다. 해로울 수 있는 것은 빼고 도움이 되는 쪽으로 씁니다.
     진단·치료·약 이야기는 하지 않습니다.
-  - {축}은 {구간} 네 개를 모두, **이 순서로** 씁니다. 첫 구간이 시작하는 자리입니다.
+  - {축}은 {구간} 네 개를 모두, **이 순서로** 씁니다. 첫 구간이 시작하는 자리입니다.{안쪽}
   - 측정하지 않은 값을 아는 척하지 마세요.
   - 한국어 존댓말. 한줄은 40자 안팎, 할것은 각 25자 안팎으로 셋까지.
   - 의학적 진단이나 치료를 말하지 마세요. 아프면 쉬라고 안내합니다.
   - {a['한마디']}
 
 JSON 만 출력하세요. 다른 말은 쓰지 마세요.
-{{"{축}": [{{"{축}": "{구간들[0]}", "한줄": "문장", "할것": ["문장", ...], "조심": "문장"}}, ...]}}"""
+{{"{축}": [{{"{축}": "{구간들[0]}", "한줄": "문장", "할것": ["문장", ...], "조심": "문장"{안쪽모양}}}, ...]}}"""
 
 
 # 예전 이름. 계절 축의 프롬프트다.
@@ -183,7 +194,8 @@ def _season_prompt(루틴: dict, 참고: dict, 연령대: str, 상태, 일정: d
 
 def periods(루틴: dict, 참고: dict, 연령대: str,
             상태: list[str] | str | None = None, 축: str = "계절",
-            일정: dict | None = None, 구간들=None) -> list[dict] | None:
+            일정: dict | None = None, 구간들=None,
+            시간대포함: bool = False) -> list[dict] | None:
     """고른 루틴을 구간(계절 | 시간대)마다 어떻게 이어갈지. 못 하면 None.
 
     구간들을 주면 그 순서로 — 계절은 시작일의 계절부터 한 바퀴다. 봄에
@@ -201,7 +213,7 @@ def periods(루틴: dict, 참고: dict, 연령대: str,
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=_period_system(축, 구간들),
+            system=_period_system(축, 구간들, 시간대포함),
             output_config={"effort": "low"},
             messages=[{"role": "user",
                        "content": _season_prompt(루틴, 참고, 연령대, 상태, 일정)}],
@@ -224,15 +236,37 @@ def periods(루틴: dict, 참고: dict, 연령대: str,
         본것.add(이름)
         할것 = [str(y).strip()[:40] for y in (x.get("할것") or [])
               if isinstance(y, (str, int, float)) and str(y).strip()]
-        out.append({축: 이름,
-                    "한줄": str(x.get("한줄") or "").strip()[:80],
-                    "할것": 할것[:3],
-                    "조심": str(x.get("조심") or "").strip()[:80]})
+        줄 = {축: 이름,
+             "한줄": str(x.get("한줄") or "").strip()[:80],
+             "할것": 할것[:3],
+             "조심": str(x.get("조심") or "").strip()[:80]}
+        if 시간대포함 and 축 == "계절":
+            줄["시간대"] = _clean_times(x.get("시간대"))
+        out.append(줄)
     if 본것 != set(구간들):
         return None                            # 네 구간이 다 있어야 한 바퀴가 된다
     순서 = {이름: i for i, 이름 in enumerate(구간들)}
     out.sort(key=lambda x: 순서[x[축]])
     return out
+
+
+def _clean_times(목록) -> list[dict]:
+    """계절 안의 시간대 줄들. 있는 시간대만, 순서대로, 하나씩. 없으면 빈 목록.
+
+    한 시간대가 빠졌다고 그 계절을 버리진 않는다 — 받은 만큼 보여 준다.
+    """
+    시간대들 = AXES["시간대"]["구간"]
+    if not isinstance(목록, list):
+        return []
+    본것 = {}
+    for x in 목록:
+        if not isinstance(x, dict):
+            continue
+        이름 = str(x.get("시간대") or "").strip()
+        한줄 = str(x.get("한줄") or "").strip()[:80]
+        if 이름 in 시간대들 and 이름 not in 본것 and 한줄:
+            본것[이름] = {"시간대": 이름, "한줄": 한줄}
+    return [본것[t] for t in 시간대들 if t in 본것]
 
 
 def seasons(루틴: dict, 참고: dict, 연령대: str,

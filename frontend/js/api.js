@@ -98,6 +98,8 @@ const API = (() => {
     // --- 커뮤니티 ---
     // 짬시간 — 적어 둔 일정에서 남는 칸과 거기서 할 것
     sparePlan: (b) => post('/spare-time/plan', b),
+    // 오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있으면 실내·비슷한 것으로. 규칙이라 값이 안 든다
+    weatherCheck: (b) => post('/routine/weather-check', b),
     // 시간표 사진에서 바쁜 시간을 읽는다 (유료). 저장은 사용자가 확인한 뒤에
     schedulePhoto: (b) => post('/schedule/photo', b),
     // 약봉지·처방전 사진에서 건강 상태 후보를 읽는다. 값이 들지 않고 저장하지 않는다

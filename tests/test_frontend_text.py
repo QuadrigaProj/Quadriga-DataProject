@@ -3219,3 +3219,15 @@ def test_홈_히어로는_AI_루틴도_그린다():
     assert "AI 가 지은 루틴 · " in 본문
     assert 본문.index("if (m?.구성 === 'ai') {") < 본문.index("m.예상시간분[0]")
 
+
+def test_계절과_시간대가_따로_남아_있으면_한_덩이로_다시_받는_버튼():
+    """예전엔 따로 받았다. 따로 나와 있는 걸 그대로 두지 않는다."""
+    html = _index()
+    판단 = html.split("function separateSeasonAndTime()")[1].split("\n}")[0]
+    assert "Array.isArray(c.시간대) && c.시간대.length" in 판단        # 이미 중첩이면 아니다
+    assert "계절.length > 0 && 시간대.length > 0 && !중첩있음" in 판단
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "축 === '계절' && 따로" in 본문
+    assert "onclick=\"fetchPeriods('계절', { 시간대포함: true })\"" in 본문
+    assert "시간대까지 넣어 한 덩이로 다시 받기" in 본문
+

@@ -30,6 +30,7 @@
   body{
     background:var(--bg);
     color:var(--ink);
+    overflow-wrap:anywhere;   /* 긴 낱말·주소가 칸 밖으로 밀고 나가지 않게 */
     font-family:-apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",sans-serif;
     display:flex;
     justify-content:center;
@@ -272,7 +273,7 @@
     background:linear-gradient(180deg, #F7FAFF 0%, #E9EFF9 100%); }
   .exercise-3d-note{ font-size:11.5px; color:var(--muted); }
   /* 시간대 흐름 (홈) */
-  .daypart-row{ margin-top:10px; }
+  .daypart-row{ margin:10px 22px 0; }   /* 다른 카드와 같은 좌우 여백 */
   .daypart-done{ font-size:14px; font-weight:800; color:var(--pine-deep); padding:10px 12px;
     background:var(--pine-tint); border-radius:12px; margin-bottom:8px; }
   .daypart-actions{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; text-align:center; }
@@ -1872,8 +1873,8 @@
       <div class="prescribe-label">오늘의 일상 처방</div>
       <div class="prescribe-text" id="dailyText">계단은 올라갈 때만 이용해보세요.<br/>내려올 땐 엘리베이터가 무릎에 더 안전해요.</div>
       <div class="commute-row">
-        <input id="commuteFrom" type="text" placeholder="출발지 (예: 성북구)" onkeydown="if(event.key==='Enter')analyzeCommute()" />
-        <input id="commuteTo" type="text" placeholder="목적지 (예: 강남역)" onkeydown="if(event.key==='Enter')analyzeCommute()" />
+        <input id="commuteFrom" type="text" placeholder="출발지" onkeydown="if(event.key==='Enter')analyzeCommute()" />
+        <input id="commuteTo" type="text" placeholder="목적지" onkeydown="if(event.key==='Enter')analyzeCommute()" />
         <button id="commuteBtn" onclick="analyzeCommute()">분석</button>
       </div>
       <div class="prescribe-meta" id="commuteMeta"></div>

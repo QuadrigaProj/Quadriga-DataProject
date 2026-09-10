@@ -2447,11 +2447,14 @@ def test_자세히_알아보기는_값을_받지_않고_묻지도_않는다():
     assert "recoAiReady" in 본문                      # 쓸 수 있는지는 본다
 
 
-def test_이미_받아_둔_루틴이면_다시_부르지_않는다():
+def test_이미_받아_둔_축도_다시_누르면_새로_받는다():
+    """값이 들지 않으니 마음에 안 들면 한 번 더 — 새것이 옛것을 덮는다.
+    (예전엔 '이미 받아 뒀어요' 로 막았다.)"""
     html = _index()
     본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
-    assert "recoSeason?.루틴명 === x.루틴명 && (recoSeason[축] || []).length" in 본문
-    assert "별 계획은 이미 받아 뒀어요" in 본문
+    assert "이미 받아 뒀어요" not in 본문
+    assert "'다시 ' : ''" in 본문                       # 받아 둔 축이면 '다시 받는 중' 이라 말한다
+    assert "API.recommendPeriods" in 본문
 
 
 def test_다른_루틴으로_옮기면_그_계획을_안_그린다():
@@ -2966,3 +2969,60 @@ def test_저장하면_추천_화면이면_다시_그린다():
     assert "await saveProfile();" in 본문
     assert "renderRecommend()" in 본문
     assert "다음 AI 추천부터 반영돼요" in 본문
+
+
+# ---------- 시작일 ----------
+
+def test_값을_치르기로_하면_언제부터_할지_묻는다():
+    """받은 날이 곧 시작일이다. 봄에 받았다고 봄부터가 아니다."""
+    html = _index()
+    본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
+    assert "askStartDate(async () => {" in 본문
+    assert 본문.index("값을치를까(물음)") < 본문.index("askStartDate(")   # 값을 묻고 나서 날짜를 묻는다
+    창 = html.split("function askStartDate(then)")[1].split("\n}")[0]
+    assert "바로 시작해요" in 창 and "내일(" in 창
+    assert 'type="date" id="startDateInput"' in 창 and "이 날부터" in 창
+
+
+def test_바로_시작은_내일부터고_어제는_고를_수_없다():
+    html = _index()
+    본문 = html.split("async function pickStartDate(날)")[1].split("\n}")[0]
+    assert "if (날 < tomorrowIso())" in 본문 and "내일부터 고를 수 있어요" in 본문
+    assert "state.routineStart = 날;" in 본문 and "saveProfile();" in 본문
+
+
+def test_시작일은_계정에_남는다():
+    html = _index()
+    assert "routineStart: null," in html and "routineStart: state.routineStart," in html
+    assert "state.routineStart = /^" in html
+
+
+def test_시작일과_위치를_AI_에_보낸다():
+    html = _index()
+    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "시작일: state.routineStart || tomorrowIso()," in 받기
+    assert "...(await myLocation() || {})," in 받기
+    구간 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    assert "시작일: state.routineStart || tomorrowIso()," in 구간
+    위치 = html.split("function myLocation()")[1].split("\n}")[0]
+    assert "navigator.geolocation" in 위치 and "3000" in 위치        # 3초 안에 못 받으면 서울 기준
+
+
+def test_같은_축을_다시_누르면_새로_받는다():
+    """값이 들지 않으니 마음에 안 들면 한 번 더 — 새것이 옛것을 덮는다."""
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축)")[1].split("\n}")[0]
+    assert "이미 받아 뒀어요" not in 본문
+    assert "'다시 ' : ''" in 본문
+    assert "받아 둠 · 다시 받기" in html.split("function askDetail()")[1].split("\n}")[0]
+
+
+def test_카드에_시작일_계절_날씨_한_줄():
+    html = _index()
+    본문 = html.split("function startLine(시)")[1].split("\n}")[0]
+    assert "시작 ${esc(날)}" in 본문 and "℃" in 본문 and "습도" in 본문
+    assert "(서울 기준)" in 본문                                   # 위치를 모르면 그렇다고 적는다
+    카드 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "startLine(x.시작)" in 카드
+    계절 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "recoSeason.시작.계절" in 계절 and "부터</span>" in 계절

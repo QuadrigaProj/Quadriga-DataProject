@@ -6,17 +6,19 @@
  * 그 운동을 하는 것처럼 보인다.
  *
  * 2D 한 색 선 그림은 팔·다리·기구가 겹치면 헷갈린다. 그래서
- *   - 부위별로 색을 다르게 — 머리(살색) · 몸(파랑) · 기구·바닥(회색)
+ *   - 사람은 회색 하나로, 대신 입체 음영으로 알아본다 — 기구·바닥은 더 어두운 회색
  *   - 굵은 캡슐에 그림자·하이라이트를 넣어 입체로
  *   - 발밑에 그림자 타원
  * 진짜 3D 모델이 아니다. 형체만 살린 입체 그림이다. 외부 파일·서버 없이 돈다.
  */
 const MOVE_3D = (() => {
   const VIEW = 64;                         // 자세 그림의 viewBox
+  // 사람은 회색 하나 — 색으로 나누지 않고 음영으로 알아본다. 기구·바닥은 더
+  // 어둡고 가는 회색이라 몸과 구분된다. 그림자와 하이라이트 대비를 키워 둥글게.
   const COLORS = {
-    head: { base: '#F2B58C', dark: '#C98A62', light: '#FFD9BF' },
-    body: { base: '#4A78D8', dark: '#2F55A6', light: '#8FB0F0' },
-    gear: { base: '#8A8F98', dark: '#5E636C', light: '#C5C9D0' },
+    head: { base: '#A9AFB8', dark: '#5C626B', light: '#EEF1F4' },
+    body: { base: '#A9AFB8', dark: '#5C626B', light: '#EEF1F4' },
+    gear: { base: '#6B717B', dark: '#3E434B', light: '#A3A9B2' },
   };
   const BEAT_MS = 1200;                    // 한 왕복
 
@@ -105,9 +107,9 @@ const MOVE_3D = (() => {
   function capsule(ctx, l, col, w, s){
     // 그림자 → 바탕 → 하이라이트 순으로 겹쳐 그려 둥글게 보이게 한다
     const passes = [
-      { c: col.dark, w: w * 1.0, dx: 0.9, dy: 1.2, alpha: 1 },
-      { c: col.base, w: w * 0.86, dx: 0, dy: 0, alpha: 1 },
-      { c: col.light, w: w * 0.34, dx: -0.55, dy: -0.75, alpha: 0.85 },
+      { c: col.dark, w: w * 1.0, dx: 1.1, dy: 1.4, alpha: 1 },
+      { c: col.base, w: w * 0.84, dx: 0, dy: 0, alpha: 1 },
+      { c: col.light, w: w * 0.30, dx: -0.7, dy: -0.9, alpha: 0.95 },
     ];
     passes.forEach(p => {
       ctx.globalAlpha = p.alpha;

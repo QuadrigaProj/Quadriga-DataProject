@@ -261,6 +261,12 @@
   .rec-spare-when{ color:var(--muted); font-variant-numeric:tabular-nums; }
   .rec-spare-what{ font-weight:600; }
   .rec-spare-why{ flex-basis:100%; color:var(--muted); }
+  /* 영상 대신 3D 느낌의 동작 그림 (M5) */
+  .exercise-3d{ display:flex; flex-direction:column; align-items:center; gap:6px;
+    margin:8px 0 4px; }
+  .exercise-3d canvas{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px;
+    background:linear-gradient(180deg, #F7FAFF 0%, #E9EFF9 100%); }
+  .exercise-3d-note{ font-size:11.5px; color:var(--muted); }
   /* 오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있을 때만 */
   .weather-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:14px 16px; margin-top:14px; background:var(--paper); }
@@ -1857,6 +1863,11 @@
     <div class="content" style="padding:0 0 20px;">
       <div class="player-video">
         <div id="exerciseVideoFrame" class="exercise-video-inline" hidden></div>
+        <!-- 영상이 없는 동작(고른 종목·기록 종목)은 3D 느낌의 동작 그림으로 대신한다 (M5) -->
+        <div id="exercise3d" class="exercise-3d" hidden>
+          <canvas id="exercise3dCanvas" width="320" height="320" aria-label="동작을 3D 그림으로 보여줍니다"></canvas>
+          <div class="exercise-3d-note">*해당하는 영상이 없어 3D로 대체했습니다.</div>
+        </div>
         <div class="player-tag" id="playerTag">1 / 5</div>
         <button type="button" class="play" id="exerciseVideoButton" onclick="openExerciseVideo()" style="font-size:16px;border:0;cursor:pointer;">영상 보기</button>
       </div>
@@ -2376,6 +2387,7 @@
 <script src="js/api.js"></script>
 <script src="js/gauge.js"></script>
 <script src="js/move-art.js"></script>
+<script src="js/move-3d.js"></script>
 <script>
 /* ---------------------------------------------------------------------------
    화면 상태와 백엔드 연결.
@@ -3652,6 +3664,7 @@ function goTo(id){
   if(id === 's2') renderPurpose();
   if(id === 's3') { loadHome(); paintGauges({ animate: true }); loadSparePlan(); checkTodayWeather(); }
   if(id === 's4') resetRoutine();
+  if(id !== 's4') MOVE_3D.stop();
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
   if(id === 's7') renderRecords();
   if(id === 's8') renderSports();
@@ -5631,8 +5644,24 @@ async function renderCommute(){
   }
 }
 
+/* 영상이 없는 동작을 어떤 자세 그림으로 보여 줄지.
+   기록 종목 id 는 자세 id 와 같다. 고른 종목은 비슷한 자세로 잇는다 — 없는
+   종목(축구·테니스 …)은 엉뚱한 동작을 보여 주느니 아무것도 안 보여 준다. */
+const POSE_FOR_SPORT = {
+  running: 'run', marathon: 'run', hiking: 'stair', cycling: 'cycle', swimming: 'swim',
+  jumprope: 'jump-rope', walking: 'walk', gym: 'dumbbell-curl', crossfit: 'burpee',
+  pilates: 'dead-bug', yoga: 'hamstring-stretch', climbing: 'lat-pulldown',
+};
+
+function poseForStep(step){
+  if (!step || youtubeVideoId(step.youtube_id)) return null;      // 영상이 있으면 영상
+  if (step.출처 === '기록') return step.id || null;
+  if (step.출처 === '종목') return POSE_FOR_SPORT[step.id] || null;
+  return null;
+}
+
 /* AI 가 지은 루틴을 플레이어가 도는 모양으로. 영상이 없는 줄(고른 종목·기록
-   종목)은 영상 버튼이 안 뜰 뿐, 나머지는 같다. */
+   종목)은 영상 버튼이 안 뜨고, 대신 3D 느낌의 동작 그림이 뜬다. */
 function applyAiRoutine(){
   const x = state.aiRoutine;
   state.routineError = null;
@@ -5810,6 +5839,16 @@ function stopExerciseVideo(){
   $("exerciseVideoFrame").hidden = true;
   const step = activeRoutine()[currentStep];
   $("exerciseVideoButton").hidden = !youtubeVideoId(step?.youtube_id);
+  show3dForStep(step);
+}
+
+/* 영상이 없는 동작이면 그 자리에 3D 그림. 있으면 접는다. */
+function show3dForStep(step){
+  const box = $('exercise3d');
+  if (!box) return;
+  const pose = poseForStep(step);
+  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose)) { MOVE_3D.stop(); box.hidden = true; return; }
+  box.hidden = false;
 }
 
 function renderStep(){

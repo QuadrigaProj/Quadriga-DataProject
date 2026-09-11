@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
+<script type="importmap">{ "imports": { "three": "./js/vendor/three.module.min.js" } }</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Fitage — 체력나이로 오늘 할 운동을 정해요</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -1890,10 +1891,11 @@
     <div class="content" style="padding:0 0 20px;">
       <div class="player-video">
         <div id="exerciseVideoFrame" class="exercise-video-inline" hidden></div>
-        <!-- 영상이 없는 동작(고른 종목·기록 종목)은 3D 느낌의 동작 그림으로 대신한다 (M5) -->
+        <!-- 영상이 없는 동작(고른 종목·기록 종목)은 3D 캐릭터의 모션캡처 동작으로 대신한다 (M5) -->
         <div id="exercise3d" class="exercise-3d" hidden>
-          <canvas id="exercise3dCanvas" width="320" height="320" aria-label="동작을 3D 그림으로 보여줍니다"></canvas>
-          <div class="exercise-3d-note">*해당하는 영상이 없어 3D로 대체했습니다.</div>
+          <canvas id="exercise3dCanvas" width="320" height="320" aria-label="동작을 3D 캐릭터로 보여줍니다"></canvas>
+          <div class="exercise-3d-note">*해당하는 영상이 없어 3D 동작으로 대체했습니다. (캐릭터·동작: Mixamo)</div>
+          <div class="exercise-3d-note" id="exercise3dSub" hidden></div>
         </div>
         <div class="player-tag" id="playerTag">1 / 5</div>
         <div class="player-daypart" id="playerDaypart" hidden></div>
@@ -5687,7 +5689,7 @@ async function renderCommute(){
 const POSE_FOR_SPORT = {
   running: 'run', marathon: 'run', hiking: 'stair', cycling: 'cycle', swimming: 'swim',
   jumprope: 'jump-rope', walking: 'walk', gym: 'dumbbell-curl', crossfit: 'burpee',
-  pilates: 'dead-bug', yoga: 'hamstring-stretch', climbing: 'lat-pulldown',
+  pilates: 'plank', yoga: 'deep-breath', climbing: 'lat-pulldown',
 };
 
 function poseForStep(step){
@@ -5884,7 +5886,8 @@ function show3dForStep(step){
   const box = $('exercise3d');
   if (!box) return;
   const pose = poseForStep(step);
-  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose, { sex: state.sex })) { MOVE_3D.stop(); box.hidden = true; return; }
+  const onNote = t => { const s = $('exercise3dSub'); if (s) { s.textContent = t || ''; s.hidden = !t; } };
+  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose, { onNote })) { MOVE_3D.stop(); box.hidden = true; return; }
   box.hidden = false;
 }
 

@@ -1,8 +1,8 @@
 """영상이 없는 동작을 3D 캐릭터로 (M5).
 
-고른 종목·기록 종목은 공식 영상이 없다. 그 자리에 Mixamo(Adobe)의 무료
-캐릭터 Y Bot 이 실제 모션캡처 동작을 하는 모습을 띄우고, 아래에 대체했다고
-적는다. 캐릭터·동작 파일은 assets/3d 에, three.js 는 js/vendor 에 함께 둔다 —
+고른 종목·기록 종목은 공식 영상이 없다. 그 자리에 회색 마네킹(Blender 인체
+기본형을 Mixamo 로 리깅)이 실제 모션캡처 동작을 하는 모습을 띄우고, 아래에
+대체했다고 적는다. 캐릭터·동작 파일은 assets/3d 에, three.js 는 js/vendor 에 함께 둔다 —
 밖에서 받지 않으니 오프라인 시연에서도 돈다.
 """
 from __future__ import annotations
@@ -52,12 +52,21 @@ def test_three_js_는_같이_둔다_밖에서_받지_않는다():
     assert html.index('type="importmap"') < html.index('src="js/api.js"')             # 어떤 스크립트보다 앞
 
 
-def test_캐릭터는_Mixamo_Y_Bot_이고_뼈대가_있다():
-    j = _glb_json(FRONT / "assets" / "3d" / "ybot.glb")
+def test_캐릭터는_사람_몸_마네킹이고_Mixamo_뼈대가_있다():
+    p = FRONT / "assets" / "3d" / "mannequin.glb"
+    j = _glb_json(p)
     names = [n.get("name", "") for n in j["nodes"]]
     assert "mixamorig:Hips" in names and "mixamorig:LeftArm" in names and "mixamorig:RightUpLeg" in names
+    assert "mixamorig:LeftHandIndex1" in names                                          # 손가락까지 — 기구를 쥔다
     assert len(j.get("skins", [])) >= 1 and len(j.get("meshes", [])) >= 1
-    assert (FRONT / "assets" / "3d" / "ybot.glb").stat().st_size < 4_000_000        # 한 번 받을 만한 크기
+    assert "EXT_meshopt_compression" in j.get("extensionsRequired", [])                # gltfpack 으로 눌렀다
+    assert p.stat().st_size < 300_000                                                    # 휴대폰에서도 금방 받는다
+    assert j["animations"] and j["animations"][0]["channels"]                            # 한 프레임짜리 T 자세가 들어 있다
+    assert not (FRONT / "assets" / "3d" / "ybot.glb").exists()                           # 옛 Y Bot 은 치웠다
+    js = _js()
+    assert "const MODEL = 'mannequin.glb';" in js and "loader.setMeshoptDecoder(lib.Meshopt)" in js
+    assert "import('./vendor/libs/meshopt_decoder.module.js')" in js
+    assert (FRONT / "js" / "vendor" / "libs" / "meshopt_decoder.module.js").exists()
 
 
 def test_동작_파일은_뼈대만_들어_있고_작다():
@@ -70,7 +79,7 @@ def test_동작_파일은_뼈대만_들어_있고_작다():
         assert not j.get("meshes"), name
         assert j.get("animations") and j["animations"][0]["channels"], name
         assert "mixamorig:Hips" in [n.get("name", "") for n in j["nodes"]], name     # 같은 뼈 이름이라 그대로 붙는다
-        assert p.stat().st_size < 400_000, name
+        assert p.stat().st_size < 120_000, name                                              # gltfpack 으로 눌러 둔다
 
 
 def test_자세_그림이_있는_동작은_모두_처리된다():
@@ -96,21 +105,22 @@ def test_겉모습은_매끈한_회색이다():
     """Mixamo 디자인 그대로가 아니라 — 각진 면을 매끈하게, 색은 회색 하나로."""
     js = _js().split("function smoothAndGray(lib, body)")[1].split("\n  }")[0]
     assert "g.deleteAttribute('normal'); g.deleteAttribute('uv');" in js        # 이음새까지 합쳐서
-    assert "U.mergeVertices(g, 1e-4); merged.computeVertexNormals();" in js     # 법선을 다시 계산한다
+    assert "const merged = U.mergeVertices(g, tol); merged.computeVertexNormals();" in js   # 법선을 다시 계산한다
+    assert "getSize(new T.Vector3()).length() * 1e-5" in js                     # '같은 자리' 기준은 몸 크기에 비례
     assert "color: joints ? 0xA4A9B0 : 0xBCC1C7" in js                          # 회색 둘 (몸통은 한 덩이로 읽힌다)
 
 
 def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
     js = _js()
     손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
-    assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { set: [-90, 0, 0] }" in 손봄   # 무릎을 바닥에
+    assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { aim: shinBack }" in 손봄     # 무릎을 바닥에, 정강이는 뒤로 눕힌다
     assert "'deadlift': { fist: true, bones: { 'mixamorig:LeftArm': hang" in 손봄                          # 팔은 늘어뜨리고 주먹을 쥔다
     assert "'shoulder-press': { base: 'idle', bones: press, fist: true }" in 손봄                           # 기본 자세 + 밀어 올리기 + 주먹
     assert "palmTo: 'head'" in js                                                                            # 손바닥은 머리 쪽으로
     assert "'one-leg': { base: 'idle', bones: oneLeg }" in 손봄                                             # 기본 자세 + 한 발 들기
     assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
     적용 = js.split("const applyTweaks = t =>")[1].split("\n    };")[0]
-    assert "pitchAtHands(tweak.pitchAtHands)" in 적용 and "aimBone(bone, how.aim)" in 적용
+    assert "pitchAtHands(tweak.pitchAtHands)" in 적용 and "aimBone(bone, typeof how.aim === 'function' ? how.aim(posOf) : how.aim)" in 적용
     assert "if (how.palmTo) palmToward(bone, how.palmTo);" in 적용 and "if (tweak.fist) fist();" in 적용
     assert "const palm = new T.Vector3(0, -1, 0).applyQuaternion(inv).normalize();" in js   # 손바닥 축은 T 자세에서 잰다
     assert "const norm = n => String(n).replace(/[^A-Za-z]/g, '');" in js       # GLTFLoader 가 ':' 를 지워도 뼈를 찾는다
@@ -148,19 +158,23 @@ def test_비슷한_동작으로_대신하는_것은_화면에_적는다():
 
 def test_빛과_그림자_카메라는_몸을_따라간다():
     js = _js().split("function setup(lib, me, clip)")[1].split("\n  }")[0]
-    assert "renderer.shadowMap.enabled = true" in js and "ShadowMaterial" in js
+    assert "r.shadowMap.enabled = true" in _js() and "ShadowMaterial" in js          # 그림자는 렌더러를 만들 때 켠다
     assert "new T.AnimationMixer(body)" in js and "mixer.clipAction(clip)" in js
     assert "prefers-reduced-motion: reduce" in js and "action.paused = true" in js
     assert "for (const b of boneList) { b.getWorldPosition(v); lo.min(v); hi.max(v); }" in js   # 뼈대 상자로 화면 맞춤
     assert "smoothAndGray(lib, body)" in js
-    assert "if (h > 10) body.scale.setScalar(1 / h * 1.8);" in js                          # cm 로 오면 사람 키로
+    assert "if (h > 0 && (h < 1.2 || h > 2.4)) body.scale.setScalar(1.75 / h);" in js   # 단위가 뭐든 사람 키로
+    assert "if (me.tpose) {" in js and "b.quaternion.fromArray(tr.values, 0);" in js    # 처음 자세는 늘 T 자세
 
 
 def test_플레이어에_붙어_있고_출처를_적는다():
     html = _index()
     assert html.index('src="js/move-art.js"') < html.index('src="js/move-3d.js"')
     assert 'id="exercise3d"' in html and 'id="exercise3dCanvas"' in html
-    assert "*해당하는 영상이 없어 3D 동작으로 대체했습니다. (캐릭터·동작: Mixamo)" in html
+    assert "*해당하는 영상이 없어 3D 동작으로 대체했습니다. (몸: Blender 인체 기본형 · 뼈대·동작: Mixamo)" in html
+    js = _js()
+    assert "if (onNote) onNote(LOADING_NOTE);" in js and "LOADING_NOTE = '3D 동작을 불러오는 중…'" in js   # 기다리는 동안 알려 준다
+    assert "function preload()" in js and "MOVE_3D.preload()" in html                        # 루틴 화면에서 미리 받아 둔다
 
 
 def test_영상이_있으면_영상_없으면_3D():
@@ -179,4 +193,6 @@ def test_화면을_떠나면_멈추고_자원을_돌려준다():
     assert "if(id !== 's4') MOVE_3D.stop();" in _index()
     멈춤 = _js().split("function stop(canvas)")[1].split("\n  }")[0]
     assert "cancelAnimationFrame(me.raf)" in 멈춤
-    assert "me.renderer.dispose(); me.renderer.forceContextLoss();" in 멈춤
+    assert "if (o.geometry) o.geometry.dispose();" in 멈춤 and "me.renderer.renderLists.dispose(); me.renderer.clear();" in 멈춤
+    assert "forceContextLoss" not in _js()                                    # 컨텍스트를 잃게 하면 같은 캔버스에 다시 못 그린다
+    assert "const renderers = new WeakMap();" in _js() and "const renderer = getRenderer(T, canvas);" in _js()   # 캔버스마다 렌더러 하나

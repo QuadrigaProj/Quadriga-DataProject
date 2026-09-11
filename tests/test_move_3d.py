@@ -28,6 +28,11 @@ def _index() -> str:
     return (FRONT / "index.html").read_text(encoding="utf-8")
 
 
+def _proc() -> str:
+    """학습한 자세로 만든 동작(PROC) 표."""
+    return _js().split("const PROC = {")[1].split("\n  };")[0]
+
+
 def _clips() -> dict:
     표 = _js().split("const CLIPS = {")[1].split("\n  };")[0]
     return dict(re.findall(r"'([a-z0-9-]+)': '([a-z0-9-]+)'", 표))
@@ -90,7 +95,7 @@ def test_자세_그림이_있는_동작은_모두_처리된다():
     covered = ids & set(clips)
     assert len(covered) >= 20, sorted(covered)
     js = _js()
-    assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
+    assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || (PROC[id] && PROC[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
     assert "FALLBACK_CLIP = 'idle'" in js
     assert "이 동작의 3D 동작은 아직 없어 기본 자세만 보여 줘요" in js
     표 = _index().split("const POSE_FOR_SPORT = {")[1].split("};")[0]
@@ -114,11 +119,12 @@ def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
     js = _js()
     손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
     assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { aim: shinBack }" in 손봄     # 무릎을 바닥에, 정강이는 뒤로 눕힌다
-    assert "'deadlift': { fist: true, bones: { 'mixamorig:LeftArm': hang" in 손봄                          # 팔은 늘어뜨리고 주먹을 쥔다
-    assert "'shoulder-press': { base: 'idle', bones: press, fist: true }" in 손봄                           # 기본 자세 + 밀어 올리기 + 주먹
-    assert "palmTo: 'head'" in js                                                                            # 손바닥은 머리 쪽으로
-    assert "'one-leg': { base: 'idle', bones: oneLeg }" in 손봄                                             # 기본 자세 + 한 발 들기
-    assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
+    만듦 = _proc()
+    assert "'deadlift': { base: 'idle', period: 3.4, gear: 'barbell', fist: true" in 만듦                   # 힌지해서 바를 잡고 똑바로 선다
+    assert "'shoulder-press': { base: 'idle', period: 2.4, gear: 'dumbbells', fist: true" in 만듦          # 어깨 위로 밀어 올린다
+    assert "palmTo: 'head'" in 만듦                                                                          # 손바닥은 머리 쪽으로
+    assert "'one-leg': { base: 'idle', period: 6" in 만듦 and "handsOnHips(C)" in 만듦                     # 손은 허리, 한 발 들기
+    assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || (PROC[id] && PROC[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
     적용 = js.split("const applyTweaks = t =>")[1].split("\n    };")[0]
     assert "pitchAtHands(tweak.pitchAtHands)" in 적용 and "aimBone(bone, typeof how.aim === 'function' ? how.aim(posOf) : how.aim)" in 적용
     assert "if (how.palmTo) palmToward(bone, how.palmTo);" in 적용 and "if (tweak.fist) fist();" in 적용
@@ -130,10 +136,11 @@ def test_기구가_필요한_동작엔_기구를_붙인다():
     js = _js()
     기구 = js.split("const GEAR = {")[1].split("\n  };")[0]
     for id_, 이름 in (("barbell-squat", "backbar"), ("deadlift", "barbell"), ("dumbbell-curl", "dumbbells"), ("shoulder-press", "dumbbells"),
-                     ("kettlebell-swing", "kettlebell"), ("jump-rope", "rope"), ("treadmill", "treadmill"), ("swim", "water")):
+                     ("kettlebell-swing", "kettlebell"), ("jump-rope", "rope"), ("treadmill", "treadmill"), ("swim", "water"),
+                     ("bench-press", "bench"), ("lat-pulldown", "pulldown"), ("leg-press", "legpress"), ("cycle", "bike"), ("rowing", "rower"), ("calf-stretch", "wall")):
         assert f"'{id_}': '{이름}'" in 기구, id_
     만들기 = js.split("function makeGear(T, name, ctx)")[1].split("\n  }")[0]
-    for 이름 in ("barbell", "backbar", "dumbbells", "kettlebell", "rope", "treadmill", "water"):
+    for 이름 in ("barbell", "backbar", "dumbbells", "kettlebell", "rope", "treadmill", "water", "bench", "pulldown", "legpress", "bike", "rower", "wall"):
         assert f"case '{이름}':" in 만들기, 이름
     assert "grip('Left', a); grip('Right', b2);" in 만들기                                     # 손바닥 가운데를 잡는다
     assert "out.add(b.set(0, GRIP.along, 0).applyQuaternion(q));" in 만들기
@@ -145,9 +152,9 @@ def test_기구가_필요한_동작엔_기구를_붙인다():
 def test_비슷한_동작으로_대신하는_것은_화면에_적는다():
     js = _js()
     근사 = js.split("const APPROX = {")[1].split("\n  };")[0]
-    for id_ in ("knee-pushup", "deadlift", "shoulder-press", "one-leg"):
-        assert f"'{id_}':" in 근사, id_
-    assert "const note = CLIPS[id] ? (APPROX[id] || '') : GAP_NOTE;" in js
+    assert "'knee-pushup':" in 근사
+    assert "const note = APPROX[id] || (PROC[id] ? PROC_NOTE : (CLIPS[id] ? '' : GAP_NOTE));" in js
+    assert "PROC_NOTE = '자세 설명을 보고 만든 3D 동작이에요'" in js                                          # 설명대로 만든 동작도 그렇다고 적는다
     assert "if (onNote) onNote(note);" in js
     html = _index()
     assert 'id="exercise3dSub"' in html
@@ -196,3 +203,26 @@ def test_화면을_떠나면_멈추고_자원을_돌려준다():
     assert "if (o.geometry) o.geometry.dispose();" in 멈춤 and "me.renderer.renderLists.dispose(); me.renderer.clear();" in 멈춤
     assert "forceContextLoss" not in _js()                                    # 컨텍스트를 잃게 하면 같은 캔버스에 다시 못 그린다
     assert "const renderers = new WeakMap();" in _js() and "const renderer = getRenderer(T, canvas);" in _js()   # 캔버스마다 렌더러 하나
+
+
+def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
+    """docs/3d-exercise-form-notes.md 에 정리한 자세대로 — 모션캡처가 없던 13개와 설명과 다르던 7개."""
+    ids = set(re.findall(r'id="pose-([a-z0-9-]+)"', _art()))
+    만듦 = _proc()
+    있는 = set(re.findall(r"^    '([a-z0-9-]+)': \{ base: '([a-z-]+)', period: ([0-9.]+)", 만듦, re.M))
+    만든_ids = {i for i, _, _ in 있는}
+    for id_ in ("lunge", "bridge", "bench-press", "lat-pulldown", "leg-press", "cycle", "rowing", "hamstring-stretch", "calf-stretch",
+                "hip-stretch", "twist", "side-plank", "dead-bug",                                        # 모션캡처가 없던 것
+                "crunch", "deadlift", "shoulder-press", "one-leg", "deep-breath", "shoulder-stretch", "neck-stretch"):   # 설명과 달랐던 것
+        assert id_ in 만든_ids, id_
+    assert ids <= (set(_clips()) | 만든_ids), sorted(ids - set(_clips()) - 만든_ids)                     # 34개 모두 진짜 동작
+    for _, base, period in 있는:
+        assert (FRONT / "assets" / "3d" / "anim" / f"{base}.glb").exists(), base                         # 바탕 동작 파일이 있다
+        assert 1.5 <= float(period) <= 15, period
+    노트 = (ROOT / "docs" / "3d-exercise-form-notes.md").read_text(encoding="utf-8")
+    for id_ in ids:
+        assert f"### {id_} " in 노트, id_                                                                # 동작마다 자세 설명이 있다
+    js = _js()
+    for 조각 in ("const ik2 = (a, target, l1, l2, bend) =>", "const orientBone = (bone, up, front) =>", "typeof how.ik === 'function' ? how.ik() : how.ik",
+                 "const resetHips = () =>", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
+        assert 조각 in js, 조각

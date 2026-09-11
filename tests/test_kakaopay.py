@@ -516,7 +516,11 @@ def test_모르는_에러코드는_일반_문구로_둔다(키, monkeypatch):
                         가짜({"error_code": -9999, "error_message": "x"}, status=400))
     r = _login().post("/pay/kakao/ready", json={"amount": 100})
     assert r.status_code == 502
-    assert r.json()["detail"] == "카카오페이 결제를 시작하지 못했어요."
+    # 모르는 코드여도 카카오가 준 코드·문구는 그대로 붙인다 —
+    # 그게 없으면 붙이는 사람이 무엇을 고쳐야 할지 알 수 없다.
+    detail = r.json()["detail"]
+    assert detail.startswith("카카오페이 결제를 시작하지 못했어요.")
+    assert "-9999" in detail
 
 
 def test_에러가_JSON_이_아니어도_터지지_않는다(키, monkeypatch):

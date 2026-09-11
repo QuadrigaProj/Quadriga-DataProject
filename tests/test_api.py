@@ -236,6 +236,44 @@ def test_또래백분위():
 
 
 @needs_data
+def test_안_잰_항목은_또래비교도_항목별에도_안_나온다():
+    """유연성만 보내면 유연성만 나와야 한다 — placeholder 예시값이 실제 값처럼
+    쓰여 근력·체성분까지 '분석'되는 일이 없어야 한다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 45, "flexibility": 8}).json()
+    assert set(b["또래비교"]) == {"유연성"}
+    assert set(b["항목별"]) == {"유연성"}
+
+
+@needs_data
+def test_나이를_안_주면_또래비교_자체가_없다():
+    """또래비교는 나이가 있어야 성립한다 — 측정값이 있어도 나이가 없으면 비워 둔다."""
+    b = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "flexibility": 8, "strength": 25}).json()
+    assert b["또래비교"] == {}
+
+
+@needs_data
+def test_빈_문자열이나_NaN은_422로_막혀_계산에_안_들어간다():
+    """프런트가 빈 입력칸을 실수로 빈 문자열("")로 보내는 경우를 흉내 낸다.
+    숫자 타입 필드에 문자열이 오면 Pydantic 이 요청 자체를 거절해야 하고,
+    이게 조용히 0 이나 다른 값으로 둔갑해 계산에 들어가면 안 된다."""
+    r = client.post("/fitness-age", json={
+        "age_gbn": "성인", "sex": "M", "age": 45, "flexibility": ""})
+    assert r.status_code == 422
+
+
+def test_NaN값은_측정_안한_것으로_취급한다():
+    """혹시라도 NaN 이 함수까지 들어오면(예: 다른 호출 경로) '안 잰 것'으로 본다 —
+    None 과 똑같이 취급해서 보간 계산이 NaN 을 퍼뜨리지 않게 막는 마지막 방어선."""
+    from backend import fitness_age as fa
+    assert fa._given(None) is False
+    assert fa._given(float("nan")) is False
+    assert fa._given(0) is True          # 0 은 '안 잰 것'이 아니라 실제로 0을 잰 것이다
+    assert fa._given(12.0) is True
+
+
+@needs_data
 def test_환산나이는_절대_음수가_안된다():
     """website/server.js 에 있던 결함: 재점검 캡 때문에 개선효과가 음수로 나왔다."""
     for flex in (-30, -10, 0, 15, 50):
@@ -714,3 +752,89 @@ def test_선택입력만_보내도_계산된다():
         "weight_kg": 74, "grip_kg": 42}).json()
     assert b["체력나이"] is not None
     assert set(b["항목별"]) == {"근력"}
+
+
+def test_AI를_못_쓰면_까닭을_함께_준다(monkeypatch):
+    """화면이 '지금 쓸 수 없어요' 만 띄우면 손쓸 방법이 없다."""
+    from backend import ai_recommend as air
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert air.available() is False
+    까닭 = air.why_unavailable()
+    assert 까닭 and "ANTHROPIC_API_KEY" in 까닭
+
+    r = client.get("/recommend/routines", params={"age_gbn": "성인", "limit": 2})
+    assert r.status_code == 200
+    assert r.json()["ai가능"] is False
+    assert "ANTHROPIC_API_KEY" in r.json()["ai이유"]
+
+
+def test_까닭에_키_값은_담지_않는다(monkeypatch):
+    """있는지 없는지만 말한다. 값이 화면에 나가면 그게 곧 유출이다."""
+    from backend import ai_recommend as air
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-비밀값123")
+    까닭 = air.why_unavailable()
+    assert 까닭 is None or "비밀값123" not in 까닭
+
+
+# ---------- 고른 종목이 추천에 반영되는가 ----------
+
+def _추천(sports, limit=5):
+    from backend import recommend as rc
+    return rc.for_user("성인", weak=[], sports=sports, limit=limit)
+
+
+def _종목id(*이름들):
+    from backend import sports as sp
+    return [s["id"] for s in sp.catalog()["종목"] if s["이름"] in 이름들]
+
+
+def test_고른_종목이_추천을_바꾼다():
+    """예전에는 무엇을 골라도 목적마다 하나씩이라 결과가 거의 같았다."""
+    없이 = [x["루틴명"] for x in _추천([])["추천"]]
+    러닝 = [x["루틴명"] for x in _추천(_종목id("러닝", "마라톤"))["추천"]]
+    요가 = [x["루틴명"] for x in _추천(_종목id("요가", "필라테스"))["추천"]]
+    assert 없이 != 러닝
+    assert 러닝 != 요가
+
+
+def test_여러_종목이_같은_요인을_요구하면_더_무겁다():
+    """러닝과 마라톤을 함께 골랐으면 심폐지구력이 두 배로 중요하다.
+    예전에는 무게를 버리고 요인 이름만 써서 하나로 셌다."""
+    한개 = _추천(_종목id("러닝"))
+    두개 = _추천(_종목id("러닝", "마라톤"))
+    assert 한개["참고"]["종목요인무게"]["심폐지구력"] == 1
+    assert 두개["참고"]["종목요인무게"]["심폐지구력"] == 2
+    # 무게가 크면 점수도 커진다
+    assert 두개["추천"][0]["점수"] > 한개["추천"][0]["점수"]
+
+
+def test_고른_종목_이름을_이유에_적는다():
+    out = _추천(_종목id("수영", "등산"))
+    assert out["참고"]["고른종목"] == ["수영", "등산"] or set(out["참고"]["고른종목"]) == {"수영", "등산"}
+    이유들 = " ".join(x for r in out["추천"] for x in r["이유"])
+    assert "수영" in 이유들 and "등산" in 이유들
+
+
+def test_근거가_있으면_앞자리는_점수순이다():
+    """목적마다 한 줄씩 세우느라 점수가 묻히던 것을 푼다."""
+    out = _추천(_종목id("러닝", "마라톤"))
+    점수 = [x["점수"] for x in out["추천"]]
+    assert 점수[0] >= 점수[1]
+    # 앞 두 자리는 같은 목적이 될 수 있다
+    assert len({x["목적"] for x in out["추천"][:2]}) <= 2
+
+
+def test_근거가_없으면_목적을_골고루_보여준다():
+    """점수가 고만고만할 때 앞자리를 몰아 줄 이유가 없다."""
+    out = _추천([])
+    목적들 = [x["목적"] for x in out["추천"]]
+    assert len(set(목적들)) == len(목적들)
+
+
+def test_같은_목적이_셋씩_이어지지_않는다():
+    for 종목 in ([], _종목id("러닝", "마라톤"), _종목id("수영", "등산"), _종목id("요가")):
+        목적들 = [x["목적"] for x in _추천(종목)["추천"]]
+        for m in set(목적들):
+            assert 목적들.count(m) <= 2, (종목, 목적들)

@@ -331,33 +331,27 @@ def test_화면을_옮기면_목록이_닫힌다():
     assert "closeMenu();" in goto
 
 
-# ---------- G1 점검기록 선택 삭제 ----------
+# ---------- G1 점검기록 ----------
 
-def test_점검기록_선택_삭제_UI가_있다():
+def test_점검기록에는_삭제가_없다():
+    """점검 기록은 재측정과 운동 기록에 딸린 것이다. 원본을 그대로 두고
+    이 줄만 지우면 두 목록이 어긋난다."""
     html = _index()
-    assert 'id="recDeleteBtn"' in html
-    assert 'onclick="deleteSelectedMeasures()"' in html
-    assert "삭제할 기록을 고르세요" in html
-    assert "function renderMeasureRecords()" in html
-    assert "function pickMeasure(i, on)" in html
-    assert "async function deleteSelectedMeasures()" in html
+    for 없어야 in ("recDeleteBtn", "deleteSelectedMeasures", "measurePicked",
+                 "pickMeasure", "paintMeasureDeleteBtn"):
+        assert 없어야 not in html, 없어야
+    본문 = html.split("function renderMeasureRecords()")[1].split("\n}")[0]
+    assert "checkbox" not in 본문
+    assert "점검 기록은 여기서 지우지 않아요" in html
 
 
 def test_점검기록은_measureLog를_보여준다():
-    """달력·변화추이와 같은 배열을 읽어야 지운 결과가 함께 반영된다."""
+    """달력·변화추이와 같은 배열을 읽어야 결과가 함께 반영된다."""
     html = _index()
-    body = html.split("function renderMeasureRecords()")[1].split("\nfunction pickMeasure")[0]
+    body = html.split("function measureRows()")[1].split("\n}")[0]
     assert "state.measureLog" in body
     # 서버 스냅샷 목록을 쓰던 옛 경로는 사라졌다
     assert "const rows = (r.기록 || []).filter" not in html
-
-
-def test_삭제는_저장까지_한다():
-    html = _index()
-    body = html.split("async function deleteSelectedMeasures()")[1].split("\n}")[0]
-    assert "confirm(" in body            # 되돌릴 수 없으니 한 번 묻는다
-    assert "saveProfile()" in body       # 기기·계정 모두에 반영
-    assert "renderRecords()" in body
 
 
 def test_직접적은운동_선택_삭제_UI가_있다():
@@ -374,20 +368,10 @@ def test_직접적은운동_선택_삭제_UI가_있다():
     assert "renderRecords()" in body
 
 
-def test_점검기록_삭제는_직접적은운동이_남아있으면_막힌다():
-    """같은 날짜에 직접 적은 운동이 남아있으면, 그 기록의 기준나이가 참조하고 있을 수
-    있어 점검 기록을 먼저 지우지 못하게 막는다."""
-    html = _index()
-    body = html.split("async function deleteSelectedMeasures()")[1].split("\n}")[0]
-    assert "state.workoutLog" in body
-    assert "직접 적은 운동에서 먼저 삭제를 진행해주세요" in body
-
-
-def test_점검기록_삭제_안내는_닫을수있는_모달로_보인다():
+def test_안내_모달은_닫을_수_있다():
     html = _index()
     assert 'id="noticeModal"' in html
     assert 'onclick="closeNoticeModal()"' in html
-    assert "openNoticeModal('직접 적은 운동에서 먼저 삭제를 진행해주세요')" in html
 
 
 def test_채팅방_생성은_플러스_버튼으로_연다():
@@ -396,18 +380,44 @@ def test_채팅방_생성은_플러스_버튼으로_연다():
     assert 'id="roomComposer"' in html
 
 
-def test_게시글_작성란은_모달이_아니라_피드_하단에_항상_있다():
-    """모달 팝업(+ 버튼)이었다가, 하단에 얇고 넓게 항상 보이는 입력란으로 바꿨다."""
+def test_게시글_작성란은_플러스_버튼으로_폈다_접는다():
+    """모달 → 늘 펼쳐진 하단 입력란 → 지금은 ＋ 로 펴는 하단 입력란.
+
+    늘 펼쳐 두니 좁은 화면에서 피드를 가려서, 머리의 ＋ 로 펴게 되돌렸다.
+    모달로는 안 돌아간다 — 접었다 펴는 자리는 그대로 피드 하단이다."""
     html = _index()
-    assert 'onclick="openPostComposer()"' not in html
-    assert 'id="postComposer"' not in html
+    assert 'id="postComposer"' not in html          # 모달은 없앤 그대로
+    머리 = html.split('id="commFeed"')[1].split('id="feedList"')[0]
+    assert 'id="postAddBtn"' in 머리
+    assert 'onclick="togglePostComposer()"' in 머리
     본문 = html.split('id="commFeed"')[1].split('id="commFriend"')[0]
-    assert 'class="post-compose-bar"' in 본문
+    assert 'id="postComposeBar" class="post-compose-bar" hidden' in 본문
     assert '<input id="postBody" type="text"' in 본문
-    assert 'onclick="submitPost()">게시</button>' in 본문
     css = html.split(".post-compose-bar{")[1].split("}")[0]
     assert "position:sticky" in css and "bottom:0" in css
     assert "position:fixed" not in css   # 이 저장소는 position:fixed 를 금지한다
+
+
+def test_게시_버튼은_글자_대신_아이콘이다():
+    """게시 버튼이 자리를 많이 먹어서 입력란이 짧아 보였다."""
+    html = _index()
+    본문 = html.split('id="postComposeBar"')[1].split("</div>")[0]
+    assert 'class="post-send"' in 본문
+    assert "<svg" in 본문                              # 글자가 아니라 아이콘
+    assert ">게시</button>" not in 본문
+    assert 'aria-label="게시"' in 본문                 # 아이콘만 있어도 읽히게
+    css = html.split(".post-send{")[1].split("}")[0]
+    assert "flex-shrink:0" in css                      # 입력란이 남는 자리를 갖는다
+    입력 = html.split(".post-compose-bar input[type=text]{")[1].split("}")[0]
+    assert "flex:1" in 입력
+
+
+def test_작성란을_펴면_입력칸에_바로_쓸_수_있다():
+    html = _index()
+    본문 = html.split("function togglePostComposer(열기)")[1].split("\n}")[0]
+    assert "$('postBody').focus()" in 본문
+    assert "aria-expanded" in 본문                     # 접힘/펼침을 읽어 줄 수 있게
+    assert "$('postPreview').hidden" in 본문           # 미리보기도 같이 접힌다
 
 
 def test_게시글을_누르면_댓글창이_열린다():
@@ -436,7 +446,8 @@ def test_채팅방_목록에서_내_채팅만_볼_수_있다():
     assert "onclick=\"setRoomFilter('all')\">전체</button>" in html
     assert "onclick=\"setRoomFilter('mine')\">내 채팅</button>" in html
     본문 = html.split("function renderRoomList(){")[1].split("\n}")[0]
-    assert "ROOMS.filter(rm => rm['참여중'])" in 본문
+    assert "const 내채팅 = COMM.roomFilter === 'mine';" in 본문
+    assert "내채팅 ? rm['참여중'] : !rm['참여중']" in 본문
 
 
 def test_방장만_단체_채팅방을_폭파할_수_있다():
@@ -577,9 +588,9 @@ def test_계정_패널에_이용권_줄이_있다():
     assert "function renderAcctCredit()" in html
     본문 = html.split("function renderAcctCredit()")[1].split("\n}")[0]
     assert "AI 추천 선결제" in 본문
-    # 결제 여부와 남은 금액을 둘 다 적어야 한다
-    assert "선결제됨" in 본문 and "선결제 안 함" in 본문
+    # 남은 값만 적는다. 설명은 프로필 화면에 이미 있어서 여기서 또 하면 겹친다
     assert "won(원)" in 본문
+    assert "선결제 안 함" not in 본문
 
 
 def test_패널을_열_때마다_이용권을_다시_그린다():
@@ -635,7 +646,7 @@ def test_토글은_줄_안에서_상세를_찾는다():
     """버튼 바로 옆에 상세가 없어도(가운데 ✓ 가 끼어도) 동작해야 한다."""
     html = _index()
     본문 = html.split("function toggleRecDetail(btn)")[1].split("\n}")[0]
-    assert "closest('.rec-item')" in 본문
+    assert "closest('.rec-item, .post-record')" in 본문
     assert "querySelector('.rec-detail')" in 본문
     assert "nextElementSibling" not in 본문
 
@@ -646,8 +657,9 @@ def test_세_목록_모두_자세히_보기가_있다():
     assert "moreToggle(routineDetailHtml(e))" in 루틴
     직접 = html.split("$('recManual').innerHTML")[1].split("\n}")[0]
     assert "moreToggle(manualDetailHtml(w))" in 직접
-    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
-    assert "moreToggle(measureDetailHtml(m))" in 점검
+    점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]
+    assert "measureDetailHtml(r)" in 점검
+    assert "dayAgeHtml(r.date)" in 점검                 # 운동에서 뽑은 줄도 펼쳐진다
 
 
 def test_달력_아래_목록도_같다():
@@ -666,14 +678,13 @@ def test_달력이_직접기록의_종목을_받는다():
     assert "items: w.items" in 본문
 
 
-def test_점검_기록은_버튼과_체크박스가_안_겹친다():
-    """label 안에 button 을 두면 버튼을 눌러도 체크박스가 켜진다."""
+def test_점검_기록에는_고르는_자리가_없다():
+    """지우기가 없어졌으니 체크박스도 label 도 없다 — 줄 모양이 하나다."""
     html = _index()
-    점검 = html.split("$('recMeasures').innerHTML")[1].split("paintMeasureDeleteBtn()")[0]
-    assert '<div class="rec-item rec-pick">' in 점검      # label 이 아니다
-    assert '<label class="rec-pick-main">' in 점검        # 고르는 부분만 label
-    # 버튼은 label 밖에 있어야 한다
-    assert 점검.index("</label>") < 점검.index("moreToggle(")
+    점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]
+    assert '<div class="rec-item">' in 점검
+    assert "<label" not in 점검
+    assert "rec-pick" not in 점검
 
 
 # ---------- J2. 결제창 · 카카오페이 ----------
@@ -869,7 +880,8 @@ def test_기록한_날마다_체력나이를_저장한다():
     assert "async function refreshLogAges(" in html
     본문 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
     assert "API.activityAgeDays(bodies)" in 본문      # 날마다 부르지 않고 한 번에
-    assert "w.체력나이 = {" in 본문
+    assert "state.dayAges[r.date] = {" in 본문         # 날짜별 보관함에 넣는다
+    assert "w.체력나이 = state.dayAges[w.date]" in 본문  # 직접 적은 줄에도 붙여 둔다
     저장 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
     assert "refreshLogAges({ 전부: true })" in 저장
 
@@ -884,31 +896,50 @@ def test_그날까지의_측정만_기준으로_쓴다():
 def test_그날까지의_운동만_센다():
     html = _index()
     본문 = html.split("function activityCounts(끝날)")[1].split("\n}")[0]
-    assert "w.date < 시작 || w.date > 끝" in 본문     # 창 밖과 미래를 뺀다
+    assert "날 < 시작 || 날 > 끝" in 본문             # 창 밖과 미래를 뺀다
     assert "끝날 || todayIso()" in 본문               # 안 주면 오늘까지 (I3 그대로)
 
 
 def test_그날_잰_몸_상태를_함께_보낸다():
     html = _index()
-    본문 = html.split("function activityBodyFor(w)")[1].split("\n}")[0]
+    본문 = html.split("function activityBodyFor(날)")[1].split("\n}")[0]
     for k in ("키:", "몸무게:", "체지방률:", "sex:"):
         assert k in 본문, k
     assert "요약.몸무게" in 본문
+    # 루틴만 끝낸 날에는 직접 적은 줄이 없다 — 날짜로 찾아온다 (규칙 3)
+    assert "logAt(날)?.요약" in 본문
 
 
-def test_기준이_없으면_만들지_않는다():
-    """측정 전에 적은 날은 비교할 기준이 없다."""
+def test_한_번도_안_쟀으면_만들지_않는다():
+    """잰 적이 아예 없으면 비교할 기준 자체가 없다 — 값을 지어내지 않는다."""
     html = _index()
-    본문 = html.split("function activityBodyFor(w)")[1].split("\n}")[0]
+    본문 = html.split("function activityBodyFor(날)")[1].split("\n}")[0]
     assert "if (!기준?.항목별 || !state.ageGbn) return null;" in 본문
+
+
+def test_그날_전에_잰_적이_없으면_뒤_측정을_거슬러_쓴다():
+    """기록이 있는 날은 무조건 체력나이를 남긴다 (규칙 2).
+
+    되도록 그날까지의 측정을 쓰지만, 그전에 잰 적이 아예 없으면
+    가장 이른 뒤 측정을 끌어다 쓴다. 대신 추정이라고 화면에 밝힌다."""
+    html = _index()
+    본문 = html.split("function measureAtOrBefore(날)")[1].split("\n}")[0]
+    assert "const 이전 = list.filter(m => m.date <= 날);" in 본문   # 먼저 그날까지
+    assert "if (list.length) return list[0];" in 본문              # 없으면 가장 이른 것
+    산출 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
+    assert "소급: !!(기준 && 기준.date && 기준.date > r.date)" in 산출
+    # 화면에는 '거슬러 쓴 추정' 이라고 적지 않는다 — 그래프의 속 빈 점과
+    # 안내 문구가 이미 추정치라고 말한다. 값에는 그 사실을 남겨 둔다.
+    상세 = html.split("function dayAgeHtml(날)")[1].split("\n}")[0]
+    assert "거슬러 쓴 추정" not in 상세
 
 
 def test_예전_기록은_한_번에_채운다():
     html = _index()
     assert "async function backfillLogAges()" in html
     본문 = html.split("async function backfillLogAges()")[1].split("\n}")[0]
-    assert "!w.체력나이" in 본문                       # 빈 날만
-    assert "saveProfile()" in 본문                      # 채웠으면 저장한다
+    assert "workoutDates().filter(d => !dayAge(d))" in 본문   # 빈 날만
+    assert "saveProfile()" in 본문                             # 채웠으면 저장한다
 
 
 def test_지우면_뒤_날들도_다시_센다():
@@ -920,13 +951,13 @@ def test_지우면_뒤_날들도_다시_센다():
 
 def test_그날_체력나이를_상세에_보여준다():
     html = _index()
-    assert "function dayAgeHtml(w)" in html
-    본문 = html.split("function dayAgeHtml(w)")[1].split("\n}")[0]
+    assert "function dayAgeHtml(날)" in html
+    본문 = html.split("function dayAgeHtml(날)")[1].split("\n}")[0]
     assert "체력나이" in 본문
     assert "측정 ${Math.round(a.기준나이)}세에서" in 본문   # 측정값과 비교해서 보여 준다
     assert "체성분은 그날 잰 값" in 본문
     상세 = html.split("function manualDetailHtml(w)")[1].split("\n}")[0]
-    assert "dayAgeHtml(w)" in 상세
+    assert "dayAgeHtml(w.date)" in 상세
 
 
 def test_서버가_실패해도_있던_값을_지우지_않는다():
@@ -954,7 +985,7 @@ def test_삭제_버튼이_부르는_함수가_실제로_있다():
 def test_삭제_함수가_중복_정의되지_않는다():
     """#85 에서 deleteSelectedMeasures 가 두 번 선언돼 앞엣것이 죽은 코드가 됐다."""
     html = _index()
-    for f in ("deleteSelectedMeasures", "deleteSelectedManual",
+    for f in ("deleteSelectedManual",
               "pickManual", "paintManualDeleteBtn", "renderManualRecords"):
         assert html.count(f"function {f}(") == 1, f
 
@@ -1434,18 +1465,36 @@ def test_그래프가_측정과_운동을_함께_쓴다():
     html = _index()
     assert "function trendPoints()" in html
     본문 = html.split("function trendPoints()")[1].split("\n}")[0]
-    assert "state.workoutLog" in 본문
+    assert "workoutDates()" in 본문      # 루틴만 끝낸 날도 들어온다 (규칙 3)
+    assert "dayAge(d)" in 본문
     assert "measurePoints()" in 본문
     assert "'운동'" in 본문 and "'측정'" in 본문
 
 
-def test_같은_날이면_측정이_이긴다():
-    """실제로 잰 값이 운동 기록에서 뽑은 추정치보다 낫다."""
+def test_잰_날은_꽉_찬_점으로_그리되_값은_그날_최종값이다():
+    """점 모양은 잰 날인지 아닌지를 말하고, 값은 화면마다 같아야 한다."""
     html = _index()
     본문 = html.split("function trendPoints()")[1].split("\n}")[0]
     운동자리 = 본문.index("출처: '운동'")
-    측정자리 = 본문.index("측정이 나중에 덮는다")
+    측정자리 = 본문.index("measurePoints().forEach")
     assert 운동자리 < 측정자리        # 나중에 set 하는 쪽이 남는다
+    assert "체력나이: dayFinalAge(p.date) ?? p.체력나이" in 본문
+
+
+def test_하루에_보여_주는_체력나이는_하나다():
+    """점검 기록과 직접 적은 운동에 같은 날 다른 숫자가 뜨면
+    어느 게 맞는 값인지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function dayFinalAge(날)")[1].split("\n}")[0]
+    assert "dayAge(날)" in 본문                      # 운동까지 반영한 값이 먼저
+    assert "state.measureLog" in 본문                # 없으면 잰 값
+
+    점검 = html.split("function measureRows()")[1].split("\n}")[0]
+    assert "체력나이: dayFinalAge(m.date) ?? m.체력나이" in 점검
+
+    # 자리수도 맞춘다 — 29.7 을 한쪽은 30, 한쪽은 29.7 로 쓰면 달라 보인다
+    목록 = html.split("$(\'recMeasures\').innerHTML")[1].split(".join(\'\')")[0]
+    assert "Math.round(r.체력나이 * 10) / 10" in 목록
 
 
 def test_체력나이가_없는_운동일은_안_찍는다():
@@ -1482,3 +1531,1711 @@ def test_추정치라고_문구에_적는다():
     html = _index()
     본문 = html.split("function renderTrend()")[1].split("\n}")[0]
     assert "속 빈 점" in 본문 and "추정치" in 본문
+
+
+# ---------- 채팅방 목록 표기 ----------
+
+def test_방_종류는_공개_여부만_적는다():
+    """'비공개 단체 채팅' 은 좁은 목록에서 너무 길다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "'비공개 단체 채팅'" not in 본문 and "'공개 단체 채팅'" not in 본문
+    assert "rm['비공개'] ? '비공개' : '공개'" in 본문
+    assert "'개인 채팅'" in 본문          # 개인 채팅은 그대로 구분해서 보여 준다
+
+
+def test_내가_방장인_방은_이름_옆에_표시된다():
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "rc-host" in 본문
+    assert 'aria-label="내가 만든 방"' in 본문
+    assert "${privateMark}${hostMark}" in 본문     # 이름 옆에 붙는다
+    # 개인 채팅에는 방장이 없다 — 먼저 말을 건 쪽일 뿐이라 표시할 뜻이 없다
+    assert "(rm['방장'] && rm['종류'] !== 'direct')" in 본문
+
+
+def test_방_카드가_좁아도_이름이_접히지_않는다():
+    """방장이면 버튼이 셋이라, 이름 칸이 한 글자씩 세로로 접혔다."""
+    html = _index()
+    카드 = html.split(".room-card{")[1].split("}")[0]
+    assert "flex-wrap:wrap" in 카드              # 버튼 줄이 아래로 내려간다
+    정보 = html.split(".room-card .rc-info{")[1].split("}")[0]
+    assert "min-width:0" in 정보
+    버튼 = html.split(".room-actions{")[1].split("}")[0]
+    assert "flex-shrink:0" not in 버튼           # 이름을 밀어내지 않는다
+    assert 'class="rc-info"' in html
+
+
+def test_두_목록은_겹치지_않는다():
+    """같은 방이 '전체' 와 '내 채팅' 양쪽에 다 뜨면 어느 쪽을 봐야 할지 모른다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "내채팅 ? rm['참여중'] : !rm['참여중']" in 본문
+    # 빈 목록 문구도 각자 뜻에 맞게
+    assert "아직 들어가 있는 채팅방이 없어요" in 본문
+    assert "새로 들어갈 채팅방이 없어요" in 본문
+
+
+# ---------- 기록 규칙 (2·3·4) ----------
+
+def test_운동한_날에는_루틴만_한_날도_들어간다():
+    """루틴만 하는 사람은 아무리 운동해도 그래프에 점이 안 찍혔다 (규칙 3)."""
+    html = _index()
+    본문 = html.split("function workoutDates()")[1].split("\n}")[0]
+    assert "allRoutineLog()" in 본문          # 루틴을 끝낸 날
+    assert "state.workoutLog" in 본문         # 직접 적은 날 (몸 상태만 적은 날 포함)
+    assert "new Set()" in 본문                # 겹쳐도 한 번만
+
+
+def test_기록이_지워진_날은_체력나이도_지운다():
+    html = _index()
+    본문 = html.split("async function refreshLogAges(")[1].split("\n}")[0]
+    assert "delete state.dayAges[d]" in 본문
+
+
+def test_루틴을_끝내도_그날_체력나이를_뽑는다():
+    """저장만 하고 끝내면 루틴만 한 날은 영영 값이 없다 (규칙 2)."""
+    html = _index()
+    본문 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
+    assert "refreshLogAges({ 전부: true })" in 본문
+    assert "saveProfile()" in 본문
+
+
+def test_날짜별_체력나이는_저장되고_돌아온다():
+    html = _index()
+    assert "dayAges: state.dayAges," in html                       # 스냅샷에 담는다
+    assert "state.dayAges = (saved?.dayAges" in html               # 되돌린다
+    assert html.count("state.dayAges = {};") >= 3                  # 초기화 자리마다
+
+
+def test_점검_기록은_날짜당_한_줄이다():
+    """같은 날 두 줄이면 어느 쪽이 지금 값인지 알 수 없다 (규칙 4)."""
+    html = _index()
+    본문 = html.split("function dedupeMeasureLog()")[1].split("\n}")[0]
+    assert "byDate.set(m.date, m)" in 본문        # 나중 것이 이긴다
+    보탬 = html.split("function appendMeasureLog()")[1].split("\n}")[0]
+    assert "dedupeMeasureLog()" in 보탬           # 잴 때마다 정리한다
+    assert "dedupeMeasureLog();" in html.split("state.dayAges = (saved?.dayAges")[1][:400]
+
+
+def test_운동한_날은_점검_기록에도_뜬다():
+    """'직접 적은 운동' 에는 있는데 '점검 기록' 에는 없는 날이 생기면 안 된다 (규칙 4)."""
+    html = _index()
+    본문 = html.split("function measureRows()")[1].split("\n}")[0]
+    assert "workoutDates()" in 본문
+    assert "출처: '운동'" in 본문
+    assert "출처: '측정'" in 본문
+    # 잰 값이 나중에 덮는다 — 실제로 잰 쪽이 이긴다
+    assert 본문.index("출처: '운동'") < 본문.index("출처: '측정'")
+
+
+def test_점검_기록은_어느_줄도_지울_수_없다():
+    """그날 운동 기록이나 재측정 쪽에서만 바뀐다. 여기서 따로 지우면 어긋난다."""
+    html = _index()
+    점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]
+    assert "checkbox" not in 점검
+    assert "그날 운동 기록을 지우면 함께 사라집니다" in html
+
+
+def test_끝낸_루틴도_운동한_날로_센다():
+    """루틴만 하는 사람의 기록이 체력나이에 하나도 안 닿으면,
+    운동해도 숫자가 안 움직인다 (규칙 2)."""
+    html = _index()
+    본문 = html.split("function activityCounts(끝날)")[1].split("\n}")[0]
+    assert "allRoutineLog()" in 본문
+    assert "if (e.직접) return;" in 본문                  # 직접 적은 건 두 번 세지 않는다
+    assert "String(st.체력요인 || '').split('·')" in 본문   # '근력·협응력' 을 나눈다
+    # 루틴 기록에 체력요인을 남겨야 셀 수 있다
+    완료 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
+    assert "체력요인: s.체력요인 || null" in 완료
+
+
+
+def test_x축에_찍힌_날짜를_적는다():
+    """점만 있고 며칠 기록인지 알 수 없으면 그래프를 읽을 수 없다."""
+    html = _index()
+    본문 = html.split("function trendSvg(pts)")[1].split("\nfunction ")[0]
+    assert "const 날짜들 = 날짜자리();" in 본문
+    assert "날짜들.map(p => tick(p) + dateLabel(p, 어느쪽(p)))" in 본문
+    assert "pts.slice(1, -1).forEach" in 본문     # 가운데 점들도 후보다
+
+
+def test_x축_날짜는_겹치면_건너뛴다():
+    """글자가 겹치면 아예 못 읽는다. 처음과 끝은 반드시 남긴다."""
+    html = _index()
+    본문 = html.split("function trendSvg(pts)")[1].split("\nfunction ")[0]
+    assert "if (왼 >= 오른끝) { 고른것.push(p); 오른끝 = 오; }" in 본문
+    # anchor 마다 글자가 퍼지는 방향이 달라서 자리를 따로 잰다
+    assert "if (anchor === 'start') return [cx, cx + w];" in 본문
+    assert "if (anchor === 'end') return [cx - w, cx];" in 본문
+    assert "고른것.push(b);" in 본문               # 끝은 늘 들어간다
+
+
+def test_댓글_등록도_아이콘_버튼이다():
+    """게시글 작성란과 같은 모양 — 입력칸이 넓고 버튼은 작은 아이콘."""
+    html = _index()
+    본문 = html.split('class="comment-row"')[1].split("</div>")[0]
+    assert 'class="post-send sm"' in 본문
+    assert "<svg" in 본문
+    assert ">등록</button>" not in 본문
+    assert 'aria-label="댓글 등록"' in 본문
+    입력 = html.split(".comment-row input{")[1].split("}")[0]
+    assert "flex:1" in 입력                     # 남는 자리는 입력칸이 가져간다
+    assert "border-radius:999px" in 입력        # 작성란과 같은 알약 모양
+    버튼 = html.split(".post-send.sm{")[1].split("}")[0]
+    assert "32px" in 버튼                       # 게시 버튼(38px)보다 한 단계 작다
+
+
+def test_이미_적은_날을_고치면_한_번_묻는다():
+    """하루에 하나다. 덮어쓰면 되돌릴 수 없고 그날 체력나이도 다시 뽑힌다."""
+    html = _index()
+    본문 = html.split("async function saveDailyLog()")[1].split("\n}")[0]
+    assert "이전 기록은 사라지고 저장되는 기록으로 바뀝니다. 괜찮으시겠습니까?" in 본문
+    assert "적어둔게있다" in 본문
+    # 아니라고 하면 아무것도 바뀌지 않는다 — 묻기가 먼저다
+    assert "&& !confirm(" in 본문
+    assert 본문.index("confirm(") < 본문.index("state.workoutLog.push")
+
+
+# ---------- 내가 쓴 것 고치기·지우기, 채팅 이모지 ----------
+
+def test_내_글_댓글_메시지에_수정과_삭제가_있다():
+    html = _index()
+    카드 = html.split("function postCard(p)")[1].split("\n}")[0]
+    assert 'onclick="editPost(${p.id})"' in 카드
+    assert 'onclick="removePost(${p.id})"' in 카드
+    assert "p['내글']" in 카드                    # 남의 글에는 안 뜬다
+
+    댓글 = html.split("async function toggleComments(id)")[1].split("\n}")[0]
+    assert "editComment(${id}, ${c.id})" in 댓글
+    assert "removeComment(${id}, ${c.id})" in 댓글
+    assert "c['내글']" in 댓글
+
+    메시지 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "editMessage(${m.id})" in 메시지
+    assert "removeMessage(${m.id})" in 메시지
+    assert "m['내글']" in 메시지
+
+
+def test_채팅_메시지에도_이모지를_단다():
+    """상대 글에도 달 수 있어야 쓸 데가 있다 — 내글 조건을 걸지 않는다."""
+    html = _index()
+    본문 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    이모지줄 = [l for l in 본문.split("\n") if "reactBar(" in l][0]
+    assert "reactBar('message', m.id, m['반응'], { opener: false })" in 이모지줄
+    assert "내글" not in 이모지줄
+
+
+def test_고친_글에는_표시가_남는다():
+    html = _index()
+    assert "function 수정됨(o)" in html
+    본문 = html.split("function 수정됨(o)")[1].split("\n}")[0]
+    assert "o['수정시각']" in 본문
+    assert "수정됨" in 본문
+
+
+def test_그_자리에서_고친다():
+    """새 창을 열면 앞뒤 맥락이 사라진다. 저장이 실패하면 되돌린다."""
+    html = _index()
+    본문 = html.split("function openInlineEdit(대상, 원래글, 저장)")[1].split("\nasync function")[0]
+    assert "class=\"edit-input\"" in 본문
+    assert "되돌리기" in 본문
+    assert "catch (e) { showToast(e.message); 되돌리기(); }" in 본문   # 쓴 글이 사라지지 않게
+    assert "e.key === 'Escape'" in 본문
+
+
+def test_지우기는_한_번_묻는다():
+    html = _index()
+    for 함수 in ("async function removeComment(pid, cid)", "async function removeMessage(id)"):
+        본문 = html.split(함수)[1].split("\n}")[0]
+        assert "confirm(" in 본문, 함수
+
+
+def test_채팅은_목록을_통째로_다시_그린다():
+    """고친 글·지운 글·이모지는 새 id 를 만들지 않는다.
+    새 것만 이어 붙이면 화면이 영영 안 바뀐다."""
+    html = _index()
+    본문 = html.split("async function pollChat()")[1].split("\n}")[0]
+    assert "API.commMessages(COMM.room)" in 본문      # after 를 주지 않는다
+    assert "paintChat(" in 본문
+    그리기 = html.split("function paintChat(list, { 강제 = false } = {})")[1].split("\n}")[0]
+    assert "if (!강제 && sig === chatSig) return;" in 그리기   # 달라졌을 때만
+    assert "맨아래였다" in 그리기                      # 읽는 중에 스크롤이 튀지 않게
+    assert "적던것" in 그리기                          # 적다 만 댓글은 지킨다
+    assert "lastMsgId" not in html                    # 이어 붙이던 자리는 사라졌다
+
+
+# ---------- 기록 공유 ----------
+
+def test_공유한_기록에_항목별_지표와_그날_운동이_담긴다():
+    """나이 한 줄만으로는 무엇을 해서 그렇게 됐는지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
+    assert "기준?.항목별?.[k]" in 본문
+    assert "오늘운동: 운동" in 본문
+
+    그날 = html.split("function movesOn(날)")[1].split("\n}")[0]
+    assert "logAt(날)?.items" in 그날            # 직접 적은 종목
+    assert "state.routineLog" in 그날            # 끝낸 루틴의 동작
+    assert "목록.some(m => m.이름 === st.운동명)" in 그날   # 같은 걸 두 번 적지 않는다
+
+
+def test_공유한_기록은_다섯_줄까지만_늘어놓는다():
+    """피드에서 글 하나가 화면을 다 차지하면 다른 글을 못 본다."""
+    html = _index()
+    assert "const SHARE_ROWS_INLINE = 5;" in html
+    본문 = html.split("function recordHtml(rec)")[1].split("\n}")[0]
+    assert "줄.length > SHARE_ROWS_INLINE ? moreToggle(표) : 표" in 본문
+    assert "AXIS_ORDER" in 본문                   # 항목 차례는 앱 기준을 따른다
+    # 카드를 누르면 댓글이 열린다. 안의 버튼이 그 동작까지 타면 안 된다
+    assert 'onclick="event.stopPropagation()"' in 본문
+
+
+def test_자세히_보기는_기록_카드_안에서도_열린다():
+    html = _index()
+    본문 = html.split("function toggleRecDetail(btn)")[1].split("\n}")[0]
+    assert "btn.closest('.rec-item, .post-record')" in 본문
+
+
+# ---------- 채팅방 목록 : 필터와 고정 ----------
+
+def test_필터를_누르면_목록으로_돌아온다():
+    """방을 열어 둔 채로 누르면 화면이 그대로여서, 두 버튼이 아무 일도
+    안 하는 것처럼 보였다."""
+    html = _index()
+    본문 = html.split("function setRoomFilter(f)")[1].split("\n}")[0]
+    assert "if (COMM.room) closeRoom();" in 본문
+    assert "renderRoomList();" in 본문
+
+
+def test_고정한_방이_위로_간다():
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "const 고정 = new Set(내채팅 ? (state.pinnedRooms || []).map(Number) : []);" in 본문
+    assert ".sort((a, b) => (고정.has(b.id) ? 1 : 0) - (고정.has(a.id) ? 1 : 0))" in 본문
+    assert "data-pin-room=" in 본문
+    assert 'aria-pressed="${고정.has(rm.id)}"' in 본문   # 켜짐/꺼짐을 읽어 줄 수 있게
+
+
+def test_고정_버튼은_내_채팅에만_뜬다():
+    """전체 목록은 아직 안 들어간 방이다. 고정할 것이 아니다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    핀 = 본문.split("data-pin-room=")[0]
+    assert 핀.rstrip().endswith('${내채팅 ? `<button type="button" class="room-pin"')
+
+
+def test_고정_버튼은_카드_맨_왼쪽에_아이콘만_있다():
+    """이름보다 먼저 눈에 들어와야 어느 방을 고정했는지 한눈에 보인다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert 본문.index("data-pin-room=") < 본문.index('<div class="rc-info">')
+    css = html.split(".room-card .room-pin{")[1].split("}")[0]
+    assert "order:-1" in css
+    assert "border:none" in css and "background:none" in css   # 버튼 테두리는 없다
+    아이콘 = html.split(".room-card .room-pin svg{")[1].split("}")[0]
+    assert "fill:var(--paper)" in 아이콘 and "stroke:var(--pine)" in 아이콘   # 안 한 것
+    켜짐 = html.split('.room-card .room-pin[aria-pressed="true"] svg{')[1].split("}")[0]
+    assert "fill:var(--pine)" in 켜짐                                        # 한 것
+    assert "📌" not in 본문                                    # 이모지 대신 단색 아이콘
+
+
+def test_들어간_방의_버튼은_참여다():
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "rm['참여중'] ? '참여' : '가입'" in 본문
+
+
+def test_고정은_계정에_남는다():
+    html = _index()
+    본문 = html.split("async function togglePinRoom(id)")[1].split("\n}")[0]
+    assert "state.pinnedRooms.splice(있던자리, 1)" in 본문   # 다시 누르면 풀린다
+    assert "state.pinnedRooms.unshift(id)" in 본문
+    assert "saveProfile()" in 본문
+    assert "pinnedRooms: state.pinnedRooms," in html                 # 스냅샷에 담고
+    assert "state.pinnedRooms = Array.isArray(saved?.pinnedRooms)" in html   # 되돌린다
+    assert html.count("state.pinnedRooms = [];") >= 3                # 초기화 자리마다
+
+
+# ---------- 채팅 댓글 ----------
+
+def test_인라인_수정창은_프로필_폼과_이름이_겹치지_않는다():
+    """.edit-row 는 프로필 폼(성별 버튼 포함)이 이미 쓰던 이름이다.
+    같은 이름을 쓰면 여기 button 규칙이 그쪽 버튼까지 칠한다."""
+    html = _index()
+    assert 'class="inline-edit"' in html
+    assert ".inline-edit button{" in html
+    # 프로필 폼 쪽 규칙은 그대로 살아 있어야 한다
+    assert ".edit-row > span:first-child{" in html
+    앞 = html.split(".edit-seg button.on{")[1].split("}")[0]
+    assert "background:var(--pine)" in 앞
+    # 인라인 수정창 CSS 가 .edit-row 를 다시 정의하지 않는다
+    assert ".edit-row button{" not in html
+    assert ".edit-row{ display:flex; gap:6px;" not in html
+
+
+# ---------- 이모지: 눌러서 열고, 남기면 닫는다 ----------
+
+def test_이모지는_눌러야_펴진다():
+    """여섯 개를 늘 펼쳐 두면 글보다 자리를 더 먹는다."""
+    html = _index()
+    본문 = html.split("function reactBar(target_type, id, react, { opener = true } = {})")[1].split("\n}")[0]
+    assert "COMM.emojis.filter(e => counts[e])" in 본문      # 남겨진 것만 늘 보인다
+    assert 'class="react-open"' in 본문                      # 나머지는 버튼으로 연다
+    고르는자리 = html.split("function reactPickerHtml(target_type, id, mine)")[1].split("\n}")[0]
+    assert 'class="react-picker" hidden' in 고르는자리        # 평소엔 접혀 있다
+
+
+def test_이모지를_남기면_고르는_자리가_닫힌다():
+    html = _index()
+    본문 = html.split("async function doReact(tt, id, emoji, btn)")[1].split("\nasync function")[0]
+    # 다시 그리면 picker 는 hidden 인 채로 만들어진다 — 남은 이모지와 여는 버튼만 남는다
+    assert "bar.outerHTML = reactBar(tt, id, r['반응'], { opener: 여는버튼있음 })" in 본문
+    assert "openMsgMenus.delete(id)" in 본문                  # 채팅은 연 자리까지 닫는다
+
+
+def test_한_번에_하나만_펴_둔다():
+    html = _index()
+    본문 = html.split("function toggleReactPicker(btn)")[1].split("\n}")[0]
+    assert "document.querySelectorAll('.react-picker').forEach(el => { el.hidden = true; })" in 본문
+
+
+# ---------- 채팅: 꾹 눌러 여는 자리 ----------
+
+def test_채팅은_꾹_눌러야_반응과_댓글이_나온다():
+    html = _index()
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "reactBar('message', m.id, m['반응'], { opener: false })" in 줄   # 여는 버튼이 없다
+    assert "openReactPickerFor('message', ${m.id})" in 줄
+    assert "replyFromMenu(${m.id})" in 줄
+    누르기 = html.split("function bindChatPress()")[1].split("\n}\n")[0]
+    assert "LONG_PRESS_MS" in 누르기
+    assert "pointerdown" in 누르기
+    assert "contextmenu" in 누르기                    # 마우스에서는 오른쪽 버튼
+    assert "ev.target.closest('button, input, a')" in 누르기   # 버튼을 누른 건 그 버튼 일이다
+
+
+def test_꾹_눌러_연_자리는_다시_그려도_남는다():
+    """채팅은 4초마다 다시 그린다. 열자마자 사라지면 쓸 수가 없다."""
+    html = _index()
+    assert "const openMsgMenus = new Set();" in html
+    그리기 = html.split("function paintChat(list, { 강제 = false } = {})")[1].split("\n}")[0]
+    assert "[...openMsgMenus].sort().join(',')" in 그리기
+    방옮김 = html.split("async function openRoom(id, name)")[1].split("\n}")[0]
+    assert "openMsgMenus.clear()" in 방옮김
+
+# ---------- 채팅 답장 ----------
+
+def test_답장은_시간순_그대로_끼어든다():
+    """따로 매달아 두면 대화가 시간순으로 읽히지 않는다."""
+    html = _index()
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "replyQuoteHtml(m)" in 줄
+    assert "chatRepliesHtml" not in html          # 매달아 두던 자리는 없앴다
+    assert "openReplies" not in html
+
+
+def test_답장_위에_어떤_글의_답장인지_적는다():
+    html = _index()
+    본문 = html.split("function replyQuoteHtml(m)")[1].split("\n}")[0]
+    assert "m['답장']" in 본문
+    assert "if (!원글) return '';" in 본문        # 원글이 지워졌으면 안 그린다
+    assert "goToMessage(${원글.id})" in 본문
+    css = html.split(".cm-quote{")[1].split("}")[0]
+    assert "font-size:11px" in css               # 작고
+    assert "color:var(--muted)" in css           # 흐리게
+
+
+def test_인용문을_누르면_원글로_간다():
+    html = _index()
+    본문 = html.split("function goToMessage(id)")[1].split("\n}")[0]
+    assert "scrollIntoView" in 본문
+    assert "classList.add('found')" in 본문       # 어디로 갔는지 잠깐 밝힌다
+    assert "원글이 이 목록에는 없어요" in 본문      # 조용히 아무 일도 안 하면 안 된다
+
+
+def test_답장_쓰는_중에는_무엇에_답하는지_보인다():
+    html = _index()
+    assert 'id="replyStrip"' in html
+    본문 = html.split("function paintReplyStrip()")[1].split("\n}")[0]
+    assert "replyTarget" in 본문
+    assert "cancelReply()" in 본문                # 그만둘 수 있다
+    보내기 = html.split("async function sendChat()")[1].split("\n}")[0]
+    assert "API.commSend(COMM.room, body, 답장)" in 보내기
+    assert 보내기.index("replyTarget = null") < 보내기.index("API.commSend")
+
+
+# ---------- 기록 공유: 날짜와 공개 범위 ----------
+
+def test_기록_공유는_날짜와_공개_범위를_고른다():
+    """누르는 즉시 오늘 기록이 전체 공개로 올라가면, 되돌릴 수 없는 일을
+    한 번에 하는 셈이다."""
+    html = _index()
+    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert 'id="shareDate"' in 본문
+    assert "pickAudience(" in 본문
+    assert "submitShare()" in 본문
+
+
+def test_기록이_있는_날만_고를_수_있다():
+    """아무 날이나 고르게 두면 빈 날을 골라 놓고 '올릴 기록이 없다' 는
+    말을 듣게 된다."""
+    html = _index()
+    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert "const 있는날 = workoutDates();" in 본문        # 기록이 있는 날만
+    assert "<select id=\"shareDate\"" in 본문             # 날짜 입력칸이 아니다
+    assert 'type="date"' not in 본문
+    assert "[...있는날].reverse().map" in 본문             # 최근 날부터
+    assert "아직 기록한 운동이 없어요" in 본문             # 하나도 없으면 그렇다고 말한다
+    assert "${고를수있음 ? '' : 'disabled'}" in 본문        # 올릴 것이 없으면 못 누른다
+
+
+def test_고를_때_어떤_날인지_함께_보여준다():
+    """날짜만 늘어놓으면 어느 날을 고르는지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function shareDateLabel(날)")[1].split("\n}")[0]
+    assert "dayFinalAge(날)" in 본문
+    assert "movesOn(날)" in 본문
+
+
+def test_기본_공개_범위는_친구까지다():
+    """몸에 관한 기록이다. 넓히는 건 사용자가 고르게 한다."""
+    html = _index()
+    assert "let shareAudience = 'friends';" in html
+
+
+def test_고른_친구를_안_고르면_올리지_않는다():
+    html = _index()
+    본문 = html.split("async function submitShare()")[1].split("\n}")[0]
+    assert "shareAudience === 'chosen' && !shareChosen.length" in 본문
+    assert "그날은 올릴 기록이 없어요" in 본문             # 빈 날도 막는다
+    assert "record_date: 날" in 본문
+    assert "audience: shareAudience" in 본문
+
+
+def test_올리기_전에_무엇이_올라가는지_보여준다():
+    html = _index()
+    본문 = html.split("function renderSharePreview()")[1].split("\n}")[0]
+    assert "recordHtml(shareRecordFor(" in 본문
+    기록 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
+    assert "dayFinalAge(날)" in 기록                      # 그날의 최종값
+    assert "movesOn(날)" in 기록                          # 그날 한 운동
+
+
+def test_전체_공개가_아닌_글에는_범위를_적는다():
+    html = _index()
+    본문 = html.split("function 범위표시(p)")[1].split("\n}")[0]
+    assert "p['공개범위']" in 본문
+    assert "친구 공개" in 본문 and "고른 친구" in 본문
+    카드 = html.split("function postCard(p)")[1].split("\n}")[0]
+    assert "범위표시(p)" in 카드
+
+# ---------- 아이디 · 댓글 프로필 · 채팅 입력칸 ----------
+
+def test_프로필_창에서도_내_아이디를_본다():
+    """프로필 버튼(친구 탭)과 프로필 창 두 곳 다에서 확인할 수 있어야 한다."""
+    html = _index()
+    assert 'id="myHandle"' in html          # 커뮤니티 친구 탭
+    assert 'id="editHandle"' in html        # 프로필 창
+    본문 = html.split("async function showMyHandle()")[1].split("\n}")[0]
+    assert "MY_HANDLE" in 본문
+    assert "API.commMyHandle()" in 본문
+    assert "로그인하면 발급돼요" in 본문      # 계정이 아니면 그렇다고 적는다
+    그리기 = html.split("function renderEdit()")[1].split("\n}")[0]
+    assert "showMyHandle()" in 그리기
+    # 바꿀 수 없는 값이라 입력칸이 아니다
+    자리 = html.split('<span>앱 내 아이디</span>')[1].split("</div>")[0]
+    assert "<input" not in 자리
+
+
+def test_댓글에도_글쓴이_프로필이_뜬다():
+    html = _index()
+    댓글 = html.split("async function toggleComments(id)")[1].split("\n}")[0]
+    assert "whoHtml(c['작성자'], c['작성자아이디'])" in 댓글
+    css = html.split(".comment .who-avatar{")[1].split("}")[0]
+    assert "22px" in css                    # 게시글보다 조금 작게
+
+
+def test_채팅_입력칸도_게시글_작성란과_같은_모양이다():
+    html = _index()
+    본문 = html.split('class="chat-compose-row"')[1].split("</div>")[0]
+    assert 'class="post-send"' in 본문
+    assert "<svg" in 본문
+    assert ">보내기</button>" not in 본문
+    assert 'aria-label="보내기"' in 본문
+    css = html.split(".chat-compose-row input{")[1].split("}")[0]
+    assert "flex:1" in css
+    assert "border-radius:999px" in css
+
+
+# ---------- 글마다 얼마나 담을지 ----------
+
+def test_올릴_때_얼마나_담을지_고른다():
+    html = _index()
+    본문 = html.split("const POST_LEVEL_LABEL = {")[1].split("};")[0]
+    for k in ("full", "no_body", "workout_only", "axes_only", "custom"):
+        assert k in 본문, k
+    assert "none" not in 본문                 # 아무것도 안 보이는 글을 올릴 까닭이 없다
+    assert "let shareLevel = 'no_body';" in html   # 몸 상태는 기본으로 담지 않는다
+    시트 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert 'id="shareLevel"' in 시트
+
+
+def test_직접_고르면_하나하나_켠다():
+    html = _index()
+    본문 = html.split("function renderShareItems()")[1].split("\n}")[0]
+    assert "level !== 'custom'" in 본문        # 고를 때만 나온다
+    assert 'type="checkbox"' in 본문
+    assert "toggleShareItem(" in 본문
+    항목 = html.split("function shareItemsFor(날)")[1].split("\n}")[0]
+    assert "dayFinalAge(날)" in 항목           # 체력나이
+    assert "AXES_SHOWN.forEach" in 항목        # 지표 하나하나
+    assert "movesOn(날).forEach" in 항목       # 운동 하나하나
+    assert "LOG_SUMMARY" in 항목               # 그날 몸 상태 하나하나
+
+
+def test_고를_수_없는_것은_늘어놓지_않는다():
+    """켰는데 안 올라간 것처럼 보이면 안 된다."""
+    html = _index()
+    항목 = html.split("function shareItemsFor(날)")[1].split("\n}")[0]
+    assert "기준?.항목별?.[k] != null" in 항목
+    assert "요약[f.key] != null" in 항목
+
+
+def test_담지_않기로_한_것은_아예_만들지_않는다():
+    """담아 놓고 화면에서 가리면 값은 이미 올라간 뒤다."""
+    html = _index()
+    본문 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
+    assert "켬.has('age')" in 본문
+    assert "켬.has('axis:' + k)" in 본문
+    assert "켬.has('move:' + x.이름)" in 본문
+    assert "켬.has('body:' + f.key)" in 본문
+
+
+def test_수준을_바꾸면_켠_것도_따라간다():
+    """빈 목록에서 시작하면 매번 처음부터 다 켜야 한다."""
+    html = _index()
+    본문 = html.split("function pickShareLevel()")[1].split("\n}")[0]
+    assert "pickedByLevel(날, shareLevel)" in 본문
+    잡기 = html.split("function pickedByLevel(날, level)")[1].split("\n}")[0]
+    assert "level === 'full'" in 잡기 and "level === 'axes_only'" in 잡기
+
+
+def test_늘_열어_두는_공개_설정은_두지_않는다():
+    """공유는 글마다 고른다. 켤 방법이 없는 설정과 죽은 화면을 남기지 않는다."""
+    html = _index()
+    for 없어야 in ("prefScope", "prefLevel", "loadPrefs", "renderPrefs", "savePrefs",
+                 "openFriendRecords", "renderFriendCal", "openFriendDay",
+                 "commSharePrefs", "commFriendDays"):
+        assert 없어야 not in html, 없어야
+
+
+def test_api에도_지운_길이_남지_않는다():
+    js = (_ROOT / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    for 없어야 in ("share/prefs", "/records"):
+        assert 없어야 not in js, 없어야
+
+
+# ---------- 체력 측정 화면 — placeholder는 절대 계산값으로 안 쓴다 ----------
+
+def test_num은_빈_문자열과_NaN을_실제_입력값과_구분한다():
+    """num() 하나만 있어야 한다. 예전엔 syncInputs()가 이걸 안 쓰고 parseFloat(...)
+    를 따로 또 짜서, 빈 칸(NaN)과 정말 0을 잰 경우를 다르게 취급하는 등 갈라지기
+    쉬웠다. placeholder(예: "예: 12")는 DOM에서 별개 속성이라 .value 로 절대
+    안 섞이지만, 그래도 "안 적음"의 기준(빈 문자열·NaN)을 이 한 곳에 명시해 둔다."""
+    html = _index()
+    assert html.count("function num(id){") == 1
+    body = html.split("function num(id){")[1].split("\n}")[0]
+    assert "raw === ''" in body           # 빈 문자열 = 안 적음
+    assert "Number.isFinite(v)" in body   # NaN(숫자로 못 읽음) = 안 적음
+    assert ".value" in body               # placeholder 가 아니라 실제 입력값만 읽는다
+
+
+def test_syncInputs는_직접_parseFloat하지_않고_num을_쓴다():
+    """유연성·근력·키·몸무게 네 항목 모두 num()을 거치게 해서, 빈 칸을 0이나
+    placeholder 예시값으로 잘못 읽는 경로를 하나로 막는다."""
+    html = _index()
+    body = html.split("function syncInputs(){")[1].split("\n}")[0]
+    assert "num('flexInput')" in body
+    assert "num('strengthInput')" in body
+    assert "num('heightInput')" in body
+    assert "num('weightInput')" in body
+    # 이 함수 안에서 더는 값을 직접 parseFloat 하지 않는다(나이 파싱은 정수라 예외)
+    assert body.count("parseFloat(") == 0
+
+
+def test_계산_전에_필수_측정값이_비면_막는다():
+    """나이·키·몸무게·유연성·근력 중 하나라도 안 적었으면 계산 자체를 막아서,
+    placeholder 예시값이 실제 입력인 것처럼 넘어가는 일이 없게 한다."""
+    html = _index()
+    body = html.split("async function calcAge(){")[1].split("\n}\n")[0]
+    assert "need.push('나이')" in body
+    assert "need.push('키')" in body
+    assert "need.push('몸무게')" in body
+    assert "need.push('다리를 펴고 앉아 손끝이 닿는 거리')" in body
+    assert "need.push(strengthLabel())" in body
+    assert "if (need.length)" in body and "return;" in body
+
+
+def test_또래비교_렌더링은_서버가_실제로_준_항목만_그린다():
+    """r.또래비교에 없는 항목(안 잰 항목)은 화면에 만들어 붙이지 않는다 —
+    화면 쪽에서 기본값·mock값으로 항목을 채우는 로직이 없어야 한다."""
+    html = _index()
+    body = html.split("function renderPeerComparison(r){")[1].split("\n}")[0]
+    assert "Object.entries(r.또래비교 || {})" in body
+    # 백분위가 없는 항목은 순위 계산에서 빠진다(체성분처럼 U자형인 것도 그렇다)
+    assert "typeof v.백분위 === 'number'" in body
+    for 금지 in ("?? 12", "?? 0", "|| 12", "상위 5%", "또래 중앙값 10"):
+        assert 금지 not in body
+
+
+# ---------- 왜 안 되는지 화면에 드러낸다 ----------
+
+def test_카카오_실패는_서버가_준_이유를_보여준다():
+    """고정 문구만 띄우면 설정이 틀렸는지 카카오가 막았는지 알 길이 없다."""
+    html = _index()
+    본문 = html.split("async function startPay()")[1].split("\n}")[0]
+    assert "alert(e.message ||" in 본문
+
+
+def test_AI_추천이_안_되면_까닭을_말한다():
+    html = _index()
+    assert "let recoAiWhy = null;" in html
+    assert "recoAiWhy = r.ai이유 || null;" in html
+    # 까닭은 들어간 화면(aiIntroHtml)에서 말한다 — 탭을 막고 토스트로 던지지 않는다
+    본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "recoAiWhy ||" in 본문
+
+
+# ---------- 기록 입력 단위 ----------
+
+def test_회씩_세트로_읽히게_적는다():
+    """'3세트 10회' 는 어느 쪽이 반복인지 헷갈린다."""
+    html = _index()
+    본문 = html.split("function wlogUnit(k, keys, 단위)")[1].split("\n}")[0]
+    assert "k === '횟수' && 목록.includes('세트')" in 본문
+    assert "'회씩'" in 본문
+    assert "k === '시간' && 목록.includes('세트')" in 본문
+    assert "'분씩'" in 본문
+
+
+def test_시간과_거리는_분_동안_km로_읽힌다():
+    html = _index()
+    본문 = html.split("function wlogUnit(k, keys, 단위)")[1].split("\n}")[0]
+    assert "k === '시간' && 목록.includes('거리')" in 본문
+    assert "'분 동안'" in 본문
+
+
+def test_입력칸도_적어_둔_값도_같은_말을_쓴다():
+    html = _index()
+    칸 = html.split('class="wlog-unit"')[1].split("</span>")[0]
+    assert "wlogUnit(k, x.입력, cat.단위)" in 칸
+    assert html.count("wlogUnit(k, 열쇠)") == 2      # 공유용·상세용 둘 다
+
+
+# ---------- AI 추천은 눌러야 값을 치른다 ----------
+
+def test_화면에_들어왔다고_AI를_부르지_않는다():
+    """예전에는 추천 화면에 들어올 때마다 불러서, 다른 창에 갔다 돌아오면
+    그때마다 100원이 빠졌다."""
+    html = _index()
+    본문 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "state.aiReco?.추천?.length" in 본문
+    assert "showAiReco();" in 본문                 # 받아 둔 것을 그대로 보여 준다
+    assert "aiIntroHtml()" in 본문                 # 없으면 안내만, 부르지 않는다
+    assert "API.recommendRoutines" not in 본문     # 여기서 직접 부르지 않는다
+
+
+def test_다시_받기는_반드시_한_번_묻는다():
+    """값이 빠지는 일이다."""
+    html = _index()
+    본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
+    assert "값을치를까(물음)" in 본문
+    assert "다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다." in 본문
+    # 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다
+    assert "AI 추천은 유료입니다. 이용하시겠습니까?" in 본문
+    assert "fetchRecommend(true)" in 본문
+    # 잔액을 보고 막는 일은 값을치를까() 가 한 자리에서 한다
+    # (test_유료_확인은_한_자리에서_한다 가 확인한다)
+    assert 본문.index("값을치를까(물음)") < 본문.index("fetchRecommend(true)")
+
+
+def test_받은_AI_추천은_남는다():
+    """창을 옮겼다 와도 그대로 있어야 한다."""
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "추천저장();" in 본문
+    저장 = html.split("function 추천저장()")[1].split("\n}")[0]
+    assert "state.aiReco = 담을것" in 저장 and "state.freeReco = 담을것" in 저장
+    assert "saveProfile();" in 저장
+    assert "aiReco: state.aiReco," in html          # 스냅샷에 담고
+    assert "state.aiReco = 되살린추천(saved?.aiReco);" in html   # 되돌린다
+    assert html.count("state.aiReco = null;") >= 3  # 초기화 자리마다
+
+
+def test_AI_카드에도_같은_버튼이_있다():
+    """무료 추천과 같은 자리에서 고르고, 거기에 다시 받기만 더한다."""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    for 버튼 in ("이전 루틴", "더 쉬운 루틴", "더 어려운 루틴", "이 루틴으로 시작"):
+        assert 버튼 in 본문, 버튼
+    assert "recoBy === 'ai' ?" in 본문
+    assert "AI 추천 다시 받기" in 본문
+
+
+def test_받은_적_없으면_받기_버튼만_보여준다():
+    html = _index()
+    본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "askAiRecommend()" in 본문
+    assert "원이 결제돼요" in 본문
+    assert "모자람 ? 'disabled' : ''" in 본문 or "${모자람 ? 'disabled' : ''}" in 본문
+
+
+def test_받은_추천은_창을_옮겨도_그대로다():
+    """무료든 AI든, 창을 옮겼다 왔다고 다른 루틴이 떠 있으면
+    보던 것을 다시 찾을 방법이 없다."""
+    html = _index()
+    본문 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "state.freeReco?.추천?.length" in 본문
+    assert "추천되살리기(state.freeReco, '점수')" in 본문
+    assert "freeReco: state.freeReco," in html
+    assert "state.freeReco = 되살린추천(saved?.freeReco);" in html
+
+
+def test_보던_자리까지_기억한다():
+    """'더 쉬운 루틴' 으로 옮긴 자리도 그대로여야 한다."""
+    html = _index()
+    저장 = html.split("function 추천저장()")[1].split("\n}")[0]
+    assert "자리: recoAt" in 저장 and "되돌아갈자리: [...recoBack]" in 저장
+    되살리기 = html.split("function 추천되살리기(저장본, 출처)")[1].split("\n}")[0]
+    assert "저장본.자리" in 되살리기
+    assert "Math.min(" in 되살리기                  # 목록이 짧아졌어도 벗어나지 않게
+    for 옮기기 in ("function goRecommend(i)", "function backRecommend()"):
+        옮김 = html.split(옮기기)[1].split("\n}")[0]
+        assert "추천저장();" in 옮김, 옮기기
+
+
+def test_채팅에도_글쓴이_프로필이_뜬다():
+    """게시판과 같은 자리에서 같은 모양으로 — 눌러서 프로필을 연다."""
+    html = _index()
+    줄 = html.split("function chatMsgHtml(m)")[1].split("\n}")[0]
+    assert "whoHtml(m['작성자'], m['작성자아이디'])" in 줄
+    css = html.split(".chat-msg .who-avatar{")[1].split("}")[0]
+    assert "20px" in css                    # 채팅 줄에 맞게 작게
+
+
+# ---------- 짬시간 ----------
+
+def test_짬시간_카드는_경로_안내_위에_있다():
+    html = _index()
+    assert 'id="spareCard"' in html
+    앞 = html.index('id="spareCard"')
+    뒤 = html.index('id="commuteFrom"')
+    assert 앞 < 뒤, "경로 안내보다 위에 있어야 한다"
+
+
+def test_일정을_안_적었으면_비워_두지_않고_무엇을_하면_되는지_말한다():
+    """빈 칸은 무엇을 해야 하는지 말해 주지 않는다. 하루가 통째로 빈다고 단정하지도 않는다."""
+    html = _index()
+    본문 = html.split("async function loadSparePlan()")[1].split("\n}")[0]
+    assert "if (!state.schedule?.바쁜시간) { sparePlan = null; renderSpareCard(); return; }" in 본문
+    카드 = html.split("function renderSpareCard()")[1].split("\n}")[0]
+    assert "일정을 주시면 AI가 짬시간에 맞게 루틴을 짜줘요" in 카드
+    assert 'onclick="openSchedule()">일정 넣기</button>' in 카드
+    assert "if (!칸) { card.hidden = true; return; }" in 카드         # 적었는데 비는 칸이 없으면 조용히
+
+
+def test_지금_들어와_있는_칸을_먼저_고른다():
+    html = _index()
+    본문 = html.split("function currentSlot()")[1].split("\n}")[0]
+    assert "c.시작 <= 지금 && 지금 < c.끝" in 본문      # 지금 들어와 있는 칸
+    assert "지금 < c.시작" in 본문                      # 없으면 오늘 남은 것 중 이른 것
+
+
+def test_홈에_들어올_때_짬시간을_다시_읽는다():
+    html = _index()
+    본문 = html.split("function goTo(id)")[1].split("\n}")[0]
+    assert "loadSparePlan()" in 본문
+
+
+def test_일정은_고른_종목과_약점을_함께_보낸다():
+    """비는 시간에 고른 종목을 넣어 주려면 서버가 그걸 알아야 한다."""
+    html = _index()
+    본문 = html.split("async function loadSparePlan()")[1].split("\n}")[0]
+    assert "sports: state.sports || []" in 본문
+    assert "weak: weakFactors()" in 본문
+
+
+def test_비었거나_거꾸로_된_시간은_담지_않는다():
+    """그런 줄은 빈 칸을 엉뚱하게 만든다."""
+    html = _index()
+    본문 = html.split("async function saveSchedule()")[1].split("\n}")[0]
+    assert "x.시작 && x.끝 && x.시작 < x.끝" in 본문
+    assert "saveProfile()" in 본문
+
+
+def test_일정은_계정에_남는다():
+    html = _index()
+    assert "schedule: state.schedule," in html
+    assert "state.schedule = (saved?.schedule" in html
+    assert html.count("state.schedule = null;") >= 3
+
+
+def test_루틴_추천에서_일정을_넣을_수_있다():
+    """선택 사항이다 — 적은 사람만 쓴다."""
+    html = _index()
+    assert 'id="schOpen"' in html
+    assert 'onclick="openSchedule()"' in html
+
+
+# ---------- AI 추천이 일정까지 읽는다 ----------
+
+def test_AI_추천은_늘_POST로_이_사람의_데이터를_보낸다():
+    """항목별 체력나이·최근 기록·일정은 쿼리 문자열에 실을 수 없다. 무료는 GET 그대로."""
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "const r = ai" in 본문
+    assert "API.recommendWithSchedule({" in 본문
+    assert "바쁜시간: 바쁜 || {}," in 본문
+    assert "상태: state.schedule?.상태 || []," in 본문
+    assert "항목별: state.result?.항목별 || {}," in 본문
+    assert "체력나이: state.result?.체력나이 ?? null," in 본문
+    assert "최근기록: recentWorkouts(14)," in 본문
+    # 무료는 예전 그대로 GET
+    assert "API.recommendRoutines({" in 본문
+
+
+def test_AI가_고른_짬시간을_추천_카드에_그린다():
+    html = _index()
+    assert "function spareRecoHtml()" in html
+    본문 = html.split("function spareRecoHtml()")[1].split("\n}")[0]
+    assert "비는 시간에는 이걸 해보세요" in 본문
+    assert "c.할것" in 본문
+
+
+def test_AI_짬시간도_추천과_함께_남는다():
+    """다른 창 갔다 와도 그대로여야 한다 — AI 추천은 값을 치른 것이다."""
+    html = _index()
+    assert "짬시간계획: recoSpare," in html
+    assert "recoSpare = 저장본.짬시간계획 || null;" in html
+    assert "recoSpare = r.짬시간계획 || null;" in html
+
+
+def test_홈_카드는_AI가_고른_말을_먼저_쓴다():
+    """홈과 추천 화면이 서로 다른 것을 말하면 어느 쪽을 믿을지 알 수 없다."""
+    html = _index()
+    본문 = html.split("function renderSpareCard()")[1].split("\n}")[0]
+    assert "state.aiReco?.짬시간계획?.[todayDow()]" in 본문
+    assert "x.시작 === 칸.시작 && x.끝 === 칸.끝" in 본문
+
+
+# ---------- 계절별로 자세히 도전하기 ----------
+
+def test_자세히_도전하기_버튼이_있다():
+    html = _index()
+    assert "이 루틴 자세히 알아보기" in html
+    assert 'onclick="askDetail()"' in html
+
+
+def test_자세히_알아보기는_값을_받지_않고_묻지도_않는다():
+    """AI 추천을 받을 때 이미 치렀다. 돈이 들지 않으니 결제 확인창이 없다."""
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "값을치를까(" not in 본문
+    assert "confirm(" not in 본문
+    assert "원이 결제됩니다" not in 본문
+    assert "API.recommendPeriods" in 본문
+    assert "state.credit" not in 본문                 # 잔액을 만지지 않는다
+    assert "recoAiReady" in 본문                      # 쓸 수 있는지는 본다
+
+
+def test_이미_받아_둔_축도_다시_누르면_새로_받는다():
+    """값이 들지 않으니 마음에 안 들면 한 번 더 — 새것이 옛것을 덮는다.
+    (예전엔 '이미 받아 뒀어요' 로 막았다.)"""
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "이미 받아 뒀어요" not in 본문
+    assert "'다시 ' : ''" in 본문                       # 받아 둔 축이면 '다시 받는 중' 이라 말한다
+    assert "API.recommendPeriods" in 본문
+
+
+def test_다른_루틴으로_옮기면_그_계획을_안_그린다():
+    """'더 쉬운 루틴' 으로 옮겨 놓고 예전 루틴의 계획을 보고 있으면 안 된다."""
+    html = _index()
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "recoSeason.루틴명 !== x.루틴명" in 본문
+    assert "PERIOD_AXES[축].머리" in 본문          # 머리말은 축 표(계절·시간대)에서 온다
+
+
+def test_계절_계획도_추천과_함께_남는다():
+    html = _index()
+    assert "계절계획: recoSeason," in html
+    assert "recoSeason = 저장본.계절계획 || null;" in html
+    # 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "recoSeason = null;" in 본문
+
+
+def test_차감은_서버가_준_잔액을_받아_적는다():
+    """값이 빠지는 곳(AI 추천 · 시간표 사진)은 서버가 준 잔액을 받아 적을 뿐,
+    화면이 스스로 깎지 않는다. 자세히 알아보기는 무료라 잔액을 만지지 않는다."""
+    html = _index()
+    for 함수 in ("async function fetchRecommend(ai)", "async function onSchedulePhoto(ev)"):
+        본문 = html.split(함수)[1].split("\n}")[0]
+        assert "state.credit = r['잔액']" in 본문, 함수
+        assert "state.credit -=" not in 본문, 함수
+    계절 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "state.credit" not in 계절
+
+
+# ---------- 일정은 AI 추천에서만 ----------
+
+def test_일정_넣는_자리는_AI_소개_카드_안에_있다():
+    """붙박이 버튼이 아니라 AI 소개 카드 안에 있다 — 그래서 무료 탭에는 저절로 없다.
+    받고 난 뒤에는 '자세히 알아보기' 메뉴의 '짬시간도 이용하고 싶어요' 로 간다."""
+    html = _index()
+    assert 'id="schOpen" onclick="openSchedule()" hidden' not in html
+    assert "sch.hidden" not in html
+    소개 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert 'id="schOpen" onclick="openSchedule()"' in 소개
+    assert "내 일정 넣기 (선택)" in 소개 and "내 일정 고치기" in 소개
+
+
+def test_무료_추천은_일정을_보내지_않는다():
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "const 바쁜 = ai ? (state.schedule?.바쁜시간 || null) : null;" in 본문
+
+
+# ---------- 하루의 모습은 여럿 ----------
+
+def test_학생을_학교별로_나눠_놓았다():
+    """같은 '학생' 이라도 중학생과 대학원생은 하루가 아주 다르다."""
+    html = _index()
+    본문 = html.split("const LIFE_KINDS = ")[1].split("];")[0]
+    for k in ("중학생", "고등학생", "대학생", "대학원생", "직장인", "알바생"):
+        assert k in 본문, k
+
+
+def test_여러_개_고를_수_있고_직접_적을_수도_있다():
+    html = _index()
+    고르기 = html.split("function pickLifeKind(k)")[1].split("\n}")[0]
+    assert "SCH.상태.indexOf(k)" in 고르기
+    assert "splice(i, 1)" in 고르기            # 다시 누르면 빠진다
+    assert "LIFE_MAX" in 고르기
+    assert 'id="schOther"' in html
+    assert "그 밖이라면 어떤 하루인지 적어주세요" in html
+    assert "function lifeKinds()" in html
+
+
+def test_예전에_하나만_골랐던_것도_읽힌다():
+    html = _index()
+    본문 = html.split("function scheduleDraft()")[1].split("\n}")[0]
+    assert "Array.isArray(예전) ? [...예전] : (예전 ? [예전] : [])" in 본문
+
+
+def test_저장은_고른_것과_적은_것을_함께_담는다():
+    html = _index()
+    assert "state.schedule = { 상태: lifeKinds(), 바쁜시간: 담을것 };" in html
+
+
+# ---------- 시간표 사진 ----------
+
+def test_사진_읽기는_묻고_나서_부른다():
+    html = _index()
+    본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
+    assert "값을치를까(" in 본문
+    assert "원이 결제됩니다" in 본문
+    assert 본문.index("값을치를까(") < 본문.index("API.schedulePhoto")
+
+
+def test_읽은_것을_곧바로_저장하지_않는다():
+    """잘못 읽었는데 그대로 저장되면 손댈 곳이 없다."""
+    html = _index()
+    본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
+    assert "renderSchedule()" in 본문
+    assert "saveProfile()" not in 본문        # 저장은 사용자가 누른다
+    assert "맞는지 보고 고쳐주세요" in 본문
+
+
+def test_이미_적어_둔_시간을_지우지_않는다():
+    html = _index()
+    본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
+    assert "const 있음 = (SCH.바쁜시간[d] || []).some" in 본문
+    assert "if (!있음)" in 본문
+
+# ---------- 채팅방 안 읽은 글 ----------
+
+def test_내_채팅은_안_읽은_수를_보여_준다():
+    """'지금까지 나눈 대화 수' 보다 '내가 안 읽은 수' 가 쓸모 있다."""
+    html = _index()
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert "const 안읽음 = 내채팅 ? (rm['안읽음'] || 0) : 0;" in 본문
+    assert "안 읽음 ${안읽음}" in 본문
+    # 새 글이 없으면 아무 말도 하지 않는다 — 못 본 연락만 알려 준다
+    assert "새 글 없음" not in 본문
+    # 안 들어간 방은 그대로 전체 수
+    assert "메시지 ${rm['메시지수']}" in 본문
+
+
+def test_안_읽은_글이_있으면_빨간_점():
+    html = _index()
+    assert ".room-card .rc-dot{" in html
+    assert "background:var(--clay)" in html.split(".room-card .rc-dot{")[1].split("}")[0]
+    본문 = html.split("function renderRoomList()")[1].split("\n}")[0]
+    assert 'class="rc-dot"' in 본문
+    assert "안 읽은 글이 있어요" in 본문
+
+
+def test_방에서_나오면_점이_사라진다():
+    """서버는 읽은 것으로 적어 뒀지만 손에 든 목록은 들어가기 전 것이다."""
+    html = _index()
+    본문 = html.split("function closeRoom()")[1].split("\n}")[0]
+    assert "rm['안읽음'] = 0" in 본문
+    assert "renderRoomList()" in 본문
+    assert "loadRooms()" in 본문
+
+
+# ---------- 퀘스트 클리어 (체력나이가 어려졌을 때) ----------
+
+def test_어려졌을_때만_띄운다():
+    """같거나 나빠졌는데 축하하면 앱을 못 믿게 된다."""
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "if (지금 >= 이전) return;" in 본문
+    assert "Number.isFinite(이전) && Number.isFinite(지금)" in 본문
+
+
+def test_첫_점검에는_띄우지_않는다():
+    """견줄 지난 기록이 없어 '어려졌다' 가 성립하지 않는다."""
+    html = _index()
+    본문 = html.split("function commitResult()")[1].split("\n}")[0]
+    assert "const 첫점검 = !state.first;" in 본문
+    assert "if (!첫점검) showQuestClear(" in 본문
+
+
+def test_지난번_값은_기록을_더하기_전에_읽는다():
+    """더한 뒤에 읽으면 방금 넣은 값이 스스로와 비교된다 — 늘 '그대로' 가 된다."""
+    html = _index()
+    본문 = html.split("function commitResult()")[1].split("\n}")[0]
+    assert 본문.index("const 지난번 = lastMeasuredAge();") < 본문.index("appendMeasureLog();")
+
+
+def test_같은_날_다시_잰_줄은_지난번으로_치지_않는다():
+    """그 줄은 곧 덮인다 (규칙 4)."""
+    html = _index()
+    본문 = html.split("function lastMeasuredAge()")[1].split("\n}")[0]
+    assert "m.date !== 오늘" in 본문
+    assert "state.first?.결과?.체력나이" in 본문      # 기록이 없으면 첫 결과로
+
+
+def test_점이_예전_자리에서_출발한다():
+    """0 에서 차오르면 '얼마나 옮겨 갔나' 가 보이지 않는다."""
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "GAUGE.moveDot(" in 본문
+    assert "fromDot: 이전 / 기준," in 본문
+
+
+def test_다_옮기면_얼마나_어려졌는지_띄운다():
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "퀘스트 클리어!" in 본문
+    assert "차이.toFixed(1)" in 본문
+    assert "onDone:" in 본문
+
+
+def test_겹쳐_띄우지_않고_눌러서_닫힌다():
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "document.querySelector('.quest')) return;" in 본문
+    assert "box.onclick = 닫기;" in 본문
+    assert "화면을 누르면 닫혀요" in 본문
+
+
+def test_스스로_사라진다():
+    """연출이 화면을 붙잡고 있으면 안 된다."""
+    html = _index()
+    본문 = html.split("function showQuestClear(이전, 지금)")[1].split("\n}")[0]
+    assert "QUEST_HOLD_MS" in 본문
+    assert "box.remove()" in 본문
+
+
+def test_움직임을_줄여_달라는_사람도_읽을_수_있다():
+    html = _index()
+    assert ".quest, .quest.done .quest-word" in html
+    본문 = html.split(".quest, .quest.done .quest-word")[1].split("}")[0]
+    assert "animation:none" in 본문 and "opacity:1" in 본문
+
+
+def test_게이지는_점만_옮기는_길을_따로_둔다():
+    """초록 채움과 눈금이 같이 움직이면 무엇이 달라졌는지 알 수 없다."""
+    art = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "gauge.js").read_text(encoding="utf-8")
+    assert "function moveDot(el, data" in art
+    본문 = art.split("function moveDot(el, data")[1].split("\n  }")[0]
+    assert "출발 + (dot - 출발) * t" in 본문      # 점만 움직인다
+    assert "svg(green," in 본문                  # 채움은 붙박이
+    assert "duration > 0 ?" in 본문              # 0 이면 NaN 이 되어 점이 사라진다
+    assert "moveDot" in art.split("return {")[-1]
+
+
+# ---------- 값이 빠지기 전 확인은 한 자리에서 ----------
+
+def test_유료_확인은_한_자리에서_한다():
+    """값이 빠지는 곳은 같은 순서로 물어야 한다 — 한 곳만 빠지면 그 버튼만 묻지 않고 돈이 빠진다.
+    (자세히 알아보기는 무료라 여기 없다.)"""
+    html = _index()
+    본문 = html.split("function 값을치를까(물음)")[1].split("\n}")[0]
+    assert "recoAiReady" in 본문                       # 쓸 수 있는지
+    assert "(state.credit || 0) < AI_PRICE" in 본문    # 이용권이 남았는지
+    assert "return confirm(물음);" in 본문             # 정말 할 것인지
+    # 부르는 곳은 셋. 각자 confirm 을 따로 부르지 않는다.
+    assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2 (AI 추천 · 시간표 사진)
+
+
+def test_자세히_도전하기는_AI_추천에서만_보인다():
+    """무료 추천에서는 눌러도 유료 안내만 뜬다 — 아예 없는 편이 낫다."""
+    html = _index()
+    actions = html.split("function paintRecommend()")[1]
+    actions = actions.split('<div class="reco-actions">')[1].split("</div>")[0]
+    도전 = actions.index("이 루틴 자세히 알아보기")
+    조건 = actions.index("recoBy === 'ai'")
+    assert 조건 < 도전, "AI 일 때만 그리는 조건 안에 있어야 한다"
+
+
+def test_후보가_모자라면_무료_추천을_다시_받는다():
+    """후보가 적으면 '더 쉬운·더 어려운 루틴' 이 갈 곳이 없다. 무료는 값이 들지 않는다."""
+    html = _index()
+    본문 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "state.freeReco?.추천?.length >= 5" in 본문
+
+
+# ---------- 안 보이는 창에서는 묻지 않는다 ----------
+
+def test_숨은_창에서는_채팅을_묻지_않는다():
+    """탭을 옮겨 두고 잊은 채팅방이 4초마다 서버를 두드릴 이유가 없다."""
+    html = _index()
+    본문 = html.split("async function pollChat()")[1].split("\n}")[0]
+    assert "if (document.hidden) return;" in 본문
+
+
+def test_창으로_돌아오면_바로_받아_온다():
+    """다음 4초를 기다리면 늦게 보인다."""
+    html = _index()
+    assert "visibilitychange" in html
+    본문 = html.split("visibilitychange")[1][:200]
+    assert "!document.hidden && COMM.room" in 본문
+    assert "pollChat()" in 본문
+
+
+# ---------- AI 탭은 잠그지 않는다 ----------
+
+def test_AI_탭을_잠그지_않는다():
+    """여기는 '받을지 고르는 자리' 다. 들어가 보지도 못하면 무엇을 고를 수 있는지조차 모른다."""
+    html = _index()
+    본문 = html.split("function paintRecoMode()")[1].split("\n}")[0]
+    assert "ai.disabled" not in 본문
+    고르기 = html.split("function setRecoMode(mode)")[1].split("\n}")[0]
+    assert "recoAiReady !== true" not in 고르기
+    assert "recoMode = mode;" in 고르기
+
+
+def test_쓸_수_있는지는_따로_가볍게_묻는다():
+    """추천 응답에만 실려 있으면, 받아 둔 추천이 있을 때 영영 모른다."""
+    html = _index()
+    assert "async function refreshAiStatus()" in html
+    본문 = html.split("async function refreshAiStatus()")[1].split("\n}")[0]
+    assert "API.aiStatus()" in 본문
+    assert "recoAiReady = !!r.ai가능;" in 본문
+    assert "aiStatusInFlight" in 본문            # 겹쳐 묻지 않는다
+    그리기 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "if (recoAiReady === null) refreshAiStatus();" in 그리기
+    assert "recoMode = 'free';" not in 그리기.split("if (recoMode === 'ai')")[1].split("paintRecoMode();")[0]
+
+
+def test_AI_화면이_왜_못_쓰는지_말해_준다():
+    """버튼만 잠가 두면 손쓸 방법이 없다."""
+    html = _index()
+    본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert "확인하는 중이에요" in 본문
+    assert "recoAiWhy" in 본문
+    assert "다시 확인" in 본문 and "refreshAiStatus()" in 본문
+    assert "무료 추천 보기" in 본문
+    # 값이 빠지는 버튼은 쓸 수 있을 때만 눌린다
+    assert "${확인중 || 못씀 || 모자람 ? 'disabled' : ''}" in 본문
+
+
+# ---------- AI 가 지은 루틴 ----------
+
+def test_최근_기록은_읽을_만큼만_보낸다():
+    """통째로 보내지 않는다. 날짜·이름·값, 끝낸 루틴만, 30줄까지."""
+    html = _index()
+    본문 = html.split("function recentWorkouts(days)")[1].split("\n}")[0]
+    assert "w.date < 부터" in 본문
+    assert "!e.done" in 본문                 # 끝내지 않은 루틴은 기록이 아니다
+    assert ".slice(0, 30)" in 본문
+    assert "이름: x.이름" in 본문
+
+
+def test_지은_루틴에는_더_쉬운_더_어려운_버튼이_없다():
+    """후보 목록이 아니라 하나다. 갈 곳이 없는 버튼은 두지 않는다."""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "const 지은것 = x.구성 === 'ai';" in 본문
+    actions = 본문.split('<div class="reco-actions">')[1].split("</div>")[0]
+    assert actions.index("${지은것 ? '' : `<button") < actions.index("이전 루틴")
+    assert actions.index("더 어려운 루틴") < actions.index("`}")   # 셋이 한 묶음으로 빠진다
+    assert "이 루틴으로 시작" in actions.split("`}")[1]           # 시작은 늘 있다
+
+
+def test_지은_루틴은_왜_이_사람인지를_말한다():
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요" in 본문
+    assert "AI 가 지었어요 · 이용권" in 본문
+    assert "${s.왜 ? `<br/>${esc(s.왜)}` : ''}" in 본문          # 동작마다 왜
+    assert "(x.주의 || []).length" in 본문                          # 주의 한 줄
+
+
+def test_고른_종목은_표시가_붙고_영상이_없어도_그린다():
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "s.출처 === '종목'" in 본문 and "고른 종목</span>" in 본문
+    assert "${s.아이콘 ? s.아이콘 + ' ' : ''}" in 본문
+    assert ".rec-step-tag{" in html
+
+
+def test_지은_루틴으로_시작하면_그_루틴을_그대로_돈다():
+    """목적별 기본 루틴으로 바꿔치기하면 맞춤으로 지은 뜻이 없다."""
+    html = _index()
+    시작 = html.split("async function useRecommend()")[1].split("\n}")[0]
+    assert "state.aiRoutine = x.구성 === 'ai' ? x : null;" in 시작
+    불러오기 = html.split("async function loadRoutine()")[1].split("\n}")[0]
+    assert "if (state.aiRoutine?.steps?.length) { applyAiRoutine(); return; }" in 불러오기
+    assert 불러오기.index("applyAiRoutine()") < 불러오기.index("API.programRoutine")
+    적용 = html.split("function applyAiRoutine()")[1].split("\n}")[0]
+    assert "youtube_id: s.youtube_id || null" in 적용            # 영상 없는 줄은 버튼만 안 뜬다
+    assert "구성: 'ai'" in 적용
+    assert "설명: [s.수행량, s.왜].filter(Boolean).join(' · ')" in 적용
+
+
+def test_목적을_손수_고르면_지은_루틴에서_벗어난다():
+    html = _index()
+    # 줄바꿈(CRLF/LF)에 매이지 않게 앵커 다음 줄만 본다
+    다음줄 = html.split("state.purpose = p;")[1][:80]
+    assert "state.aiRoutine = null;" in 다음줄
+
+
+def test_지은_루틴은_계정에_남고_모양이_맞을_때만_읽힌다():
+    html = _index()
+    assert "aiRoutine: state.aiRoutine," in html
+    assert "saved?.aiRoutine?.구성 === 'ai'" in html
+    assert "saved.aiRoutine.steps.length) ? saved.aiRoutine : null;" in html
+
+
+# ---------- 더 쉬운 · 더 어려운 루틴은 잠그지 않는다 ----------
+
+def test_더_쉬운_더_어려운_버튼을_잠그지_않는다():
+    """잠긴 버튼은 왜 안 되는지 말해 주지 않는다."""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    actions = 본문.split('<div class="reco-actions">')[1].split("</div>")[0]
+    assert "onclick=\"easierRecommend()\">더 쉬운 루틴" in actions
+    assert "onclick=\"harderRecommend()\">더 어려운 루틴" in actions
+    assert "쉬움 < 0" not in actions and "어려움 < 0" not in actions
+
+
+def test_지금_목록에_없으면_전체를_받아_와서_찾는다():
+    """12개는 화면이 넉넉하라고 자른 것이지, 더 어려운 루틴이 없다는 뜻이 아니다."""
+    html = _index()
+    본문 = html.split("async function stepRecommend(dir)")[1].split("\n}")[0]
+    assert "let i = recoStep(dir);" in 본문
+    assert "if (i < 0 && !전체받음)" in 본문
+    assert "await 전체추천얹기();" in 본문
+    assert 본문.index("전체추천얹기") < 본문.index("showToast")      # 받아 보고 나서야 없다고 한다
+    얹기 = html.split("async function 전체추천얹기()")[1].split("\n}")[0]
+    assert "limit: 60," in 얹기 and "ai: 0," in 얹기                  # 무료라 값이 안 든다
+    assert "recoList.push(x)" in 얹기 and "if (!있음.has(열쇠))" in 얹기   # 보던 자리가 밀리지 않는다
+    assert "추천저장();" in 얹기
+
+
+def test_정말_없으면_그렇다고_말한다():
+    html = _index()
+    본문 = html.split("async function stepRecommend(dir)")[1].split("\n}")[0]
+    assert "지금이 가장 어려운 루틴이에요" in 본문
+    assert "지금이 가장 쉬운 루틴이에요" in 본문
+
+
+def test_지은_루틴에서는_옮기지_않는다():
+    html = _index()
+    본문 = html.split("async function stepRecommend(dir)")[1].split("\n}")[0]
+    assert "recoList[recoAt]?.구성 === 'ai'" in 본문
+
+
+def test_새_추천을_받으면_전체_얹음_표시가_풀린다():
+    html = _index()
+    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "전체받음 = false;" in 본문
+
+
+# ---------- 자세히 알아보기 메뉴 ----------
+
+def test_자세히_알아보기는_메뉴를_연다():
+    html = _index()
+    본문 = html.split("function askDetail()")[1].split("\n}")[0]
+    assert "openSheet('이 루틴 자세히 알아보기'" in 본문
+    메뉴 = html.split("function renderDetailMenu()")[1].split("\n}")[0]
+    assert "별로 추천받기" in 메뉴
+    assert "짬시간도 이용하고 싶어요" in 메뉴
+    assert "toggleDetail('${key}')" in 메뉴                  # 누르면 고르는 것이지 바로 받는 게 아니다
+    assert "fetchDetail()" in 메뉴                           # 받기는 아래 버튼 하나
+
+
+def test_축은_계절과_시간대_둘이다():
+    html = _index()
+    본문 = html.split("const PERIOD_AXES = {")[1].split("};")[0]
+    assert "계절:" in 본문 and "시간대:" in 본문
+    assert "계절마다 이렇게 이어가요" in 본문 and "하루 중 이 시간엔 이렇게" in 본문
+
+
+def test_축을_받으면_같은_루틴에_얹고_다른_루틴이면_비운다():
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "const 같은루틴 = recoSeason?.루틴명 === x.루틴명 ? recoSeason : { 루틴명: x.루틴명 };" in 본문
+    assert "[축]: r[축] || []" in 본문
+    assert "바쁜시간: state.schedule?.바쁜시간 || {}," in 본문    # 시간대별엔 비는 시간이 재료다
+    assert "closeSheet();" in 본문                              # 메뉴는 닫고 받는다
+
+
+def test_받아_둔_축만_그린다():
+    html = _index()
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "Object.keys(PERIOD_AXES).filter(축 => (recoSeason[축] || []).length)" in 본문
+    assert "PERIOD_AXES[축].머리" in 본문
+    assert "esc(c[축])" in 본문
+
+
+# ---------- 건강 상태 ----------
+
+def test_건강_상태는_계정에_남고_모양이_맞을_때만_읽힌다():
+    html = _index()
+    assert "health: null," in html
+    assert "health: state.health," in html
+    assert "state.health = (saved?.health && typeof saved.health === 'object'" in html
+
+
+def test_고른_것과_직접_적은_것을_하나로_보낸다():
+    html = _index()
+    본문 = html.split("function healthList(src)")[1].split("\n}")[0]
+    assert "h.항목" in 본문 and "h.직접" in 본문
+    assert ".slice(0, 20)" in 본문                       # 낱말은 20자
+    assert "new Set(" in 본문                            # 겹치면 하나
+    for 곳 in ("async function fetchRecommend(ai)", "async function fetchPeriods(축,"):
+        assert "건강상태: healthList()," in html.split(곳)[1].split("\n}")[0], 곳
+
+
+def test_건강_상태_창은_고르고_적고_사진으로_채운다():
+    html = _index()
+    assert "const HEALTH_KINDS = [" in html
+    목록 = html.split("const HEALTH_KINDS = [")[1].split("];")[0]
+    for k in ("무릎 통증", "허리 통증", "고혈압", "당뇨", "임신·출산 후", "수술·부상 회복 중"):
+        assert k in 목록, k
+    창 = html.split("function renderHealth()")[1].split("\n}")[0]
+    assert 'id="healthOther"' in 창
+    assert "약봉지·처방전 사진으로 채우기" in 창
+    assert "진단이 아니며, 심한 상태면 의사와 먼저 상의하세요" in 창
+
+
+def test_사진은_채워_줄_뿐_저장은_사용자가_한다():
+    """잘못 읽었는데 그대로 저장되면 손댈 곳이 없다."""
+    html = _index()
+    본문 = html.split("async function onHealthPhoto(ev)")[1].split("\n}")[0]
+    assert "API.healthPhoto" in 본문
+    assert "renderHealth()" in 본문
+    assert "saveProfile()" not in 본문 and "saveHealth()" not in 본문
+    assert "값을치를까(" not in 본문                     # 무료다
+    assert "if (!HEALTH.항목.includes(x)" in 본문         # 이미 고른 것을 지우지 않는다
+
+
+def test_건강_상태는_AI_소개_카드와_프로필에서_적을_수_있다():
+    html = _index()
+    소개 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
+    assert 'id="healthOpen" onclick="openHealth()"' in 소개
+    assert "내 건강 상태 적기 (선택)" in 소개 and "내 건강 상태 고치기" in 소개
+    assert 'id="editHealth"' in html and 'onclick="openHealth()">적기</button>' in html
+    assert "paintHealthSummary();" in html.split("function renderEdit(){")[1][:60]
+
+
+def test_저장하면_추천_화면이면_다시_그린다():
+    html = _index()
+    본문 = html.split("async function saveHealth()")[1].split("\n}")[0]
+    assert "await saveProfile();" in 본문
+    assert "renderRecommend()" in 본문
+    assert "다음 AI 추천부터 반영돼요" in 본문
+
+
+# ---------- 시작일 ----------
+
+def test_값을_치르기로_하면_언제부터_할지_묻는다():
+    """받은 날이 곧 시작일이다. 봄에 받았다고 봄부터가 아니다."""
+    html = _index()
+    본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
+    assert "askStartDate(async () => {" in 본문
+    assert 본문.index("값을치를까(물음)") < 본문.index("askStartDate(")   # 값을 묻고 나서 날짜를 묻는다
+    창 = html.split("function askStartDate(then)")[1].split("\n}")[0]
+    assert "바로 시작해요" in 창 and "내일(" in 창
+    assert 'type="date" id="startDateInput"' in 창 and "이 날부터" in 창
+
+
+def test_바로_시작은_내일부터고_어제는_고를_수_없다():
+    html = _index()
+    본문 = html.split("async function pickStartDate(날)")[1].split("\n}")[0]
+    assert "if (날 < tomorrowIso())" in 본문 and "내일부터 고를 수 있어요" in 본문
+    assert "state.routineStart = 날;" in 본문 and "saveProfile();" in 본문
+
+
+def test_시작일은_계정에_남는다():
+    html = _index()
+    assert "routineStart: null," in html and "routineStart: state.routineStart," in html
+    assert "state.routineStart = /^" in html
+
+
+def test_시작일과_위치를_AI_에_보낸다():
+    html = _index()
+    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "시작일: state.routineStart || tomorrowIso()," in 받기
+    assert "...(await myLocation() || {})," in 받기
+    구간 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "시작일: state.routineStart || tomorrowIso()," in 구간
+    위치 = html.split("function myLocation()")[1].split("\n}")[0]
+    assert "navigator.geolocation" in 위치 and "3000" in 위치        # 3초 안에 못 받으면 서울 기준
+
+
+def test_같은_축을_다시_누르면_새로_받는다():
+    """값이 들지 않으니 마음에 안 들면 한 번 더 — 새것이 옛것을 덮는다."""
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "이미 받아 뒀어요" not in 본문
+    assert "'다시 ' : ''" in 본문
+    assert "받아 둠 · 다시 받기" in html.split("function renderDetailMenu()")[1].split("\n}")[0]
+
+
+def test_카드에_시작일_계절_날씨_한_줄():
+    html = _index()
+    본문 = html.split("function startLine(시)")[1].split("\n}")[0]
+    assert "시작 ${esc(날)}" in 본문 and "℃" in 본문 and "습도" in 본문
+    assert "(서울 기준)" in 본문                                   # 위치를 모르면 그렇다고 적는다
+    카드 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "startLine(x.시작)" in 카드
+    계절 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "recoSeason.시작.계절" in 계절 and "부터</span>" in 계절
+
+
+# ---------- 오늘 날씨에 맞춘 대안 ----------
+
+def test_AI_루틴의_동작에_출처와_id_를_남긴다():
+    """밖에서 하는 동작인지 알려면 이게 있어야 한다."""
+    html = _index()
+    본문 = html.split("function applyAiRoutine()")[1].split("\n}")[0]
+    assert "출처: s.출처 || null, id: s.id || null," in 본문
+    assert "checkTodayWeather();" in 본문
+
+
+def test_밖에서_하는_동작이_없으면_묻지도_않는다():
+    html = _index()
+    본문 = html.split("async function checkTodayWeather()")[1].split("\n}")[0]
+    assert "if (!steps.length) { weatherCheck = null;" in 본문
+    assert "if (weatherCheck?.열쇠 === 열쇠)" in 본문         # 같은 날·같은 동작 묶음이면 한 번
+    assert "오늘 + '|' + steps.map(s => s.출처 + ':' + s.id).join(',')" in 본문
+    assert "API.weatherCheck({ steps, ...(await myLocation() || {}) })" in 본문
+    고르기 = html.split("function outdoorSteps()")[1].split("\n}")[0]
+    assert "s.출처 === '종목' || s.출처 === '기록'" in 고르기
+
+
+def test_홈_카드는_홈에_들어올_때_그린다():
+    html = _index()
+    assert 'id="weatherCard"' in html
+    assert html.index('id="weatherCard"') < html.index('id="spareCard"')     # 짬시간 카드 위
+    assert "loadSparePlan(); checkTodayWeather(); }" in html
+
+
+def test_카드는_바꿔치기하지_않고_안내만_한다():
+    html = _index()
+    본문 = html.split("function renderWeatherCard()")[1].split("\n}")[0]
+    for 글 in ("오늘은 실내로", "오늘은 조심해서", "오늘 밖에서 해도 좋아요", "오늘 날씨를 못 받았어요"):
+        assert 글 in 본문, 글
+    assert "그대로 하셔도 돼요" in 본문                          # 괜찮으면 대안 없이
+    assert 'class="weather-from"' in 본문 and 'class="weather-to"' in 본문
+
+
+def test_플레이어에도_지금_동작의_대안_한_줄():
+    html = _index()
+    assert 'id="playerAlt"' in html
+    본문 = html.split("function renderPlayerAlt()")[1].split("\n}")[0]
+    assert "x.동작 === step.운동명" in 본문
+    assert "renderPlayerAlt();" in html.split("function renderStep()")[1].split("\n}")[0]
+
+
+# ---------- 자세히 알아보기: 여러 개를 한 번에 ----------
+
+def test_여러_개_골라서_한_번에_받는다():
+    html = _index()
+    고르기 = html.split("function toggleDetail(key)")[1].split("\n}")[0]
+    assert "DETAIL_PICK.delete(key)" in 고르기 and "DETAIL_PICK.add(key)" in 고르기
+    메뉴 = html.split("function renderDetailMenu()")[1].split("\n}")[0]
+    assert 'aria-pressed="${DETAIL_PICK.has(key)}"' in 메뉴
+    assert "고른 ${DETAIL_PICK.size}개 받기" in 메뉴 and "받을 것을 골라주세요" in 메뉴
+    받기 = html.split("async function fetchDetail()")[1].split("\n}")[0]
+    assert "Promise.all(부를것.map(축 => fetchPeriods(축, { 조용히: true, 시간대포함: 둘다 })))" in 받기   # 나란히 받는다
+    assert "if (고른것.includes('짬시간')) openSchedule();" in 받기                    # 짬시간은 일정 창
+    assert "계획을 받았어요" in 받기 and "계획은 못 받았어요" in 받기
+
+
+def test_고르기_전에는_아무것도_그리지_않는다():
+    """고른 축만 그린다 — 메뉴를 열었다고 계절·시간대가 미리 뜨지 않는다."""
+    html = _index()
+    assert "DETAIL_PICK = new Set();" in html.split("function askDetail()")[1].split("\n}")[0]
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "filter(축 => (recoSeason[축] || []).length)" in 본문
+
+
+def test_조용히_받을_때는_창과_알림을_부르는_쪽이_맡는다():
+    html = _index()
+    본문 = html.split("async function fetchPeriods(축, { 조용히 = false, 시간대포함 = false } = {})")[1].split("\n}")[0]
+    assert "if (!조용히) closeSheet();" in 본문
+    assert "return true;" in 본문 and "return false;" in 본문
+
+
+# ---------- 계절 안에 시간대 ----------
+
+def test_둘_다_고르면_한_번에_계절_안에_시간대():
+    """따로 두 덩이가 아니다 — "가을 아침엔 이렇게" 가 되어야 자세히 안내하는 것이다."""
+    html = _index()
+    받기 = html.split("async function fetchDetail()")[1].split("\n}")[0]
+    assert "const 둘다 = 축들.includes('계절') && 축들.includes('시간대');" in 받기
+    assert "const 부를것 = 둘다 ? ['계절'] : 축들;" in 받기               # AI 를 한 번만 부른다
+    assert "시간대포함: 둘다" in 받기
+    축 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
+    assert "시간대포함: !!(시간대포함 && 축 === '계절')," in 축
+    assert "if (융합됨) delete recoSeason.시간대;" in 축                   # 두 번 말하지 않는다
+    assert "계절 안에 시간대까지는 못 받았어요" in 축                    # 안 왔으면 옛 것을 지우지 않고 말한다
+
+
+def test_계절_상자_안에_시간대_줄을_그린다():
+    html = _index()
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    # 시간대 블록에선 c.시간대 가 문자열("아침")이다 — 배열일 때만 계절 안의 중첩으로 본다
+    assert "Array.isArray(c.시간대) && c.시간대.length" in 본문
+    assert 'class="season-time-name"' in 본문 and "esc(t.시간대)" in 본문 and "esc(t.한줄)" in 본문
+    assert ".season-times{" in html
+
+
+# ---------- 시간대 흐름 (홈 · 플레이어) ----------
+
+def test_하루를_네_시간대로_가른다():
+    html = _index()
+    표 = html.split("const DAYPARTS = [")[1].split("];")[0]
+    assert "{ 이름: '아침', 시작: '04:00', 끝: '11:00' }" in 표
+    assert "{ 이름: '낮',   시작: '11:00', 끝: '17:00' }" in 표
+    assert "{ 이름: '저녁', 시작: '17:00', 끝: '21:00' }" in 표
+    assert "{ 이름: '밤',   시작: '21:00', 끝: '04:00' }" in 표
+    본문 = html.split("function daypartOf(hm)")[1].split("\n}")[0]
+    assert "|| DAYPARTS[3]" in 본문                                  # 자정을 넘긴 밤은 나머지 전부
+
+
+def test_그_시간대에_어떻게_할지는_계절_안의_말이_먼저():
+    html = _index()
+    본문 = html.split("function daypartGuide(이름)")[1].split("\n}")[0]
+    assert "c.계절 === todaySeason()" in 본문
+    assert "(계절?.시간대 || []).find(t => t.시간대 === 이름)" in 본문
+    assert "(계획.시간대 || []).find(t => t.시간대 === 이름)" in 본문      # 없으면 시간대별 말
+
+
+def test_끝냈으면_다음_것을_바로_띄우지_않는다():
+    """"끝났어요!" 를 띄우고, 미리 하고 싶은 사람만 버튼을 누른다."""
+    html = _index()
+    assert "이 시간대에 할 루틴이 끝났어요!" in html
+    본문 = html.split("function renderDaypartRow()")[1].split("\n}")[0]
+    assert "const 끝남 = daypartDone(지금);" in 본문
+    assert "$('daypartDone').hidden = !끝남;" in 본문
+    assert "nextBtn.hidden = !끝남;" in 본문
+    assert "루틴 미리하기" in 본문
+    미리 = html.split("function previewNextDaypart()")[1].split("\n}")[0]
+    assert "state.previewDaypart = { date: isoDate(new Date()), 시간대: 다음 };" in 미리
+    assert "goTo('s4');" in 미리
+
+
+def test_시계가_다음_시간대로_넘어가면_누르든_말든_그_시간대():
+    html = _index()
+    본문 = html.split("function effectiveDaypart()")[1].split("\n}")[0]
+    assert "p?.date === 오늘" in 본문                                  # 오늘 것만
+    assert "> DAYPARTS.findIndex(d => d.이름 === daypartOf())" in 본문   # 앞으로만, 시계가 닿으면 뜻이 없다
+    assert "return daypartOf();" in 본문
+
+
+def test_완료는_시간대마다_한_번씩_남는다():
+    """아침에 끝냈다고 낮 것까지 끝난 게 아니다."""
+    html = _index()
+    본문 = html.split("function logRoutineDone()")[1].split("\n}")[0]
+    assert "const 시간대 = state.routineMeta?.구성 === 'ai' ? effectiveDaypart() : null;" in 본문
+    assert "(e.시간대 || null) === 시간대" in 본문
+    assert "date: today, no, done: true, 시간대," in 본문
+
+
+def test_플레이어_위에_시간대_한_줄():
+    html = _index()
+    assert 'id="playerDaypart"' in html
+    본문 = html.split("function renderPlayerDaypart()")[1].split("\n}")[0]
+    assert "const 미리 = 이름 !== daypartOf();" in 본문 and "'미리 하는 '" in 본문
+    assert "renderPlayerDaypart();" in html.split("function renderStep()")[1].split("\n}")[0]
+
+
+def test_오늘의_스케줄_미리보기():
+    """시간대별로 몇 시부터 몇 시까지 무엇을 할지. 짬시간을 쓰면 바쁜 시간과 비는 칸도 같은 줄로."""
+    html = _index()
+    assert 'onclick="openTodayPreview()">오늘의 스케줄 미리보기</button>' in html
+    본문 = html.split("function openTodayPreview()")[1].split("\n}")[0]
+    assert "openSheet('오늘의 스케줄 미리보기'" in 본문
+    assert "DAYPARTS.map(d =>" in 본문
+    assert "state.schedule?.바쁜시간?.[요일]" in 본문 and "종류: 'busy'" in 본문
+    assert "sparePlan?.[요일]" in 본문 and "종류: 'spare'" in 본문
+    assert "state.aiReco?.짬시간계획?.[요일]" in 본문                   # AI 가 고른 것을 먼저
+    assert "줄.sort(" in 본문
+    assert "일정을 적어 두면 바쁜 시간과 비는 시간도 여기에 함께 보여요" in 본문
+
+
+def test_미리하기는_계정에_남고_홈_로딩에_잇는다():
+    html = _index()
+    assert "previewDaypart: null," in html and "previewDaypart: state.previewDaypart," in html
+    assert "state.previewDaypart = (saved?.previewDaypart?.date && saved.previewDaypart.시간대)" in html
+    assert "renderDaypartRow();" in html.split("async function loadHome()")[1].split("\n}")[0]
+
+
+def test_홈_히어로는_AI_루틴도_그린다():
+    """AI 루틴엔 루틴번호·주기·예상시간이 없다. 예전 줄을 그대로 쓰면 홈이 첫 점검 안내인 채로 남았다."""
+    html = _index()
+    본문 = html.split("async function loadHome()")[1].split(chr(10) + "}")[0]
+    assert "if (m?.구성 === 'ai') {" in 본문
+    assert "AI 가 지은 루틴 · " in 본문
+    assert 본문.index("if (m?.구성 === 'ai') {") < 본문.index("m.예상시간분[0]")
+
+
+def test_계절과_시간대가_따로_남아_있으면_버튼_없이_알아서_섞는다():
+    """예전엔 따로 받았다. 따로 나와 있는 걸 그대로 두지 않고, 버튼도 기다리지 않는다."""
+    html = _index()
+    판단 = html.split("function separateSeasonAndTime()")[1].split("\n}")[0]
+    assert "Array.isArray(c.시간대) && c.시간대.length" in 판단        # 이미 중첩이면 아니다
+    assert "계절.length > 0 && 시간대.length > 0 && !중첩있음" in 판단
+    섞기 = html.split("async function autoFuseSeasonTime()")[1].split("\n}")[0]
+    assert "if (!x || !separateSeasonAndTime() || !recoAiReady) return;" in 섞기
+    assert "recoFuseTried.has(x.루틴명)" in 섞기                        # 루틴마다 한 번만
+    assert "await fetchPeriods('계절', { 조용히: true, 시간대포함: true })" in 섞기
+    assert "값을치를까" not in 섞기                                     # 결제 없음
+    assert "값을치를까" not in html.split("async function fetchPeriods(")[1].split("\n}")[0]
+    본문 = html.split("function seasonHtml()")[1].split("\n}")[0]
+    assert "<button" not in 본문.split("season-refuse")[1].split("</div>")[0]   # 버튼이 아니다
+    assert "다시 정리하는 중이에요" in 본문
+    그리기 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert "autoFuseSeasonTime();" in 그리기                            # 그릴 때마다 살핀다
+    assert "if (recoAiReady) autoFuseSeasonTime();" in html             # AI 가능이 나중에 확인돼도
+

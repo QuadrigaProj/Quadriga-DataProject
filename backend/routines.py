@@ -218,11 +218,6 @@ def _sport_candidate(age_gbn: str, factors: list[str], used_names: set[str],
     return None
 
 
-def _score(step: dict, prefer: list[str]) -> int:
-    """선호 요인 몇 개를 건드리는 동작인가. 순서를 정하는 데만 쓴다."""
-    return sum(1 for p in prefer if _has_factor(step, p))
-
-
 def _prefer_substitute(age_gbn: str, factor: str, exclude: set[str],
                        used: set[str]) -> dict | None:
     """그 요인을 쓰는 본운동을 풀에서 하나 찾는다. 안전 조건은 그대로 지킨다."""
@@ -317,7 +312,15 @@ def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
 
 # ---------------------------------------------------------------------------
 # 강도 (12주 = 3구간, 현재 체력이 낮으면 한 단계 낮춰 시작)
+#
+# 영상을 따라 하는 구조라 루틴 플레이어는 반복 횟수·수행 시간을 쓰지 않는다.
+# 강도는 세트 수 하나로만 표현한다.
+#   1~4주: 2세트 · 5~8주: 2세트 · 9~12주: 3세트
+#   몸이 무거운 날: 기본 세트에서 1세트 감소, 최소 1세트
 # ---------------------------------------------------------------------------
+
+BASE_SETS = {"1-4": 2, "5-8": 2, "9-12": 3}
+
 
 def _band(week: int) -> str:
     if week <= 4:
@@ -346,28 +349,19 @@ def start_offset(fitness_age: float | None, real_age: float | None,
 
 
 def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = False) -> dict:
-    """주차 + 보정 → 이번 수행량."""
-    d = load()
+    """주차 + 보정 → 이번 세트 수.
+
+    age_gbn 은 호출부 호환을 위해 받지만 세트 수는 연령대와 무관하게 구간으로만
+    정해진다. 영상 기반 구조라 반복 횟수·수행 시간은 돌려주지 않는다.
+    """
     bands = ["1-4", "5-8", "9-12"]
     idx = bands.index(_band(max(1, int(week))))
     idx = max(0, min(len(bands) - 1, idx + offset))     # 보정은 구간을 당기거나 미룬다
-    conf = d["config"]["intensity"]["weeks"][bands[idx]]
-    per_age = conf.get(age_gbn, {})
-    time = conf.get("시간형", {})
-    sets = per_age.get("sets", time.get("sets", 2))
-    reps = per_age.get("reps")
-    sec = time.get("sec", 30)
-    rnd = per_age.get("round")
+    band = bands[idx]
+    sets = BASE_SETS[band]
     if heavy:
-        hd = d["config"]["intensity"]["heavy_day"]
-        sets = hd["sets"]                       # 모든 세트 1세트
-        sec = round(sec * hd["time_ratio"])     # 시간형 운동은 시간 절반
-    out = {"주차": int(week), "구간": bands[idx], "세트": sets, "시간초": sec}
-    if reps is not None:
-        out["반복"] = reps
-    if rnd is not None:
-        out["라운드"] = rnd
-    return out
+        sets = max(1, sets - 1)                 # 몸이 무거운 날: 1세트 감소, 최소 1세트
+    return {"주차": int(week), "구간": band, "세트": sets}
 
 
 AGE_NOTICE = "체력나이 분석은 만 11세 이상부터 이용할 수 있습니다.\n국민체력100 체력측정 데이터의 연령 범위에 따라 현재 서비스는 만 11세 이상을 지원합니다."

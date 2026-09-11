@@ -35,15 +35,37 @@ CREATE TABLE IF NOT EXISTS community_posts (
   body       TEXT NOT NULL DEFAULT '',
   media      TEXT NOT NULL DEFAULT '[]',
   record     TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER,
+  /* 누가 볼 수 있는 글인지. all=전체, friends=친구 전체, chosen=고른 친구.
+     예전 글에는 값이 없다 — 그때는 전체 공개뿐이었으니 all 로 읽는다. */
+  audience   TEXT,
+  /* 기록 공유 글이 어느 날의 기록인지 (YYYY-MM-DD) */
+  record_date TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cposts_created ON community_posts(created_at DESC);
+
+/* 글을 누구에게 보일지 고른 사람들. audience='chosen' 인 글에만 쓴다.
+   비어 있으면 글쓴이 말고는 아무도 못 본다 — 아무나 보이는 쪽으로 새지 않게. */
+CREATE TABLE IF NOT EXISTS post_audience (
+  post_id INTEGER NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (post_id, user_id)
+);
+
+/* 자주 고르는 친구 묶음 — '고른 친구' 로 올릴 때 기본으로 채워 준다. */
+CREATE TABLE IF NOT EXISTS share_chosen (
+  user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  other_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, other_id)
+);
 CREATE TABLE IF NOT EXISTS community_comments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   post_id    INTEGER NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_ccomments_post ON community_comments(post_id, created_at);
 CREATE TABLE IF NOT EXISTS community_reactions (
@@ -65,20 +87,41 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
   created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at INTEGER NOT NULL
 );
+/* last_read_id — 이 사람이 이 방에서 어디까지 읽었는지(마지막으로 본 메시지 id).
+   안 읽은 수는 이 값보다 뒤에 온 남의 글을 센다. 사람마다 다르므로 방이
+   아니라 멤버 줄에 둔다. */
 CREATE TABLE IF NOT EXISTS chat_members (
-  room_id   INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
-  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  joined_at INTEGER NOT NULL,
+  room_id      INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at    INTEGER NOT NULL,
+  last_read_id INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (room_id, user_id)
 );
+/* 답장도 메시지다. reply_to 로 어떤 글에 단 것인지만 적어 둔다.
+   따로 매달아 두면 대화가 시간순으로 읽히지 않는다. */
 CREATE TABLE IF NOT EXISTS chat_messages (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   room_id    INTEGER NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER,
+  reply_to   INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_cmsg_room ON chat_messages(room_id, id);
+
+/* 예전에 댓글을 따로 두던 자리. 지금은 답장도 chat_messages 의 한 줄이다.
+   이 표는 옮겨 담기(_move_replies_into_messages)만을 위해 남겨 둔다 —
+   없애 버리면 아직 옮기지 않은 DB 의 댓글이 그대로 사라진다. */
+CREATE TABLE IF NOT EXISTS chat_replies (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_creply_msg ON chat_replies(message_id, id);
 
 /* 앱 내 아이디 — 다른 사람에게 보이는 유일한 식별자다.
    이메일로 사람을 찾게 두면 이메일이 곧 검색키가 된다(가입 여부가 새어 나간다). */
@@ -128,28 +171,65 @@ def init_db() -> None:
     with auth.db() as con:
         for stmt in filter(str.strip, schema.split(";")):
             con.execute(stmt)
-        # 이미 만들어진 서비스 DB에도 채팅방 설정 컬럼을 안전하게 더한다.
-        if auth.is_postgres():
-            for column in ("room_type TEXT NOT NULL DEFAULT 'group'",
-                           "is_private INTEGER NOT NULL DEFAULT 0",
-                           "password_salt TEXT", "password_hash TEXT"):
-                con.execute(f"ALTER TABLE chat_rooms ADD COLUMN IF NOT EXISTS {column}")
-        else:
-            columns = {row["name"] for row in con.execute("PRAGMA table_info(chat_rooms)").fetchall()}
-            for column in ("room_type TEXT NOT NULL DEFAULT 'group'",
-                           "is_private INTEGER NOT NULL DEFAULT 0",
-                           "password_salt TEXT", "password_hash TEXT"):
-                if column.split()[0] not in columns:
-                    con.execute(f"ALTER TABLE chat_rooms ADD COLUMN {column}")
+        # 이미 만들어진 서비스 DB에도 늘어난 컬럼을 안전하게 더한다.
+        _add_columns(con, "chat_rooms",
+                     ["room_type TEXT NOT NULL DEFAULT 'group'",
+                      "is_private INTEGER NOT NULL DEFAULT 0",
+                      "password_salt TEXT", "password_hash TEXT"])
+        for table in ("community_posts", "community_comments", "chat_messages"):
+            _add_columns(con, table, ["edited_at INTEGER"])
+        _add_columns(con, "chat_messages", ["reply_to INTEGER"])
+        _add_columns(con, "chat_members", ["last_read_id INTEGER NOT NULL DEFAULT 0"])
+        _add_columns(con, "community_posts", ["audience TEXT", "record_date TEXT"])
+        _move_replies_into_messages(con)
+
+
+def _move_replies_into_messages(con) -> None:
+    """예전에 따로 두던 댓글(chat_replies)을 메시지로 옮긴다.
+
+    답장도 메시지가 되면서 자리가 하나로 합쳐졌다. 옮기지 않으면 이미 달아
+    둔 댓글이 화면에서 사라진다. 옮긴 줄은 지우므로 두 번 돌아도 그대로다.
+    """
+    try:
+        rows = con.execute(
+            "SELECT c.*, g.room_id FROM chat_replies c"
+            " JOIN chat_messages g ON g.id = c.message_id ORDER BY c.id").fetchall()
+    except Exception:
+        return                      # 그 테이블을 만든 적이 없는 DB
+    for r in rows:
+        con.execute(
+            "INSERT INTO chat_messages (room_id, user_id, body, created_at, edited_at, reply_to)"
+            " VALUES (?,?,?,?,?,?)",
+            (r["room_id"], r["user_id"], r["body"], r["created_at"],
+             r["edited_at"], r["message_id"]))
+    if rows:
+        con.execute("DELETE FROM chat_replies")
+
+
+def _add_columns(con, table: str, columns: list[str]) -> None:
+    """없는 컬럼만 더한다. 배포(Postgres)와 로컬(SQLite) 문법이 다르다."""
+    if auth.is_postgres():
+        for column in columns:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column}")
+        return
+    있는것 = {row["name"] for row in con.execute(f"PRAGMA table_info({table})").fetchall()}
+    for column in columns:
+        if column.split()[0] not in 있는것:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
 
 
 DATA_URL = re.compile(r"^data:(image|video)/[\w.+-]+;base64,[A-Za-z0-9+/=\s]+$")
 
 
-# 앱 내 아이디에 쓰는 글자. 헷갈리는 0/O, 1/l 은 뺀다.
-HANDLE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
-HANDLE_LEN = 6
-HANDLE_RE = re.compile(r"^[a-z0-9]{3,20}$")
+# 앱 내 아이디에 쓰는 글자 — 대소문자와 숫자 12자.
+# 이메일을 식별자로 쓰면 가입 여부가 새어 나가고, 길어서 주고받기도 어렵다.
+# 한 번 발급하면 바뀌지 않는다. 아무도 고칠 수 없다(고치는 길이 아예 없다).
+HANDLE_ALPHABET = ("ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                   "abcdefghijklmnopqrstuvwxyz"
+                   "0123456789")
+HANDLE_LEN = 12
+# 예전에 만든 6자 소문자 아이디도 그대로 찾을 수 있어야 한다 — 아이디는 고정이다.
+HANDLE_RE = re.compile(r"^[A-Za-z0-9]{3,20}$")
 
 
 def _new_handle(con) -> str:
@@ -195,7 +275,8 @@ def _public_user(con, user_id: int) -> dict:
 
 def find_by_handle(handle: str) -> dict | None:
     """아이디로 사람 찾기. 정확히 맞아야 찾힌다 — 부분 검색은 목록 훑기가 된다."""
-    handle = (handle or "").strip().lower()
+    # 대소문자를 구분한다. 눕혀서 찾으면 'Ab1' 과 'ab1' 이 같은 사람이 된다.
+    handle = (handle or "").strip()
     if not HANDLE_RE.match(handle):
         return None
     with auth.db() as con:
@@ -291,18 +372,88 @@ def _clean_media(media) -> str:
 # 게시글 · 댓글 · 반응
 # ---------------------------------------------------------------------------
 
+AUDIENCE = ("all", "friends", "chosen")
+
+
+def _friend_ids(con, me: int) -> set[int]:
+    보냄 = {r["other_id"] for r in con.execute(
+        "SELECT other_id FROM friend_links WHERE user_id=?", (me,)).fetchall()}
+    받음 = {r["user_id"] for r in con.execute(
+        "SELECT user_id FROM friend_links WHERE other_id=?", (me,)).fetchall()}
+    return 보냄 & 받음
+
+
+def chosen_friends(me: int) -> list[dict]:
+    """자주 고르는 친구 묶음. 친구가 아니게 된 사람은 빼고 돌려준다."""
+    with auth.db() as con:
+        고른것 = {r["other_id"] for r in con.execute(
+            "SELECT other_id FROM share_chosen WHERE user_id=?", (me,)).fetchall()}
+        친구 = _friend_ids(con, me)
+        return [_public_user(con, u) for u in sorted(고른것 & 친구)]
+
+
+def set_chosen_friends(me: int, handles: list[str]) -> list[dict]:
+    """친구인 사람만 담는다. 친구가 아닌 사람을 담아 두면, 나중에 친구가
+    되는 순간 예전에 올린 글까지 한꺼번에 보이게 된다."""
+    with auth.db() as con:
+        친구 = _friend_ids(con, me)
+        ids = []
+        for h in handles or []:
+            r = con.execute("SELECT user_id FROM user_handles WHERE handle=?",
+                            (str(h).strip(),)).fetchone()
+            if not r:
+                raise HTTPException(404, f"'{h}' 아이디를 쓰는 회원이 없어요.")
+            if r["user_id"] not in 친구:
+                raise HTTPException(400, "친구인 사람만 고를 수 있어요.")
+            ids.append(r["user_id"])
+        con.execute("DELETE FROM share_chosen WHERE user_id=?", (me,))
+        for u in set(ids):
+            con.execute("INSERT INTO share_chosen (user_id, other_id) VALUES (?,?)", (me, u))
+    return chosen_friends(me)
+
+
+def _audience_ids(con, me: int, audience: str, handles) -> list[int]:
+    """'고른 친구' 로 올릴 때 볼 사람들. 안 주면 저장해 둔 묶음을 쓴다."""
+    친구 = _friend_ids(con, me)
+    if handles is None:
+        고른것 = {r["other_id"] for r in con.execute(
+            "SELECT other_id FROM share_chosen WHERE user_id=?", (me,)).fetchall()}
+        return sorted(고른것 & 친구)
+    out = []
+    for h in handles:
+        r = con.execute("SELECT user_id FROM user_handles WHERE handle=?",
+                        (str(h).strip(),)).fetchone()
+        if not r or r["user_id"] not in 친구:
+            raise HTTPException(400, "친구인 사람만 고를 수 있어요.")
+        out.append(r["user_id"])
+    return sorted(set(out))
+
+
 def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
-                record: dict | None = None) -> int:
+                record: dict | None = None, audience: str = "all",
+                to: list[str] | None = None, record_date: str | None = None) -> int:
     body = (body or "").strip()
     media_json = _clean_media(media)
     if not body and media_json == "[]" and not record:
         raise HTTPException(400, "내용이나 사진을 하나는 넣어주세요.")
+    # 공유하는 기록에는 항목별 지표와 그날 운동까지 담긴다. 그래도 한 줄에
+    # 들어갈 크기다 — 그보다 크면 화면에 쓰라고 보낸 것이 아니다.
+    if record is not None and len(json.dumps(record, ensure_ascii=False)) > 4000:
+        raise HTTPException(400, "공유할 기록이 너무 큽니다.")
+    if audience not in AUDIENCE:
+        raise HTTPException(400, "공개 범위가 올바르지 않아요.")
     with auth.db() as con:
-        return con.insert_id(
-            "INSERT INTO community_posts (user_id, kind, body, media, record, created_at)"
-            " VALUES (?,?,?,?,?,?)",
+        볼사람 = _audience_ids(con, user_id, audience, to) if audience == "chosen" else []
+        pid = con.insert_id(
+            "INSERT INTO community_posts"
+            " (user_id, kind, body, media, record, created_at, audience, record_date)"
+            " VALUES (?,?,?,?,?,?,?,?)",
             (user_id, kind, body[:4000], media_json,
-             json.dumps(record, ensure_ascii=False) if record else None, int(time.time())))
+             json.dumps(record, ensure_ascii=False) if record else None,
+             int(time.time()), audience, record_date))
+        for u in 볼사람:
+            con.execute("INSERT INTO post_audience (post_id, user_id) VALUES (?,?)", (pid, u))
+        return pid
 
 
 def _reaction_summary(con, target_type: str, ids: list[int], me: int) -> dict[int, dict]:
@@ -322,15 +473,38 @@ def _reaction_summary(con, target_type: str, ids: list[int], me: int) -> dict[in
     return out
 
 
+def _visible_sql(me: int) -> tuple[str, tuple]:
+    """내가 볼 수 있는 글의 조건.
+
+    내 글은 늘 보이고, 전체 공개도 보인다. '친구 전체' 는 서로 친구일 때만,
+    '고른 친구' 는 글쓴이가 나를 고른 글만. 예전 글(audience 가 비어 있음)은
+    전체 공개뿐이던 때의 것이라 all 로 읽는다.
+    Postgres 는 OR 의 피연산자가 boolean 이어야 해서 EXISTS 로 감싼다.
+    """
+    return (
+        " (p.user_id = ?"
+        "  OR p.audience IS NULL OR p.audience = 'all'"
+        "  OR (p.audience = 'friends'"
+        "      AND EXISTS (SELECT 1 FROM friend_links f1"
+        "                  WHERE f1.user_id = p.user_id AND f1.other_id = ?)"
+        "      AND EXISTS (SELECT 1 FROM friend_links f2"
+        "                  WHERE f2.user_id = ? AND f2.other_id = p.user_id))"
+        "  OR (p.audience = 'chosen'"
+        "      AND EXISTS (SELECT 1 FROM post_audience a"
+        "                  WHERE a.post_id = p.id AND a.user_id = ?)))",
+        (me, me, me, me))
+
+
 def list_posts(me: int, *, before: int | None = None, limit: int = 20) -> list[dict]:
     limit = max(1, min(50, limit))
     with auth.db() as con:
+        볼조건, 볼값 = _visible_sql(me)
         sql = ("SELECT p.*, u.display_name FROM community_posts p"
-               " JOIN users u ON u.id = p.user_id")
-        params: tuple = ()
+               " JOIN users u ON u.id = p.user_id WHERE" + 볼조건)
+        params: tuple = 볼값
         if before:
-            sql += " WHERE p.id < ?"
-            params = (before,)
+            sql += " AND p.id < ?"
+            params = (*볼값, before)
         sql += " ORDER BY p.id DESC LIMIT ?"
         rows = con.execute(sql, (*params, limit)).fetchall()
         ids = [r["id"] for r in rows]
@@ -360,6 +534,9 @@ def _post_dict(r, me: int, comment_count: int, react: dict | None,
         "미디어": json.loads(r["media"] or "[]"),
         "기록": json.loads(r["record"]) if r["record"] else None,
         "작성시각": r["created_at"],
+        "수정시각": r["edited_at"],
+        "공개범위": r["audience"] or "all",
+        "기록날짜": r["record_date"],
         "댓글수": comment_count,
         "반응": (react or {"counts": {}, "mine": []}),
     }
@@ -367,10 +544,13 @@ def _post_dict(r, me: int, comment_count: int, react: dict | None,
 
 def get_post(me: int, post_id: int) -> dict:
     with auth.db() as con:
+        볼조건, 볼값 = _visible_sql(me)
         r = con.execute(
             "SELECT p.*, u.display_name FROM community_posts p"
-            " JOIN users u ON u.id = p.user_id WHERE p.id=?", (post_id,)).fetchone()
+            " JOIN users u ON u.id = p.user_id WHERE p.id=? AND" + 볼조건,
+            (post_id, *볼값)).fetchone()
         if not r:
+            # 못 보는 글과 없는 글을 구분해 주지 않는다 — 있다는 사실도 정보다
             raise HTTPException(404, "글을 찾을 수 없어요.")
         cs = con.execute(
             "SELECT c.*, u.display_name FROM community_comments c"
@@ -385,6 +565,7 @@ def get_post(me: int, post_id: int) -> dict:
         "id": c["id"], "작성자": c["display_name"], "내글": c["user_id"] == me,
         "작성자아이디": 핸들.get(c["user_id"]),
         "본문": c["body"], "작성시각": c["created_at"],
+        "수정시각": c["edited_at"],
         "반응": creact.get(c["id"], {"counts": {}, "mine": []}),
     } for c in cs]
     return post
@@ -403,11 +584,19 @@ def add_comment(user_id: int, post_id: int, body: str) -> int:
 
 
 def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) -> dict:
-    if target_type not in ("post", "comment"):
+    if target_type not in ("post", "comment", "message"):
         raise HTTPException(400, "잘못된 대상이에요.")
     if emoji not in ALLOWED_EMOJI:
         raise HTTPException(400, "쓸 수 없는 이모지예요.")
     with auth.db() as con:
+        # 채팅은 그 방 사람만 볼 수 있다. 남의 방 메시지에 이모지를 달 수는 없다.
+        if target_type == "message":
+            m = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
+                            (target_id,)).fetchone()
+            if not m:
+                raise HTTPException(404, "메시지를 찾을 수 없어요.")
+            if not _is_member(con, m["room_id"], user_id):
+                raise HTTPException(403, "먼저 모임에 참여해 주세요.")
         hit = con.execute(
             "SELECT 1 FROM community_reactions WHERE target_type=? AND target_id=? AND user_id=? AND emoji=?",
             (target_type, target_id, user_id, emoji)).fetchone()
@@ -423,14 +612,82 @@ def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) 
     return summary.get(target_id, {"counts": {}, "mine": []})
 
 
+def _mine_or_403(con, table: str, row_id: int, user_id: int, 이름: str):
+    """내가 쓴 것만 고치거나 지울 수 있다. 없으면 404, 남의 것이면 403."""
+    r = con.execute(f"SELECT * FROM {table} WHERE id=?", (row_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, f"{이름}을 찾을 수 없어요.")
+    if r["user_id"] != user_id:
+        raise HTTPException(403, f"내 {이름}만 고치거나 지울 수 있어요.")
+    return r
+
+
+def _drop_reactions(con, target_type: str, ids: list[int]) -> None:
+    """이모지에는 글을 가리키는 외래키가 없다(대상이 여러 종류라서).
+       글을 지울 때 여기서 함께 지우지 않으면 남은 줄이 새 글에 붙는다."""
+    if not ids:
+        return
+    marks = ",".join("?" for _ in ids)
+    con.execute(f"DELETE FROM community_reactions"
+                f" WHERE target_type=? AND target_id IN ({marks})", (target_type, *ids))
+
+
+def _edited(body: str, 자리: int) -> str:
+    body = (body or "").strip()
+    if not body:
+        raise HTTPException(400, "내용을 입력해 주세요.")
+    return body[:자리]
+
+
 def delete_post(user_id: int, post_id: int) -> None:
     with auth.db() as con:
-        r = con.execute("SELECT user_id FROM community_posts WHERE id=?", (post_id,)).fetchone()
-        if not r:
-            raise HTTPException(404, "글을 찾을 수 없어요.")
-        if r["user_id"] != user_id:
-            raise HTTPException(403, "내 글만 지울 수 있어요.")
+        _mine_or_403(con, "community_posts", post_id, user_id, "글")
+        cids = [c["id"] for c in con.execute(
+            "SELECT id FROM community_comments WHERE post_id=?", (post_id,)).fetchall()]
+        _drop_reactions(con, "comment", cids)
+        _drop_reactions(con, "post", [post_id])
+        con.execute("DELETE FROM community_comments WHERE post_id=?", (post_id,))
         con.execute("DELETE FROM community_posts WHERE id=?", (post_id,))
+
+
+def edit_post(user_id: int, post_id: int, body: str) -> None:
+    """본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
+    with auth.db() as con:
+        _mine_or_403(con, "community_posts", post_id, user_id, "글")
+        con.execute("UPDATE community_posts SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 4000), int(time.time()), post_id))
+
+
+def delete_comment(user_id: int, comment_id: int) -> None:
+    with auth.db() as con:
+        _mine_or_403(con, "community_comments", comment_id, user_id, "댓글")
+        _drop_reactions(con, "comment", [comment_id])
+        con.execute("DELETE FROM community_comments WHERE id=?", (comment_id,))
+
+
+def edit_comment(user_id: int, comment_id: int, body: str) -> None:
+    with auth.db() as con:
+        _mine_or_403(con, "community_comments", comment_id, user_id, "댓글")
+        con.execute("UPDATE community_comments SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 2000), int(time.time()), comment_id))
+
+
+def delete_message(user_id: int, message_id: int) -> int:
+    with auth.db() as con:
+        r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
+        _drop_reactions(con, "message", [message_id])
+        # 답장은 남긴다. 원글이 없어졌다는 이유로 남의 글까지 지울 수는 없다.
+        con.execute("UPDATE chat_messages SET reply_to=NULL WHERE reply_to=?", (message_id,))
+        con.execute("DELETE FROM chat_messages WHERE id=?", (message_id,))
+        return r["room_id"]
+
+
+def edit_message(user_id: int, message_id: int, body: str) -> int:
+    with auth.db() as con:
+        r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
+        con.execute("UPDATE chat_messages SET body=?, edited_at=? WHERE id=?",
+                    (_edited(body, 2000), int(time.time()), message_id))
+        return r["room_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +707,13 @@ def list_rooms(me: int) -> list[dict]:
             "SELECT r.*, "
             " (SELECT COUNT(*) FROM chat_members m WHERE m.room_id=r.id) AS 인원,"
             " (SELECT COUNT(*) FROM chat_messages g WHERE g.room_id=r.id) AS 메시지수,"
+            # 안 읽은 수 — 내가 마지막으로 본 뒤에 온 **남의** 글만 센다.
+            # 내가 쓴 글은 쓰는 순간 읽은 것이라 세면 늘 안 읽은 것이 남는다.
+            " (SELECT COUNT(*) FROM chat_messages g"
+            "  WHERE g.room_id=r.id AND g.user_id<>?"
+            "    AND g.id > COALESCE((SELECT m.last_read_id FROM chat_members m"
+            "                         WHERE m.room_id=r.id AND m.user_id=?), 0)"
+            " ) AS 안읽음,"
             " (SELECT 1 FROM chat_members m WHERE m.room_id=r.id AND m.user_id=?) AS 참여"
             " FROM chat_rooms r"
             # Postgres 는 OR 의 피연산자가 boolean 이어야 한다. 스칼라 서브쿼리
@@ -458,14 +722,16 @@ def list_rooms(me: int) -> list[dict]:
             " WHERE r.room_type <> 'direct'"
             "  OR EXISTS (SELECT 1 FROM chat_members m"
             "             WHERE m.room_id=r.id AND m.user_id=?)"
-            " ORDER BY r.id DESC", (me, me)).fetchall()
+            " ORDER BY r.id DESC", (me, me, me, me)).fetchall()
     out = []
     with auth.db() as con:
         for r in rows:
             방 = {"id": r["id"], "이름": r["name"], "주제": r["topic"],
                  "종류": r["room_type"], "비공개": bool(r["is_private"]),
                  "방장": r["created_by"] == me, "인원": r["인원"],
-                 "메시지수": r["메시지수"], "참여중": bool(r["참여"])}
+                 "메시지수": r["메시지수"], "참여중": bool(r["참여"]),
+                 # 안 들어간 방에는 '안 읽음' 이 없다. 아직 내 대화가 아니다.
+                 "안읽음": (r["안읽음"] if r["참여"] else 0)}
             if r["room_type"] == "direct":
                 # 개인 채팅은 방 이름이 아니라 상대 이름으로 보여 준다
                 상대 = con.execute(
@@ -821,28 +1087,100 @@ def _is_member(con, room_id: int, user_id: int) -> bool:
                             (room_id, user_id)).fetchone())
 
 
+def mark_read(user_id: int, room_id: int, upto: int | None = None) -> int:
+    """이 방을 어디까지 읽었는지 적는다. 적힌 자리를 돌려준다.
+
+    ``upto`` 를 안 주면 그 방의 마지막 메시지까지 읽은 것으로 본다.
+    뒤로 되돌리지 않는다 — 예전 글을 다시 봤다고 안 읽은 수가 늘어나면
+    사용자는 읽지도 않은 글이 생겼다고 여긴다.
+    """
+    with auth.db() as con:
+        if not _is_member(con, room_id, user_id):
+            return 0
+        if upto is None:
+            끝 = con.execute("SELECT MAX(id) AS m FROM chat_messages WHERE room_id=?",
+                            (room_id,)).fetchone()
+            upto = (끝["m"] if 끝 else 0) or 0
+        con.execute(
+            "UPDATE chat_members SET last_read_id=? WHERE room_id=? AND user_id=?"
+            "  AND last_read_id < ?", (upto, room_id, user_id, upto))
+        줄 = con.execute(
+            "SELECT last_read_id FROM chat_members WHERE room_id=? AND user_id=?",
+            (room_id, user_id)).fetchone()
+    return (줄["last_read_id"] if 줄 else 0) or 0
+
+
 def messages(user_id: int, room_id: int, after: int = 0, limit: int = 50) -> list[dict]:
+    """after 를 주면 그 뒤로 온 것, 안 주면 **가장 최근** 것부터 limit 개.
+
+    예전에는 after 가 없을 때도 앞에서부터 잘라서, 대화가 길어지면 맨 처음
+    50개만 돌려줬다. 화면은 늘 최근 대화를 보여 줘야 한다.
+    고친 글·지운 글·이모지는 새 id 가 생기지 않아서, 화면이 이 목록을
+    통째로 다시 그려야 반영된다.
+    """
+    limit = max(1, min(200, limit))
     with auth.db() as con:
         if not _is_member(con, room_id, user_id):
             raise HTTPException(403, "먼저 모임에 참여해 주세요.")
-        rows = con.execute(
-            "SELECT g.*, u.display_name FROM chat_messages g JOIN users u ON u.id=g.user_id"
-            " WHERE g.room_id=? AND g.id > ? ORDER BY g.id LIMIT ?",
-            (room_id, after, max(1, min(200, limit)))).fetchall()
+        if after:
+            rows = con.execute(
+                "SELECT g.*, u.display_name FROM chat_messages g JOIN users u ON u.id=g.user_id"
+                " WHERE g.room_id=? AND g.id > ? ORDER BY g.id LIMIT ?",
+                (room_id, after, limit)).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT g.*, u.display_name FROM chat_messages g JOIN users u ON u.id=g.user_id"
+                " WHERE g.room_id=? ORDER BY g.id DESC LIMIT ?",
+                (room_id, limit)).fetchall()
+            rows = list(rows)[::-1]
+        ids = [r["id"] for r in rows]
+        react = _reaction_summary(con, "message", ids, user_id)
+        원글 = _reply_targets(con, [r["reply_to"] for r in rows])
+        # 프로필을 열려면 아이디가 있어야 한다. 닉네임은 겹칠 수 있다 (게시글과 같다).
+        핸들 = {u: _handle_in(con, u) for u in {r["user_id"] for r in rows}}
     return [{"id": r["id"], "작성자": r["display_name"], "내글": r["user_id"] == user_id,
-             "본문": r["body"], "작성시각": r["created_at"]} for r in rows]
+             "작성자아이디": 핸들.get(r["user_id"]),
+             "본문": r["body"], "작성시각": r["created_at"],
+             "수정시각": r["edited_at"],
+             "반응": react.get(r["id"], {"counts": {}, "mine": []}),
+             "답장": 원글.get(r["reply_to"])} for r in rows]
 
 
-def send_message(user_id: int, room_id: int, body: str) -> int:
+def _reply_targets(con, ids: list) -> dict[int, dict]:
+    """답장이 가리키는 원글 — 누가 쓴 무슨 글인지 한 줄만.
+
+    화면에 원글을 통째로 다시 그릴 필요는 없다. 어떤 글의 답장인지 알아보고
+    눌러서 찾아갈 수 있으면 된다. 원글이 지워졌으면 아무것도 돌려주지 않는다.
+    """
+    쓸것 = sorted({i for i in ids if i})
+    if not 쓸것:
+        return {}
+    marks = ",".join("?" for _ in 쓸것)
+    rows = con.execute(
+        f"SELECT g.id, g.body, u.display_name FROM chat_messages g"
+        f" JOIN users u ON u.id=g.user_id WHERE g.id IN ({marks})", 쓸것).fetchall()
+    return {r["id"]: {"id": r["id"], "작성자": r["display_name"],
+                      "본문": r["body"][:60]} for r in rows}
+
+
+def send_message(user_id: int, room_id: int, body: str,
+                 reply_to: int | None = None) -> int:
     body = (body or "").strip()
     if not body:
         raise HTTPException(400, "메시지를 입력해 주세요.")
     with auth.db() as con:
         if not _is_member(con, room_id, user_id):
             raise HTTPException(403, "먼저 모임에 참여해 주세요.")
+        if reply_to is not None:
+            # 다른 방 글에 답장할 수는 없다 — 그 방 사람만 볼 수 있는 글이다
+            대상 = con.execute("SELECT room_id FROM chat_messages WHERE id=?",
+                             (reply_to,)).fetchone()
+            if not 대상 or 대상["room_id"] != room_id:
+                raise HTTPException(404, "답장할 메시지를 찾을 수 없어요.")
         return con.insert_id(
-            "INSERT INTO chat_messages (room_id, user_id, body, created_at) VALUES (?,?,?,?)",
-            (room_id, user_id, body[:2000], int(time.time())))
+            "INSERT INTO chat_messages (room_id, user_id, body, created_at, reply_to)"
+            " VALUES (?,?,?,?,?)",
+            (room_id, user_id, body[:2000], int(time.time()), reply_to))
 
 
 # ---------------------------------------------------------------------------
@@ -864,6 +1202,21 @@ class PostIn(BaseModel):
     media: list[dict] = Field(default_factory=list)
     kind: str = Field("post", pattern="^(post|record)$")
     record: dict | None = None
+    # 누가 볼 수 있는 글인지. 안 주면 전체 공개 — 지금까지와 같다.
+    audience: str = Field("all", pattern="^(all|friends|chosen)$")
+    # 'chosen' 일 때 볼 사람들. 안 주면 저장해 둔 묶음을 쓴다.
+    to: list[str] | None = Field(None, max_length=100)
+    # 기록 공유 글이 어느 날의 기록인지
+    record_date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class ChosenIn(BaseModel):
+    handles: list[str] = Field(default_factory=list, max_length=100)
+
+
+class PostEditIn(BaseModel):
+    """글은 본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
+    body: str = Field(..., max_length=4000)
 
 
 class CommentIn(BaseModel):
@@ -871,7 +1224,7 @@ class CommentIn(BaseModel):
 
 
 class ReactionIn(BaseModel):
-    target_type: str = Field(..., pattern="^(post|comment)$")
+    target_type: str = Field(..., pattern="^(post|comment|message)$")
     target_id: int
     emoji: str
 
@@ -898,6 +1251,8 @@ class RoomPasswordIn(BaseModel):
 
 class MessageIn(BaseModel):
     body: str = Field(..., max_length=2000)
+    # 답장이면 원글 id. 답장도 그냥 메시지라, 자리는 시간순 그대로다.
+    reply_to: int | None = None
 
 
 @router.get("/meta")
@@ -916,7 +1271,9 @@ def get_posts(before: int | None = None, limit: int = 20,
 @router.post("/posts")
 def post_new(body: PostIn, quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
-    pid = create_post(me, body=body.body, media=body.media, kind=body.kind, record=body.record)
+    pid = create_post(me, body=body.body, media=body.media, kind=body.kind,
+                      record=body.record, audience=body.audience, to=body.to,
+                      record_date=body.record_date)
     return get_post(me, pid)
 
 
@@ -931,12 +1288,62 @@ def post_remove(post_id: int, quadriga_session: str | None = Cookie(None)) -> di
     return {"ok": True}
 
 
+@router.put("/posts/{post_id}")
+def post_edit(post_id: int, body: PostEditIn,
+              quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    edit_post(me, post_id, body.body)
+    return get_post(me, post_id)
+
+
+@router.put("/comments/{comment_id}")
+def comment_edit(comment_id: int, body: CommentIn,
+                 quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    edit_comment(me, comment_id, body.body)
+    return {"ok": True}
+
+
+@router.delete("/comments/{comment_id}")
+def comment_remove(comment_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    delete_comment(me, comment_id)
+    return {"ok": True}
+
+
+@router.put("/messages/{message_id}")
+def message_edit(message_id: int, body: MessageIn,
+                 quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = edit_message(me, message_id, body.body)
+    return {"messages": messages(me, room_id, 0)}
+
+
+@router.delete("/messages/{message_id}")
+def message_remove(message_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    me = _uid(quadriga_session)
+    room_id = delete_message(me, message_id)
+    return {"messages": messages(me, room_id, 0)}
+
+
 @router.post("/posts/{post_id}/comments")
 def comment_new(post_id: int, body: CommentIn,
                 quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
     add_comment(me, post_id, body.body)
     return get_post(me, post_id)
+
+
+@router.get("/share/chosen")
+def share_chosen_get(quadriga_session: str | None = Cookie(None)) -> dict:
+    """'고른 친구' 로 올릴 때 기본으로 채워 줄 사람들."""
+    return {"고른친구": chosen_friends(_uid(quadriga_session))}
+
+
+@router.put("/share/chosen")
+def share_chosen_put(body: ChosenIn,
+                     quadriga_session: str | None = Cookie(None)) -> dict:
+    return {"고른친구": set_chosen_friends(_uid(quadriga_session), body.handles)}
 
 
 @router.post("/reactions")
@@ -1041,16 +1448,23 @@ def room_destroy(room_id: int, quadriga_session: str | None = Cookie(None)) -> d
 @router.get("/rooms/{room_id}/messages")
 def room_messages(room_id: int, after: int = 0,
                   quadriga_session: str | None = Cookie(None)) -> dict:
+    """방을 열어 메시지를 받아 가면 거기까지 읽은 것으로 본다.
+
+    따로 '읽음' 을 누르게 하지 않는다. 화면에 띄운 것이 곧 읽은 것이다.
+    """
     me = _uid(quadriga_session)
-    return {"messages": messages(me, room_id, after)}
+    목록 = messages(me, room_id, after)
+    본데까지 = max((m["id"] for m in 목록), default=None)
+    읽은자리 = mark_read(me, room_id, 본데까지)
+    return {"messages": 목록, "읽은자리": 읽은자리}
 
 
 @router.post("/rooms/{room_id}/messages")
 def room_send(room_id: int, body: MessageIn,
               quadriga_session: str | None = Cookie(None)) -> dict:
     me = _uid(quadriga_session)
-    send_message(me, room_id, body.body)
-    return {"messages": messages(me, room_id, 0)[-30:]}
+    send_message(me, room_id, body.body, body.reply_to)
+    return {"messages": messages(me, room_id, 0)}
 
 
 # ---------- 앱 내 아이디 · 상호 친구 ----------

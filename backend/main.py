@@ -21,10 +21,13 @@ from pathlib import Path
 from urllib.parse import urlencode
 from typing import Literal
 
+import anyio
 import httpx
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -43,6 +46,9 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import kakaopay as kp
     from backend import billing
     from backend import community
+    from backend import spare_time as spare
+    from backend import season as ssn
+    from backend import outdoor
 except ImportError:                         # backend/ 안에서 직접 실행할 때
     import auth                             # noqa: E402
     import daily                            # noqa: E402
@@ -64,6 +70,9 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import kakaopay as kp                   # noqa: E402
     import billing                          # noqa: E402
     import community                        # noqa: E402
+    import spare_time as spare              # noqa: E402
+    import season as ssn  # type: ignore
+    import outdoor  # type: ignore
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -83,6 +92,54 @@ app = FastAPI(
     description="국민체력100 공공데이터 기반 체력나이 산출·운동 처방",
     version="0.2.0",
 )
+
+# 한 요청이 이만큼을 넘기면 끊는다.
+#
+# 무한 루프 하나가 스레드를 영구 점유해 앱 전체를 멈춰 세운 적이 있다
+# (추천의 limit=12). 서버가 한 대뿐이라 그런 요청 몇 개면 남는 자리가 없다.
+# 오래 걸릴 일이 없는 서비스라, 넘긴 요청은 답을 못 낸 것으로 본다.
+REQUEST_TIMEOUT_SEC = float(os.getenv("REQUEST_TIMEOUT_SEC", "25"))
+
+
+@app.middleware("http")
+async def 시간_제한(request: Request, call_next):
+    """오래 끄는 요청을 끊는다. 0 이하로 두면 끄지 않는다(디버깅용)."""
+    if REQUEST_TIMEOUT_SEC <= 0:
+        return await call_next(request)
+    try:
+        with anyio.fail_after(REQUEST_TIMEOUT_SEC):
+            return await call_next(request)
+    except TimeoutError:
+        # 무엇이 오래 걸렸는지 로그에 남긴다. 경로만 적는다 — 쿼리에는
+        # 개인 정보가 실릴 수 있다.
+        print(f"[timeout] {request.method} {request.url.path} "
+              f"> {REQUEST_TIMEOUT_SEC}s", flush=True)
+        return JSONResponse(
+            {"detail": "처리가 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해주세요."},
+            status_code=503)
+
+
+# 화면 파일(index.html · js · css)은 받을 때마다 서버에 "바뀌었나" 를 묻게 한다.
+#
+# 여태 Cache-Control 이 없어서 브라우저가 알아서 오래 들고 있었다. 배포를 해도
+# 사람마다 옛 화면이 남아 "고쳤다는데 안 바뀌었다" 가 되풀이됐고, 그때마다
+# 강력 새로고침을 부탁했다. no-cache 는 "쓰지 말라" 가 아니라 "쓰기 전에
+# 물어보라" 다 — ETag 가 있으니 안 바뀌었으면 304 한 줄로 끝난다.
+NO_CACHE_SUFFIXES = (".html", ".js", ".css")
+
+
+@app.middleware("http")
+async def 화면은_늘_다시_확인(request: Request, call_next):
+    response = await call_next(request)
+    경로 = request.url.path
+    if 경로 == "/" or 경로.endswith(NO_CACHE_SUFFIXES):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
+
+
+# 배포(Cloudflare)는 알아서 압축하지만 로컬 개발 서버는 아니다.
+# index.html 이 380KB 라 켜고 끄고가 눈에 띄게 다르다.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # 개발 중에는 프론트 로컬 서버를 허용한다. 배포 시 도메인으로 좁힐 것.
 app.add_middleware(
@@ -1226,6 +1283,56 @@ def post_activity_days(body: list[ActivityDayIn]) -> list[dict]:
 
 # ---------- 12. 루틴 추천 ----------
 
+@app.get("/recommend/ai-status")
+def get_ai_status(quadriga_session: str | None = Cookie(None)) -> dict:
+    """AI 를 쓸 수 있는지, 이용권이 얼마나 남았는지. 값은 들지 않는다.
+
+    예전에는 이 정보가 추천 응답에만 실려 있었다. 그래서 화면이 AI 를 쓸 수
+    있는지 알려면 추천을 한 번 받아야 했고, 받아 둔 추천이 있어 그 호출을
+    건너뛰면 **영영 알 수 없었다** — AI 방식 버튼이 '확인하는 중…' 인 채로
+    잠겨 있었다. 루틴 점수를 매기지 않으니 가볍다.
+    """
+    누구 = auth.user_for_token(quadriga_session)
+    return {"ai가능": air.available(),
+            "이유": air.why_unavailable(),
+            "값": AI_PRICE,
+            "잔액": billing.balance(누구["id"]) if 누구 else 0,
+            "로그인": bool(누구)}
+
+
+class RecommendIn(BaseModel):
+    """일정까지 함께 보낼 때 쓴다.
+
+    GET 은 쿼리 문자열이라 요일별 시간표를 실을 수 없다. 그래서 같은 추천을
+    POST 로도 받는다. 추천 내용은 GET 과 다르지 않다 — 아래 ``_recommend``
+    하나를 같이 쓴다.
+    """
+    age_gbn: ProgramAge
+    weak: list[str] = Field(default_factory=list, max_length=10)
+    style_purpose: str | None = None
+    sports: list[str] = Field(default_factory=list, max_length=100)
+    target_gap: float | None = None
+    limit: int = Field(12, ge=1, le=60)
+    week: int = Field(1, ge=1, le=13)
+    ai: bool = True
+    real_age: float | None = Field(None, ge=5, le=110)
+    바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
+                                        description="{요일: [{시작, 끝}, ...]} — 적은 사람만")
+    상태: str | list[str] | None = Field(
+        None, description="하루의 모습. 여럿 고를 수 있다 — 대학생이면서 알바생인 사람이 흔하다")
+    # AI 가 '이 사람' 을 읽는 데 쓰는 것. 무료 추천은 보지 않는다.
+    항목별: dict[str, float] = Field(default_factory=dict,
+                                   description="마지막 측정의 항목별 환산나이")
+    체력나이: float | None = Field(None, ge=5, le=110)
+    최근기록: list[dict] = Field(default_factory=list, max_length=30,
+                              description="[{date, 이름, 값}] 최근 2주. 화면이 추린다")
+    건강상태: list[str] = Field(default_factory=list, max_length=20,
+                             description="사용자가 적어 둔 건강 상태. AI 가 해로운 동작을 뺀다")
+    시작일: str | None = Field(None, description="루틴을 시작할 날 (YYYY-MM-DD). 그날의 계절·날씨에 맞춘다")
+    위도: float | None = Field(None, ge=-90, le=90)
+    경도: float | None = Field(None, ge=-180, le=180)
+
+
 @app.get("/recommend/routines")
 def get_recommend_routines(
     age_gbn: ProgramAge,
@@ -1233,7 +1340,7 @@ def get_recommend_routines(
     style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
-    limit: int = Query(12, ge=1, le=30, description="난이도를 오갈 수 있게 넉넉히 준다"),
+    limit: int = Query(12, ge=1, le=60, description="난이도를 오갈 수 있게 넉넉히 준다. 60이면 전부다"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
     quadriga_session: str | None = Cookie(None),
@@ -1244,13 +1351,53 @@ def get_recommend_routines(
     루틴을 새로 만들지 않는다. 이미 있는 것 중에서 고르고 왜 골랐는지를 함께 낸다.
     아무 정보가 없어도 안전한 기본 순위를 돌려준다.
     """
+    return _recommend(
+        age_gbn=age_gbn,
+        weak=[w.strip() for w in (weak or "").split(",") if w.strip()],
+        style_purpose=style_purpose,
+        sports=[s.strip() for s in (sports or "").split(",") if s.strip()],
+        target_gap=target_gap, limit=limit, week=week, ai=ai,
+        real_age=real_age, token=quadriga_session)
+
+
+@app.post("/recommend/routines")
+def post_recommend_routines(body: RecommendIn,
+                            quadriga_session: str | None = Cookie(None)) -> dict:
+    """GET 과 같은 추천에 일정을 얹는다.
+
+    일정은 선택 사항이다. 적어 보내면 비는 칸을 함께 계산하고, AI 를 쓸 때는
+    그 칸에서 무엇을 할지까지 고른다. 안 보내면 GET 과 결과가 같다.
+    """
+    return _recommend(
+        age_gbn=body.age_gbn, weak=body.weak, style_purpose=body.style_purpose,
+        sports=body.sports, target_gap=body.target_gap, limit=body.limit,
+        week=body.week, ai=body.ai, real_age=body.real_age,
+        token=quadriga_session, busy=body.바쁜시간,
+        life_kind=_life_kinds(body.상태),
+        profile={"항목별": body.항목별, "체력나이": body.체력나이,
+                 "최근기록": body.최근기록[:30],
+                 "건강상태": _short_list(body.건강상태),
+                 "시작": ssn.start_info(body.시작일, body.위도, body.경도)})
+
+
+def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
+               sports: list[str], target_gap: float | None, limit: int,
+               week: int, ai: bool, real_age: float | None,
+               token: str | None, busy: dict | None = None,
+               life_kind: list[str] | str | None = None,
+               profile: dict | None = None) -> dict:
+    """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
+
+    profile 은 AI 가 '이 사람' 을 읽는 재료(항목별 체력나이·최근 기록).
+    무료 추천은 보지 않는다 — 점수 규칙은 그대로다.
+    """
     if real_age is not None:
         try:
             age_gbn = rt.age_group(real_age)
         except ValueError as error:
             raise HTTPException(422, str(error)) from None
-    parts = [w.strip() for w in (weak or "").split(",") if w.strip()]
-    picked = [s.strip() for s in (sports or "").split(",") if s.strip()]
+    parts = list(weak)
+    picked = list(sports)
     try:
         out = rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
                           sports=picked, target_gap=target_gap, limit=limit, week=week)
@@ -1261,27 +1408,295 @@ def get_recommend_routines(
     # 실패하면 점수 결과를 그대로 쓴다 — 화면이 비지 않는다.
     out["출처"] = "점수"
     out["ai가능"] = air.available()
+    # 왜 못 쓰는지도 함께. 화면이 "지금 쓸 수 없어요" 만 띄우면 손쓸 방법이 없다.
+    out["ai이유"] = air.why_unavailable()
 
     # 이용권 차감은 서버에서 한다. 화면에서 빼면 브라우저에서 숫자만 바꿔
     # 공짜로 무제한 쓸 수 있다.
-    누구 = auth.user_for_token(quadriga_session)
+    누구 = auth.user_for_token(token)
     out["잔액"] = billing.balance(누구["id"]) if 누구 else 0
+    # 일정을 줬으면 비는 칸도 함께 계산해 둔다. AI 가 그 칸에서 무엇을
+    # 할지 고르고, AI 를 안 써도 화면이 그대로 쓸 수 있다.
+    일정 = None
+    바쁜 = {k: v for k, v in (busy or {}).items() if k in spare.WEEKDAYS}
+    if 바쁜:
+        일정 = {"상태": life_kind,
+              "요일별": spare.plan(바쁜, sports_ids=picked,
+                                weak=parts, limit=3)}
+        out["짬시간"] = 일정["요일별"]
+
     if ai and out["ai가능"]:
         if not 누구:
             out["안내"] = "AI 추천은 로그인 후 이용할 수 있어요."
         elif out["잔액"] < AI_PRICE:
             out["안내"] = "이용권이 모자라요. 먼저 충전해 주세요."
         else:
-            다듬음 = air.refine(out["추천"], out.get("참고") or {}, age_gbn)
-            # 실제로 다듬어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
-            if 다듬음:
-                out["추천"] = 다듬음
+            # 무료 추천은 점수 순이라 맞춤이 아니다. AI 는 이 사람의 데이터를
+            # 전부 읽고 루틴 하나를 직접 짓는다 — 검증된 재료(공식 동작·고른
+            # 종목·기록 종목) 안에서만. 응답의 코드·id 는 서버가 대조한다.
+            참고 = out.get("참고") or {}
+            사용자 = {
+                "연령대": age_gbn,
+                "실제 나이": real_age,
+                "체력나이": (profile or {}).get("체력나이"),
+                "항목별 체력나이": (profile or {}).get("항목별") or {},
+                "뒤처지는 체력요인": parts,
+                "고른 종목": 참고.get("고른종목") or [],
+                "고른 종목이 쓰는 요인": 참고.get("종목요인") or [],
+                "조심할 부위": out.get("조심할부위") or [],
+                "운동 스타일 테스트가 고른 목적": style_purpose,
+                "목표 체력나이까지 남은 세": target_gap,
+                "프로그램 주차": week,
+                "강도": out.get("강도"),
+                "하루의 모습": life_kind or [],
+                "최근 기록": ((profile or {}).get("최근기록") or [])[:30],
+                "건강 상태": (profile or {}).get("건강상태") or [],
+                "시작": (profile or {}).get("시작"),   # {시작일, 계절, 날씨(예보)} 또는 None
+            }
+            지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
+            # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
+            if 지음 and 지음.get("루틴"):
+                if (profile or {}).get("시작"):
+                    지음["루틴"]["시작"] = profile["시작"]
+                out["추천"] = [지음["루틴"]]
                 out["출처"] = "ai"
+                if 지음.get("짬시간"):
+                    out["짬시간계획"] = 지음["짬시간"]
                 out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
     return out
 
 
+def _short_list(값) -> list[str]:
+    """건강 상태처럼 사용자가 적은 짧은 낱말 목록을 다듬는다. 길면 자르고 겹치면 뺀다."""
+    out = []
+    for x in (값 or []):
+        if not isinstance(x, (str, int, float)):
+            continue
+        한줄 = str(x).strip()[:20]
+        if 한줄 and 한줄 not in out:
+            out.append(한줄)
+    return out[:20]
+
+
+class HealthPhotoIn(BaseModel):
+    """약봉지·처방전 사진 한 장. 저장하지 않는다 — 읽은 후보만 돌려준다."""
+    사진: str = Field(..., max_length=7_000_000)
+    미디어형: str | None = None
+
+
+@app.post("/health/photo")
+def post_health_photo(body: HealthPhotoIn,
+                      quadriga_session: str | None = Cookie(None)) -> dict:
+    """약봉지·처방전 사진에서 건강 상태 **후보**를 읽는다.
+
+    값을 받지 않는다 — 건강 상태는 AI 추천을 맞추는 재료이지 상품이 아니다.
+    읽은 것을 저장하지 않는다. 화면이 사용자에게 보여 주고, 고쳐서 저장할지는
+    사용자가 정한다. 사진도 남기지 않는다. 로그인은 있어야 한다.
+    """
+    if not air.available():
+        raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
+    _require_user(quadriga_session)
+    데이터, 형식 = _split_data_url(body.사진, body.미디어형)
+    if 형식 not in air.PHOTO_TYPES:
+        raise HTTPException(415, "JPG · PNG · WEBP · GIF 사진만 읽을 수 있어요.")
+    if len(데이터) * 3 // 4 > air.PHOTO_MAX_BYTES:
+        raise HTTPException(413, "사진이 너무 커요. 4MB 아래로 줄여주세요.")
+    읽은것 = air.read_health_photo(데이터, 형식)
+    if 읽은것 is None:
+        raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
+    if not 읽은것["건강상태"]:
+        읽은것["안내"] = "사진에서 건강 상태를 찾지 못했어요. 직접 골라주세요."
+    return 읽은것
+
+
+class SchedulePhotoIn(BaseModel):
+    """시간표 사진 한 장. data URL 그대로 받는다 — 화면이 FileReader 로 읽은 모양."""
+    사진: str = Field(..., max_length=7_000_000,
+                    description="data:image/...;base64,... 또는 base64 그 자체")
+    미디어형: str | None = Field(None, description="사진에 형식이 안 붙어 있을 때만")
+
+
+@app.post("/schedule/photo")
+def post_schedule_photo(body: SchedulePhotoIn,
+                        quadriga_session: str | None = Cookie(None)) -> dict:
+    """시간표 사진에서 요일별 바쁜 시간을 읽는다 (유료).
+
+    읽은 것을 곧바로 저장하지 않는다. 화면이 사용자에게 보여 주고 고치게
+    한다 — 사진을 잘못 읽었는데 그대로 저장되면 손댈 곳이 없다.
+    """
+    if not air.available():
+        raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
+    누구 = _require_user(quadriga_session)
+    if billing.balance(누구["id"]) < AI_PRICE:
+        raise HTTPException(402, "이용권이 모자라요. 먼저 충전해 주세요.")
+
+    데이터, 형식 = _split_data_url(body.사진, body.미디어형)
+    if 형식 not in air.PHOTO_TYPES:
+        raise HTTPException(415, "JPG · PNG · WEBP · GIF 사진만 읽을 수 있어요.")
+    # base64 는 원본보다 4/3 크다. 부르기 전에 막는다 — 부르고 나서 실패하면
+    # 우리만 값을 치른다.
+    if len(데이터) * 3 // 4 > air.PHOTO_MAX_BYTES:
+        raise HTTPException(413, "사진이 너무 커요. 4MB 아래로 줄여주세요.")
+
+    읽은것 = air.read_schedule_photo(데이터, 형식)
+    if 읽은것 is None:
+        raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
+    if not 읽은것:
+        # 부르긴 했지만 시간표가 아니었다. 값은 받되 왜 비었는지는 알려준다.
+        잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")
+        return {"바쁜시간": {}, "잔액": 잔액,
+                "안내": "사진에서 시간표를 찾지 못했어요. 직접 적어주세요."}
+    잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")
+    return {"바쁜시간": 읽은것, "잔액": 잔액}
+
+
+def _split_data_url(값: str, 기본형: str | None) -> tuple[str, str | None]:
+    """data URL 이면 형식과 알맹이로 가른다. 그냥 base64 면 기본형을 쓴다."""
+    값 = (값 or "").strip()
+    if 값.startswith("data:") and "," in 값:
+        머리, _, 몸 = 값.partition(",")
+        형식 = 머리[5:].split(";")[0].strip().lower()
+        return 몸, (형식 or 기본형)
+    return 값, (기본형 or "").strip().lower() or None
+
+
+def _life_kinds(값) -> list[str]:
+    """하루의 모습을 목록 하나로 다듬는다.
+
+    예전에는 하나만 골랐다(문자열). 그때 저장해 둔 것도 그대로 읽힌다.
+    직접 적은 것이 섞여 오므로 길이를 자른다 — 프롬프트에 긴 글이 통째로
+    실리면 안 된다.
+    """
+    if 값 is None:
+        값 = []
+    elif isinstance(값, str):
+        값 = [값]
+    elif not isinstance(값, list):
+        return []
+    out = []
+    for x in 값:
+        if not isinstance(x, (str, int, float)):
+            continue
+        한줄 = str(x).strip()[:20]
+        if 한줄 and 한줄 not in out:
+            out.append(한줄)
+    return out[:6]
+
+
+class SeasonIn(BaseModel):
+    """고른 루틴 하나를 1년 동안 어떻게 이어갈지 물을 때."""
+    age_gbn: ProgramAge
+    루틴: dict = Field(..., description="추천에서 고른 그 루틴 (목적·루틴명·체력요인 …)")
+    약점: list[str] = Field(default_factory=list, max_length=10)
+    고른종목: list[str] = Field(default_factory=list, max_length=100)
+    조심할부위: list[str] = Field(default_factory=list, max_length=20)
+    상태: str | list[str] | None = Field(
+        None, description="하루의 모습. 여럿 고를 수 있다")
+    바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
+                                        description="시간대별로 볼 때 비는 시간을 알려면")
+    건강상태: list[str] = Field(default_factory=list, max_length=20)
+    시작일: str | None = Field(None, description="계절별로 볼 때 첫 계절은 이 날의 계절이다")
+    위도: float | None = Field(None, ge=-90, le=90)
+    경도: float | None = Field(None, ge=-180, le=180)
+
+
+class PeriodIn(SeasonIn):
+    축: Literal["계절", "시간대"] = "계절"
+    시간대포함: bool = Field(False, description="계절 안에 아침·낮·저녁·밤을 함께 (계절 축일 때만)")
+
+
+def _periods(body: "SeasonIn", 축: str, token: str | None, 시간대포함: bool = False) -> dict:
+    """'이 루틴 자세히 알아보기' — 구간(계절 | 시간대)마다 어떻게 이어갈지.
+
+    **값을 받지 않는다.** AI 추천을 받을 때 이미 치렀다. 이건 그 루틴을
+    더 알아보는 선택 사항이라, 누를지는 사용자가 정하고 돈은 다시 들지 않는다.
+    로그인은 있어야 한다 — 남의 이름으로 AI 를 부를 수는 없다.
+
+    루틴을 바꾸지 않는다. 이미 고른 루틴 하나를 구간에 맞게 어떻게 할지만
+    쓴다. 네 구간이 다 나오지 않으면 버린다.
+    """
+    if not air.available():
+        raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
+    _require_user(token)
+
+    참고 = {"약점": body.약점, "고른종목": body.고른종목,
+          "조심할부위": body.조심할부위, "건강상태": _short_list(body.건강상태)}
+    # 계절은 시작일의 계절부터 한 바퀴다. 봄에 받았다고 봄부터가 아니다.
+    시작 = ssn.start_info(body.시작일, body.위도, body.경도)
+    구간들 = None
+    if 시작:
+        참고["시작"] = 시작
+        if 축 == "계절":
+            구간들 = ssn.order_from(시작["계절"])
+    일정 = None
+    바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
+    if 바쁜:
+        일정 = {"요일별": spare.plan(바쁜, sports_ids=body.고른종목, weak=body.약점, limit=3)}
+    구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정,
+                       구간들=구간들, 시간대포함=(시간대포함 and 축 == "계절"))
+    if not 구간:
+        raise HTTPException(503, f"지금은 {축}별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
+    out = {"축": 축, 축: 구간, "루틴명": body.루틴.get("루틴명")}
+    if 시작:
+        out["시작"] = 시작
+    return out
+
+
+@app.post("/recommend/periods")
+def post_recommend_periods(body: PeriodIn,
+                           quadriga_session: str | None = Cookie(None)) -> dict:
+    """구간을 골라 본다 — 계절별 또는 시간대별."""
+    return _periods(body, body.축, quadriga_session, body.시간대포함)
+
+
+@app.post("/recommend/seasons")
+def post_recommend_seasons(body: SeasonIn,
+                           quadriga_session: str | None = Cookie(None)) -> dict:
+    """계절 축. /recommend/periods 의 예전 주소다."""
+    return _periods(body, "계절", quadriga_session)
+
+
 # ---------- 11. 당일 기록 종목 ----------
+
+class WeatherCheckIn(BaseModel):
+    """오늘 루틴의 동작들. 밖에서 하는 것만 본다 — 출처(종목·기록)와 id 가 있어야 안다."""
+    steps: list[dict] = Field(default_factory=list, max_length=20)
+    위도: float | None = Field(None, ge=-90, le=90)
+    경도: float | None = Field(None, ge=-180, le=180)
+
+
+@app.post("/routine/weather-check")
+def post_weather_check(body: WeatherCheckIn) -> dict:
+    """오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있으면 실내·비슷한 것으로 안내.
+
+    AI 를 부르지 않는다. 규칙이다. 값이 들지 않고 로그인도 필요 없다 —
+    오늘 날씨와 동작 이름뿐, 누구의 것인지 알 필요가 없다.
+    루틴을 바꿔치기하지 않는다. 어떻게 할지는 사용자가 정한다.
+    """
+    return outdoor.check(body.steps, body.위도, body.경도)
+
+
+class SpareTimeIn(BaseModel):
+    """짬시간 계산에 필요한 것만. 일정은 저장하지 않는다 — 화면이 갖고 있다."""
+    바쁜시간: dict[str, list[dict]] = Field(default_factory=dict,
+                                        description="{요일: [{시작, 끝}, ...]}")
+    sports: list[str] = Field(default_factory=list, max_length=100)
+    weak: list[str] = Field(default_factory=list, max_length=10)
+    limit: int = Field(3, ge=1, le=10)
+
+
+@app.post("/spare-time/plan")
+def post_spare_plan(body: SpareTimeIn) -> dict:
+    """요일별로 남는 칸과 거기서 할 것.
+
+    적어 두지 않은 요일은 결과에도 없다. 하루가 통째로 빈다고 단정하면
+    안 적은 사람에게 온종일 운동하라고 하는 셈이다.
+    """
+    바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
+    return {"요일": list(spare.WEEKDAYS),
+            "요일별": spare.plan(바쁜, sports_ids=body.sports,
+                              weak=body.weak, limit=body.limit)}
+
 
 @app.get("/workout-items")
 def get_workout_items() -> dict:
@@ -1310,8 +1725,7 @@ def terms() -> FileResponse:
 # 모든 API 라우트를 정의한 뒤 마운트해야 "/" 가 API 를 가리지 않는다.
 
 if paths.FRONTEND.exists():
-    @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        return FileResponse(paths.FRONTEND / "index.html")
-
-    app.mount("/", StaticFiles(directory=paths.FRONTEND), name="frontend")
+    # html=True 가 "/" 에 index.html 을 준다. 직접 만든 라우트로 주면 If-None-Match 를
+    # 보지 않아 늘 200 이라, no-cache 와 만나면 매번 116KB 를 다시 받게 된다.
+    # StaticFiles 는 ETag 로 304 를 낸다 — 안 바뀌었으면 한 줄로 끝난다.
+    app.mount("/", StaticFiles(directory=paths.FRONTEND, html=True), name="frontend")

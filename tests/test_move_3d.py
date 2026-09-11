@@ -103,7 +103,7 @@ def test_겉모습은_매끈한_회색이다():
 def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
     js = _js()
     손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
-    assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { set: [90, 0, 0] }" in 손봄   # 무릎을 바닥에
+    assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { set: [-90, 0, 0] }" in 손봄   # 무릎을 바닥에
     assert "'deadlift': { fist: true, bones: { 'mixamorig:LeftArm': hang" in 손봄                          # 팔은 늘어뜨리고 주먹을 쥔다
     assert "'shoulder-press': { base: 'idle', bones: press, fist: true }" in 손봄                           # 기본 자세 + 밀어 올리기 + 주먹
     assert "palmTo: 'head'" in js                                                                            # 손바닥은 머리 쪽으로

@@ -61,7 +61,7 @@ const MOVE_3D = (() => {
   };
   const hang = { aim: [0, -1, 0.15] };
   const TWEAKS = {
-    'knee-pushup': { pitchAtHands: -14, bones: { 'mixamorig:LeftLeg': { set: [90, 0, 0] }, 'mixamorig:RightLeg': { set: [90, 0, 0] } } },
+    'knee-pushup': { pitchAtHands: -14, bones: { 'mixamorig:LeftLeg': { set: [-90, 0, 0] }, 'mixamorig:RightLeg': { set: [-90, 0, 0] } } },
     'deadlift': { fist: true, bones: { 'mixamorig:LeftArm': hang, 'mixamorig:RightArm': hang, 'mixamorig:LeftForeArm': hang, 'mixamorig:RightForeArm': hang } },
     'shoulder-press': { base: 'idle', bones: press, fist: true },
     'one-leg': { base: 'idle', bones: oneLeg },

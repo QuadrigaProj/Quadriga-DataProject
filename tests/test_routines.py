@@ -75,9 +75,12 @@ def test_강도_12주_3구간():
     assert rt.intensity_for("청소년", 3)["구간"] == "1-4"
     assert rt.intensity_for("청소년", 6)["구간"] == "5-8"
     assert rt.intensity_for("청소년", 11)["구간"] == "9-12"
-    # 청소년·성인 기본 설계상 수행량 점증
-    assert rt.intensity_for("성인", 2)["반복"] == 10
-    assert rt.intensity_for("성인", 10)["반복"] == 15
+    # 영상 기반 구조 — 세트 수만 쓴다. 1~4·5~8주 2세트, 9~12주 3세트.
+    assert rt.intensity_for("성인", 2)["세트"] == 2
+    assert rt.intensity_for("성인", 6)["세트"] == 2
+    assert rt.intensity_for("성인", 10)["세트"] == 3
+    # 반복·시간·라운드는 더 이상 돌려주지 않는다
+    assert set(rt.intensity_for("성인", 2)) == {"주차", "구간", "세트"}
 
 
 def test_체력_낮으면_시작_강도를_낮춘다():
@@ -85,17 +88,21 @@ def test_체력_낮으면_시작_강도를_낮춘다():
     assert rt.start_offset(45, 45) == 0
     assert rt.start_offset(38, 45) == 1
     assert rt.start_offset(None, None, focus_areas=["유연성", "근력"]) == -1
-    # 낮은 체력이면 같은 주차라도 수행량이 기본보다 적거나 같다
-    낮음 = rt.intensity_for("성인", 8, offset=-1)
-    기본 = rt.intensity_for("성인", 8, offset=0)
-    assert 낮음["반복"] <= 기본["반복"]
+    # 낮은 체력이면 같은 주차라도 세트가 기본보다 적거나 같다
+    낮음 = rt.intensity_for("성인", 10, offset=-1)
+    기본 = rt.intensity_for("성인", 10, offset=0)
+    assert 낮음["세트"] <= 기본["세트"]
 
 
-def test_몸무거운날은_1세트_시간절반():
-    hard = rt.intensity_for("어르신", 6, heavy=True)
-    soft = rt.intensity_for("어르신", 6, heavy=False)
-    assert hard["세트"] == 1
-    assert hard["시간초"] == round(soft["시간초"] / 2)
+def test_몸무거운날은_기본세트에서_한_세트_줄인다():
+    # 9~12주 3세트 → 몸이 무거운 날 2세트
+    assert rt.intensity_for("어르신", 10, heavy=True)["세트"] == 2
+    assert rt.intensity_for("어르신", 10, heavy=False)["세트"] == 3
+    # 1~4·5~8주 2세트 → 몸이 무거운 날 1세트 (최소 1세트)
+    assert rt.intensity_for("어르신", 6, heavy=True)["세트"] == 1
+    assert rt.intensity_for("어르신", 1, heavy=True)["세트"] == 1
+    # 시간 감소 로직 제거 — 시간초 키 자체가 없다
+    assert "시간초" not in rt.intensity_for("어르신", 6, heavy=True)
 
 
 # ---------- API ----------

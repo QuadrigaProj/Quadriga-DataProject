@@ -81,7 +81,7 @@ def test_자세_그림이_있는_동작은_모두_처리된다():
     covered = ids & set(clips)
     assert len(covered) >= 20, sorted(covered)
     js = _js()
-    assert "const clipName = CLIPS[id] || FALLBACK_CLIP;" in js
+    assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
     assert "FALLBACK_CLIP = 'idle'" in js
     assert "이 동작의 3D 동작은 아직 없어 기본 자세만 보여 줘요" in js
     표 = _index().split("const POSE_FOR_SPORT = {")[1].split("};")[0]
@@ -90,6 +90,46 @@ def test_자세_그림이_있는_동작은_모두_처리된다():
         assert 자세 in ids, 자세                                                       # 종목은 34개 동작 중 하나로
     for 종목명 in ("running", "walking", "swimming", "jumprope", "hiking", "gym", "crossfit", "pilates", "yoga"):
         assert 종목[종목명] in clips, 종목명                                            # 흔한 종목은 진짜 동작으로
+
+
+def test_겉모습은_매끈한_회색이다():
+    """Mixamo 디자인 그대로가 아니라 — 각진 면을 매끈하게, 색은 회색 하나로."""
+    js = _js().split("function smoothAndGray(lib, body)")[1].split("\n  }")[0]
+    assert "g.deleteAttribute('normal'); g.deleteAttribute('uv');" in js        # 이음새까지 합쳐서
+    assert "U.mergeVertices(g, 1e-4); merged.computeVertexNormals();" in js     # 법선을 다시 계산한다
+    assert "color: joints ? 0xA4A9B0 : 0xBCC1C7" in js                          # 회색 둘 (몸통은 한 덩이로 읽힌다)
+
+
+def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
+    js = _js()
+    손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
+    assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { set: [90, 0, 0] }" in 손봄   # 무릎을 바닥에
+    assert "'deadlift': { fist: true, bones: { 'mixamorig:LeftArm': hang" in 손봄                          # 팔은 늘어뜨리고 주먹을 쥔다
+    assert "'shoulder-press': { base: 'idle', bones: press, fist: true }" in 손봄                           # 기본 자세 + 밀어 올리기 + 주먹
+    assert "palmTo: 'head'" in js                                                                            # 손바닥은 머리 쪽으로
+    assert "'one-leg': { base: 'idle', bones: oneLeg }" in 손봄                                             # 기본 자세 + 한 발 들기
+    assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
+    적용 = js.split("const applyTweaks = t =>")[1].split("\n    };")[0]
+    assert "pitchAtHands(tweak.pitchAtHands)" in 적용 and "aimBone(bone, how.aim)" in 적용
+    assert "if (how.palmTo) palmToward(bone, how.palmTo);" in 적용 and "if (tweak.fist) fist();" in 적용
+    assert "const palm = new T.Vector3(0, -1, 0).applyQuaternion(inv).normalize();" in js   # 손바닥 축은 T 자세에서 잰다
+    assert "const norm = n => String(n).replace(/[^A-Za-z]/g, '');" in js       # GLTFLoader 가 ':' 를 지워도 뼈를 찾는다
+
+
+def test_기구가_필요한_동작엔_기구를_붙인다():
+    js = _js()
+    기구 = js.split("const GEAR = {")[1].split("\n  };")[0]
+    for id_, 이름 in (("barbell-squat", "backbar"), ("deadlift", "barbell"), ("dumbbell-curl", "dumbbells"), ("shoulder-press", "dumbbells"),
+                     ("kettlebell-swing", "kettlebell"), ("jump-rope", "rope"), ("treadmill", "treadmill"), ("swim", "water")):
+        assert f"'{id_}': '{이름}'" in 기구, id_
+    만들기 = js.split("function makeGear(T, name, ctx)")[1].split("\n  }")[0]
+    for 이름 in ("barbell", "backbar", "dumbbells", "kettlebell", "rope", "treadmill", "water"):
+        assert f"case '{이름}':" in 만들기, 이름
+    assert "grip('Left', a); grip('Right', b2);" in 만들기                                     # 손바닥 가운데를 잡는다
+    assert "out.add(b.set(0, GRIP.along, 0).applyQuaternion(q));" in 만들기
+    assert "new T.TubeGeometry(new T.CatmullRomCurve3(pts), 48, 0.008, 6, false)" in 만들기   # 줄넘기 줄은 손잡이 사이를 돈다
+    assert "ctx.jump = { peak0:" in js                                                         # 뛰어오를 때 발밑을 지난다
+    assert "if (gear.update) gear.update(clock.elapsedTime, action.time);" in js
 
 
 def test_비슷한_동작으로_대신하는_것은_화면에_적는다():
@@ -111,7 +151,8 @@ def test_빛과_그림자_카메라는_몸을_따라간다():
     assert "renderer.shadowMap.enabled = true" in js and "ShadowMaterial" in js
     assert "new T.AnimationMixer(body)" in js and "mixer.clipAction(clip)" in js
     assert "prefers-reduced-motion: reduce" in js and "action.paused = true" in js
-    assert "for (const b of bones) { b.getWorldPosition(v); lo.min(v); hi.max(v); }" in js   # 뼈대 상자로 화면 맞춤
+    assert "for (const b of boneList) { b.getWorldPosition(v); lo.min(v); hi.max(v); }" in js   # 뼈대 상자로 화면 맞춤
+    assert "smoothAndGray(lib, body)" in js
     assert "if (h > 10) body.scale.setScalar(1 / h * 1.8);" in js                          # cm 로 오면 사람 키로
 
 

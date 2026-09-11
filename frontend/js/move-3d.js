@@ -1,12 +1,15 @@
 /* 영상이 없는 동작을 위한 3D 캐릭터 (M5).
  *
- * 고른 종목·기록 종목은 공식 영상이 없다. 그 자리에 Mixamo(Adobe)의 무료
- * 캐릭터 "Y Bot" 이 실제 사람의 모션캡처로 그 동작을 하는 모습을 띄운다.
- * 캐릭터와 동작 모두 Mixamo 에서 받은 것이고, 우리는 그 파일을 웹용 GLB 로
- * 바꿔 assets/3d 에 두었다 (ybot.glb = 캐릭터, anim/*.glb = 동작 하나씩).
+ * 고른 종목·기록 종목은 공식 영상이 없다. 그 자리에 회색 마네킹이 실제 사람의
+ * 모션캡처로 그 동작을 하는 모습을 띄운다.
+ * 몸은 Blender 의 사람 기본형(Human Base Meshes, CC0)을 Mixamo(Adobe) 자동 리깅에
+ * 올려 뼈대를 넣은 것이고, 동작은 Mixamo 의 모션캡처를 그 뼈대로 내보낸 것이다.
+ * 둘 다 웹용 GLB 로 바꿔 assets/3d 에 두었다 (mannequin.glb = 캐릭터, anim/*.glb = 동작 하나씩).
+ * 파일은 gltfpack(meshopt) 으로 눌러 두어 작다 — 불러올 때 meshopt 디코더가 푼다.
  *
  * 여기서 손보는 것:
- *   - 겉모습: 각진 면을 매끈하게 다듬고(법선 다시 계산) 회색 하나로 칠한다.
+ *   - 겉모습: 이음새를 합치고 법선을 다시 계산해 매끈하게, 회색 하나로 칠한다.
+ *   - 크기: 파일의 단위가 무엇이든 사람 키(1.75m)로 맞춘다.
  *   - 비슷한 동작으로 대신하는 넷은 뼈 몇 개를 덮어써 원래 동작에 가깝게 (TWEAKS).
  *   - 기구가 필요한 동작엔 바벨·덤벨·케틀벨·줄·트레드밀·물을 손과 몸에 붙여 준다 (GEAR).
  *
@@ -15,6 +18,7 @@
  */
 const MOVE_3D = (() => {
   const BASE = 'assets/3d/';
+  const VER = '?v=2';            // 파일을 바꾸면 올린다 — 같은 이름의 옛 파일이 캐시에서 나오지 않게
   const D = Math.PI / 180;
 
   /* 동작 id → 동작 파일 (anim/<이름>.glb). 같은 파일을 여러 id 가 쓸 수 있다. */
@@ -35,12 +39,13 @@ const MOVE_3D = (() => {
   };
   /* 아직 동작 파일이 없는 것은 기본 자세(idle)만 보여 준다 */
   const GAP_NOTE = '이 동작의 3D 동작은 아직 없어 기본 자세만 보여 줘요';
+  const LOADING_NOTE = '3D 동작을 불러오는 중…';
   const FALLBACK_CLIP = 'idle';
 
   /* ---- 비슷한 동작 손보기 ----
    * base      : 바탕으로 쓸 동작 파일 (없으면 CLIPS 의 것)
    * pitchAtHands : 두 손을 축으로 몸 전체를 기울이기 (도)
-   * bones     : 뼈 이름 → { set: [x,y,z] 뼈 기준 각도로 바꿈 | aim: [x,y,z] 세상 기준 이 방향을 가리키게,
+   * bones     : 뼈 이름 → { set: [x,y,z] 뼈 기준 각도로 바꿈 | aim: [x,y,z] 세상 기준 이 방향을 가리키게 (함수면 뼈 위치 조회 함수를 받아 방향을 돌려준다),
    *             roll: 그 축으로 비틀기(도), palmTo: 'head' 면 손바닥이 머리 쪽을 보게 비튼다 }
    *             함수면 초 단위 시간을 받아 매 프레임 새로 준다
    * fist      : 손가락을 말아 쥔다 (기구를 잡는 동작) */
@@ -60,8 +65,10 @@ const MOVE_3D = (() => {
              'mixamorig:RightArm': { aim: [-팔[0], 팔[1], 0] }, 'mixamorig:RightForeArm': { aim: [-팔[0], 팔[1], 0] } };
   };
   const hang = { aim: [0, -1, 0.15] };
+  // 무릎 푸시업: 정강이를 바닥에 눕힌다 — 세상 기준으로 '머리 반대쪽(뒤)' 을 향하게 (뼈 기준 각도는 리깅마다 달라 쓰지 않는다)
+  const shinBack = p => { const h = p('mixamorig:Hips'), d = p('mixamorig:Head'); return [h.x - d.x, 0, h.z - d.z]; };
   const TWEAKS = {
-    'knee-pushup': { pitchAtHands: -14, bones: { 'mixamorig:LeftLeg': { set: [-90, 0, 0] }, 'mixamorig:RightLeg': { set: [-90, 0, 0] } } },
+    'knee-pushup': { pitchAtHands: -14, bones: { 'mixamorig:LeftLeg': { aim: shinBack }, 'mixamorig:RightLeg': { aim: shinBack } } },
     'deadlift': { fist: true, bones: { 'mixamorig:LeftArm': hang, 'mixamorig:RightArm': hang, 'mixamorig:LeftForeArm': hang, 'mixamorig:RightForeArm': hang } },
     'shoulder-press': { base: 'idle', bones: press, fist: true },
     'one-leg': { base: 'idle', bones: oneLeg },
@@ -81,20 +88,34 @@ const MOVE_3D = (() => {
   let libP = null;
   function loadLib(){
     if (!libP) {
-      libP = Promise.all([import('three'), import('./vendor/loaders/GLTFLoader.js'), import('./vendor/utils/BufferGeometryUtils.js')])
-        .then(([T, L, U]) => ({ T, GLTFLoader: L.GLTFLoader, U }))
+      libP = Promise.all([import('three'), import('./vendor/loaders/GLTFLoader.js'), import('./vendor/utils/BufferGeometryUtils.js'),
+                          import('./vendor/libs/meshopt_decoder.module.js')])
+        .then(([T, L, U, M]) => ({ T, GLTFLoader: L.GLTFLoader, U, Meshopt: M.MeshoptDecoder }))
         .catch(e => { libP = null; throw e; });
     }
     return libP;
   }
   function loadGltf(lib, url){
-    return new Promise((res, rej) => new lib.GLTFLoader().load(url, res, undefined, rej));
+    const loader = new lib.GLTFLoader();
+    if (lib.Meshopt) loader.setMeshoptDecoder(lib.Meshopt);           // gltfpack 으로 누른 파일을 푼다
+    return new Promise((res, rej) => loader.load(url, res, undefined, rej));
+  }
+  const MODEL = 'mannequin.glb';
+  // 캐릭터도 한 번 받으면 기억한다 — 장면마다 새로 파싱하지 않고 뼈대만 복제해 쓴다
+  let modelP = null;
+  function loadModel(lib){
+    if (!modelP) modelP = loadGltf(lib, BASE + MODEL + VER).catch(e => { modelP = null; throw e; });
+    return modelP;
+  }
+  /* 미리 받아 두기 — 루틴 화면을 열 때 불러 두면 3D 가 바로 뜬다 */
+  function preload(){
+    return loadLib().then(lib => Promise.all([loadModel(lib), loadClip(lib, FALLBACK_CLIP)])).catch(() => {});
   }
   // 동작은 나눠 쓸 수 있으니 한 번 받으면 기억한다. 캐릭터는 장면마다 새로 읽는다.
   const clipCache = new Map();
   function loadClip(lib, name){
     if (!clipCache.has(name)) {
-      clipCache.set(name, loadGltf(lib, BASE + 'anim/' + name + '.glb').then(g => g.animations[0])
+      clipCache.set(name, loadGltf(lib, BASE + 'anim/' + name + '.glb' + VER).then(g => g.animations[0])
         .catch(e => { clipCache.delete(name); throw e; }));
     }
     return clipCache.get(name);
@@ -107,7 +128,9 @@ const MOVE_3D = (() => {
       if (!o.isMesh) return;
       const g = o.geometry.clone();
       g.deleteAttribute('normal'); g.deleteAttribute('uv');                 // 텍스처는 안 쓰니 이음새도 합친다
-      const merged = U.mergeVertices(g, 1e-4); merged.computeVertexNormals();
+      g.computeBoundingBox();
+      const tol = g.boundingBox.getSize(new T.Vector3()).length() * 1e-5;   // 파일 단위가 무엇이든 '같은 자리' 기준은 몸 크기에 비례
+      const merged = U.mergeVertices(g, tol); merged.computeVertexNormals();
       o.geometry = merged;
       const joints = /joint/i.test(o.material?.name || '') || /joint/i.test(o.name || '');
       o.material = new T.MeshStandardMaterial({ color: joints ? 0xA4A9B0 : 0xBCC1C7, roughness: 0.62, metalness: 0.04 });
@@ -209,17 +232,29 @@ const MOVE_3D = (() => {
     return {};
   }
 
+  /* 렌더러는 캔버스마다 하나만 — 브라우저는 한 캔버스에 WebGL 컨텍스트를 한 번만 주므로,
+     동작을 바꿀 때마다 새로 만들면(옛 것을 잃게 하면) 두 번째부터 아무것도 못 그린다 */
+  const renderers = new WeakMap();
+  function getRenderer(T, canvas){
+    let r = renderers.get(canvas);
+    if (!r) {
+      r = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      r.setClearColor(0x000000, 0);
+      r.shadowMap.enabled = true; r.shadowMap.type = T.PCFSoftShadowMap;
+      renderers.set(canvas, r);
+    }
+    return r;
+  }
+
   /* ---- 무대 ---- */
   function setup(lib, me, clip){
     const { T } = lib;
     const { canvas, body, id } = me;
     const size = Math.max(160, Math.min(canvas.clientWidth || 320, 480));
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    const renderer = getRenderer(T, canvas);
     renderer.setPixelRatio(dpr); renderer.setSize(size, size, false);
-    renderer.setClearColor(0x000000, 0);
-    renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
-    const scene = new T.Scene();
+    const scene = new T.Scene(); me.scene = scene;
     scene.add(new T.HemisphereLight(0xffffff, 0x9AA3AD, 1.6));
     const key = new T.DirectionalLight(0xffffff, 2.4); key.position.set(2.5, 4.5, 3); key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0004;
@@ -229,10 +264,17 @@ const MOVE_3D = (() => {
     const floor = new T.Mesh(new T.PlaneGeometry(10, 10), new T.ShadowMaterial({ opacity: 0.18 }));
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
-    // 캐릭터: 크기를 미터로 맞추고, 매끈한 회색으로
-    const box = new T.Box3().setFromObject(body);
-    const h = box.max.y - box.min.y;
-    if (h > 10) body.scale.setScalar(1 / h * 1.8);          // cm 단위로 왔으면 사람 키로
+    // 캐릭터: 크기를 사람 키로 맞추고, 매끈한 회색으로
+    // (스킨 메시의 상자는 뼈가 아직 움직이기 전이라 믿을 수 없다 — 묶인 자세의 꼭짓점을 그대로 잰다)
+    body.updateMatrixWorld(true);
+    let h = 0;
+    body.traverse(o => {
+      if (!o.isMesh || !o.geometry) return;
+      o.geometry.computeBoundingBox();
+      const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+      h = Math.max(h, bb.max.y - bb.min.y);
+    });
+    if (h > 0 && (h < 1.2 || h > 2.4)) body.scale.setScalar(1.75 / h);   // 파일 단위가 cm 든 뭐든 1.75m 로
     smoothAndGray(lib, body);
     scene.add(body);
     body.updateMatrixWorld(true);
@@ -241,6 +283,17 @@ const MOVE_3D = (() => {
     const map = new Map(); const boneList = [];
     body.traverse(o => { if (o.isBone) { map.set(norm(o.name), o); boneList.push(o); } });
     const bones = { get: n => map.get(norm(n)) };
+    // 캐릭터 파일에 든 한 프레임짜리 T 자세를 먼저 입힌다 — 리깅 때 팔이 내려간 자세로 묶였어도
+    // 아래의 '처음 자세'는 늘 T 자세가 된다
+    if (me.tpose) {
+      for (const tr of me.tpose.tracks) {
+        const [node, prop] = tr.name.split('.'); const b = bones.get(node); if (!b) continue;
+        if (prop === 'quaternion') b.quaternion.fromArray(tr.values, 0);
+        else if (prop === 'position') b.position.fromArray(tr.values, 0);
+        else if (prop === 'scale') b.scale.fromArray(tr.values, 0);
+      }
+      body.updateMatrixWorld(true);
+    }
     // 뼈마다 처음(T 자세) 세상 방향을 기억해 둔다 — aim 은 이 방향에서 얼마나 돌릴지로 계산한다
     const restQ = new Map(); boneList.forEach(b => restQ.set(b, b.getWorldQuaternion(new T.Quaternion())));
     const restLocalQ = new Map(); boneList.forEach(b => restLocalQ.set(b, b.quaternion.clone()));
@@ -281,6 +334,7 @@ const MOVE_3D = (() => {
       bone.quaternion.copy(bone.parent.getWorldQuaternion(_q2).invert().multiply(worldQ));
       bone.updateMatrixWorld(true);
     };
+    const posOf = n => { const b = bones.get(n); return b ? b.getWorldPosition(new T.Vector3()) : new T.Vector3(); };
     const applyTweaks = t => {
       if (!tweak) return;
       if (tweak.pitchAtHands) pitchAtHands(tweak.pitchAtHands);
@@ -295,7 +349,7 @@ const MOVE_3D = (() => {
       const byBone = new Map(); for (const [name, how] of Object.entries(table)) { const b = bones.get(name); if (b && how.aim) byBone.set(b, how); }
       for (const bone of boneList) if (byBone.has(bone)) {
         const how = byBone.get(bone);
-        aimBone(bone, how.aim);
+        aimBone(bone, typeof how.aim === 'function' ? how.aim(posOf) : how.aim);
         if (how.roll) { bone.quaternion.multiply(_q1.setFromAxisAngle(_v3.set(0, 1, 0), how.roll * D)); bone.updateMatrixWorld(true); }
         if (how.palmTo) palmToward(bone, how.palmTo);
       }
@@ -370,6 +424,22 @@ const MOVE_3D = (() => {
     frame();
   }
 
+  /* 스킨 메시가 든 장면 복제 — 뼈를 새로 잇고 스킨을 새 뼈에 다시 묶는다 (three 의 SkeletonUtils.clone 과 같은 일) */
+  function cloneRig(lib, src){
+    const { T } = lib;
+    const out = src.clone(true);
+    const srcNodes = [], outNodes = [];
+    src.traverse(n => srcNodes.push(n)); out.traverse(n => outNodes.push(n));
+    const pair = new Map(srcNodes.map((n, i) => [n, outNodes[i]]));
+    out.traverse(n => {
+      if (!n.isSkinnedMesh) return;
+      const s = srcNodes[outNodes.indexOf(n)];
+      const bones = s.skeleton.bones.map(b => pair.get(b) || b);
+      n.bind(new T.Skeleton(bones, s.skeleton.boneInverses.map(m => m.clone())), n.bindMatrix);
+    });
+    return out;
+  }
+
   function fallbackText(canvas, text){
     const ctx = canvas.getContext && canvas.getContext('2d');
     if (!ctx) return;
@@ -386,13 +456,23 @@ const MOVE_3D = (() => {
     stop(canvas);
     const clipName = (TWEAKS[id] && TWEAKS[id].base) || CLIPS[id] || FALLBACK_CLIP;
     const note = CLIPS[id] ? (APPROX[id] || '') : GAP_NOTE;
-    if (onNote) onNote(note);
-    const me = { canvas, id, dead: false, raf: null, renderer: null, body: null };
+    if (onNote) onNote(LOADING_NOTE);
+    const me = { canvas, id, dead: false, raf: null, renderer: null, scene: null, body: null, tpose: null };
     actives.set(canvas, me);
     loadLib()
-      .then(lib => Promise.all([lib, loadGltf(lib, BASE + 'ybot.glb'), loadClip(lib, clipName)]))
-      .then(([lib, gltf, clip]) => { if (me.dead) return; me.body = gltf.scene; setup(lib, me, clip); })
-      .catch(err => { console.warn('3D 동작을 못 불러왔어요', err); if (!me.dead) fallbackText(canvas, '3D 동작을 불러오지 못했어요'); });
+      .then(lib => Promise.all([lib, loadModel(lib), loadClip(lib, clipName)]))
+      .then(([lib, gltf, clip]) => {
+        if (me.dead) return;
+        me.body = lib.T.SkeletonUtils ? lib.T.SkeletonUtils.clone(gltf.scene) : cloneRig(lib, gltf.scene);
+        me.tpose = (gltf.animations || []).find(a => a.duration < 0.05) || null;   // 한 프레임짜리 T 자세
+        setup(lib, me, clip);
+        if (onNote) onNote(note);
+      })
+      .catch(err => {
+        console.warn('3D 동작을 못 불러왔어요', err);
+        if (me.dead) return;
+        if (onNote) onNote('3D 동작을 불러오지 못했어요'); else fallbackText(canvas, '3D 동작을 불러오지 못했어요');
+      });
     return true;
   }
   function stop(canvas){
@@ -400,10 +480,12 @@ const MOVE_3D = (() => {
       if (canvas && c !== canvas) continue;
       me.dead = true;
       if (me.raf) cancelAnimationFrame(me.raf);
-      if (me.renderer) { me.renderer.dispose(); me.renderer.forceContextLoss(); }
+      // 장면의 GPU 자원은 돌려주되 렌더러(컨텍스트)는 캔버스에 남겨 둔다 — 다음 동작이 같은 캔버스에 그린다
+      if (me.scene) me.scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => m.dispose()); });
+      if (me.renderer) { me.renderer.renderLists.dispose(); me.renderer.clear(); }
       actives.delete(c);
     }
   }
 
-  return { start, stop, CLIPS, APPROX, TWEAKS, GEAR, GRIP, GAP_NOTE, FALLBACK_CLIP, BASE };
+  return { start, stop, preload, CLIPS, APPROX, TWEAKS, GEAR, GRIP, GAP_NOTE, LOADING_NOTE, FALLBACK_CLIP, BASE, MODEL };
 })();

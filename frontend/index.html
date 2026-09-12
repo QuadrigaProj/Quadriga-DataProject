@@ -289,16 +289,17 @@
   .today-line.done .today-what{ text-decoration:line-through; color:var(--muted); }
   .today-line.now{ background:var(--pine-tint); border-radius:10px; padding-left:8px; padding-right:8px; }  /* 오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있을 때만 */
   .weather-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
-    padding:14px 16px; margin-top:14px; background:var(--paper); }
+    padding:14px 16px; margin:14px 22px 0; background:var(--paper); }
   .weather-alt{ font-size:13px; margin-top:8px; line-height:1.6; }
   .weather-from{ color:var(--muted); text-decoration:line-through; }
   .weather-to{ font-weight:700; color:var(--pine-deep); }
   .weather-or{ display:block; font-size:12px; color:var(--muted); }
   .player-alt{ margin-top:8px; font-size:13px; line-height:1.5; color:var(--pine-deep);
     background:var(--pine-tint); border-radius:10px; padding:8px 10px; }
-  /* 짬시간 카드 — 지금 비는 시간에 할 것 (경로 안내 위) */
+  /* 짬시간 카드 — 지금 비는 시간에 할 것 (경로 안내 위). 다른 홈 카드(.hero-btn·
+     .prescribe-card)와 좌우 여백을 맞춘다 — .screen 은 패딩이 없어 카드마다 직접 잡는다. */
   .spare-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
-    padding:14px 16px; margin-top:14px; background:var(--pine-tint); }
+    padding:14px 16px; margin:14px 22px 0; background:var(--pine-tint); }
   .spare-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
   .spare-label{ font-size:12.5px; color:var(--pine-deep); font-weight:700; }
   .spare-when{ font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }

@@ -57,19 +57,22 @@ def test_three_js_는_같이_둔다_밖에서_받지_않는다():
     assert html.index('type="importmap"') < html.index('src="js/api.js"')             # 어떤 스크립트보다 앞
 
 
-def test_캐릭터는_사람_몸_마네킹이고_Mixamo_뼈대가_있다():
-    p = FRONT / "assets" / "3d" / "mannequin.glb"
-    j = _glb_json(p)
-    names = [n.get("name", "") for n in j["nodes"]]
-    assert "mixamorig:Hips" in names and "mixamorig:LeftArm" in names and "mixamorig:RightUpLeg" in names
-    assert "mixamorig:LeftHandIndex1" in names                                          # 손가락까지 — 기구를 쥔다
-    assert len(j.get("skins", [])) >= 1 and len(j.get("meshes", [])) >= 1
-    assert "EXT_meshopt_compression" in j.get("extensionsRequired", [])                # gltfpack 으로 눌렀다
-    assert p.stat().st_size < 300_000                                                    # 휴대폰에서도 금방 받는다
-    assert j["animations"] and j["animations"][0]["channels"]                            # 한 프레임짜리 T 자세가 들어 있다
+def test_캐릭터는_남녀_사람_몸_마네킹이고_Mixamo_뼈대가_있다():
+    for sex in ("m", "f"):
+        p = FRONT / "assets" / "3d" / f"mannequin-{sex}.glb"
+        j = _glb_json(p)
+        names = [n.get("name", "") for n in j["nodes"]]
+        assert "mixamorig:Hips" in names and "mixamorig:LeftArm" in names and "mixamorig:RightUpLeg" in names, sex
+        assert "mixamorig:LeftHandIndex1" in names, sex                                     # 손가락까지 — 기구를 쥔다
+        assert len(j.get("skins", [])) >= 1 and len(j.get("meshes", [])) >= 1, sex
+        assert "EXT_meshopt_compression" in j.get("extensionsRequired", []), sex           # gltfpack 으로 눌렀다
+        assert p.stat().st_size < 320_000, sex                                               # 휴대폰에서도 금방 받는다
+        assert j["animations"] and j["animations"][0]["channels"], sex                      # 한 프레임짜리 T 자세가 들어 있다
     assert not (FRONT / "assets" / "3d" / "ybot.glb").exists()                           # 옛 Y Bot 은 치웠다
     js = _js()
-    assert "const MODEL = 'mannequin.glb';" in js and "loader.setMeshoptDecoder(lib.Meshopt)" in js
+    assert "const MODEL = s => 'mannequin-' + SEX(s) + '.glb';" in js and "loader.setMeshoptDecoder(lib.Meshopt)" in js
+    assert "const SEX = s => (String(s || '').toUpperCase() === 'F' ? 'f' : 'm');" in js   # 앱의 성별('M'/'F')로 고른다
+    assert "sex: state.sex" in _index() and "MOVE_3D.preload(state.sex)" in _index()
     assert "import('./vendor/libs/meshopt_decoder.module.js')" in js
     assert (FRONT / "js" / "vendor" / "libs" / "meshopt_decoder.module.js").exists()
 
@@ -77,14 +80,16 @@ def test_캐릭터는_사람_몸_마네킹이고_Mixamo_뼈대가_있다():
 def test_동작_파일은_뼈대만_들어_있고_작다():
     """동작 파일마다 캐릭터를 또 넣지 않는다 — 뼈대 + 애니메이션만."""
     clips = _clips()
-    for name in sorted(set(clips.values()) | {"idle"}):
-        p = FRONT / "assets" / "3d" / "anim" / f"{name}.glb"
-        assert p.exists(), name
-        j = _glb_json(p)
-        assert not j.get("meshes"), name
-        assert j.get("animations") and j["animations"][0]["channels"], name
-        assert "mixamorig:Hips" in [n.get("name", "") for n in j["nodes"]], name     # 같은 뼈 이름이라 그대로 붙는다
-        assert p.stat().st_size < 120_000, name                                              # gltfpack 으로 눌러 둔다
+    for sex in ("m", "f"):                                                                  # 뼈대가 달라 성별마다 따로
+        for name in sorted(set(clips.values()) | {"idle"}):
+            p = FRONT / "assets" / "3d" / "anim" / sex / f"{name}.glb"
+            assert p.exists(), (sex, name)
+            j = _glb_json(p)
+            assert not j.get("meshes"), name
+            assert j.get("animations") and j["animations"][0]["channels"], name
+            assert "mixamorig:Hips" in [n.get("name", "") for n in j["nodes"]], name     # 같은 뼈 이름이라 그대로 붙는다
+            assert p.stat().st_size < 120_000, name                                              # gltfpack 으로 눌러 둔다
+    assert "BASE + 'anim/' + key + '.glb' + VER" in _js() and "const key = SEX(sex) + '/' + name;" in _js()
 
 
 def test_자세_그림이_있는_동작은_모두_처리된다():
@@ -112,7 +117,7 @@ def test_겉모습은_매끈한_회색이다():
     assert "g.deleteAttribute('normal'); g.deleteAttribute('uv');" in js        # 이음새까지 합쳐서
     assert "const merged = U.mergeVertices(g, tol); merged.computeVertexNormals();" in js   # 법선을 다시 계산한다
     assert "getSize(new T.Vector3()).length() * 1e-5" in js                     # '같은 자리' 기준은 몸 크기에 비례
-    assert "color: joints ? 0xA4A9B0 : 0xBCC1C7" in js                          # 회색 둘 (몸통은 한 덩이로 읽힌다)
+    assert "color: 0xBCC1C7, roughness: 0.62" in js                               # 마네킹 회색 하나
 
 
 def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
@@ -160,7 +165,7 @@ def test_비슷한_동작으로_대신하는_것은_화면에_적는다():
     assert 'id="exercise3dSub"' in html
     보이기 = html.split("function show3dForStep(step)")[1].split("\n}")[0]
     assert "s.textContent = t || ''; s.hidden = !t;" in 보이기
-    assert "MOVE_3D.start($('exercise3dCanvas'), pose, { onNote })" in 보이기
+    assert "MOVE_3D.start($('exercise3dCanvas'), pose, { onNote, sex: state.sex })" in 보이기
 
 
 def test_빛과_그림자_카메라는_몸을_따라간다():
@@ -181,7 +186,7 @@ def test_플레이어에_붙어_있고_출처를_적는다():
     assert "*해당하는 영상이 없어 3D 동작으로 대체했습니다. (몸: Blender 인체 기본형 · 뼈대·동작: Mixamo)" in html
     js = _js()
     assert "if (onNote) onNote(LOADING_NOTE);" in js and "LOADING_NOTE = '3D 동작을 불러오는 중…'" in js   # 기다리는 동안 알려 준다
-    assert "function preload()" in js and "MOVE_3D.preload()" in html                        # 루틴 화면에서 미리 받아 둔다
+    assert "function preload(sex)" in js and "MOVE_3D.preload(state.sex)" in html            # 루틴 화면에서 내 성별 캐릭터를 미리 받아 둔다
 
 
 def test_영상이_있으면_영상_없으면_3D():
@@ -217,7 +222,7 @@ def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
         assert id_ in 만든_ids, id_
     assert ids <= (set(_clips()) | 만든_ids), sorted(ids - set(_clips()) - 만든_ids)                     # 34개 모두 진짜 동작
     for _, base, period in 있는:
-        assert (FRONT / "assets" / "3d" / "anim" / f"{base}.glb").exists(), base                         # 바탕 동작 파일이 있다
+        assert (FRONT / "assets" / "3d" / "anim" / "m" / f"{base}.glb").exists(), base                   # 바탕 동작 파일이 있다
         assert 1.5 <= float(period) <= 15, period
     노트 = (ROOT / "docs" / "3d-exercise-form-notes.md").read_text(encoding="utf-8")
     for id_ in ids:
@@ -226,3 +231,23 @@ def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
     for 조각 in ("const ik2 = (a, target, l1, l2, bend) =>", "const orientBone = (bone, up, front) =>", "typeof how.ik === 'function' ? how.ik() : how.ik",
                  "const resetHips = () =>", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
         assert 조각 in js, 조각
+
+
+def test_우리가_만든_동작엔_바른_자세_설명을_같이_띄운다():
+    """영상이 없어 3D 로 보여 주는 동작은 docs 의 자세 설명(js/move-notes.js)을 캔버스 아래에 같이 보여 준다."""
+    notes_js = (FRONT / "js" / "move-notes.js").read_text(encoding="utf-8")
+    ids = set(re.findall(r'id="pose-([a-z0-9-]+)"', _art()))
+    표 = json.loads(notes_js.split("const MOVE_NOTES = ")[1].rsplit(";", 1)[0])
+    assert ids <= set(표), sorted(ids - set(표))                                                  # 34개 동작 모두
+    노트 = (ROOT / "docs" / "3d-exercise-form-notes.md").read_text(encoding="utf-8")
+    for id_, v in 표.items():
+        assert 2 <= len(v["tips"]) <= 7 and v["name"], id_
+        assert f"### {id_} {v['name']}" in 노트, id_                                                # 문서에서 뽑은 그대로
+        assert all("출처" not in t for t in v["tips"]), id_                                          # 출처는 문서에만
+    html = _index()
+    assert html.index('src="js/move-notes.js"') < html.index('src="js/move-3d.js"')
+    assert 'id="exercise3dTips"' in html and "function render3dTips(pose)" in html
+    보이기 = html.split("function show3dForStep(step)")[1].split("\n}")[0]
+    assert "render3dTips(pose);" in 보이기
+    그리기 = html.split("function render3dTips(pose)")[1].split("\n}")[0]
+    assert "MOVE_NOTES[pose]" in 그리기 and "note.name + ' — 이렇게 해요'" in 그리기

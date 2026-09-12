@@ -272,6 +272,11 @@
   .exercise-3d canvas{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px;
     background:linear-gradient(180deg, #F7FAFF 0%, #E9EFF9 100%); }
   .exercise-3d-note{ font-size:11.5px; color:var(--muted); }
+  .exercise-3d-tips{ width:min(100%, 320px); text-align:left; background:var(--card, #fff); border-radius:12px;
+    padding:10px 12px 8px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+  .exercise-3d-tips h4{ margin:0 0 6px; font-size:13px; }
+  .exercise-3d-tips ul{ margin:0; padding-left:16px; font-size:12.5px; line-height:1.5; }
+  .exercise-3d-tips li{ margin:2px 0; word-break:keep-all; }
   /* 시간대 흐름 (홈) */
   .daypart-row{ margin:10px 22px 0; }   /* 다른 카드와 같은 좌우 여백 */
   .daypart-done{ font-size:14px; font-weight:800; color:var(--pine-deep); padding:10px 12px;
@@ -1896,6 +1901,8 @@
           <canvas id="exercise3dCanvas" width="320" height="320" aria-label="동작을 3D 캐릭터로 보여줍니다"></canvas>
           <div class="exercise-3d-note">*해당하는 영상이 없어 3D 동작으로 대체했습니다. (몸: Blender 인체 기본형 · 뼈대·동작: Mixamo)</div>
           <div class="exercise-3d-note" id="exercise3dSub" hidden></div>
+          <!-- 우리가 만든 동작은 바른 자세 설명도 같이 보여 준다 (docs/3d-exercise-form-notes.md → js/move-notes.js) -->
+          <div class="exercise-3d-tips" id="exercise3dTips" hidden></div>
         </div>
         <div class="player-tag" id="playerTag">1 / 5</div>
         <div class="player-daypart" id="playerDaypart" hidden></div>
@@ -2416,6 +2423,7 @@
 <script src="js/api.js"></script>
 <script src="js/gauge.js"></script>
 <script src="js/move-art.js"></script>
+<script src="js/move-notes.js"></script>
 <script src="js/move-3d.js"></script>
 <script>
 /* ---------------------------------------------------------------------------
@@ -3692,7 +3700,7 @@ function goTo(id){
   if(id === 's2') renderPurpose();
   if(id === 's3') { loadHome(); paintGauges({ animate: true }); loadSparePlan(); checkTodayWeather(); }
   if(id === 's4') resetRoutine();
-  if(id !== 's4') MOVE_3D.stop(); else MOVE_3D.preload();      // 루틴 화면을 열 때 3D 캐릭터를 미리 받아 둔다
+  if(id !== 's4') MOVE_3D.stop(); else MOVE_3D.preload(state.sex);      // 루틴 화면을 열 때 내 성별의 3D 캐릭터를 미리 받아 둔다
   if(id === 's5') { renderProfile(); renderEdit(); syncDangerRow(); cancelDelete(); }
   if(id === 's7') renderRecords();
   if(id === 's8') renderSports();
@@ -5875,13 +5883,28 @@ function stopExerciseVideo(){
 }
 
 /* 영상이 없는 동작이면 그 자리에 3D 그림. 있으면 접는다. */
+/* 3D 동작 아래에 바른 자세 설명을 띄운다 — 영상이 없어 우리가 만든 동작이니 글로도 알려 준다 */
+function render3dTips(pose){
+  const el = $('exercise3dTips');
+  if (!el) return;
+  const note = (typeof MOVE_NOTES !== 'undefined') && MOVE_NOTES[pose];
+  if (!note || !note.tips || !note.tips.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.innerHTML = '';
+  const h = document.createElement('h4'); h.textContent = note.name + ' — 이렇게 해요'; el.appendChild(h);
+  const ul = document.createElement('ul');
+  note.tips.forEach(t => { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); });
+  el.appendChild(ul);
+  el.hidden = false;
+}
+
 function show3dForStep(step){
   const box = $('exercise3d');
   if (!box) return;
   const pose = poseForStep(step);
   const onNote = t => { const s = $('exercise3dSub'); if (s) { s.textContent = t || ''; s.hidden = !t; } };
-  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose, { onNote })) { MOVE_3D.stop(); box.hidden = true; return; }
+  if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose, { onNote, sex: state.sex })) { MOVE_3D.stop(); box.hidden = true; return; }
   box.hidden = false;
+  render3dTips(pose);
 }
 
 function renderStep(){

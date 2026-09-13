@@ -229,7 +229,7 @@ def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
         assert f"### {id_} " in 노트, id_                                                                # 동작마다 자세 설명이 있다
     js = _js()
     for 조각 in ("const ik2 = (a, target, l1, l2, bend) =>", "const orientBone = (bone, up, front) =>", "typeof how.ik === 'function' ? how.ik() : how.ik",
-                 "const resetHips = () =>", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
+                 "const restoreHips = () =>", "rememberHips();", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
         assert 조각 in js, 조각
 
 

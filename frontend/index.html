@@ -55,9 +55,10 @@
   }
 
   .screen{ display:none; flex-direction:column; flex:1; min-height:820px; }
+  #s3{ padding-bottom:28px; }   /* 홈은 .content 없이 바로 쌓여서, 내용이 길면 맨 아래 버튼이 창 끝에 붙는다 */
   .screen.active{ display:flex; }
 
-  .content{ flex:1; overflow-y:auto; padding:28px 22px 20px; }
+  .content{ flex:1; overflow-y:auto; padding:28px 22px 26px; }   /* 바닥 여백은 버튼 줄(.footer-area)과 같은 26px */
   .content::-webkit-scrollbar{ display:none; }
 
   h1,h2,h3,p{ margin:0; }
@@ -342,7 +343,7 @@
   .commute-row button:disabled{ background:#B9C4BB; cursor:not-allowed; }
   .prescribe-meta{ font-size:12.5px; color:var(--muted); margin-top:8px; line-height:1.5; }
 
-  .review-link{ margin:14px 22px 0; text-align:center; }
+  .review-link{ margin:20px 22px 0; text-align:center; }
   .review-link button{ background:none; border:none; color:var(--muted); font-size:13.5px; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
 
   /* 목록 — 하단 탭 대신 좌상단 버튼을 눌러 여는 드롭다운.
@@ -406,7 +407,7 @@
   .sport-applied b{ color:var(--pine-deep); }
 
   .sport-actions{
-    padding:12px 22px; background:var(--paper); border-top:1px solid var(--line);
+    padding:16px 22px 26px; background:var(--paper); border-top:1px solid var(--line);   /* 다른 화면의 버튼 줄과 같은 여백 */
   }
   .sport-picked{ display:flex; flex-wrap:wrap; gap:9px; margin-top:22px; }
   .sport-chip{

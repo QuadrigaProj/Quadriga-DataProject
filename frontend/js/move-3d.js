@@ -716,10 +716,14 @@ const MOVE_3D = (() => {
       body.updateMatrixWorld(true);
     };
     const cycle = proc ? proc.period : clip.duration;                       // 한 바퀴 — 카메라·줄넘기 박자가 이것을 본다
-    // 엉덩이는 매 프레임 처음 자리에서 시작한다 — 위치 트랙이 없는 동작에서 root.dpos 가 쌓이지 않게
-    const hipsBone = bones.get('mixamorig:Hips'), hipsRestPos = hipsBone ? hipsBone.position.clone() : null;
-    const resetHips = () => { if (hipsBone) { hipsBone.position.copy(hipsRestPos); hipsBone.quaternion.copy(restLocalQ.get(hipsBone)); } };
-    const poseAt = t => { resetHips(); mixer.setTime(t % clip.duration); body.updateMatrixWorld(true); applyTweaks(t); applyProc(t); };
+    // 믹서는 값이 안 바뀐 프레임엔 뼈를 다시 쓰지 않는다. 그래서 우리가 덮어쓴 엉덩이(root.dpos, pitchAtHands)를
+    // 다음 프레임 전에 '믹서가 마지막에 준 값'으로 되돌려 둔다 — 처음 자세로 되돌리면 엉덩이 높이가 일정한
+    // 동작(무릎꿇기 등)에서 믹서가 안 써서 몸이 떠 버리고, 안 되돌리면 dpos 가 쌓인다.
+    const hipsBone = bones.get('mixamorig:Hips');
+    const hipsMixed = hipsBone ? hipsBone.position.clone() : null, hipsMixedQ = hipsBone ? hipsBone.quaternion.clone() : null;
+    const restoreHips = () => { if (hipsBone) { hipsBone.position.copy(hipsMixed); hipsBone.quaternion.copy(hipsMixedQ); } };
+    const rememberHips = () => { if (hipsBone) { hipsMixed.copy(hipsBone.position); hipsMixedQ.copy(hipsBone.quaternion); } };
+    const poseAt = t => { restoreHips(); mixer.setTime(t % clip.duration); rememberHips(); body.updateMatrixWorld(true); applyTweaks(t); applyProc(t); };
     if (GEAR[id] === 'rope') {
       const hips = bones.get('mixamorig:Hips'); const N = 60, ys = [];
       for (let i = 0; i < N; i++) { poseAt(clip.duration * i / N); ys.push(hips.getWorldPosition(v).y); }
@@ -752,8 +756,9 @@ const MOVE_3D = (() => {
     const clock = new T.Clock();
     const frame = () => {
       if (me.dead) return;
-      resetHips();
+      restoreHips();
       mixer.update(clock.getDelta());
+      rememberHips();
       body.updateMatrixWorld(true);
       applyTweaks(clock.elapsedTime);
       applyProc(clock.elapsedTime);

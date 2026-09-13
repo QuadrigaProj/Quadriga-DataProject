@@ -268,12 +268,12 @@
   .rec-spare-why{ flex-basis:100%; color:var(--muted); }
   /* 영상 대신 3D 느낌의 동작 그림 (M5) */
   .exercise-3d{ display:flex; flex-direction:column; align-items:center; gap:6px;
-    margin:8px 0 4px; }
-  .exercise-3d canvas{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px;
-    background:linear-gradient(180deg, #F7FAFF 0%, #E9EFF9 100%); }
-  .exercise-3d-note{ font-size:11.5px; color:var(--muted); }
-  .exercise-3d-tips{ width:min(100%, 320px); text-align:left; background:var(--card, #fff); border-radius:12px;
-    padding:10px 12px 8px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+    margin:8px 0 10px; }
+  /* 동작 화면과 설명 카드는 플레이어의 초록 배경을 그대로 쓰고 글씨는 흰색 (리뷰: 흰 판이 튀어 보임) */
+  .exercise-3d canvas{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px; background:transparent; }
+  .exercise-3d-note{ font-size:11.5px; color:rgba(255,255,255,0.78); padding:0 14px; text-align:center; }
+  .exercise-3d-tips{ width:min(100%, 320px); text-align:left; color:#fff; background:rgba(255,255,255,0.08); border-radius:12px;
+    padding:10px 12px 8px; }
   .exercise-3d-tips h4{ margin:0 0 6px; font-size:13px; }
   .exercise-3d-tips ul{ margin:0; padding-left:16px; font-size:12.5px; line-height:1.5; }
   .exercise-3d-tips li{ margin:2px 0; word-break:keep-all; }

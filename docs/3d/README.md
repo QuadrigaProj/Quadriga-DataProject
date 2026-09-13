@@ -8,7 +8,7 @@
 |---|---|
 | `frontend/assets/3d/mannequin-m.glb`, `mannequin-f.glb` | 남·여 캐릭터 (뼈대 52개, 한 프레임짜리 T 자세 포함, 각 115KB) |
 | `frontend/assets/3d/anim/{m,f}/<id>.glb` | 동작 파일 25개씩 — 뼈대만 들어 있고 캐릭터는 없다. 뼈대가 성별마다 달라 따로 둔다 |
-| `frontend/js/move-3d.js` | 불러오기·그리기. `CLIPS`(모션캡처 동작), `PROC`(설명대로 만든 동작), `GEAR`(기구), `TWEAKS`(무릎 푸시업) |
+| `frontend/js/move-3d.js` | 불러오기·그리기. `CLIPS`(모션캡처 동작), `PROC`(설명대로 만든 동작), `GEAR`(기구), `TWEAKS`(무릎 푸시업), `qa`(검사 손잡이) |
 | `frontend/js/move-notes.js` | 동작 아래에 띄우는 자세 설명 — `3d-exercise-form-notes.md` 에서 뽑은 것 |
 | `frontend/js/vendor/` | three.js r160 + GLTFLoader + meshopt 디코더 (밖에서 받지 않는다) |
 
@@ -46,6 +46,19 @@
 - **Mixamo 에 있는 동작**: `MX.ITEMS` 식으로 검색어·이름을 적어 두 성별 모두 받고, `move-3d.js` 의 `CLIPS` 에 `'동작id': '파일이름'` 을 더한다.
 - **Mixamo 에 없는 동작**: `PROC` 표에 적는다. 시간(0~1)에 따른 자세를 세상 기준 방향(+Y 위, +Z 앞, +X 캐릭터 왼쪽)과 손·발 목표(`ik`)로 쓴다 — 뼈 기준 각도는 리깅마다 달라 쓰지 않는다. `base` 는 손가락·발 등 정하지 않은 뼈를 가져올 바탕 동작(idle·lying·kneel·plank). 기구가 필요하면 `GEAR` 와 `makeGear()` 에 더한다.
 - 자세 설명은 `docs/3d-exercise-form-notes.md` 에 `### 동작id 이름` 으로 적고, `frontend/js/move-notes.js` 를 다시 뽑는다(문서의 `- ` 줄에서 `출처:` 만 빼면 된다). 테스트가 둘이 어긋나면 잡는다.
+
+## 관절·관통 검사
+
+동작을 만들거나 고친 뒤에는 관절이 사람처럼 꺾였는지, 몸·기구가 서로 뚫지 않는지 검사한다 (기준: [`../3d-joint-kinematics.md`](../3d-joint-kinematics.md)).
+
+```bash
+node docs/3d/qa_sample.js work/qa                      # 앱(127.0.0.1:8390)을 헤드리스 크롬으로 열어 동작마다 관절·기구 자리 24 프레임 + 그림 8장 (남·여)
+python docs/3d/qa_check.py work/qa --sheets            # 위반 목록(report.txt) + sheets/<성별>_<동작>.jpg (위반 프레임은 빨간 테두리)
+node docs/3d/qa_sample.js work/qa http://127.0.0.1:8390/ lunge,squat   # 몇 개만
+```
+
+`move-3d.js` 끝의 `MOVE_3D.qa(canvas)` 손잡이(멈춤·시간 이동·관절/기구 자리·살 두께)를 쓴다. 닿는 것(손을 허리에, 벤치에 눕기, 기구 쥐기)은 2~7cm 겹침까지 봐주고, 그 이상은 뚫는 것으로 잡는다.
+자세 엔진은 팔꿈치·무릎이 굽는 쪽에 위팔·허벅지의 비틀림을 자동으로 맞춘다(`alignHinges`) — 자세 표에서 굽는 방향만 맞으면 된다.
 
 ## 캐릭터 후보 비교
 

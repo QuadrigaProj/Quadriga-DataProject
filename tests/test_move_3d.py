@@ -123,7 +123,7 @@ def test_겉모습은_매끈한_회색이다():
 def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
     js = _js()
     손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
-    assert "'knee-pushup': { pitchAtHands:" in 손봄 and "'mixamorig:LeftLeg': { aim: shinBack }" in 손봄     # 무릎을 바닥에, 정강이는 뒤로 눕힌다
+    assert "'knee-pushup': { bones: {" in 손봄 and "'mixamorig:LeftUpLeg': { aim: thighToFloor('Left') }" in 손봄 and "'mixamorig:LeftLeg': { aim: shinBack }" in 손봄     # 무릎을 바닥에, 정강이는 뒤로 눕힌다
     만듦 = _proc()
     assert "'deadlift': { base: 'idle', period: 3.4, gear: 'barbell', fist: true" in 만듦                   # 힌지해서 바를 잡고 똑바로 선다
     assert "'shoulder-press': { base: 'idle', period: 2.4, gear: 'dumbbells', fist: true" in 만듦          # 어깨 위로 밀어 올린다
@@ -228,7 +228,7 @@ def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
     for id_ in ids:
         assert f"### {id_} " in 노트, id_                                                                # 동작마다 자세 설명이 있다
     js = _js()
-    for 조각 in ("const ik2 = (a, target, l1, l2, bend) =>", "const orientBone = (bone, up, front) =>", "typeof how.ik === 'function' ? how.ik() : how.ik",
+    for 조각 in ("const ik2 = (a, target, l1, l2, bend) =>", "const orientBone = (bone, up, front) =>", "typeof how.ik === 'function' ? how.ik(posOf) : how.ik",
                  "const restoreHips = () =>", "rememberHips();", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
         assert 조각 in js, 조각
 
@@ -261,3 +261,42 @@ def test_움직임_줄이기_설정이어도_동작은_멈추지_않는다():
     assert "if (!still)" not in js and "if (still)" not in js
     assert "me.raf = requestAnimationFrame(frame);" in js
     assert "prefers-reduced-motion" in js and "calm ? 0 :" in js
+
+
+def test_팔꿈치_무릎은_사람처럼_한쪽으로만_굽는다():
+    """docs/3d-joint-kinematics.md — 경첩 관절: 아래팔·정강이가 굽는 쪽에 위팔·허벅지의 비틀림을 맞추고,
+    아래팔·정강이는 위팔·허벅지에 대해 비틀리지 않게 한다. IK 로 움직인 팔다리 끝의 손·발은 부모가 정해진 뒤 다시 맞춘다."""
+    js = _js()
+    assert "const HINGES = [['LeftArm', 'LeftForeArm', [0, 0, 1]]" in js and "['LeftUpLeg', 'LeftLeg', [0, 0, -1]]" in js
+    적용 = js.split("const applyProc = t => {")[1].split("\n    };")[0]
+    assert 적용.count("aimPass();") == 2 and "alignHinges(table);" in 적용          # 방향 → IK(두 번) → 손·발 다시 → 경첩
+    assert 적용.index("aimPass();") < 적용.index("ikPass(); ikPass();") < 적용.rindex("aimPass();") < 적용.index("alignHinges(table);")
+    손봄 = js.split("const applyTweaks = t => {")[1].split("\n    };")[0]
+    assert "alignHinges(byBone);" in 손봄
+    정렬 = js.split("const alignHinges = table => {")[1].split("\n    };")[0]
+    assert "if (table && !table.has(p) && !table.has(c)) continue;" in 정렬           # 모션캡처 뼈는 건드리지 않는다
+    assert "hc.palmTo || hc.roll" in 정렬                                            # 손바닥 방향을 정한 아래팔은 비틀림을 그대로
+
+
+def test_발은_바닥과_정강이를_기준으로_둔다():
+    """리깅의 발목은 바닥에서 0.09, 평평한 발 뼈는 N(0,-0.53,0.85) — 자세 표가 이 숫자를 쓴다."""
+    js = _js()
+    assert "const FLAT = N(0, -0.53, 0.85);" in js
+    assert "const footFollow = (side, left = [1, 0, 0], deg = 60) => p => {" in js
+    proc = _proc()
+    for 동작 in ("'lunge'", "'deadlift'", "'hip-stretch'", "'hamstring-stretch'", "'lat-pulldown'"):
+        assert "FLAT" in proc.split(동작)[1].split("} },")[0], 동작
+    assert "footFollow(L, [1, 0, 0], 50)" in proc and "footFollow(L, [1, 0, 0], 66)" in proc   # 자전거·로잉은 정강이를 따라간다
+
+
+def test_관절_검사_도구가_있고_기준_문서와_맞는다():
+    """docs/3d/qa_sample.js(관절·기구 자리 뽑기) → docs/3d/qa_check.py(한계·관통 검사). 규칙 이름은 학습 문서의 표에 있어야 한다."""
+    js = _js()
+    assert "me.qa = {" in js and "return { start, stop, preload, qa," in js
+    sample = (ROOT / "docs" / "3d" / "qa_sample.js").read_text(encoding="utf-8")
+    check = (ROOT / "docs" / "3d" / "qa_check.py").read_text(encoding="utf-8")
+    doc = (ROOT / "docs" / "3d-joint-kinematics.md").read_text(encoding="utf-8")
+    assert "MOVE_3D.qa(c)" in sample and "qa.joints()" in sample and "qa.gear()" in sample
+    for rule in re.findall(r'out\.append\(\("([A-Z_]+)"', check):
+        assert rule in doc, rule
+    assert "3d-joint-kinematics.md" in check

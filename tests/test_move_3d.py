@@ -172,7 +172,7 @@ def test_빛과_그림자_카메라는_몸을_따라간다():
     js = _js().split("function setup(lib, me, clip)")[1].split("\n  }")[0]
     assert "r.shadowMap.enabled = true" in _js() and "ShadowMaterial" in js          # 그림자는 렌더러를 만들 때 켠다
     assert "new T.AnimationMixer(body)" in js and "mixer.clipAction(clip)" in js
-    assert "prefers-reduced-motion: reduce" in js and "action.paused = true" in js
+    assert "prefers-reduced-motion: reduce" in js and "action.paused" not in js      # 움직임 줄이기여도 동작은 돈다 (카메라만 가만히)
     assert "for (const b of boneList) { b.getWorldPosition(v); lo.min(v); hi.max(v); }" in js   # 뼈대 상자로 화면 맞춤
     assert "smoothAndGray(lib, body)" in js
     assert "if (h > 0 && (h < 1.2 || h > 2.4)) body.scale.setScalar(1.75 / h);" in js   # 단위가 뭐든 사람 키로
@@ -251,3 +251,13 @@ def test_우리가_만든_동작엔_바른_자세_설명을_같이_띄운다():
     assert "render3dTips(pose);" in 보이기
     그리기 = html.split("function render3dTips(pose)")[1].split("\n}")[0]
     assert "MOVE_NOTES[pose]" in 그리기 and "note.name + ' — 이렇게 해요'" in 그리기
+
+
+def test_움직임_줄이기_설정이어도_동작은_멈추지_않는다():
+    """휴대폰의 '움직임 줄이기'(prefers-reduced-motion) 설정에서 캐릭터가 한 프레임만 그리고 멈춰 있었다.
+    동작 자체가 보여 줄 내용이니 항상 돌리고, 카메라가 좌우로 도는 것만 뺀다."""
+    js = _js()
+    assert "action.paused = true" not in js
+    assert "if (!still)" not in js and "if (still)" not in js
+    assert "me.raf = requestAnimationFrame(frame);" in js
+    assert "prefers-reduced-motion" in js and "calm ? 0 :" in js

@@ -583,7 +583,9 @@ const MOVE_3D = (() => {
 
     const mixer = new T.AnimationMixer(body);
     const action = mixer.clipAction(clip); action.play();
-    const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // '움직임 줄이기'(prefers-reduced-motion) 설정이어도 동작은 멈추지 않는다 — 동작 자체가 보여 줄 내용이다.
+    // (전엔 이 설정에서 한 프레임만 그려 휴대폰에서 캐릭터가 멈춰 보였다.) 카메라가 좌우로 도는 것만 뺀다.
+    const calm = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
     // ---- 손보기 적용 ----
     const tweak = TWEAKS[id];
@@ -746,13 +748,12 @@ const MOVE_3D = (() => {
     const target = lo.clone().add(hi).multiplyScalar(0.5);
     const dist = (Math.max(hi.x - lo.x, hi.y - lo.y + 0.3, hi.z - lo.z, 1.2) + (gear.pad || 0)) * 1.9 + 0.8;   // 머리·손끝·기구 여유
     const place = ms => {
-      const a = (34 + (still ? 0 : 8 * Math.sin(ms / 1400))) * D;      // 천천히 좌우로 돌며 입체를 보여 준다
+      const a = (34 + (calm ? 0 : 8 * Math.sin(ms / 1400))) * D;       // 천천히 좌우로 돌며 입체를 보여 준다
       const e = 14 * D;
       camera.position.set(target.x + Math.sin(a) * Math.cos(e) * dist, target.y + Math.sin(e) * dist, target.z + Math.cos(a) * Math.cos(e) * dist);
       camera.lookAt(target);
     };
 
-    if (still) { action.paused = true; action.time = clip.duration / 2; applyProc(cycle / 2); }
     const clock = new T.Clock();
     const frame = () => {
       if (me.dead) return;
@@ -765,7 +766,7 @@ const MOVE_3D = (() => {
       if (gear.update) gear.update(clock.elapsedTime, action.time);
       place(clock.elapsedTime * 1000);
       renderer.render(scene, camera);
-      if (!still) me.raf = requestAnimationFrame(frame);
+      me.raf = requestAnimationFrame(frame);
     };
     me.renderer = renderer;
     frame();

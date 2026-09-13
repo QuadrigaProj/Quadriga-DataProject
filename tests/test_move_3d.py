@@ -172,7 +172,7 @@ def test_빛과_그림자_카메라는_몸을_따라간다():
     js = _js().split("function setup(lib, me, clip)")[1].split("\n  }")[0]
     assert "r.shadowMap.enabled = true" in _js() and "ShadowMaterial" in js          # 그림자는 렌더러를 만들 때 켠다
     assert "new T.AnimationMixer(body)" in js and "mixer.clipAction(clip)" in js
-    assert "prefers-reduced-motion: reduce" in js and "action.paused = true" in js
+    assert "prefers-reduced-motion: reduce" in js and "action.paused" not in js      # 움직임 줄이기여도 동작은 돈다 (카메라만 가만히)
     assert "for (const b of boneList) { b.getWorldPosition(v); lo.min(v); hi.max(v); }" in js   # 뼈대 상자로 화면 맞춤
     assert "smoothAndGray(lib, body)" in js
     assert "if (h > 0 && (h < 1.2 || h > 2.4)) body.scale.setScalar(1.75 / h);" in js   # 단위가 뭐든 사람 키로

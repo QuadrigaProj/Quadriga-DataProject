@@ -268,21 +268,21 @@
   .rec-spare-why{ flex-basis:100%; color:var(--muted); }
   /* 영상 대신 3D 느낌의 동작 그림 (M5) */
   .exercise-3d{ display:flex; flex-direction:column; align-items:center; gap:6px;
-    margin:8px 0 10px; }
+    width:100%; margin:8px 0 10px; }   /* 상자 너비를 다 써야 안의 캔버스·설명이 상자 가운데에 온다 */
   /* 동작 화면과 설명 카드는 플레이어의 초록 배경을 그대로 쓰고 글씨는 흰색 (리뷰: 흰 판이 튀어 보임) */
   .exercise-3d canvas{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px; background:transparent; }
   .exercise-3d-note{ font-size:11.5px; color:rgba(255,255,255,0.78); padding:0 14px; text-align:center; }
-  .exercise-3d-tips{ width:min(100%, 320px); text-align:center; color:#fff; background:rgba(255,255,255,0.08); border-radius:12px;
-    padding:10px 12px 8px; }   /* 설명은 가운데 정렬 */
+  .exercise-3d-tips{ width:min(100%, 320px); text-align:left; color:#fff; background:rgba(255,255,255,0.08); border-radius:12px;
+    padding:10px 12px 8px; }   /* 글은 왼쪽 정렬, 카드는 상자 가운데 */
   .exercise-3d-tips h4{ margin:0 0 6px; font-size:13px; }
-  .exercise-3d-tips ul{ margin:0; padding:0; list-style:none; font-size:12.5px; line-height:1.5; }   /* 가운데 정렬이라 글머리표는 뺀다 — 줄마다 위치가 흔들려 보여서 */
-  .exercise-3d-tips li{ margin:5px 0; word-break:keep-all; }
+  .exercise-3d-tips ul{ margin:0; padding-left:16px; font-size:12.5px; line-height:1.5; }
+  .exercise-3d-tips li{ margin:2px 0; word-break:keep-all; }
   /* 시간대 흐름 (홈) */
   .daypart-row{ margin:10px 22px 0; }   /* 다른 카드와 같은 좌우 여백 */
   .daypart-done{ font-size:14px; font-weight:800; color:var(--pine-deep); padding:10px 12px;
     background:var(--pine-tint); border-radius:12px; margin-bottom:8px; }
   .daypart-actions{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; text-align:center; }
-  .player-daypart{ font-size:12.5px; color:var(--pine-deep); margin:4px 0 6px; line-height:1.5; }
+  .player-daypart{ font-size:12.5px; color:rgba(255,255,255,0.85); margin:4px 14px 8px; line-height:1.5; text-align:center; }   /* 초록 상자 안에 있어 흰 글씨 */
   /* 오늘의 스케줄 미리보기 */
   .today-line{ display:flex; gap:10px; padding:9px 0; border-top:1px solid var(--line); font-size:13px; line-height:1.5; }
   .today-line:first-child{ border-top:none; }
@@ -555,7 +555,7 @@
   /* ===================== SCREEN 4 : 루틴 플레이어 ===================== */
   .player-video{
     margin:0 22px; margin-top:18px; aspect-ratio:16/9; border-radius:18px; background:linear-gradient(160deg,#2C4B3E,#1F3830);
-    display:flex; align-items:center; justify-content:center; position:relative;
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:center; position:relative;   /* 3D 블록이 한 줄을 다 쓰면 시간대 한 줄은 그 아래로 */
   }
   .player-video .play{ width:58px; height:58px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; }
   .player-tag{ position:absolute; top:12px; left:12px; background:rgba(22,48,38,0.62); color:#fff; font-size:12px; padding:5px 10px; border-radius:20px; }   /* 밝은 3D 배경 위에서도 읽히게 */

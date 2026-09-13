@@ -272,11 +272,11 @@
   /* 동작 화면과 설명 카드는 플레이어의 초록 배경을 그대로 쓰고 글씨는 흰색 (리뷰: 흰 판이 튀어 보임) */
   .exercise-3d canvas{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px; background:transparent; }
   .exercise-3d-note{ font-size:11.5px; color:rgba(255,255,255,0.78); padding:0 14px; text-align:center; }
-  .exercise-3d-tips{ width:min(100%, 320px); text-align:left; color:#fff; background:rgba(255,255,255,0.08); border-radius:12px;
-    padding:10px 12px 8px; }
+  .exercise-3d-tips{ width:min(100%, 320px); text-align:center; color:#fff; background:rgba(255,255,255,0.08); border-radius:12px;
+    padding:10px 12px 8px; }   /* 설명은 가운데 정렬 */
   .exercise-3d-tips h4{ margin:0 0 6px; font-size:13px; }
-  .exercise-3d-tips ul{ margin:0; padding-left:16px; font-size:12.5px; line-height:1.5; }
-  .exercise-3d-tips li{ margin:2px 0; word-break:keep-all; }
+  .exercise-3d-tips ul{ margin:0; padding:0; list-style:none; font-size:12.5px; line-height:1.5; }   /* 가운데 정렬이라 글머리표는 뺀다 — 줄마다 위치가 흔들려 보여서 */
+  .exercise-3d-tips li{ margin:5px 0; word-break:keep-all; }
   /* 시간대 흐름 (홈) */
   .daypart-row{ margin:10px 22px 0; }   /* 다른 카드와 같은 좌우 여백 */
   .daypart-done{ font-size:14px; font-weight:800; color:var(--pine-deep); padding:10px 12px;

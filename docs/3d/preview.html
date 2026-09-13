@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>body preview</title>
+<!-- 캐릭터 후보 비교용. 저장소 루트에서  python -m http.server 8000  →
+     http://localhost:8000/docs/3d/preview.html?files=a.glb,b.glb&snap=http://127.0.0.1:8393/snap  (snap 은 snap_server.py, 없어도 된다) -->
+<style>body{margin:0;background:#fff;font:13px sans-serif} .cell{display:inline-block;margin:4px;text-align:center} canvas{width:400px;height:400px;background:#fff}</style>
+<script type="importmap">{"imports":{"three":"../../frontend/js/vendor/three.module.min.js"}}</script>
+<div id="grid"></div>
+<script type="module">
+import * as T from 'three';
+import { GLTFLoader } from '../../frontend/js/vendor/loaders/GLTFLoader.js';
+import * as U from '../../frontend/js/vendor/utils/BufferGeometryUtils.js';
+const files = (new URLSearchParams(location.search).get('files') || '').split(',').filter(Boolean);
+const snapTo = new URLSearchParams(location.search).get('snap');
+window.__done = {};
+async function show(file){
+  const cell = document.createElement('div'); cell.className = 'cell';
+  const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 400; cell.appendChild(canvas);
+  const cap = document.createElement('div'); cap.textContent = file; cell.appendChild(cap);
+  document.getElementById('grid').appendChild(cell);
+  const gltf = await new Promise((res, rej) => new GLTFLoader().load(file, res, undefined, rej));
+  const body = gltf.scene;
+  // 앱과 같은 겉모습: 이음새 합치고 법선 다시, 회색
+  body.traverse(o => {
+    if (!o.isMesh) return;
+    const g = o.geometry.clone(); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g.computeBoundingBox();
+    const tol = g.boundingBox.getSize(new T.Vector3()).length() * 1e-5;
+    const merged = U.mergeVertices(g, tol); merged.computeVertexNormals(); o.geometry = merged;
+    const hair = /hair|tail|tie/.test(o.name || '') || /hair|tail|tie/.test((o.parent && o.parent.name) || '');
+    o.material = new T.MeshStandardMaterial({ color: hair ? 0x858B93 : 0xBCC1C7, roughness: hair ? 0.8 : 0.62, metalness: 0.04 }); o.castShadow = true;
+  });
+  const box = new T.Box3().setFromObject(body); const h = box.max.y - box.min.y; body.scale.setScalar(1.75 / h);
+  body.updateMatrixWorld(true);
+  const box2 = new T.Box3().setFromObject(body); body.position.y -= box2.min.y; body.position.x -= (box2.min.x + box2.max.x) / 2; body.position.z -= (box2.min.z + box2.max.z) / 2;
+  const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1); renderer.setSize(400, 400, false); renderer.setClearColor(0xffffff, 1);
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
+  const scene = new T.Scene();
+  scene.add(new T.HemisphereLight(0xffffff, 0x9AA3AD, 1.6));
+  const key = new T.DirectionalLight(0xffffff, 2.4); key.position.set(2.5, 4.5, 3); key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0004;
+  Object.assign(key.shadow.camera, { left: -2, right: 2, top: 3, bottom: -1, near: 1, far: 14 }); scene.add(key);
+  const fill = new T.DirectionalLight(0xffffff, 0.8); fill.position.set(-3, 2, -2); scene.add(fill);
+  const floor = new T.Mesh(new T.PlaneGeometry(10, 10), new T.ShadowMaterial({ opacity: 0.18 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  scene.add(body);
+  const camera = new T.PerspectiveCamera(30, 1, 0.1, 60);
+  const q = new URLSearchParams(location.search);
+  const target = new T.Vector3(0, +(q.get('ty') || 0.9), 0), dist = +(q.get('dist') || 4.2), a = +(q.get('az') || 28) * Math.PI / 180, e = +(q.get('el') || 10) * Math.PI / 180;
+  camera.position.set(target.x + Math.sin(a) * Math.cos(e) * dist, target.y + Math.sin(e) * dist, target.z + Math.cos(a) * Math.cos(e) * dist); camera.lookAt(target);
+  renderer.render(scene, camera);
+  if (snapTo) { const name = file.replace(/\.glb$/, '') + (q.get('tag') || ''); await fetch(snapTo + '?name=' + name, { method: 'POST', body: canvas.toDataURL('image/png') }); }
+  window.__done[file] = true;
+}
+for (const f of files) show(f).catch(e => { window.__done[f] = 'ERR ' + e.message; });
+</script>

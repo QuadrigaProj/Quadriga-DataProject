@@ -4,7 +4,7 @@
  * 모션캡처로 그 동작을 하는 모습을 띄운다.
  * 몸은 Blender 의 사람 기본형(Human Base Meshes, CC0)을 Mixamo(Adobe) 자동 리깅에
  * 올려 뼈대를 넣은 것이고, 동작은 Mixamo 의 모션캡처를 그 뼈대로 내보낸 것이다.
- * 둘 다 웹용 GLB 로 바꿔 assets/3d 에 두었다 (mannequin.glb = 캐릭터, anim/*.glb = 동작 하나씩).
+ * 둘 다 웹용 GLB 로 바꿔 assets/3d 에 두었다 (mannequin-m/-f.glb = 남·여 캐릭터, anim/m|f/*.glb = 동작 하나씩).
  * 파일은 gltfpack(meshopt) 으로 눌러 두어 작다 — 불러올 때 meshopt 디코더가 푼다.
  *
  * 여기서 손보는 것:
@@ -20,7 +20,7 @@
  */
 const MOVE_3D = (() => {
   const BASE = 'assets/3d/';
-  const VER = '?v=2';            // 파일을 바꾸면 올린다 — 같은 이름의 옛 파일이 캐시에서 나오지 않게
+  const VER = '?v=3';            // 파일을 바꾸면 올린다 — 같은 이름의 옛 파일이 캐시에서 나오지 않게
   const D = Math.PI / 180;
 
   /* 동작 id → 동작 파일 (anim/<이름>.glb). 같은 파일을 여러 id 가 쓸 수 있다. */
@@ -298,25 +298,30 @@ const MOVE_3D = (() => {
     if (lib.Meshopt) loader.setMeshoptDecoder(lib.Meshopt);           // gltfpack 으로 누른 파일을 푼다
     return new Promise((res, rej) => loader.load(url, res, undefined, rej));
   }
-  const MODEL = 'mannequin.glb';
+  /* 캐릭터는 성별대로 둘 (mannequin-m / mannequin-f). 동작 파일도 뼈대가 달라 성별 폴더(anim/m, anim/f)에 따로 둔다.
+     앱의 성별 값('M'/'F') 을 받는다 — 없으면 남성. */
+  const SEX = s => (String(s || '').toUpperCase() === 'F' ? 'f' : 'm');
+  const MODEL = s => 'mannequin-' + SEX(s) + '.glb';
   // 캐릭터도 한 번 받으면 기억한다 — 장면마다 새로 파싱하지 않고 뼈대만 복제해 쓴다
-  let modelP = null;
-  function loadModel(lib){
-    if (!modelP) modelP = loadGltf(lib, BASE + MODEL + VER).catch(e => { modelP = null; throw e; });
-    return modelP;
+  const modelP = new Map();
+  function loadModel(lib, sex, file){
+    const k = file || MODEL(sex);                                          // file 은 디자인 비교용 — 다른 캐릭터 파일을 바로 띄운다
+    if (!modelP.has(k)) modelP.set(k, loadGltf(lib, BASE + k + VER).catch(e => { modelP.delete(k); throw e; }));
+    return modelP.get(k);
   }
   /* 미리 받아 두기 — 루틴 화면을 열 때 불러 두면 3D 가 바로 뜬다 */
-  function preload(){
-    return loadLib().then(lib => Promise.all([loadModel(lib), loadClip(lib, FALLBACK_CLIP)])).catch(() => {});
+  function preload(sex){
+    return loadLib().then(lib => Promise.all([loadModel(lib, sex), loadClip(lib, FALLBACK_CLIP, sex)])).catch(() => {});
   }
   // 동작은 나눠 쓸 수 있으니 한 번 받으면 기억한다. 캐릭터는 장면마다 새로 읽는다.
   const clipCache = new Map();
-  function loadClip(lib, name){
-    if (!clipCache.has(name)) {
-      clipCache.set(name, loadGltf(lib, BASE + 'anim/' + name + '.glb' + VER).then(g => g.animations[0])
-        .catch(e => { clipCache.delete(name); throw e; }));
+  function loadClip(lib, name, sex){
+    const key = SEX(sex) + '/' + name;
+    if (!clipCache.has(key)) {
+      clipCache.set(key, loadGltf(lib, BASE + 'anim/' + key + '.glb' + VER).then(g => g.animations[0])
+        .catch(e => { clipCache.delete(key); throw e; }));
     }
-    return clipCache.get(name);
+    return clipCache.get(key);
   }
 
   /* 겉모습: 각진 면을 매끈하게(같은 자리 꼭짓점을 합치고 법선을 다시 계산), 회색 하나로 */
@@ -330,8 +335,7 @@ const MOVE_3D = (() => {
       const tol = g.boundingBox.getSize(new T.Vector3()).length() * 1e-5;   // 파일 단위가 무엇이든 '같은 자리' 기준은 몸 크기에 비례
       const merged = U.mergeVertices(g, tol); merged.computeVertexNormals();
       o.geometry = merged;
-      const joints = /joint/i.test(o.material?.name || '') || /joint/i.test(o.name || '');
-      o.material = new T.MeshStandardMaterial({ color: joints ? 0xA4A9B0 : 0xBCC1C7, roughness: 0.62, metalness: 0.04 });
+      o.material = new T.MeshStandardMaterial({ color: 0xBCC1C7, roughness: 0.62, metalness: 0.04 });   // 마네킹 회색 하나
       o.castShadow = true; o.frustumCulled = false;
     });
   }
@@ -506,7 +510,7 @@ const MOVE_3D = (() => {
   function getRenderer(T, canvas){
     let r = renderers.get(canvas);
     if (!r) {
-      r = new T.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      r = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });   // 그린 그림을 캔버스에서 꺼낼 수 있게 (비교·공유용)
       r.setClearColor(0x000000, 0);
       r.shadowMap.enabled = true; r.shadowMap.type = T.PCFSoftShadowMap;
       renderers.set(canvas, r);
@@ -789,7 +793,7 @@ const MOVE_3D = (() => {
 
   /* ---- 돌리기 ---- 캔버스마다 하나씩. stop() 은 전부, stop(canvas) 는 그것만. */
   const actives = new Map();
-  function start(canvas, id, { onNote } = {}){
+  function start(canvas, id, { onNote, sex, model } = {}){
     if (!canvas || !id) return false;
     stop(canvas);
     const clipName = (TWEAKS[id] && TWEAKS[id].base) || (PROC[id] && PROC[id].base) || CLIPS[id] || FALLBACK_CLIP;
@@ -798,7 +802,7 @@ const MOVE_3D = (() => {
     const me = { canvas, id, dead: false, raf: null, renderer: null, scene: null, body: null, tpose: null };
     actives.set(canvas, me);
     loadLib()
-      .then(lib => Promise.all([lib, loadModel(lib), loadClip(lib, clipName)]))
+      .then(lib => Promise.all([lib, loadModel(lib, sex, model), loadClip(lib, clipName, sex)]))
       .then(([lib, gltf, clip]) => {
         if (me.dead) return;
         me.body = lib.T.SkeletonUtils ? lib.T.SkeletonUtils.clone(gltf.scene) : cloneRig(lib, gltf.scene);
@@ -825,5 +829,5 @@ const MOVE_3D = (() => {
     }
   }
 
-  return { start, stop, preload, CLIPS, APPROX, TWEAKS, PROC, PROC_NOTE, GEAR, GRIP, GAP_NOTE, LOADING_NOTE, FALLBACK_CLIP, BASE, MODEL };
+  return { start, stop, preload, CLIPS, APPROX, TWEAKS, PROC, PROC_NOTE, GEAR, GRIP, GAP_NOTE, LOADING_NOTE, FALLBACK_CLIP, BASE, MODEL, SEX };
 })();

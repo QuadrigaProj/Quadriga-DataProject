@@ -40,7 +40,7 @@ def test_목표가_가까우면_빠르면_늦으면_주가_나오고_멀면_못_
     assert r["가능"] and r["빠르면주"] is not None and r["빠르면주"] % 4 == 0
     assert r["늦으면주"] is None or r["빠르면주"] <= r["늦으면주"]
     assert r["12주뒤"]["빠르면"] <= r["12주뒤"]["늦으면"] <= 지금            # 높은 추정이 더 젊다
-    assert "권장 용량대로 주 3회" in r["가정"] and "주" in r["안내"]
+    assert "주 3회 권장 용량대로" in r["가정"] and "주" in r["안내"]
     멀리 = client.post("/fitness-age/eta", json={**ADULT, "target": 지금 - 25}).json()
     assert 멀리["가능"] and 멀리["빠르면주"] is None and "1년 안에" in 멀리["안내"]
     이미 = client.post("/fitness-age/eta", json={**ADULT, "target": 지금 + 1}).json()

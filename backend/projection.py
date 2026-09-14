@@ -29,7 +29,7 @@ IMPROVE_12W = {
 DIMINISH = (1.0, 0.6, 0.4, 0.3)     # 12주 블록마다 곱 — 초보 효과는 처음이 가장 크고 점점 준다
 MAX_WEEKS = 48
 STEP_WEEKS = 4
-ASSUMPTION = "권장 용량대로 주 3회 꾸준히 할 때 · 재측정으로 확인"
+ASSUMPTION = "주 3회 권장 용량대로 할 때"      # 게이지 아래 한 줄이라 짧게. 재측정으로 다시 잡힌다는 말은 안내에
 
 
 def gain_fraction(weeks: float) -> float:

@@ -1073,3 +1073,46 @@ def test_시간대포함_없이_받으면_계절만(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
     d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
     assert "시간대" not in d["계절"][0]
+
+
+def test_더_어렵게는_이전_루틴과_방향을_AI에_적어_보낸다(monkeypatch):
+    """'다시 받기' 대신 '더 쉽게/더 어렵게' 를 고르면, 받아 둔 루틴을 바탕으로 그 방향으로만 다시 짓게 한다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["체계"] = kw["system"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+    a = _paid(1000)
+    d = a.post("/recommend/routines", json={
+        "age_gbn": "성인", "limit": 3, "조정": "더 어렵게",
+        "이전루틴": {"루틴명": "아침 기초 루틴", "강도": {"세트": 2, "반복": 10},
+                    "steps": [{"동작": "제자리 걷기", "단계": "준비운동", "수행량": "3분"},
+                              {"동작": "스쿼트", "단계": "본운동", "수행량": "10회 2세트"},
+                              {"동작": "x" * 100, "단계": "본운동", "수행량": 3}]}}).json()
+    assert d["출처"] == "ai" and d["잔액"] == 900
+    assert d["추천"][0]["조정"] == "더 어렵게"                     # 화면이 '이전 루틴보다 더 어렵게' 라고 적는다
+    글 = 본["글"]
+    assert "조정: 이전 루틴보다 더 어렵게" in 글
+    assert "이전 루틴 아침 기초 루틴" in 글 and "본운동 스쿼트 10회 2세트" in 글
+    assert "x" * 41 not in 글                                    # 화면이 보낸 것은 다듬어서만
+    assert "조정이 있으면 이전 루틴을 바탕으로" in 본["체계"]
+    # 방향이 없으면 조정 이야기는 없다
+    a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3}).json()
+    assert "조정:" not in 본["글"]
+
+
+def test_조정은_더_쉽게_더_어렵게_둘뿐이다():
+    a = _paid(1000)
+    r = a.post("/recommend/routines", json={"age_gbn": "성인", "조정": "아무렇게나"})
+    assert r.status_code == 422

@@ -7801,15 +7801,25 @@ function aiIntroHtml(){
   </div>`;
 }
 
-/* 다시 받기 — 값이 빠지는 일이라 반드시 한 번 묻는다. */
-async function askAiRecommend(){
+/* 다시 받기 — 값이 빠지는 일이라 반드시 한 번 묻는다.
+   받아 둔 AI 루틴이 있으면 '그냥 다시' 가 아니라 방향(더 쉽게 / 더 어렵게)을 골라 그 루틴을 바탕으로 다시 짓는다. */
+let recoAdjust = null;         // fetchRecommend 에 넘길 방향 — 한 번 쓰고 비운다
+async function askAiRecommend(방향){
   // 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다. 값이 빠지고 나서
   // 알게 되면 늦다.
   const 다시 = !!state.aiReco?.추천?.length;
-  const 물음 = 다시
+  const 물음 = 방향
+    ? `지금 루틴을 바탕으로 ${방향} 다시 지어요. ${AI_PRICE}원이 결제됩니다.`
+    : 다시
     ? `AI 추천을 다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다.`
     : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${AI_PRICE}원이 결제됩니다.`;
   if (!값을치를까(물음)) return;
+  if (방향) {                                                      // 시작일은 그대로 — 같은 루틴을 방향만 바꿔 다시 짓는다
+    recoAdjust = 방향;
+    $('recoBody').innerHTML = `<div class="rec-empty">AI 가 ${방향} 다시 짓는 중이에요…</div>`;
+    await fetchRecommend(true);
+    return;
+  }
   // 값을 치르기로 했으면 언제부터 할지 묻는다. 받은 날이 곧 시작일이라
   // 봄에 받았다고 봄부터가 아니다 — 그날의 계절·날씨에 맞춰 짓는다.
   askStartDate(async () => {
@@ -7897,6 +7907,7 @@ async function fetchRecommend(ai){
     // 실을 수 없고, AI 는 그 칸에서 무엇을 할지까지 함께 골라 준다.
     // 일정은 AI 추천에서만 쓴다 — 무료 추천은 예전 그대로 GET 이다.
     const 바쁜 = ai ? (state.schedule?.바쁜시간 || null) : null;
+    const 조정 = ai ? recoAdjust : null; recoAdjust = null;
     // AI 는 늘 POST 다. 이 사람을 읽을 재료(항목별 체력나이·최근 기록·일정)를
     // 쿼리 문자열에 실을 수 없다. 무료는 그런 걸 보지 않으니 GET 그대로.
     const r = ai
@@ -7916,6 +7927,8 @@ async function fetchRecommend(ai){
           최근기록: recentWorkouts(14),
           건강상태: healthList(),
           시작일: state.routineStart || tomorrowIso(),
+          조정: 조정 || null,
+          이전루틴: 조정 ? 이전AI루틴() : null,                       // 바탕이 될 루틴 — 이름·강도·줄만
           ...(await myLocation() || {}),
         })
       : await API.recommendRoutines({
@@ -7986,7 +7999,7 @@ function paintRecommend(){
   box.innerHTML = `
     <div class="rec-card">
       ${지은것 && x.시작 ? `<div class="rec-start">${startLine(x.시작)}</div>` : ''}
-      <div class="rec-rank">${지은것 ? 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요'
+      <div class="rec-rank">${지은것 ? 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요' + (x.조정 ? ` · 이전 루틴보다 ${x.조정}` : '')
         : `${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서`}</div>
       <div class="rec-purpose">${x.표시목적 || x.목적}</div>
       <div class="rec-title">${x.루틴명}<span class="rec-level ${lv}">${x.난이도 || ''}</span></div>
@@ -8018,11 +8031,19 @@ function paintRecommend(){
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
           onclick="askDetail()">이 루틴 자세히 알아보기</button>
-        <button type="button" class="reco-btn"
-          onclick="askAiRecommend()">AI 추천 다시 받기</button>` : ''}
+        <button type="button" class="reco-btn" onclick="askAiRecommend('더 쉽게')">더 쉽게 다시 받기</button>
+        <button type="button" class="reco-btn" onclick="askAiRecommend('더 어렵게')">더 어렵게 다시 받기</button>` : ''}
       </div>
     </div>`;
   autoFuseSeasonTime();     // 계절·시간대가 따로 남아 있으면 알아서 섞는다
+}
+
+/* 조정의 바탕: 지금 보고 있는 AI 루틴 (없으면 받아 둔 것). AI 가 읽을 만큼만 — 이름·강도·줄 */
+function 이전AI루틴(){
+  const x = (recoList[recoAt]?.구성 === 'ai' ? recoList[recoAt] : state.aiReco?.추천?.[0]) || null;
+  if (!x) return null;
+  return { 루틴명: x.루틴명, 강도: x.강도 || null,
+           steps: (x.steps || []).map(s => ({ 동작: s.동작, 단계: s.단계, 수행량: s.수행량 })) };
 }
 
 /* "시작 9/12 · 가을 · 맑음 18~26℃ · 습도 60% (서울 기준)" */

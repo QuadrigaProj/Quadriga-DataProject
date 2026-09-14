@@ -1331,6 +1331,9 @@ class RecommendIn(BaseModel):
     시작일: str | None = Field(None, description="루틴을 시작할 날 (YYYY-MM-DD). 그날의 계절·날씨에 맞춘다")
     위도: float | None = Field(None, ge=-90, le=90)
     경도: float | None = Field(None, ge=-180, le=180)
+    # 받아 둔 AI 루틴을 바탕으로 방향만 바꿔 다시 짓는다. '다시 받기' 대신 이 둘 중 하나를 고른다.
+    조정: Literal["더 쉽게", "더 어렵게"] | None = Field(None, description="이전 루틴보다 더 쉽게/더 어렵게 다시 짓는다")
+    이전루틴: dict | None = Field(None, description="조정의 바탕 {루틴명, 강도, steps: [{동작, 단계, 수행량}]}")
 
 
 @app.get("/recommend/routines")
@@ -1377,7 +1380,8 @@ def post_recommend_routines(body: RecommendIn,
         profile={"항목별": body.항목별, "체력나이": body.체력나이,
                  "최근기록": body.최근기록[:30],
                  "건강상태": _short_list(body.건강상태),
-                 "시작": ssn.start_info(body.시작일, body.위도, body.경도)})
+                 "시작": ssn.start_info(body.시작일, body.위도, body.경도)},
+        adjust=body.조정, previous=_previous_routine(body.이전루틴) if body.조정 else None)
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
@@ -1385,8 +1389,11 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                week: int, ai: bool, real_age: float | None,
                token: str | None, busy: dict | None = None,
                life_kind: list[str] | str | None = None,
-               profile: dict | None = None) -> dict:
+               profile: dict | None = None,
+               adjust: str | None = None, previous: dict | None = None) -> dict:
     """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
+
+    adjust 는 '더 쉽게'·'더 어렵게' — previous(받아 둔 AI 루틴)를 바탕으로 그 방향으로만 다시 짓는다.
 
     profile 은 AI 가 '이 사람' 을 읽는 재료(항목별 체력나이·최근 기록).
     무료 추천은 보지 않는다 — 점수 규칙은 그대로다.
@@ -1453,6 +1460,8 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 "건강 상태": (profile or {}).get("건강상태") or [],
                 "시작": (profile or {}).get("시작"),   # {시작일, 계절, 날씨(예보)} 또는 None
             }
+            if adjust:
+                사용자["조정"] = {"방향": adjust, "이전 루틴": previous or {}}
             지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
             # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
             if 지음 and 지음.get("루틴"):
@@ -1463,6 +1472,21 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 if 지음.get("짬시간"):
                     out["짬시간계획"] = 지음["짬시간"]
                 out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
+    return out
+
+
+def _previous_routine(루틴) -> dict:
+    """조정의 바탕이 되는 루틴을 AI 가 읽을 만큼만 남긴다 — 이름·강도·줄(동작·단계·수행량). 화면이 보낸 것을 그대로 믿지 않는다."""
+    if not isinstance(루틴, dict):
+        return {}
+    글 = lambda v, n: str(v).strip()[:n] if isinstance(v, (str, int, float)) else ""
+    줄들 = []
+    for s in (루틴.get("steps") or [])[:12]:
+        if isinstance(s, dict) and 글(s.get("동작"), 40):
+            줄들.append({"동작": 글(s.get("동작"), 40), "단계": 글(s.get("단계"), 10), "수행량": 글(s.get("수행량"), 20)})
+    out = {"루틴명": 글(루틴.get("루틴명"), 40), "동작": 줄들}
+    if isinstance(루틴.get("강도"), dict):
+        out["강도"] = {k: v for k, v in 루틴["강도"].items() if isinstance(v, (int, float, str))}
     return out
 
 

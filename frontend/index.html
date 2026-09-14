@@ -307,6 +307,7 @@
   .today-line.now{ background:var(--pine-tint); border-radius:10px; padding-left:8px; padding-right:8px; }  /* 오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있을 때만 */
   .weather-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:14px 16px; margin:14px 22px 0; background:var(--paper); }
+  .weather-line{ font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.5; font-variant-numeric:tabular-nums; }   /* 날씨·온습도는 머리글 옆이 아니라 둘째 줄에 통째로 — 옆에 붙이면 반이 다음 줄로 넘어가 어색하다 */
   .weather-alt{ font-size:13px; margin-top:8px; line-height:1.6; }
   .weather-from{ color:var(--muted); text-decoration:line-through; }
   .weather-to{ font-weight:700; color:var(--pine-deep); }
@@ -7488,10 +7489,8 @@ function renderWeatherCard(){
       ${(a.또는 || []).length ? `<span class="weather-or">또는 ${a.또는.map(esc).join(' / ')}</span>` : ''}
     </div>`).join('');
   card.innerHTML = `
-    <div class="spare-head">
-      <span class="spare-label">${머리}</span>
-      <span class="spare-when">${weatherLine(r.날씨)}</span>
-    </div>
+    <div class="spare-label">${머리}</div>
+    <div class="weather-line">${weatherLine(r.날씨)}</div>
     ${(r.판정?.이유 || []).length ? `<div class="spare-why">${r.판정.이유.map(esc).join(' · ')}</div>` : ''}
     ${대안 || `<div class="spare-why">${(r.실외동작 || []).map(x => esc(x.동작)).join(' · ')} 그대로 하셔도 돼요</div>`}`;
 }

@@ -217,15 +217,15 @@
     position:absolute; right:22px; bottom:24px; width:42px; height:42px; border-radius:50%;
     background:rgba(255,255,255,0.16); display:flex; align-items:center; justify-content:center; color:#fff; font-size:18px;
   }
-  /* 본운동 칸 — 당일 루틴(준비·정리) 아래에 따로. 그날 일정에 따라 다른 시간에 하거나 못 할 수도 있다 */
-  .main-card{ margin:12px 22px 0; border:1.5px solid var(--pine); border-radius:24px; background:var(--pine-tint); color:var(--pine-deep);
+  /* 고른 종목 칸 — 당일 루틴 아래에 따로. 수영·요가처럼 고른 종목은 그날 일정에 따라 다른 시간에 하거나 못 할 수도 있다 */
+  .picked-card{ margin:12px 22px 0; border:1.5px solid var(--pine); border-radius:24px; background:var(--pine-tint); color:var(--pine-deep);
     padding:20px 24px; text-align:left; cursor:pointer; font-family:inherit; position:relative; }
-  .main-kicker{ font-size:13px; font-weight:700; color:var(--pine); }
-  .main-title{ font-size:19px; font-weight:800; margin-top:4px; padding-right:56px; letter-spacing:-0.01em; }
-  .main-list{ font-size:13.5px; margin-top:6px; padding-right:56px; line-height:1.5; }
-  .main-meta{ font-size:12.5px; color:var(--muted); margin-top:6px; padding-right:56px; line-height:1.5; }
-  .main-card .hero-arrow{ background:var(--pine); }
-  .main-card.done{ border-style:dashed; }
+  .picked-kicker{ font-size:13px; font-weight:700; color:var(--pine); }
+  .picked-title{ font-size:19px; font-weight:800; margin-top:4px; padding-right:56px; letter-spacing:-0.01em; }
+  .picked-list{ font-size:13.5px; margin-top:6px; padding-right:56px; line-height:1.5; }
+  .picked-meta{ font-size:12.5px; color:var(--muted); margin-top:6px; padding-right:56px; line-height:1.5; }
+  .picked-card .hero-arrow{ background:var(--pine); }
+  .picked-card.done{ border-style:dashed; }
 
   .prescribe-card{
     margin:16px 22px 0; padding:18px; border-radius:18px; background:var(--paper); border:1px solid var(--line);
@@ -1869,7 +1869,7 @@
       </div>
     </div>
 
-    <button class="hero-btn" onclick="startRoutine('light')">
+    <button class="hero-btn" onclick="startRoutine('daily')">
       <div class="hero-kicker" id="heroKicker">오늘의 루틴</div>
       <div class="hero-title" id="heroTitle">오늘의 루틴</div>
       <div class="hero-meta" id="heroMeta">먼저 첫 점검을 마쳐주세요</div>
@@ -1884,12 +1884,12 @@
       </div>
     </div>
 
-    <!-- 본운동은 당일 루틴(준비·정리)에서 빼 따로 둔다 — 그날 일정에 따라 다른 시간에 하거나 못 할 수도 있어서 (리뷰) -->
-    <button class="main-card" id="mainCard" onclick="startRoutine('main')" hidden>
-      <div class="main-kicker">본운동 · 시간 될 때 따로</div>
-      <div class="main-title" id="mainTitle">본운동</div>
-      <div class="main-list" id="mainList"></div>
-      <div class="main-meta" id="mainMeta"></div>
+    <!-- 고른 종목(수영·요가 같은 것)은 당일 루틴에서 빼 따로 둔다 — 그날 일정에 따라 다른 시간에 하거나 못 할 수도 있어서 (리뷰) -->
+    <button class="picked-card" id="pickedCard" onclick="startRoutine('sport')" hidden>
+      <div class="picked-kicker">고른 종목 · 시간 될 때 따로</div>
+      <div class="picked-title" id="pickedTitle">고른 종목</div>
+      <div class="picked-list" id="pickedList"></div>
+      <div class="picked-meta" id="pickedMeta"></div>
       <div class="hero-arrow">▶</div>
     </button>
 
@@ -5653,49 +5653,44 @@ async function loadHome(){
     // AI 가 지은 루틴엔 루틴번호·주기·예상시간이 없다. 예전 줄을 그대로 쓰면
     // 여기서 터져서 홈이 "먼저 첫 점검을 마쳐주세요" 인 채로 남았다.
     $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
-    $('heroMeta').textContent = `AI 가 지은 루틴 · 준비·정리 ${lightSteps().length}가지 (본운동은 아래 칸)`;
+    $('heroMeta').textContent = `AI 가 지은 루틴 · ${dailySteps().length}가지 동작${sportSteps().length ? ' · 고른 종목은 아래 칸' : ''}`;
   } else if (m) {
     $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
-    const 기본 = `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · 준비·정리 ${lightSteps().length}가지 (본운동은 아래 칸)`;
+    const 기본 = `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
     const 종목 = (m.고른종목 || []).length ? ` · ${m.고른종목.slice(0, 2).join('·')} 반영` : '';
     $('heroMeta').textContent = 기본 + 종목;
   } else {
     $('heroTitle').textContent = '오늘의 루틴';
-    $('heroMeta').textContent = state.routine.length ? `준비·정리 ${lightSteps().length}가지 (본운동은 아래 칸)` : '루틴을 불러오지 못했어요';
+    $('heroMeta').textContent = state.routine.length ? `${state.routine.length}가지 동작` : '루틴을 불러오지 못했어요';
   }
   renderDaypartRow();
-  renderMainCard();
+  renderPickedCard();
 }
 
-/* 본운동 칸 — 당일 루틴에서 뺀 본운동. 그날 일정에 따라 시간 될 때 따로 한다. 체력이 느는 건 이쪽이다 */
-const lightSteps = () => state.routine.filter(s => s.단계 !== '본운동');
-const mainSteps = () => state.routine.filter(s => s.단계 === '본운동');
-function renderMainCard(){
-  const card = $('mainCard');
+/* 고른 종목 칸 — 사용자가 고른 종목(수영·요가 같은 것, 출처 '종목')은 당일 루틴에서 빼 따로 둔다.
+   그날 일정에 따라 다른 시간에 하거나 못 할 수도 있어서다. 스쿼트·런지 같은 동작은 루틴 안에 그대로 있다 */
+const isSportStep = s => s.출처 === '종목';
+const dailySteps = () => state.routine.filter(s => !isSportStep(s));
+const sportSteps = () => state.routine.filter(isSportStep);
+function renderPickedCard(){
+  const card = $('pickedCard');
   if (!card) return;
-  const mains = mainSteps();
-  card.hidden = !mains.length;
-  if (!mains.length) return;
-  const 끝 = mainDoneToday();
+  const 종목 = sportSteps();
+  card.hidden = !종목.length;
+  if (!종목.length) return;
+  const 끝 = sportDoneToday();
   card.classList.toggle('done', 끝);
-  $('mainTitle').textContent = `본운동 ${mains.length}가지${끝 ? ' · 오늘 완료' : ''}`;
-  $('mainList').textContent = mains.map(s => s.운동명).join(' · ');
-  const 주 = mainWeekCount();
-  $('mainMeta').textContent = 끝 ? `오늘 완료 · 이번 주 ${주}/3회 · 한 번 더 하려면 눌러요`
-    : `${state.intensity?.세트 ?? 2}세트씩 · 이번 주 ${주}/3회 · 눌러서 시작`;
+  $('pickedTitle').textContent = 종목.map(s => `${s.아이콘 ? s.아이콘 + ' ' : ''}${s.운동명}`).join(' · ') + (끝 ? ' · 오늘 완료' : '');
+  $('pickedList').textContent = 종목.length > 1
+    ? 종목.map(s => [s.운동명, s.설명].filter(Boolean).join(' · ')).join(' / ')
+    : (종목[0].설명 || '');
+  $('pickedMeta').textContent = 끝 ? '오늘 했어요. 한 번 더 하려면 눌러요' : '당일 루틴과 따로, 오늘 시간 되는 때에 · 눌러서 시작';
 }
-/* 루틴 기록 한 줄에 어느 부분(light=준비·정리, main=본운동)을 했는지 — 옛 기록(부분 없음)은 전부 한 것 */
+/* 루틴 기록 한 줄에 어느 부분(daily=고른 종목 뺀 루틴, sport=고른 종목)을 했는지 — 옛 기록(부분 없음)은 전부 한 것 */
 const partDone = (e, 부분) => !e.부분 || e.부분.includes('all') || e.부분.includes(부분);
-/* 이번 주(월~일) 본운동을 한 날 수 — 측정값이 실제로 좋아지려면 주 3회는 해야 해서 목표로 같이 보여 준다 */
-function mainWeekCount(){
-  const 오늘 = new Date(); const 요일 = (오늘.getDay() + 6) % 7;            // 월요일 = 0
-  const 월 = isoDate(new Date(오늘.getTime() - 요일 * 86400000));
-  const 날들 = new Set((state.routineLog || []).filter(e => e.done && e.date >= 월 && partDone(e, 'main')).map(e => e.date));
-  return 날들.size;
-}
-function mainDoneToday(){
+function sportDoneToday(){
   const 오늘 = isoDate(new Date());
-  return (state.routineLog || []).some(e => e.date === 오늘 && e.done && partDone(e, 'main'));
+  return (state.routineLog || []).some(e => e.date === 오늘 && e.done && partDone(e, 'sport'));
 }
 
 /* ---- 화면 3 : 출발지→목적지 경로 분석 (F2) ---- */
@@ -5769,6 +5764,7 @@ function applyAiRoutine(){
     부담부위: s.부담부위 || [], 부위: '',
     설명: [s.수행량, s.왜].filter(Boolean).join(' · '),
     출처: s.출처 || null, id: s.id || null,      // 밖에서 하는 동작인지 알려면 있어야 한다
+    아이콘: s.아이콘 || '',                       // 고른 종목 칸에 쓴다
   }));
   checkTodayWeather();
 }
@@ -5808,7 +5804,7 @@ async function loadRoutine(){
    몸 무거운 날은 서버(/program/routine?heavy=true)가 steps 와 강도에 이미 반영해 준다.
    오프라인 폴백일 때만 본운동 앞 2개로 클라이언트에서 줄인다. */
 let currentStep = 0;
-/* 플레이어가 도는 부분 — 홈의 당일 루틴 칸은 'light'(준비·정리), 본운동 칸은 'main', 그 밖의 진입은 'all' */
+/* 플레이어가 도는 부분 — 홈의 당일 루틴 칸은 'daily'(고른 종목을 뺀 나머지), 고른 종목 칸은 'sport', 그 밖의 진입은 'all' */
 let playScope = 'all';
 function startRoutine(scope){ playScope = scope; goTo('s4'); }
 function resetRoutine(){ currentStep = 0; renderStep(); renderSportApplied(); }
@@ -5893,8 +5889,8 @@ function renderSportApplied(){
 function activeRoutine(){
   let 전부 = state.routine;
   if (!state.routineMeta && heavyOn) { let main = 0; 전부 = state.routine.filter(s => s.단계 !== '본운동' || ++main <= 2); }   // 서버 응답이면 그대로
-  if (playScope === 'main') return 전부.filter(s => s.단계 === '본운동');
-  if (playScope === 'light') { const 가벼움 = 전부.filter(s => s.단계 !== '본운동'); return 가벼움.length ? 가벼움 : 전부; }   // 준비·정리가 없으면 전부
+  if (playScope === 'sport') return 전부.filter(isSportStep);
+  if (playScope === 'daily') { const 나머지 = 전부.filter(s => !isSportStep(s)); return 나머지.length ? 나머지 : 전부; }   // 종목뿐인 루틴은 없지만 빈 플레이어는 막는다
   return 전부;
 }
 
@@ -6009,7 +6005,7 @@ function nextStep(){
 }
 
 /* 오늘 루틴 완료 기록 (사용자별, 새로고침 후에도 유지).
-   당일 루틴(light)과 본운동(main)은 따로 끝내도 그날 한 줄에 합친다 — 날짜당 한 줄이어야 체력나이·자세히 보기가 그대로 돈다. */
+   당일 루틴(daily)과 고른 종목(sport)은 따로 끝내도 그날 한 줄에 합친다 — 날짜당 한 줄이어야 체력나이·자세히 보기가 그대로 돈다. */
 function logRoutineDone(부분 = playScope){
   const today = new Date().toISOString().slice(0,10);
   const no = state.routineMeta?.루틴번호 ?? null;
@@ -6032,7 +6028,7 @@ function logRoutineDone(부분 = playScope){
     const 한것 = activeRoutine().map(s => ({ 단계: s.단계, 운동명: s.운동명,
                                            체력요인: s.체력요인 || null }));
     e.steps = [...(e.steps || []), ...한것.filter(s => !(e.steps || []).some(t => t.단계 === s.단계 && t.운동명 === s.운동명))];
-    showToast(부분 === 'main' ? '오늘 본운동 완료' : `오늘 루틴 완료 · 지난 측정 이후 ${state.routineLog.length}회`);
+    showToast(부분 === 'sport' ? '오늘 고른 종목 완료' : `오늘 루틴 완료 · 지난 측정 이후 ${state.routineLog.length}회`);
     // 기록이 생겼으니 그날 체력나이도 뽑아서 저장한다 (규칙 2).
     // 화면을 붙잡지 않게 뒤에서 돌린다 — 실패해도 루틴 기록 자체는 남는다.
     (async () => {
@@ -7353,7 +7349,7 @@ function effectiveDaypart(){
 
 function daypartDone(이름, 날){
   날 = 날 || isoDate(new Date());
-  return (state.routineLog || []).some(e => e.date === 날 && e.done && e.시간대 === 이름 && partDone(e, 'light'));   // 본운동만 했으면 아직
+  return (state.routineLog || []).some(e => e.date === 날 && e.done && e.시간대 === 이름 && partDone(e, 'daily'));   // 고른 종목만 했으면 아직
 }
 
 /* 홈: 지금 시간대와 끝났는지 */
@@ -7380,7 +7376,7 @@ function previewNextDaypart(){
   const 다음 = daypartNext(daypartOf());
   state.previewDaypart = { date: isoDate(new Date()), 시간대: 다음 };
   saveProfile();
-  startRoutine('light');                                   // 미리 하는 것도 준비·정리만 — 본운동은 아래 칸
+  startRoutine('daily');                                   // 미리 하는 것도 당일 루틴만 — 고른 종목은 아래 칸
 }
 
 /* 플레이어 위 한 줄 */

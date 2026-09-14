@@ -64,3 +64,22 @@
 - ACSM. *Guidelines for Exercise Testing and Prescription* (11th ed., 2021): 근력 8~12회 × 2~4세트(초보 1~3세트) 주 2~3회, 근지구력 15~25회, 유연성 10~30초 정적 스트레칭 × 2~4 주 2~3회 이상, 유산소 주 3~5회 중강도 30~60분.
 - Krieger JW. *Single vs. multiple sets of resistance exercise for muscle hypertrophy/strength: a meta-analysis* (J Strength Cond Res 2009·2010): 2~3세트가 1세트보다 근력 향상 효과가 약 46% 크다.
 - Garber CE et al. ACSM position stand (Med Sci Sports Exerc 2011): 체력 지표의 측정 가능한 변화는 대개 8~12주의 규칙적 운동 뒤에 나타난다.
+
+## 목표 체력나이에 언제 닿을지 (backend/projection.py)
+
+홈 게이지 아래에 "목표 24세까지 12~20주 (추정)" 처럼 적는다. 지금 측정값에 아래 폭을 얹어
+`fitness_age.py` 의 같은 함수로 환산나이를 다시 내고, 체력나이가 목표 아래로 내려가는 주를 찾는다.
+4주 단위, 최대 48주. 12주 블록마다 향상 폭을 1.0 · 0.6 · 0.4 · 0.3 배로 줄인다 (초보 효과는 처음이 가장 크다).
+낮은 추정으로 닿는 주가 '늦으면', 높은 추정으로 닿는 주가 '빠르면' 이다. 성장기는 추정하지 않는다.
+
+| 항목 | 12주에 보통 | 근거 |
+|---|---|---|
+| 앉아윗몸앞으로굽히기 | +2~4 cm | Thomas E et al. *Int J Sports Med* 2018 (정적 스트레칭 메타분석) |
+| 교차윗몸일으키기 | +15~30 % | ACSM 근지구력 훈련 반응 (초보 8~12주) |
+| 상대악력 | +4~10 % | Labott BK et al. *Gerontology* 2019 (악력 훈련 메타분석) |
+| 왕복오래달리기 · 2분제자리걷기 | +8~15 % | ACSM: VO2max 8~12주 +10~15 % |
+| 의자앉았다일어서기 | +10~20 % | Liu CJ & Latham NK, Cochrane 2009 (노인 근력 훈련) |
+| 제자리멀리뛰기 | +3~8 % | Markovic G, *Br J Sports Med* 2007 (플라이오메트릭 메타분석) |
+| BMI | −0.5~−1.0 | Swift DL et al. *Prog Cardiovasc Dis* 2014 (운동만으로의 체중 변화) |
+
+추정이지 약속이 아니다. 재측정 때마다 다시 잡히고, 화면에 '추정' 이라고 적는다.

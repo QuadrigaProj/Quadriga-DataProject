@@ -42,6 +42,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import workout_items as wi
     from backend import recommend as rc
     from backend import ai_recommend as air
+    from backend import projection as pj
     from backend import route
     from backend import kakaopay as kp
     from backend import billing
@@ -243,6 +244,11 @@ class MeasureIn(ServiceAgeIn):
                     "성장기는 공개 분포가 없어 계산하지 않는다")
 
 
+class EtaIn(MeasureIn):
+    """측정값 + 목표 체력나이 → 언제 닿을지. /fitness-age 와 같은 값을 보낸다."""
+    target: float = Field(..., ge=5, le=110, description="목표 체력나이")
+
+
 class MeasureOut(BaseModel):
     체력나이: float | None
     신뢰구간: float | None
@@ -251,6 +257,35 @@ class MeasureOut(BaseModel):
     또래비교: dict = {}
     집중개선영역: list[str] = []
     해석: str = ""
+
+
+def _measure_inputs(body: "MeasureIn") -> tuple:
+    """BMI 와 상대악력을 만든다 — /fitness-age 와 도달 시점 추정이 같은 값을 쓴다."""
+    bmi = body.bmi
+    if bmi is None and body.height_cm and body.weight_kg:
+        bmi = body.weight_kg / (body.height_cm / 100) ** 2
+    grip = None
+    if body.grip_kg is not None and body.weight_kg:
+        grip = body.grip_kg / body.weight_kg * 100
+    return bmi, grip
+
+
+@app.post("/fitness-age/eta")
+def post_fitness_age_eta(body: EtaIn) -> dict:
+    """목표 체력나이에 언제 닿을지 — 권장 용량대로 주 3회 할 때의 추정 (backend/projection.py).
+
+    빠르면·늦으면 주로 돌려준다. 못 닿으면 None 과 안내. 성장기는 추정하지 않는다.
+    """
+    _load()
+    if _dist is None:
+        raise HTTPException(503, "분포 데이터가 없습니다. /health 참고")
+    bmi, grip = _measure_inputs(body)
+    if (body.flexibility is None and body.strength is None and bmi is None
+            and grip is None and body.endurance is None):
+        raise HTTPException(400, "측정값을 최소 하나는 보내주세요.")
+    return pj.project(_dist, age_gbn=body.age_gbn, sex=body.sex, age=body.age, target=body.target,
+                      flexibility=body.flexibility, strength=body.strength, grip=grip,
+                      endurance=body.endurance, bmi=bmi)
 
 
 @app.post("/fitness-age", response_model=MeasureOut)

@@ -107,8 +107,9 @@ def test_자세_그림이_있는_동작은_모두_처리된다():
     종목 = dict(re.findall(r"(\w+): '([a-z0-9-]+)'", 표))
     for 자세 in 종목.values():
         assert 자세 in ids, 자세                                                       # 종목은 34개 동작 중 하나로
+    만든 = set(re.findall(r"^    '([a-z0-9-]+)': \{ base:", _proc(), re.M))
     for 종목명 in ("running", "walking", "swimming", "jumprope", "hiking", "gym", "crossfit", "pilates", "yoga"):
-        assert 종목[종목명] in clips, 종목명                                            # 흔한 종목은 진짜 동작으로
+        assert 종목[종목명] in clips or 종목[종목명] in 만든, 종목명                     # 흔한 종목은 진짜 동작으로 (수영은 직접 만든 자유형)
 
 
 def test_겉모습은_매끈한_회색이다():

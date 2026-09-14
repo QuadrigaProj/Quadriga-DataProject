@@ -1150,6 +1150,110 @@ def test_시간_여유를_재서_프롬프트에_적는다(monkeypatch):
     assert "30~50% 올리고" in 본["체계"] and "하나 더 넣습니다" in 본["체계"] and "똑같은 줄이 절반을 넘으면 안 됩니다" in 본["체계"]
 
 
+def test_권장_용량을_프롬프트에_적고_고른_운동_단계에_맞춘다(monkeypatch):
+    """예전 지침은 '주어진 강도에서 조금 올리거나 내린다' 였다 — 10회 2세트로는 다음 측정이 안 움직인다.
+    이제 backend/dose.py 의 권장 용량 표를 하한으로 주고, 사용자가 고른 운동 단계가 그 표를 고른다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["체계"] = kw["system"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    air.compose({**사용자, "고른 운동 단계": "벌크업"}, "성인", 종목ids=["running"], 일정=None)
+    assert "권장 용량 — 이 정도를 주 3회, 8~12주 해야 다음 측정에서 체력나이가 움직입니다" in 본["글"]
+    assert '"근력": "6~10회 × 4세트, 무겁게"' in 본["글"] and '"목적": "벌크업"' in 본["글"]
+    assert "권장 용량' 표대로 씁니다 — 그보다 적게 쓰지 않습니다" in 본["체계"]
+    assert "세트 수는 하한이지 상한이 아닙니다" in 본["체계"] and "점진적 과부하" in 본["체계"]
+    assert "조금 올리거나 내립니다" not in 본["체계"]
+    # 고른 단계가 없으면 스타일 테스트가 고른 목적, 그것도 없으면 기초 체력 증진
+    air.compose({**사용자, "운동 스타일 테스트가 고른 목적": "재활 및 기능 회복"}, "성인", 종목ids=["running"], 일정=None)
+    assert '"목적": "재활 및 기능 회복"' in 본["글"] and '"근력": "10~15회 × 2세트"' in 본["글"]
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=None)
+    assert '"목적": "기초 체력 증진"' in 본["글"]
+    # 체력나이가 실제보다 7세 이상 높으면 낮게 시작하라는 줄, 빡빡한 일정이면 인터벌
+    air.compose({**사용자, "체력나이": 52}, "성인", 종목ids=["running"], 일정=None)
+    assert '"시작": "첫 2주는' in 본["글"]
+    빡빡 = {"요일별": {"월": [{"시작": "22:00", "끝": "22:30", "분": 30}]}}
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=빡빡)
+    assert "인터벌" in 본["글"] and '"본운동 분": "20~30"' in 본["글"]
+
+
+def test_추천_요청에_고른_운동_단계를_받는다():
+    """화면이 보내는 purpose 가 AI 의 '고른 운동 단계' 로 들어간다. 없어도 예전처럼 돈다."""
+    c = TestClient(app)
+    r = c.post("/recommend/routines", json={"age_gbn": "성인", "purpose": "벌크업", "ai": False})
+    assert r.status_code == 200 and r.json()["추천"]
+    assert c.get("/recommend/routines", params={"age_gbn": "성인", "purpose": "벌크업", "ai": 0}).status_code == 200
+    assert air.recommended_dose({"연령대": "성인", "고른 운동 단계": "벌크업"})["목적"] == "벌크업"
+    assert air.recommended_dose({"연령대": "성인", "실제 나이": 40, "체력나이": 48}).get("시작")
+    assert not air.recommended_dose({"연령대": "성인", "실제 나이": 15, "체력나이": 20}).get("시작")   # 성장기는 반대 방향
+
+
+def test_고른_종목이_여럿이면_날마다_돌아가며_넣는다(monkeypatch):
+    """뒤처지는 요인에 제일 잘 맞는 종목(수영) 하나만 매번 본운동에 나오고 고른 다른 종목은 안 나왔다 (리뷰)."""
+    셋 = {"고른 종목": ["수영", "요가", "테니스"]}
+    본 = [air.todays_sports(셋, 날짜=f"2026-09-{d:02d}")["오늘"][0] for d in (15, 16, 17)]
+    assert sorted(본) == ["수영", "요가", "테니스"]                      # 사흘이면 셋이 다 차례를 받는다
+    assert air.todays_sports(셋, 날짜="2026-09-15") == air.todays_sports(셋, 날짜="2026-09-15")   # 같은 날은 같다
+    assert air.todays_sports({"고른 종목": ["수영"]}) is None            # 하나면 돌릴 게 없다
+    넷 = air.todays_sports({"고른 종목": ["수영", "요가", "테니스", "러닝"]}, 날짜="2026-09-15")
+    assert len(넷["오늘"]) == 2 and len(넷["순서"]) == 4                  # 넷 이상이면 하루 둘씩
+    # 루틴 시작일로 돈다 — 그날 것을 짓는 것이니까
+    assert air.todays_sports({**셋, "시작": {"시작일": "2026-09-16"}}) == air.todays_sports(셋, 날짜="2026-09-16")
+    # 프롬프트에 적힌다
+    본문 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본문["글"] = kw["messages"][0]["content"]
+            본문["체계"] = kw["system"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    air.compose({**사용자, "고른 종목": ["수영", "요가", "테니스"], "시작": {"시작일": "2026-09-16"}}, "성인", 종목ids=["swimming", "yoga", "tennis"])
+    오늘 = air.todays_sports({"고른 종목": ["수영", "요가", "테니스"]}, 날짜="2026-09-16")["오늘"][0]
+    assert f"오늘의 고른 종목: {오늘} (고른 종목 3개를 날마다 돌아가며" in 본문["글"]
+    assert "고른 종목이 여럿이면 날마다 돌아가며 씁니다" in 본문["체계"]
+    air.compose({**사용자, "고른 종목": ["수영"]}, "성인", 종목ids=["swimming"])
+    assert "오늘의 고른 종목" not in 본문["글"]                         # 하나면 줄이 없다
+
+
+def test_코드_대신_이름을_써도_재료에서_찾는다(monkeypatch):
+    """AI 가 id 대신 "요가"·"★ 수영"·"스쿼트" 라고 쓰면 예전엔 그 줄이 조용히 버려졌다 — 고른 종목이 빠진 채 루틴이 나왔다."""
+    from backend import routines as rt
+    이름 = rt.load()["pools"]["성인"]["본운동"][_코드("본운동")]["동작"]
+    줄 = [
+        {"코드": _코드("준비운동"), "단계": "준비운동", "수행량": "30초", "왜": "몸을 풀어요"},
+        {"코드": 이름, "단계": "본운동", "수행량": "10회 3세트", "왜": "이름으로 썼다"},
+        {"종목": "★ 요가", "단계": "본운동", "수행량": "20분", "왜": "별표와 이름"},
+        {"종목": "수영", "단계": "본운동", "수행량": "30분", "왜": "이름"},
+        {"기록": "스쿼트", "단계": "본운동", "수행량": "12회 3세트", "왜": "기록도 이름"},
+        {"종목": "퀴디치", "단계": "본운동", "수행량": "x", "왜": "없는 건 여전히 버린다"},
+    ]
+    _fake_sdk(monkeypatch, _지은응답(동작=줄))
+    d = air.compose(사용자, "성인", 종목ids=["yoga", "swimming"])
+    steps = d["루틴"]["steps"]
+    assert [s.get("id") for s in steps if s["출처"] == "종목"] == ["yoga", "swimming"]
+    assert [s.get("id") for s in steps if s["출처"] == "기록"] == ["squat"]
+    assert [s.get("코드") for s in steps if s["출처"] == "동작"][1] == _코드("본운동")
+    assert len(steps) == 5
+
+
 def test_구간_계획은_넉넉한_제한_시간으로_부르고_실패한_까닭을_남긴다(monkeypatch):
     """'이 루틴 자세히 알아보기' 가 "못 받았어요" 만 띄우고 안 됐다 (리뷰) — 20초 제한에 네 계절(×네 시간대) JSON 이 늘 늦었고,
     늦으면 통째로 버려져 까닭도 남지 않았다."""

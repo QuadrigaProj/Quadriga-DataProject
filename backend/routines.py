@@ -17,6 +17,10 @@ try:
     from backend.paths import find_data
 except ImportError:
     from paths import find_data
+try:
+    from backend import dose
+except ImportError:
+    import dose  # type: ignore
 
 AGE_GROUPS = ( "유소년", "청소년", "성인", "어르신")
 PURPOSES = ("다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
@@ -333,12 +337,14 @@ def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
 # 강도 (12주 = 3구간, 현재 체력이 낮으면 한 단계 낮춰 시작)
 #
 # 영상을 따라 하는 구조라 루틴 플레이어는 반복 횟수·수행 시간을 쓰지 않는다.
-# 강도는 세트 수 하나로만 표현한다.
-#   1~4주: 2세트 · 5~8주: 2세트 · 9~12주: 3세트
+# 강도는 세트 수 하나로만 표현한다 (+ '노력' 한 줄, backend/dose.py).
+#   1~4주: 2세트 · 5~8주: 3세트 · 9~12주: 3세트  — 5주차부터 3세트여야 8~12주 뒤 측정이 움직인다 (docs/effective_dose.md)
+#   재활 및 기능 회복은 천천히: 1~4주 2 · 5~8주 2 · 9~12주 3
 #   몸이 무거운 날: 기본 세트에서 1세트 감소, 최소 1세트
 # ---------------------------------------------------------------------------
 
-BASE_SETS = {"1-4": 2, "5-8": 2, "9-12": 3}
+BASE_SETS = {"1-4": 2, "5-8": 3, "9-12": 3}
+SLOW_SETS = {"1-4": 2, "5-8": 2, "9-12": 3}          # 재활 및 기능 회복
 
 
 def _band(week: int) -> str:
@@ -371,7 +377,8 @@ def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = Fal
                   purpose: str | None = None) -> dict:
     """주차 + 보정 (+ 목적) → 이번 세트 수.
 
-    purpose 가 벌크업·근육량 늘리기면 한 세트 더(최대 4), 세 목적엔 한 줄 요령이 붙는다.
+    purpose 가 벌크업·근육량 늘리기면 한 세트 더(최대 4), 재활 및 기능 회복은 천천히(SLOW_SETS),
+    세 목적엔 한 줄 요령이, 모두에게 '노력'(얼마나 힘들게) 한 줄이 붙는다.
 
     age_gbn 은 호출부 호환을 위해 받지만 세트 수는 연령대와 무관하게 구간으로만
     정해진다. 영상 기반 구조라 반복 횟수·수행 시간은 돌려주지 않는다.
@@ -380,11 +387,11 @@ def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = Fal
     idx = bands.index(_band(max(1, int(week))))
     idx = max(0, min(len(bands) - 1, idx + offset))     # 보정은 구간을 당기거나 미룬다
     band = bands[idx]
-    sets = BASE_SETS[band]
+    sets = (SLOW_SETS if purpose == "재활 및 기능 회복" else BASE_SETS)[band]
     sets = min(4, sets + PURPOSE_SETS.get(purpose or "", 0))   # 근육을 키우는 목적은 한 세트 더
     if heavy:
         sets = max(1, sets - 1)                 # 몸이 무거운 날: 1세트 감소, 최소 1세트
-    out = {"주차": int(week), "구간": band, "세트": sets}
+    out = {"주차": int(week), "구간": band, "세트": sets, "노력": dose.effort_for(purpose, age_gbn)}
     if purpose in PURPOSE_TIP:
         out["요령"] = PURPOSE_TIP[purpose]
     return out

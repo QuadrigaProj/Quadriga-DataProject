@@ -98,7 +98,7 @@ def test_자세_그림이_있는_동작은_모두_처리된다():
     clips = _clips()
     assert ids, "자세 그림이 없다"
     covered = ids & set(clips)
-    assert len(covered) >= 20, sorted(covered)
+    assert len(covered) >= 19, sorted(covered)            # 수영·플랭크는 모션캡처 대신 직접 만든다 (PROC)
     js = _js()
     assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || (PROC[id] && PROC[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
     assert "FALLBACK_CLIP = 'idle'" in js
@@ -135,7 +135,7 @@ def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
     assert "pitchAtHands(tweak.pitchAtHands)" in 적용 and "aimBone(bone, typeof how.aim === 'function' ? how.aim(posOf) : how.aim)" in 적용
     assert "if (how.palmTo) palmToward(bone, how.palmTo);" in 적용 and "if (tweak.fist) fist();" in 적용
     assert "const palm = new T.Vector3(0, -1, 0).applyQuaternion(inv).normalize();" in js   # 손바닥 축은 T 자세에서 잰다
-    assert "const norm = n => String(n).replace(/[^A-Za-z]/g, '');" in js       # GLTFLoader 가 ':' 를 지워도 뼈를 찾는다
+    assert "const norm = n => String(n).replace(/[^A-Za-z0-9]/g, '');" in js    # GLTFLoader 가 ':' 를 지워도 뼈를 찾는다 (숫자는 남긴다 — Spine1·Spine2)
 
 
 def test_기구가_필요한_동작엔_기구를_붙인다():
@@ -219,7 +219,8 @@ def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
     만든_ids = {i for i, _, _ in 있는}
     for id_ in ("lunge", "bridge", "bench-press", "lat-pulldown", "leg-press", "cycle", "rowing", "hamstring-stretch", "calf-stretch",
                 "hip-stretch", "twist", "side-plank", "dead-bug",                                        # 모션캡처가 없던 것
-                "crunch", "deadlift", "shoulder-press", "one-leg", "deep-breath", "shoulder-stretch", "neck-stretch"):   # 설명과 달랐던 것
+                "crunch", "deadlift", "shoulder-press", "one-leg", "deep-breath", "shoulder-stretch", "neck-stretch",
+                "swim", "plank"):   # 설명과 달랐던 것 (수영은 평영, 플랭크는 팔 편 하이 플랭크였다)
         assert id_ in 만든_ids, id_
     assert ids <= (set(_clips()) | 만든_ids), sorted(ids - set(_clips()) - 만든_ids)                     # 34개 모두 진짜 동작
     for _, base, period in 있는:

@@ -254,8 +254,8 @@
     padding:10px 12px; background:var(--pine-tint); border-radius:12px; }
   /* 계절 안의 시간대 — 아침·낮·저녁·밤 한 줄씩 */
   .season-times{ margin-top:8px; border-top:1px dashed var(--line); padding-top:6px; }
-  .season-time{ font-size:12.5px; line-height:1.6; }
-  .season-time-name{ display:inline-block; width:34px; font-weight:700; color:var(--pine-deep); }
+  .season-time{ display:grid; grid-template-columns:38px 1fr; column-gap:6px; align-items:start; font-size:12.5px; line-height:1.6; padding:2px 0; }   /* 이름 칸 | 설명 칸 — 설명이 길어져도 이름 아래로 흘러들지 않는다 */
+  .season-time-name{ font-weight:700; color:var(--pine-deep); }
   /* 추천 카드 안, AI 가 요일별로 골라 준 짬시간 */
   .rec-spare{ border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
   .rec-spare-day{ display:flex; gap:10px; margin-top:8px; }
@@ -8106,7 +8106,7 @@ function seasonHtml(){
           c.할것.map(y => `<li>${esc(y)}</li>`).join('')}</ul>` : ''}
         ${c.조심 ? `<div class="season-care">${esc(c.조심)}</div>` : ''}
         ${Array.isArray(c.시간대) && c.시간대.length ? `<div class="season-times">${c.시간대.map(t => `
-          <div class="season-time"><span class="season-time-name">${esc(t.시간대)}</span>${esc(t.한줄)}</div>`).join('')}</div>` : ''}
+          <div class="season-time"><span class="season-time-name">${esc(t.시간대)}</span><span>${esc(t.한줄)}</span></div>`).join('')}</div>` : ''}
       </div>`).join('')}
   </div>`).join('');
 }

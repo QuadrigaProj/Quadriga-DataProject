@@ -119,7 +119,7 @@ const MOVE_3D = (() => {
   const PROC_NOTE = '자세 설명을 보고 만든 3D 동작이에요';
   // 기구 자리 — 자세와 기구가 같은 숫자를 쓴다
   const BIKE = { crank: [0, 0.28, 0.12], r: 0.17, x: 0.14, bar: [0.2, 1.02, 0.5] };
-  const ROWER = { foot: [0.09, 0.27, 0.72], fly: [0, 0.5, 1.15], seatY: 0.37 };
+  const ROWER = { foot: [0.07, 0.27, 0.72], fly: [0, 0.5, 1.15], seatY: 0.37 };
   const LEGPRESS = { dir: N(0.6, 0.8, 0) };                                  // 발판 쪽 (앞·위 53°)
   const WALL_X = 0.56;                                                      // 종아리 스트레칭의 벽 (캐릭터 왼쪽, +X)
 
@@ -334,12 +334,12 @@ const MOVE_3D = (() => {
       const legs = ramp(u, 0, 0.28) - ramp(u, 0.55, 1), body = ramp(u, 0.08, 0.33) - ramp(u, 0.45, 0.85), arms = ramp(u, 0.15, 0.33) - ramp(u, 0.35, 0.6);
       const hz = mix(0.16, -0.2, legs), up = N(...mix([0, 0.985, 0.17], [0, 0.94, -0.34], body)), front = N(up[0], -up[2], up[1]);
       const trunk = N(...mix([0, 0.9, 0.44], [0, 0.92, -0.39], body));                                              // 등은 골반보다 더 앞으로 숙인다(허리 굽힘 15°)
-      const hand = mix([0, 0.58, 0.95], [0, ROWER.seatY + 0.35, hz + 0.12], arms);                                  // 캐치에선 무릎 위를 지난다
+      const hand = mix([0, 0.62, 0.95], [0, ROWER.seatY + 0.35, hz + 0.12], arms);                                  // 캐치에선 무릎 위를 지난다
       const foot = (x, bx) => ({ ik: [x, ROWER.foot[1], ROWER.foot[2]], bend: [bx, 1, 0.2] });
       return { root: { pos: [0, ROWER.seatY, hz], up, front },
         bones: { ...spineAll(trunk), [L + 'UpLeg']: foot(ROWER.foot[0], 0), [R + 'UpLeg']: foot(-ROWER.foot[0], 0), [L + 'Foot']: { aim: footFollow(L, [1, 0, 0], 66) }, [R + 'Foot']: { aim: footFollow(R, [1, 0, 0], 66) },   // 발판 위 발은 발등 쪽으로 살짝
-          [L + 'Arm']: { ik: [hand[0] + 0.32, hand[1], hand[2]], bend: [0.6, -0.3, -0.7], palmTo: [0, -1, 0] },          // 팔은 무릎 바깥으로
-          [R + 'Arm']: { ik: [hand[0] - 0.32, hand[1], hand[2]], bend: [-0.6, -0.3, -0.7], palmTo: [0, -1, 0] } } };
+          [L + 'Arm']: { ik: [hand[0] + 0.32, hand[1], hand[2]], bend: [0.9, -0.2, -0.4], palmTo: [0, -1, 0] },          // 팔은 무릎 바깥으로, 팔꿈치도 바깥으로
+          [R + 'Arm']: { ik: [hand[0] - 0.32, hand[1], hand[2]], bend: [-0.9, -0.2, -0.4], palmTo: [0, -1, 0] } } };
     } },
   };
 
@@ -554,7 +554,7 @@ const MOVE_3D = (() => {
       }
       case 'rower': {
         const V = (x, y, z) => new T.Vector3(x, y, z);
-        const rail = mesh(new T.BoxGeometry(0.12, 0.05, 1.3), soft); rail.position.set(0, ROWER.seatY - 0.13, -0.05); add(rail);
+        const rail = mesh(new T.BoxGeometry(0.08, 0.05, 1.3), soft); rail.position.set(0, ROWER.seatY - 0.13, -0.05); add(rail);   // 레일은 좁게 — 발 사이
         const seat = add(mesh(new T.BoxGeometry(0.32, 0.05, 0.3), soft));
         const fly = mesh(new T.CylinderGeometry(0.26, 0.26, 0.14, 24)); fly.rotation.z = Math.PI / 2; fly.position.fromArray(ROWER.fly); add(fly);
         [1, -1].forEach(s => { const f = mesh(new T.BoxGeometry(0.14, 0.02, 0.3), soft); f.position.set(s * ROWER.foot[0], ROWER.foot[1] - 0.06, ROWER.foot[2] + 0.02); f.rotation.x = -0.9; add(f); });

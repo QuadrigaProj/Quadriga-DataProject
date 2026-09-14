@@ -1596,7 +1596,7 @@ def test_기록이_지워진_날은_체력나이도_지운다():
 def test_루틴을_끝내도_그날_체력나이를_뽑는다():
     """저장만 하고 끝내면 루틴만 한 날은 영영 값이 없다 (규칙 2)."""
     html = _index()
-    본문 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
+    본문 = html.split("function logRoutineDone(부분 = playScope)")[1].split("\n}\n")[0]
     assert "refreshLogAges({ 전부: true })" in 본문
     assert "saveProfile()" in 본문
 
@@ -1646,7 +1646,7 @@ def test_끝낸_루틴도_운동한_날로_센다():
     assert "if (e.직접) return;" in 본문                  # 직접 적은 건 두 번 세지 않는다
     assert "String(st.체력요인 || '').split('·')" in 본문   # '근력·협응력' 을 나눈다
     # 루틴 기록에 체력요인을 남겨야 셀 수 있다
-    완료 = html.split("function logRoutineDone()")[1].split("\n}\n")[0]
+    완료 = html.split("function logRoutineDone(부분 = playScope)")[1].split("\n}\n")[0]
     assert "체력요인: s.체력요인 || null" in 완료
 
 
@@ -3166,7 +3166,7 @@ def test_끝냈으면_다음_것을_바로_띄우지_않는다():
     assert "루틴 미리하기" in 본문
     미리 = html.split("function previewNextDaypart()")[1].split("\n}")[0]
     assert "state.previewDaypart = { date: isoDate(new Date()), 시간대: 다음 };" in 미리
-    assert "goTo('s4');" in 미리
+    assert "startRoutine('daily');" in 미리                     # 미리 하는 것도 당일 루틴만 — 고른 종목은 아래 칸
 
 
 def test_시계가_다음_시간대로_넘어가면_누르든_말든_그_시간대():
@@ -3180,7 +3180,7 @@ def test_시계가_다음_시간대로_넘어가면_누르든_말든_그_시간�
 def test_완료는_시간대마다_한_번씩_남는다():
     """아침에 끝냈다고 낮 것까지 끝난 게 아니다."""
     html = _index()
-    본문 = html.split("function logRoutineDone()")[1].split("\n}")[0]
+    본문 = html.split("function logRoutineDone(부분 = playScope)")[1].split("\n}\n")[0]
     assert "const 시간대 = state.routineMeta?.구성 === 'ai' ? effectiveDaypart() : null;" in 본문
     assert "(e.시간대 || null) === 시간대" in 본문
     assert "date: today, no, done: true, 시간대," in 본문
@@ -3257,3 +3257,29 @@ def test_더_쉽게_더_어렵게는_지금_루틴을_바탕으로_다시_짓는
     바탕 = html.split("function 이전AI루틴()")[1].split("\n}")[0]
     assert "recoList[recoAt]?.구성 === 'ai'" in 바탕 and "state.aiReco?.추천?.[0]" in 바탕
     assert "동작: s.동작, 단계: s.단계, 수행량: s.수행량" in 바탕                 # AI 가 읽을 만큼만
+
+
+def test_고른_종목은_당일_루틴과_따로_한다():
+    """수영·요가처럼 사용자가 고른 종목은 그날 일정에 따라 다른 시간에 하거나 못 할 수 있다 —
+    홈의 당일 루틴 칸은 나머지(스쿼트·런지 같은 동작도 그대로), 고른 종목(출처 '종목')만 아래 칸에서 따로."""
+    html = _index()
+    assert 'class="hero-btn" onclick="startRoutine(\'daily\')"' in html
+    assert 'id="pickedCard" onclick="startRoutine(\'sport\')"' in html and 'id="pickedList"' in html and 'id="pickedMeta"' in html
+    assert html.index('id="daypartRow"') < html.index('id="pickedCard"') < html.index('id="weatherCard"')   # 당일 루틴 칸 아래
+    assert "function startRoutine(scope){ playScope = scope; goTo('s4'); }" in html
+    assert "if(id === 's4') resetRoutine(); else playScope = 'all';" in html          # 플레이어를 나가면 범위는 기본으로
+    assert "const isSportStep = s => s.출처 === '종목';" in html                       # 출처가 '종목'인 줄만 — 스쿼트·런지는 루틴 안에 남는다
+    활성 = html.split("function activeRoutine(){")[1].split("\n}")[0]
+    assert "if (playScope === 'sport') return 전부.filter(isSportStep);" in 활성
+    assert "if (playScope === 'daily') { const 나머지 = 전부.filter(s => !isSportStep(s)); return 나머지.length ? 나머지 : 전부; }" in 활성
+    assert "else { logRoutineDone(playScope); goTo('s3'); }" in html
+    # 기록은 날짜당 한 줄에 부분을 합친다
+    완료 = html.split("function logRoutineDone(부분 = playScope)")[1].split("\n}\n")[0]
+    assert "let e = state.routineLog.find(e => e.date === today && (e.시간대 || null) === 시간대);" in 완료
+    assert "e.부분 = [...(e.부분 || []), 부분];" in 완료 and "steps: [], 부분: []," in 완료
+    assert "const partDone = (e, 부분) => !e.부분 || e.부분.includes('all') || e.부분.includes(부분);" in html
+    assert "e.시간대 === 이름 && partDone(e, 'daily')" in html                          # 고른 종목만 했으면 시간대는 아직
+    카드 = html.split("function renderPickedCard(){")[1].split("\n}")[0]
+    assert "sportSteps()" in 카드 and "sportDoneToday()" in 카드 and "오늘 완료" in 카드
+    assert "아이콘: s.아이콘 || ''," in html                                            # 칸에 종목 아이콘을 쓴다
+    assert "renderPickedCard();" in html.split("renderDaypartRow();")[1][:40]

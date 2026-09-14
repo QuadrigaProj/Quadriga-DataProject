@@ -11,7 +11,7 @@
  *   - 겉모습: 이음새를 합치고 법선을 다시 계산해 매끈하게, 회색 하나로 칠한다.
  *   - 크기: 파일의 단위가 무엇이든 사람 키(1.75m)로 맞춘다.
  *   - 무릎 푸시업은 푸시업의 다리를 덮어써 만든다 (TWEAKS).
- *   - 모션캡처가 없거나 설명과 다른 20개 동작은 docs/3d-exercise-form-notes.md 의 자세 설명을
+ *   - 모션캡처가 없거나 설명과 다른 21개 동작은 docs/3d-exercise-form-notes.md 의 자세 설명을
  *     세상 기준 방향·손발 목표(IK)로 옮겨 만든다 (PROC).
  *   - 기구가 필요한 동작엔 바벨·덤벨·케틀벨·줄·트레드밀·물을 손과 몸에 붙여 준다 (GEAR).
  *
@@ -27,7 +27,7 @@ const MOVE_3D = (() => {
   const CLIPS = {
     'squat': 'squat', 'pushup': 'pushup', 'knee-pushup': 'pushup', 'plank': 'plank', 'crunch': 'crunch',
     'burpee': 'burpee', 'barbell-squat': 'barbell-squat', 'dumbbell-curl': 'dumbbell-curl',
-    'kettlebell-swing': 'kettlebell-swing', 'jump-rope': 'jump-rope', 'stair': 'stair', 'swim': 'swim',
+    'kettlebell-swing': 'kettlebell-swing', 'jump-rope': 'jump-rope', 'stair': 'stair',
     'shoulder-stretch': 'shoulder-stretch', 'neck-stretch': 'neck-stretch', 'deep-breath': 'deep-breath',
     'treadmill': 'treadmill', 'deadlift': 'deadlift', 'shoulder-press': 'shoulder-press',
     'walk': 'walk', 'run': 'run', 'one-leg': 'one-leg',
@@ -61,7 +61,7 @@ const MOVE_3D = (() => {
 
   /* ---- 학습한 자세로 만든 동작 (PROC) ----
    * 모션캡처가 없거나 설명과 다른 동작은 docs/3d-exercise-form-notes.md 의 자세 설명을 그대로 자세로 옮겼다.
-   * 한 항목: { base: 바탕 동작 파일(정하지 않은 뼈·손가락은 이것을 따른다), period: 한 회(초), gear, fist,
+   * 한 항목: { base: 바탕 동작 파일(정하지 않은 뼈·손가락은 이것을 따른다), still: 바탕 동작을 첫 프레임에 멈춘다(손이 꼼지락거리지 않게), period: 한 회(초), gear, fist,
    *            pose(u, C): 0~1 진행도와 조회 도우미 C 를 받아 그 순간의 자세를 돌려준다.
    *              C.pos(뼈) → 세상 위치 Vector3, C.rest(뼈) → T 자세에서 그 뼈가 뻗는 방향 [x,y,z] }
    * 자세: { root: { pos:[x,y,z] 엉덩이 세상 위치 | dpos: 바탕에서 옮길 양, up:[..] 척추 방향, front:[..] 배가 보는 방향 },
@@ -124,6 +124,29 @@ const MOVE_3D = (() => {
   const WALL_X = 0.56;                                                      // 종아리 스트레칭의 벽 (캐릭터 왼쪽, +X)
 
   const PROC = {
+    // 자유형: 엎드려 뜬 채 팔을 번갈아 — 물속에서 팔꿈치를 높게 두고 손으로 몸 아래를 지나 엉덩이까지 밀고(캐치→풀→푸시),
+    // 물 밖으로 팔꿈치를 높게 들어 앞으로 되돌려 다시 넣는다. 되돌리는 팔 쪽 어깨가 올라오게 몸통이 40° 굴러가고, 숨은 왼팔을 되돌릴 때 왼쪽으로.
+    // 다리는 뻗은 채 엉덩이에서 작게 찬다(발끝은 뻗고). 모션캡처 'Swimming' 은 평영처럼 보여 쓰지 않는다. (머리는 -Z 쪽, 물은 y 0.15)
+    'swim': { base: 'lying', period: 2.4, gear: 'water', still: true, pose: (u, C) => {
+      const r = -40 * D * Math.sin(u * Math.PI * 2);                                                                    // 굴림: 왼팔이 물 밖일 때(u 0.5~1) 왼쪽 어깨가 올라온다
+      const upv = [Math.sin(r), Math.cos(r), 0], leftv = [-Math.cos(r), Math.sin(r), 0], front = [-Math.sin(r), -Math.cos(r), 0];   // 엎드리면 캐릭터의 왼쪽은 -X
+      const PATH = [[0, 0.1, -0.05, -0.5], [0.15, 0.1, -0.25, -0.35], [0.35, 0.05, -0.32, 0], [0.5, 0.15, -0.15, 0.35], [0.62, 0.3, 0.12, 0.3], [0.8, 0.32, 0.15, -0.15], [1, 0.1, -0.05, -0.5]];   // [진행, 바깥, 위, 뒤] 어깨 기준, 세상 축 (엎드리면 왼쪽은 -X)
+      const arm = (side, ph, sgn) => {
+        ph = ((ph % 1) + 1) % 1; let i = 0; while (PATH[i + 1][0] < ph) i++;
+        const a = PATH[i], b = PATH[i + 1], t = sstep((ph - a[0]) / (b[0] - a[0]));
+        const x = mix(a[1], b[1], t) * sgn, y = mix(a[2], b[2], t), z = mix(a[3], b[3], t);
+        const w = hold(ph, 0.48, 0.58, 0.95, 1);                                                                       // 물 밖(되돌리기)이면 1
+        return { ik: () => { const S = C.pos(side + 'Arm'); return [S.x + x, S.y + y, S.z + z]; },
+          bend: [sgn, 0.8, 0],                                                                                         // 팔꿈치는 바깥·위(높게)
+          palmTo: N(...mix([0, 0, 1], [0, -1, 0], w)) };                                                               // 물속에선 손바닥이 뒤(발 쪽)를 밀고, 물 밖에선 아래를 본다
+      };
+      const k = Math.sin(u * Math.PI * 4);                                                                              // 발차기 — 한 바퀴에 두 번, 좌우 번갈아
+      const leg = (side, sgn) => { const d = Math.max(0, k * sgn); return { [side + 'UpLeg']: N(0, -0.08 - 0.1 * k * sgn, 1), [side + 'Leg']: N(0, -0.05 - 0.25 * d, 1), [side + 'Foot']: { aim: footFollow(side, leftv, 20) } }; };
+      const br = hold(u, 0.6, 0.7, 0.85, 0.95), headFront = N(...mix(front, leftv, br));                                 // 숨: 왼팔을 되돌릴 때 얼굴을 왼쪽으로
+      return { root: { pos: [0, 0.17, 0], up: [0, 0, -1], front },
+        bones: { ...spineAll([0, 0, -1], [0, 0, -1], front), 'mixamorig:Neck': { aim: [0, 0, -1], front: N(...mix(front, headFront, 0.5)) }, 'mixamorig:Head': { aim: N(0, 0.05, -1), front: headFront },
+          [L + 'Arm']: arm(L, u, -1), [R + 'Arm']: arm(R, u + 0.5, 1), ...leg(L, 1), ...leg(R, -1) } };                 // 왼팔의 바깥은 -X
+    } },
     // 런지: 한 발 앞으로, 양 무릎 90°, 앞 무릎은 발목 위, 뒷무릎은 엉덩이 아래로, 상체는 곧게. 손은 허리
     'lunge': { base: 'idle', period: 3.2, pose: (u, C) => {
       const k = hold(u, 0.1, 0.45, 0.55, 0.9);
@@ -133,24 +156,25 @@ const MOVE_3D = (() => {
           [R + 'UpLeg']: { ik: mix([-0.094, 0.09, 0], [-0.094, 0.15, -0.45], k), bend: [0, -0.8, 0.6] }, [R + 'Foot']: mix(FLAT, N(0, -1, 0.05), k) } };   // 뒤: 발을 세워 발끝으로 딛고 무릎은 엉덩이 아래로
     } },
     // 브리지: 누워 무릎 세우고, 뒤꿈치로 밀어 무릎–엉덩이–어깨가 한 직선. 위에서 1~2초 조인다
-    'bridge': { base: 'lying', period: 3.6, pose: u => {
+    'bridge': { base: 'lying', period: 3.6, still: true, pose: u => {
       const k = hold(u, 0.1, 0.4, 0.58, 0.9);
-      const up = N(...mix([0, 0, -1], [0, -0.35, -0.94], k)), front = N(...mix([0, 1, 0], [0, 0.94, -0.35], k));
-      return { root: { pos: mix([0, 0.11, 0], [0, 0.32, -0.02], k), up, front },
-        bones: { ...spineAll(up, [0, 0.05, -1]), ...kneesUp,
-          [L + 'UpLeg']: N(...mix([0, 0.85, 0.53], [0, 0.35, 0.94], k)), [R + 'UpLeg']: N(...mix([0, 0.85, 0.53], [0, 0.35, 0.94], k)),
-          [L + 'Arm']: N(0.35, -0.15, 0.92), [L + 'ForeArm']: { aim: N(0.3, -0.1, 0.95), palmTo: [0, -1, 0] },
-          [R + 'Arm']: N(-0.35, -0.15, 0.92), [R + 'ForeArm']: { aim: N(-0.3, -0.1, 0.95), palmTo: [0, -1, 0] } } };
+      const up = N(...mix([0, 0, -1], [0, -0.42, -0.91], k)), front = N(...mix([0, 1, 0], [0, 0.91, -0.42], k));   // 어깨는 바닥에 둔 채 엉덩이만 올라간다
+      return { root: { pos: mix([0, 0.11, 0], [0, 0.3, -0.02], k), up, front },
+        bones: { ...spineAll(up, [0, 0.05, -1]),
+          [L + 'UpLeg']: { ik: [0.094, 0.09, 0.4], bend: [0, 1, 0] }, [L + 'Foot']: FLAT,                                  // 발은 엉덩이 가까이 바닥에 고정 — 위에선 무릎이 발목 위(정강이 수직)
+          [R + 'UpLeg']: { ik: [-0.094, 0.09, 0.4], bend: [0, 1, 0] }, [R + 'Foot']: FLAT,
+          [L + 'Arm']: N(0.35, -0.15, 0.92), [L + 'ForeArm']: { aim: N(0.3, -0.1, 0.95), palmTo: [0, -1, 0] }, [L + 'Hand']: N(0.3, -0.1, 0.95),   // 팔은 옆에 뻗어 손바닥 바닥
+          [R + 'Arm']: N(-0.35, -0.15, 0.92), [R + 'ForeArm']: { aim: N(-0.3, -0.1, 0.95), palmTo: [0, -1, 0] }, [R + 'Hand']: N(-0.3, -0.1, 0.95) } };
     } },
     // 데드버그: 누워 팔은 천장, 엉덩이·무릎 90°. 한 팔은 머리 위로, 반대 다리는 앞으로 천천히 — 허리는 바닥에
-    'dead-bug': { base: 'lying', period: 5.2, pose: u => {
+    'dead-bug': { base: 'lying', period: 5.2, still: true, pose: u => {
       const side = u < 0.5 ? 0 : 1, a = hold(u - side * 0.5, 0.04, 0.24, 0.3, 0.48);
       const neutral = { ...both([0, 1, 0.08], [0, 0.05, 1], N(0, 0.85, 0.53)), [L + 'Arm']: [0.05, 1, 0], [L + 'ForeArm']: [0, 1, 0], [R + 'Arm']: [-0.05, 1, 0], [R + 'ForeArm']: [0, 1, 0] };
       const moved = { [R + 'Arm']: N(-0.15, 0.2, -0.97), [R + 'ForeArm']: N(-0.1, 0.1, -0.99), [L + 'UpLeg']: N(0, 0.35, 0.94), [L + 'Leg']: N(0, 0.2, 0.98), [L + 'Foot']: N(0, 0.95, 0.32) };
       return { root: LIE, bones: { ...spineAll([0, 0, -1]), ...blend(neutral, side ? mirror(moved) : moved, a) } };
     } },
     // 크런치: 머리와 어깨만 말아 올린다 — 허리는 바닥에, 손은 뒤통수(당기지 않는다), 턱은 살짝 당긴 채
-    'crunch': { base: 'lying', period: 2.6, pose: (u, C) => {
+    'crunch': { base: 'lying', period: 2.6, still: true, pose: (u, C) => {
       const c = hold(u, 0.1, 0.4, 0.5, 0.85);
       return { root: LIE, bones: { ...kneesUp,
         'mixamorig:Spine': N(...mix([0, 0, -1], [0, 0.12, -0.99], c)), 'mixamorig:Spine1': N(...mix([0, 0, -1], [0, 0.42, -0.9], c)), 'mixamorig:Spine2': N(...mix([0, 0, -1], [0, 0.7, -0.72], c)),
@@ -231,7 +255,7 @@ const MOVE_3D = (() => {
           [R + 'UpLeg']: N(0.62, -0.79, 0), [R + 'Leg']: [0, -1, 0], [R + 'Foot']: flatX } };                          // 앞무릎은 발목 위
     } },
     // 누워 허리 비틀기: 팔은 T 자, 한 무릎을 굽혀 반대쪽으로 넘긴다. 양 어깨는 바닥에, 머리는 반대쪽. 좌우 번갈아
-    'twist': { base: 'lying', period: 12, pose: (u, C) => {
+    'twist': { base: 'lying', period: 12, still: true, pose: (u, C) => {
       const sideL = u < 0.5, s1 = sideL ? u : u - 0.5;                                                              // 앞 절반은 왼쪽으로, 뒤 절반은 오른쪽으로 — 가운데(무릎 세움)를 지나서
       const wB = hold(s1, 0.0, 0.06, 0.44, 0.5), wT = hold(s1, 0.06, 0.18, 0.38, 0.46);                             // 아래 다리를 먼저 펴고(wB) 위 다리를 넘긴다(wT) — 두 다리가 서로 지나가지 않게
       const arms = { [L + 'Arm']: [1, 0, 0], [L + 'ForeArm']: [1, 0, 0], [R + 'Arm']: [-1, 0, 0], [R + 'ForeArm']: [-1, 0, 0] };
@@ -253,12 +277,12 @@ const MOVE_3D = (() => {
     'side-plank': { base: 'plank', period: 5, pose: u => {
       const up = N(0, 0.31, -0.95), front = [1, 0, 0];                                                              // 머리 쪽이 18° 올라간 한 직선 — 아래 어깨가 팔꿈치 위에 온다
       return { root: { pos: [0, 0.42 + 0.01 * Math.sin(u * Math.PI * 2), 0], up, front },
-        bones: { ...spineAll(up, up, front), ...both(N(0, -0.31, 0.95), N(0, -0.31, 0.95), N(0.35, 0, 0.94)),
-          [L + 'Arm']: N(0.3, -0.95, 0), [L + 'ForeArm']: { aim: [1, 0, 0], palmTo: [0, -1, 0] },                    // 위팔은 바닥으로, 아래팔은 앞으로 눕힌다
-          [R + 'Arm']: N(-0.1, 0.99, 0), [R + 'ForeArm']: N(-0.05, 1, 0) } };
+        bones: { ...spineAll(up, up, front), ...both(N(0, -0.31, 0.95), N(0, -0.31, 0.95), N(0.8, -0.15, 0.58)),   // 포갠 발은 앞(+X)을 본다
+          [L + 'Arm']: N(0.3, -0.95, 0), [L + 'ForeArm']: { aim: [1, 0, 0], palmTo: [0, -1, 0] }, [L + 'Hand']: [1, 0, 0],   // 위팔은 바닥으로, 아래팔·손은 앞으로 곧게 눕힌다
+          [R + 'Arm']: N(-0.1, 0.99, 0), [R + 'ForeArm']: N(-0.05, 1, 0), [R + 'Hand']: N(-0.05, 1, 0) } };
     } },
     // 벤치프레스: 발은 바닥에, 그립은 아래팔이 수직이 되는 너비, 바는 어깨 위에서 가슴 아래쪽으로 대각선, 팔꿈치 45~60°
-    'bench-press': { base: 'lying', period: 2.8, gear: 'bench', fist: true, pose: u => {
+    'bench-press': { base: 'lying', period: 2.8, gear: 'bench', fist: true, still: true, pose: u => {
       const p = hold(u, 0.05, 0.4, 0.5, 0.95);
       return { root: { pos: [0, 0.57, 0], up: [0, 0, -1], front: [0, 1, 0] },
         bones: { ...spineAll([0, 0, -1], [0, 0.05, -1]),
@@ -693,6 +717,7 @@ const MOVE_3D = (() => {
     const ctx = { scene, hand, u: 0, pos: (n, v) => bones.get(n) ? bones.get(n).getWorldPosition(v) : v.set(0, 0, 0), quat: (n, q) => bones.get(n) ? bones.get(n).getWorldQuaternion(q) : q.identity() };
     // ---- 학습한 자세로 만든 동작 적용 ----
     const proc = PROC[id];
+    const stillBase = !!(proc && proc.still);                                 // 바탕 동작을 첫 프레임에 멈춘다 (누운 동작의 손 꼼지락거림)
     const restDir = bone => _v1.set(0, 1, 0).applyQuaternion(restQ.get(bone)).toArray();
     const C = { pos: n => posOf(n), rest: n => { const b = bones.get(n); return b ? restDir(b) : [0, 1, 0]; } };
     const _v6 = new T.Vector3(), _m1 = new T.Matrix4(), _m2 = new T.Matrix4();
@@ -764,6 +789,16 @@ const MOVE_3D = (() => {
         g.getWorldQuaternion(_q4);
         c.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), tw)); c.updateMatrixWorld(true);
         g.quaternion.copy(c.getWorldQuaternion(_q2).invert().multiply(_q4)); g.updateMatrixWorld(true);    // 손·발(과 그 아래)은 그대로
+        // 손·발도 아래팔·정강이에 대해 비틀리지 않게 — 옆으로 누운 자세에서 발바닥이 바닥을 보는 식으로 돌아가지 않는다
+        const gax = _v7.set(0, 1, 0).applyQuaternion(g.getWorldQuaternion(_q2)).normalize();
+        const hc2 = _v9.copy(h0).applyQuaternion(_q1.copy(c.getWorldQuaternion(_q2)).multiply(_q4.copy(restQ.get(c)).invert()));
+        const hg2 = _v8.copy(h0).applyQuaternion(_q1.copy(g.getWorldQuaternion(_q2)).multiply(_q3.copy(restQ.get(g)).invert()));
+        hc2.addScaledVector(gax, -hc2.dot(gax)); hg2.addScaledVector(gax, -hg2.dot(gax));
+        if (hc2.lengthSq() < 0.05 || hg2.lengthSq() < 0.05) continue;
+        hc2.normalize(); hg2.normalize();
+        const tw2 = Math.atan2(_v1.crossVectors(hg2, hc2).dot(gax), hg2.dot(hc2));
+        if (Math.abs(tw2) < 0.02) continue;
+        g.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), tw2)); g.updateMatrixWorld(true);
       }
     };
     const ka = new T.Vector3(), km = new T.Vector3(), ke = new T.Vector3(), kt = new T.Vector3(), kb = new T.Vector3();
@@ -788,7 +823,9 @@ const MOVE_3D = (() => {
           const aim = (Array.isArray(how) || how === 'rest') ? how : how.aim;
           if (aim) { const dir = aim === 'rest' ? restDir(bone) : (typeof aim === 'function' ? aim(posOf) : aim); if (how.front) orientBone(bone, dir, how.front); else aimBone(bone, dir); }
           if (how.roll) { bone.quaternion.multiply(_q1.setFromAxisAngle(_v3.set(0, 1, 0), how.roll * D)); bone.updateMatrixWorld(true); }
-          if (how.palmTo) palmToward(bone, how.palmTo);
+        }
+        for (const bone of boneList) {                                          // 손바닥 방향은 손 방향까지 다 정한 뒤에 (아래팔을 비트니 손도 같이 돈다)
+          const how = table.get(bone); if (how && !how.ik && how.palmTo) palmToward(bone, how.palmTo);
         }
       };
       aimPass();                                                              // 1) 방향
@@ -817,7 +854,7 @@ const MOVE_3D = (() => {
     const hipsMixed = hipsBone ? hipsBone.position.clone() : null, hipsMixedQ = hipsBone ? hipsBone.quaternion.clone() : null;
     const restoreHips = () => { if (hipsBone) { hipsBone.position.copy(hipsMixed); hipsBone.quaternion.copy(hipsMixedQ); } };
     const rememberHips = () => { if (hipsBone) { hipsMixed.copy(hipsBone.position); hipsMixedQ.copy(hipsBone.quaternion); } };
-    const poseAt = t => { restoreHips(); mixer.setTime(t % clip.duration); rememberHips(); body.updateMatrixWorld(true); applyTweaks(t); applyProc(t); };
+    const poseAt = t => { restoreHips(); mixer.setTime(stillBase ? 0 : t % clip.duration); rememberHips(); body.updateMatrixWorld(true); applyTweaks(t); applyProc(t); };
     if (GEAR[id] === 'rope') {
       const hips = bones.get('mixamorig:Hips'); const N = 60, ys = [];
       for (let i = 0; i < N; i++) { poseAt(clip.duration * i / N); ys.push(hips.getWorldPosition(v).y); }
@@ -850,7 +887,7 @@ const MOVE_3D = (() => {
     const frame = () => {
       if (me.dead) return;
       restoreHips();
-      mixer.update(clock.getDelta());
+      const dt = clock.getDelta(); mixer.update(stillBase ? 0 : dt);
       rememberHips();
       body.updateMatrixWorld(true);
       applyTweaks(clock.elapsedTime);

@@ -1116,3 +1116,35 @@ def test_조정은_더_쉽게_더_어렵게_둘뿐이다():
     a = _paid(1000)
     r = a.post("/recommend/routines", json={"age_gbn": "성인", "조정": "아무렇게나"})
     assert r.status_code == 422
+
+
+def test_시간_여유를_재서_프롬프트에_적는다(monkeypatch):
+    """일정이 빡빡하면 집·혼자·짧게, 일정이 없거나 넉넉하면 시설·오래 걸리는 종목도 — 그 판단 재료를 AI 에 준다."""
+    assert air.time_budget(None)["평가"] == "넉넉함"
+    빡빡 = {"요일별": {"월": [{"시작": "22:00", "끝": "22:30", "분": 30}], "화": [{"시작": "07:00", "끝": "07:20", "분": 20}]}}
+    assert air.time_budget(빡빡)["평가"] == "빡빡함"
+    넉넉 = {"요일별": {"토": [{"시작": "09:00", "끝": "13:00", "분": 240}]}}
+    assert air.time_budget(넉넉)["평가"] == "넉넉함"
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["체계"] = kw["system"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=빡빡)
+    assert "시간 여유: 빡빡함" in 본["글"] and "월 30분, 화 20분" in 본["글"]
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=None)
+    assert "시간 여유: 넉넉함 — 일정을 주지 않았다" in 본["글"]
+    # 지침: 본운동이 몸통, 시간 여유에 맞춤, 조정은 크게
+    assert "본운동 3~6개" in 본["체계"] and "전체의 절반 이상" in 본["체계"]
+    assert "시간 여유에 맞춥니다" in 본["체계"] and "시설·상대·강습이 필요한 종목" in 본["체계"]
+    assert "30~50% 올리고" in 본["체계"] and "하나 더 넣습니다" in 본["체계"] and "똑같은 줄이 절반을 넘으면 안 됩니다" in 본["체계"]

@@ -3297,3 +3297,13 @@ def test_고른_종목은_당일_루틴과_따로_한다():
     assert "sportSteps()" in 카드 and "sportDoneToday()" in 카드 and "오늘 완료" in 카드
     assert "아이콘: s.아이콘 || ''," in html                                            # 칸에 종목 아이콘을 쓴다
     assert "renderPickedCard();" in html.split("renderDaypartRow();")[1][:40]
+
+
+def test_자세히_알아보기가_못_받으면_까닭을_띄운다():
+    """"계획은 못 받았어요" 만 띄우면 무엇이 잘못됐는지 알 수 없다 — 서버가 준 까닭(제한 시간·붐빔)을 그대로 띄운다."""
+    html = _index()
+    assert "let lastPeriodError = '';" in html
+    받기 = html.split("async function fetchPeriods(")[1].split("\n}")[0]
+    assert "lastPeriodError = e.message || '';" in 받기
+    상세 = html.split("async function fetchDetail(){")[1].split("\n}")[0]
+    assert "lastPeriodError = '';" in 상세 and "showToast(lastPeriodError || `" in 상세

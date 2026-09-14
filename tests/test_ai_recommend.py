@@ -1252,3 +1252,44 @@ def test_코드_대신_이름을_써도_재료에서_찾는다(monkeypatch):
     assert [s.get("id") for s in steps if s["출처"] == "기록"] == ["squat"]
     assert [s.get("코드") for s in steps if s["출처"] == "동작"][1] == _코드("본운동")
     assert len(steps) == 5
+
+
+def test_구간_계획은_넉넉한_제한_시간으로_부르고_실패한_까닭을_남긴다(monkeypatch):
+    """'이 루틴 자세히 알아보기' 가 "못 받았어요" 만 띄우고 안 됐다 (리뷰) — 20초 제한에 네 계절(×네 시간대) JSON 이 늘 늦었고,
+    늦으면 통째로 버려져 까닭도 남지 않았다."""
+    잡힘 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            return _Msg(_네계절())
+
+    class _Client:
+        def __init__(self, **kw):
+            잡힘.update(kw)
+            self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    assert air.periods(루틴, {}, "성인", None, 축="계절")
+    assert 잡힘["timeout"] == air.PERIOD_TIMEOUT_SEC and air.PERIOD_TIMEOUT_SEC >= 60
+    air.periods(루틴, {}, "성인", None, 축="계절", 시간대포함=True)
+    assert 잡힘["timeout"] == air.PERIOD_TIMEOUT_SEC * 1.5            # 계절 안에 시간대까지면 열여섯 줄
+    air.compose(사용자, "성인", 종목ids=["running"])
+    assert 잡힘["timeout"] == air.COMPOSE_TIMEOUT_SEC >= 60
+
+    # 늦으면 까닭이 남고, 엔드포인트가 그것을 말해 준다
+    class _Late(Exception):
+        pass
+    _Late.__name__ = "APITimeoutError"
+    _fake_sdk(monkeypatch, boom=_Late("late"))
+    assert air.periods(루틴, {}, "성인", None, 축="계절") is None
+    assert air.why_last_fail("periods") == "AI 응답이 제한 시간 안에 안 왔어요" and air.why_last_fail("compose") is None
+    a = _paid(0)
+    r = a.post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"})
+    assert r.status_code == 503 and "제한 시간 안에 안 왔어요" in r.json()["detail"]
+    # 읽지 못한 응답도 까닭이 남는다
+    _fake_sdk(monkeypatch, "이건 JSON 이 아니에요")
+    assert air.periods(루틴, {}, "성인", None, 축="계절") is None
+    assert air.why_last_fail("periods") == "AI 응답을 읽지 못했어요"

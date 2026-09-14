@@ -19,10 +19,14 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import date
 
 MODEL = "claude-opus-5"
 TIMEOUT_SEC = 20.0
+COMPOSE_TIMEOUT_SEC = 60.0     # 루틴 하나를 짓는 데 — 재료 표가 길고 본운동이 여러 줄이라 40초로는 빠듯했다
+PERIOD_TIMEOUT_SEC = 60.0      # 구간(계절·시간대) 계획 — 네 덩이, 계절 안에 시간대까지면 열여섯 줄. 20초로는 늘 늦었다
+LAST_FAIL: dict = {}           # 마지막 실패 {어디, 이유, 때} — 화면이 "못 받았어요" 만 띄우면 손쓸 방법이 없다
 MAX_TOKENS = 8000
 
 def available() -> bool:
@@ -52,6 +56,21 @@ def _text(message) -> str:
         if getattr(block, "type", None) == "text":
             parts.append(block.text)
     return "".join(parts).strip()
+
+
+def _note_fail(어디: str, 원인) -> None:
+    """실패한 까닭을 남긴다 — 화면이 "못 받았어요" 만 띄우면 손쓸 방법이 없어서. 응답 본문은 남기지 않는다."""
+    이름 = type(원인).__name__ if isinstance(원인, BaseException) else str(원인)
+    이유 = {"APITimeoutError": "AI 응답이 제한 시간 안에 안 왔어요", "RateLimitError": "AI 쪽이 붐벼요",
+          "OverloadedError": "AI 쪽이 붐벼요", "InternalServerError": "AI 쪽 오류예요",
+          "AuthenticationError": "API 키가 맞지 않아요", "APIConnectionError": "AI 에 연결하지 못했어요"}.get(이름, 이름)
+    LAST_FAIL.clear()
+    LAST_FAIL.update({"어디": 어디, "이유": 이유, "때": time.strftime("%Y-%m-%d %H:%M:%S")})
+
+
+def why_last_fail(어디: str) -> str | None:
+    """그 자리의 마지막 실패 까닭. 없으면 None."""
+    return LAST_FAIL.get("이유") if LAST_FAIL.get("어디") == 어디 else None
 
 
 def _json_only(s: str) -> dict | None:
@@ -210,7 +229,8 @@ def periods(루틴: dict, 참고: dict, 연령대: str,
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=TIMEOUT_SEC, max_retries=1)
+        # 계절 네 덩이(안에 시간대까지면 열여섯 줄)를 쓰는 데 20초는 늘 모자랐다 — 늦으면 통째로 버려져 "못 받았어요" 가 됐다
+        client = anthropic.Anthropic(timeout=PERIOD_TIMEOUT_SEC * (1.5 if 시간대포함 else 1.0), max_retries=1)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -222,10 +242,12 @@ def periods(루틴: dict, 참고: dict, 연령대: str,
         if getattr(message, "stop_reason", None) == "refusal":
             return None
         d = _json_only(_text(message))
-    except Exception:                          # 무엇이 잘못돼도 폴백
+    except Exception as e:                     # 무엇이 잘못돼도 폴백 — 다만 까닭은 남긴다
+        _note_fail("periods", e)
         return None
 
     if not d or not isinstance(d.get(축), list):
+        _note_fail("periods", "AI 응답을 읽지 못했어요")
         return None
     본것, out = set(), []
     for x in d[축]:
@@ -643,7 +665,7 @@ def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=1)
+        client = anthropic.Anthropic(timeout=COMPOSE_TIMEOUT_SEC, max_retries=1)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,

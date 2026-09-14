@@ -1826,6 +1826,21 @@
           <div><div class="purpose-title">유연성 강화</div><div class="purpose-desc">관절 가동범위와 스트레칭</div></div>
           <div class="check-mark"></div>
         </button>
+        <button class="purpose-card" data-p="bulk" onclick="selectPurpose('bulk')">
+          <div class="purpose-icon">🏋️</div>
+          <div><div class="purpose-title">벌크업</div><div class="purpose-desc">무거운 기구로 근육을 키우는 고강도 근력</div></div>
+          <div class="check-mark"></div>
+        </button>
+        <button class="purpose-card" data-p="muscle" onclick="selectPurpose('muscle')">
+          <div class="purpose-icon">💪</div>
+          <div><div class="purpose-title">근육량 늘리기</div><div class="purpose-desc">근력·근지구력 동작으로 탄탄하게</div></div>
+          <div class="check-mark"></div>
+        </button>
+        <button class="purpose-card" data-p="endurance" onclick="selectPurpose('endurance')">
+          <div class="purpose-icon">🏃</div>
+          <div><div class="purpose-title">지구력 늘리기</div><div class="purpose-desc">오래 버티는 심폐·근지구력</div></div>
+          <div class="check-mark"></div>
+        </button>
       </div>
       <div class="review-link" style="margin:18px 0 0;"><button type="button" onclick="openStyleTest('s2')">뭘 골라야 할지 모르겠어요 → 운동 스타일 테스트</button></div>
     </div>
@@ -2480,6 +2495,7 @@ const state = {
 const PURPOSE_LABEL = {
   diet: '다이어트', basic: '기초 체력 증진',
   fall: '재활 및 기능 회복', study: '수험생 체력 증진', flex: '유연성 강화',
+  bulk: '벌크업', muscle: '근육량 늘리기', endurance: '지구력 늘리기',
 };
 
 /* 연령군마다 잴 수 있는 항목이 다르다 (backend/fitness_age.py 와 같은 규칙) */
@@ -2513,6 +2529,7 @@ function programAgeGroup(age) {
 const PURPOSE_TO_KO = {
   diet: '다이어트', basic: '기초 체력 증진',
   fall: '재활 및 기능 회복', study: '수험생 체력 증진', flex: '유연성 강화',
+  bulk: '벌크업', muscle: '근육량 늘리기', endurance: '지구력 늘리기',
 };
 
 function programDay() {

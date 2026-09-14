@@ -73,3 +73,18 @@
 
 같은 구조의 `routines_250.json` 을 `data/processed/` 에 두면 자동으로 그쪽을 쓴다.
 `backend/routines.py` 는 필드명을 그대로 참조하므로 스키마만 맞추면 코드 수정이 필요 없다.
+
+## 나중에 더한 목적 — 벌크업 · 근육량 늘리기 · 지구력 늘리기
+
+원래 목적 5종에 셋을 더해 연령대 4 × 목적 8 = 32조합, 320루틴이다. 셋의 루틴은
+`python -m backend.generate_official_routines` 가 공식 영상 목록(`data/processed/kspo_candidate_pool/official_video_catalog.json`)으로
+만들어 `data/generated/routines_200_kspo_official_video.json` 에 덧붙인 것이다(파일 이름의 200은 그대로 둔다). 기존 200개는 건드리지 않는다.
+
+| 목적 | 본운동 1순위 | 2순위 | 우대 기구 | 강도 |
+|---|---|---|---|---|
+| 벌크업 | 근력/근지구력 | 민첩성/순발력 | 웨이트기계·프리웨이트 | 세트 +1, 요령 "6~10회가 한계인 무게, 2~3분 휴식" |
+| 근육량 늘리기 | 근력/근지구력 | 심폐지구력 | 프리웨이트·밴드 | 세트 +1, 요령 "8~12회, 1~2분 휴식" |
+| 지구력 늘리기 | 심폐지구력 | 근력/근지구력 | 맨몸·스텝박스·줄넘기 | 요령 "15~20회 또는 시간 늘려서, 30초~1분 휴식" |
+
+일상 처방 문구(`daily_prescriptions_750.json`)는 따로 없어 벌크업·근육량은 기초 체력 증진, 지구력은 다이어트 문구를 쓴다(`backend/daily_prescription.py` 의 PURPOSE_ALIAS).
+

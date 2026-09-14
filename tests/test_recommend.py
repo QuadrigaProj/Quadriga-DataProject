@@ -46,10 +46,12 @@ def test_약점을_다루는_목적이_위로_온다():
 
 
 def test_스타일_테스트_결과가_점수를_올린다():
-    기본 = {x["목적"]: x["점수"] for x in rc.for_user("성인", limit=5)["추천"]}
+    """목적이 8개라 상위 몇 개엔 그 목적이 아예 없을 수 있다 — 없으면 0점으로 본다."""
+    기본 = {x["목적"]: x["점수"] for x in rc.for_user("성인", limit=12)["추천"]}
     반영 = {x["목적"]: x["점수"] for x in
-           rc.for_user("성인", style_purpose="유연성 강화", limit=5)["추천"]}
-    assert 반영["유연성 강화"] > 기본["유연성 강화"]
+           rc.for_user("성인", style_purpose="유연성 강화", limit=12)["추천"]}
+    assert "유연성 강화" in 반영
+    assert 반영["유연성 강화"] > 기본.get("유연성 강화", 0)
 
 
 def test_고른_종목이_점수와_주의부위에_반영된다():
@@ -219,11 +221,11 @@ def test_더_달라고_해도_있는_만큼만():
     assert len(번호) == len(set(번호)), "같은 루틴이 두 번 나왔다"
 
 
-def test_limit_60_이면_전부_준다():
-    """'더 어려운 루틴' 이 지금 목록 밖에 있을 때 화면이 전체를 받아 온다."""
-    d = client.get("/recommend/routines", params={"age_gbn": "성인", "limit": 60, "ai": 0}).json()
+def test_limit_80_이면_전부_준다():
+    """'더 어려운 루틴' 이 지금 목록 밖에 있을 때 화면이 전체를 받아 온다 (목적 8 × 10 = 80)."""
+    d = client.get("/recommend/routines", params={"age_gbn": "성인", "limit": 80, "ai": 0}).json()
     전부 = rc.score("성인", limit=999)
     assert len(d["추천"]) == len(전부)
     assert max(x["난이도점수"] for x in d["추천"]) == max(x["난이도점수"] for x in 전부)
     assert client.get("/recommend/routines",
-                      params={"age_gbn": "성인", "limit": 61}).status_code == 422
+                      params={"age_gbn": "성인", "limit": 81}).status_code == 422

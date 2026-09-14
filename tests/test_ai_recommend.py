@@ -1118,6 +1118,86 @@ def test_조정은_더_쉽게_더_어렵게_둘뿐이다():
     assert r.status_code == 422
 
 
+def test_시간_여유를_재서_프롬프트에_적는다(monkeypatch):
+    """일정이 빡빡하면 집·혼자·짧게, 일정이 없거나 넉넉하면 시설·오래 걸리는 종목도 — 그 판단 재료를 AI 에 준다."""
+    assert air.time_budget(None)["평가"] == "넉넉함"
+    빡빡 = {"요일별": {"월": [{"시작": "22:00", "끝": "22:30", "분": 30}], "화": [{"시작": "07:00", "끝": "07:20", "분": 20}]}}
+    assert air.time_budget(빡빡)["평가"] == "빡빡함"
+    넉넉 = {"요일별": {"토": [{"시작": "09:00", "끝": "13:00", "분": 240}]}}
+    assert air.time_budget(넉넉)["평가"] == "넉넉함"
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["체계"] = kw["system"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=빡빡)
+    assert "시간 여유: 빡빡함" in 본["글"] and "월 30분, 화 20분" in 본["글"]
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=None)
+    assert "시간 여유: 넉넉함 — 일정을 주지 않았다" in 본["글"]
+    # 지침: 본운동이 몸통, 시간 여유에 맞춤, 조정은 크게
+    assert "본운동 3~6개" in 본["체계"] and "전체의 절반 이상" in 본["체계"]
+    assert "시간 여유에 맞춥니다" in 본["체계"] and "시설·상대·강습이 필요한 종목" in 본["체계"]
+    assert "30~50% 올리고" in 본["체계"] and "하나 더 넣습니다" in 본["체계"] and "똑같은 줄이 절반을 넘으면 안 됩니다" in 본["체계"]
+
+
+def test_권장_용량을_프롬프트에_적고_고른_운동_단계에_맞춘다(monkeypatch):
+    """예전 지침은 '주어진 강도에서 조금 올리거나 내린다' 였다 — 10회 2세트로는 다음 측정이 안 움직인다.
+    이제 backend/dose.py 의 권장 용량 표를 하한으로 주고, 사용자가 고른 운동 단계가 그 표를 고른다."""
+    본 = {}
+
+    class _Messages:
+        def create(self, **kw):
+            본["글"] = kw["messages"][0]["content"]
+            본["체계"] = kw["system"]
+            return _Msg(_지은응답())
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    air.compose({**사용자, "고른 운동 단계": "벌크업"}, "성인", 종목ids=["running"], 일정=None)
+    assert "권장 용량 — 이 정도를 주 3회, 8~12주 해야 다음 측정에서 체력나이가 움직입니다" in 본["글"]
+    assert '"근력": "6~10회 × 4세트, 무겁게"' in 본["글"] and '"목적": "벌크업"' in 본["글"]
+    assert "권장 용량' 표대로 씁니다 — 그보다 적게 쓰지 않습니다" in 본["체계"]
+    assert "세트 수는 하한이지 상한이 아닙니다" in 본["체계"] and "점진적 과부하" in 본["체계"]
+    assert "조금 올리거나 내립니다" not in 본["체계"]
+    # 고른 단계가 없으면 스타일 테스트가 고른 목적, 그것도 없으면 기초 체력 증진
+    air.compose({**사용자, "운동 스타일 테스트가 고른 목적": "재활 및 기능 회복"}, "성인", 종목ids=["running"], 일정=None)
+    assert '"목적": "재활 및 기능 회복"' in 본["글"] and '"근력": "10~15회 × 2세트"' in 본["글"]
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=None)
+    assert '"목적": "기초 체력 증진"' in 본["글"]
+    # 체력나이가 실제보다 7세 이상 높으면 낮게 시작하라는 줄, 빡빡한 일정이면 인터벌
+    air.compose({**사용자, "체력나이": 52}, "성인", 종목ids=["running"], 일정=None)
+    assert '"시작": "첫 2주는' in 본["글"]
+    빡빡 = {"요일별": {"월": [{"시작": "22:00", "끝": "22:30", "분": 30}]}}
+    air.compose(사용자, "성인", 종목ids=["running"], 일정=빡빡)
+    assert "인터벌" in 본["글"] and '"본운동 분": "20~30"' in 본["글"]
+
+
+def test_추천_요청에_고른_운동_단계를_받는다():
+    """화면이 보내는 purpose 가 AI 의 '고른 운동 단계' 로 들어간다. 없어도 예전처럼 돈다."""
+    c = TestClient(app)
+    r = c.post("/recommend/routines", json={"age_gbn": "성인", "purpose": "벌크업", "ai": False})
+    assert r.status_code == 200 and r.json()["추천"]
+    assert c.get("/recommend/routines", params={"age_gbn": "성인", "purpose": "벌크업", "ai": 0}).status_code == 200
+    assert air.recommended_dose({"연령대": "성인", "고른 운동 단계": "벌크업"})["목적"] == "벌크업"
+    assert air.recommended_dose({"연령대": "성인", "실제 나이": 40, "체력나이": 48}).get("시작")
+    assert not air.recommended_dose({"연령대": "성인", "실제 나이": 15, "체력나이": 20}).get("시작")   # 성장기는 반대 방향
+
+
 def test_고른_종목이_여럿이면_날마다_돌아가며_넣는다(monkeypatch):
     """뒤처지는 요인에 제일 잘 맞는 종목(수영) 하나만 매번 본운동에 나오고 고른 다른 종목은 안 나왔다 (리뷰)."""
     셋 = {"고른 종목": ["수영", "요가", "테니스"]}

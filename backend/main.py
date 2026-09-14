@@ -164,6 +164,7 @@ Sex = Literal["M", "F"]
 Purpose = Literal[
     "다이어트", "기초 체력 증진",
     "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
+    "벌크업", "근육량 늘리기", "지구력 늘리기",
 ]
 
 # 한 번만 로드해 캐시한다 (요청마다 CSV 를 읽지 않는다)
@@ -509,6 +510,7 @@ def get_video_routine(
 ProgramAge = Literal[ "유소년", "청소년", "성인", "어르신"]
 ProgramPurpose = Literal[
     "다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
+    "벌크업", "근육량 늘리기", "지구력 늘리기",
 ]
 
 
@@ -551,7 +553,7 @@ def get_program_routine(
         raise HTTPException(404, str(e))
 
     offset = rt.start_offset(fitness_age, real_age)
-    intensity = rt.intensity_for(age_gbn, week, offset=offset, heavy=heavy)
+    intensity = rt.intensity_for(age_gbn, week, offset=offset, heavy=heavy, purpose=purpose)
     routine["강도"] = intensity
     if picked:
         routine["고른종목"] = [s["이름"] for s in sp.resolve(picked)]
@@ -586,7 +588,7 @@ def get_sports_summary(ids: str = Query("", description="쉼표로 구분한 종
 
 @app.get("/program/purposes")
 def get_program_purposes(age_gbn: ProgramAge | None = None) -> list[dict]:
-    """목적 5종 + (연령대를 주면) 그 연령대 재프레이밍 라벨."""
+    """목적 8종 + (연령대를 주면) 그 연령대 재프레이밍 라벨."""
     d = rt.load()["config"]
     out = []
     for p in rt.PURPOSES:
@@ -1310,9 +1312,10 @@ class RecommendIn(BaseModel):
     age_gbn: ProgramAge
     weak: list[str] = Field(default_factory=list, max_length=10)
     style_purpose: str | None = None
+    purpose: str | None = Field(None, description="사용자가 고른 운동 단계(목적) — 권장 용량을 여기에 맞춘다")
     sports: list[str] = Field(default_factory=list, max_length=100)
     target_gap: float | None = None
-    limit: int = Field(12, ge=1, le=60)
+    limit: int = Field(12, ge=1, le=80)
     week: int = Field(1, ge=1, le=13)
     ai: bool = True
     real_age: float | None = Field(None, ge=5, le=110)
@@ -1341,9 +1344,10 @@ def get_recommend_routines(
     age_gbn: ProgramAge,
     weak: str | None = Query(None, description="쉼표 구분. 체력나이에서 뒤처지는 요인"),
     style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
+    purpose: str | None = Query(None, description="사용자가 고른 운동 단계(목적) — 권장 용량을 여기에 맞춘다"),
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
-    limit: int = Query(12, ge=1, le=60, description="난이도를 오갈 수 있게 넉넉히 준다. 60이면 전부다"),
+    limit: int = Query(12, ge=1, le=80, description="난이도를 오갈 수 있게 넉넉히 준다. 80이면 전부다 (목적 8 × 10)"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
     quadriga_session: str | None = Cookie(None),
@@ -1357,7 +1361,7 @@ def get_recommend_routines(
     return _recommend(
         age_gbn=age_gbn,
         weak=[w.strip() for w in (weak or "").split(",") if w.strip()],
-        style_purpose=style_purpose,
+        style_purpose=style_purpose, purpose=purpose,
         sports=[s.strip() for s in (sports or "").split(",") if s.strip()],
         target_gap=target_gap, limit=limit, week=week, ai=ai,
         real_age=real_age, token=quadriga_session)
@@ -1373,7 +1377,7 @@ def post_recommend_routines(body: RecommendIn,
     """
     return _recommend(
         age_gbn=body.age_gbn, weak=body.weak, style_purpose=body.style_purpose,
-        sports=body.sports, target_gap=body.target_gap, limit=body.limit,
+        purpose=body.purpose, sports=body.sports, target_gap=body.target_gap, limit=body.limit,
         week=body.week, ai=body.ai, real_age=body.real_age,
         token=quadriga_session, busy=body.바쁜시간,
         life_kind=_life_kinds(body.상태),
@@ -1390,8 +1394,11 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                token: str | None, busy: dict | None = None,
                life_kind: list[str] | str | None = None,
                profile: dict | None = None,
-               adjust: str | None = None, previous: dict | None = None) -> dict:
+               adjust: str | None = None, previous: dict | None = None,
+               purpose: str | None = None) -> dict:
     """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
+
+    purpose 는 사용자가 고른 운동 단계 — AI 가 권장 용량(backend/dose.py)을 거기에 맞춘다.
 
     adjust 는 '더 쉽게'·'더 어렵게' — previous(받아 둔 AI 루틴)를 바탕으로 그 방향으로만 다시 짓는다.
 
@@ -1452,6 +1459,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 "고른 종목이 쓰는 요인": 참고.get("종목요인") or [],
                 "조심할 부위": out.get("조심할부위") or [],
                 "운동 스타일 테스트가 고른 목적": style_purpose,
+                "고른 운동 단계": purpose,
                 "목표 체력나이까지 남은 세": target_gap,
                 "프로그램 주차": week,
                 "강도": out.get("강도"),

@@ -23,6 +23,9 @@ PURPOSE_KEY = {
     "재활 및 기능 회복": "fall",
     "수험생 체력 증진": "study",
     "유연성 강화": "flex",
+    "벌크업": "bulk",
+    "근육량 늘리기": "muscle",
+    "지구력 늘리기": "endurance",
 }
 
 _data: dict | None = None

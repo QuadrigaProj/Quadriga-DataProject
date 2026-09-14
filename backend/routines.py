@@ -17,9 +17,21 @@ try:
     from backend.paths import find_data
 except ImportError:
     from paths import find_data
+try:
+    from backend import dose
+except ImportError:
+    import dose  # type: ignore
 
 AGE_GROUPS = ( "유소년", "청소년", "성인", "어르신")
-PURPOSES = ("다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화")
+PURPOSES = ("다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
+            "벌크업", "근육량 늘리기", "지구력 늘리기")      # 뒤 셋은 backend/generate_official_routines.py 로 덧붙인 것
+# 목적별 세트 보정과 요령 — 영상 기반이라 반복 횟수는 못 정하지만, 세트와 한 줄 요령으로 벌크업·근육량·지구력을 가른다
+PURPOSE_SETS = {"벌크업": 1, "근육량 늘리기": 1}
+PURPOSE_TIP = {
+    "벌크업": "무거운 기구로 6~10회가 한계인 무게, 세트 사이 2~3분 쉬어요",
+    "근육량 늘리기": "8~12회에 힘든 무게로, 세트 사이 1~2분 쉬어요",
+    "지구력 늘리기": "가볍게 15~20회 또는 시간을 늘려서, 세트 사이 30초~1분만 쉬어요",
+}
 PARTS = ("무릎", "허리", "어깨")
 
 _data: dict | None = None
@@ -58,6 +70,16 @@ def load() -> dict:
             config[key] = {a: v for a, v in config[key].items() if a in AGE_GROUPS}
         for band in config["intensity"]["weeks"].values():
             band.pop("유아기", None)
+        # 나중에 더한 목적(벌크업 등)의 우선요인은 생성 파일의 체력항목에서 — 점수 추천·목적 목록이 쓴다
+        갈래 = {"근력/근지구력": ["근력", "근지구력"], "민첩성/순발력": ["민첩성", "순발력"]}
+        for p, spec in (generated["metadata"].get("purpose_factors") or {}).items():
+            p = p.replace("기초체력", "기초 체력")
+            if p in config["purpose_factors"] or not isinstance(spec, dict):
+                continue
+            요인 = []
+            for f in list(spec.get("primary") or []) + list(spec.get("secondary") or []):
+                요인 += [x for x in 갈래.get(f, [f]) if x not in 요인]
+            config["purpose_factors"][p] = 요인
         pools = {a: {p: {} for p in ("준비운동", "본운동", "정리운동")} for a in AGE_GROUPS}
         routines = {a: {p: [] for p in PURPOSES} for a in AGE_GROUPS}
         for entry in generated["routines"]:
@@ -76,7 +98,8 @@ def load() -> dict:
             routines[age][purpose].append(routine)
         if any(len(items) != 10 for groups in routines.values() for items in groups.values()):
             raise ValueError("KSPO 루틴은 연령대·목적별 10개여야 합니다.")
-        _data = {"_meta": {"샘플여부": False, "조합수": 20, "루틴수": 200},
+        조합 = len(AGE_GROUPS) * len(PURPOSES)
+        _data = {"_meta": {"샘플여부": False, "조합수": 조합, "루틴수": 조합 * 10},
                  "config": config, "pools": pools, "routines": routines}
 
     return _data
@@ -314,12 +337,14 @@ def build_program_routine(age_gbn: str, purpose: str, *, day: int = 0,
 # 강도 (12주 = 3구간, 현재 체력이 낮으면 한 단계 낮춰 시작)
 #
 # 영상을 따라 하는 구조라 루틴 플레이어는 반복 횟수·수행 시간을 쓰지 않는다.
-# 강도는 세트 수 하나로만 표현한다.
-#   1~4주: 2세트 · 5~8주: 2세트 · 9~12주: 3세트
+# 강도는 세트 수 하나로만 표현한다 (+ '노력' 한 줄, backend/dose.py).
+#   1~4주: 2세트 · 5~8주: 3세트 · 9~12주: 3세트  — 5주차부터 3세트여야 8~12주 뒤 측정이 움직인다 (docs/effective_dose.md)
+#   재활 및 기능 회복은 천천히: 1~4주 2 · 5~8주 2 · 9~12주 3
 #   몸이 무거운 날: 기본 세트에서 1세트 감소, 최소 1세트
 # ---------------------------------------------------------------------------
 
-BASE_SETS = {"1-4": 2, "5-8": 2, "9-12": 3}
+BASE_SETS = {"1-4": 2, "5-8": 3, "9-12": 3}
+SLOW_SETS = {"1-4": 2, "5-8": 2, "9-12": 3}          # 재활 및 기능 회복
 
 
 def _band(week: int) -> str:
@@ -348,8 +373,12 @@ def start_offset(fitness_age: float | None, real_age: float | None,
     return 0
 
 
-def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = False) -> dict:
-    """주차 + 보정 → 이번 세트 수.
+def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = False,
+                  purpose: str | None = None) -> dict:
+    """주차 + 보정 (+ 목적) → 이번 세트 수.
+
+    purpose 가 벌크업·근육량 늘리기면 한 세트 더(최대 4), 재활 및 기능 회복은 천천히(SLOW_SETS),
+    세 목적엔 한 줄 요령이, 모두에게 '노력'(얼마나 힘들게) 한 줄이 붙는다.
 
     age_gbn 은 호출부 호환을 위해 받지만 세트 수는 연령대와 무관하게 구간으로만
     정해진다. 영상 기반 구조라 반복 횟수·수행 시간은 돌려주지 않는다.
@@ -358,10 +387,14 @@ def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = Fal
     idx = bands.index(_band(max(1, int(week))))
     idx = max(0, min(len(bands) - 1, idx + offset))     # 보정은 구간을 당기거나 미룬다
     band = bands[idx]
-    sets = BASE_SETS[band]
+    sets = (SLOW_SETS if purpose == "재활 및 기능 회복" else BASE_SETS)[band]
+    sets = min(4, sets + PURPOSE_SETS.get(purpose or "", 0))   # 근육을 키우는 목적은 한 세트 더
     if heavy:
         sets = max(1, sets - 1)                 # 몸이 무거운 날: 1세트 감소, 최소 1세트
-    return {"주차": int(week), "구간": band, "세트": sets}
+    out = {"주차": int(week), "구간": band, "세트": sets, "노력": dose.effort_for(purpose, age_gbn)}
+    if purpose in PURPOSE_TIP:
+        out["요령"] = PURPOSE_TIP[purpose]
+    return out
 
 
 AGE_NOTICE = "체력나이 분석은 만 11세 이상부터 이용할 수 있습니다.\n국민체력100 체력측정 데이터의 연령 범위에 따라 현재 서비스는 만 11세 이상을 지원합니다."

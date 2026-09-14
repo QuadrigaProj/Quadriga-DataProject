@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const OUT = process.argv[2]; const URL_ = process.argv[3] || 'http://127.0.0.1:8390/'; const ONLY = process.argv[4] ? process.argv[4].split(',') : null;
-const PORT = 9334, FRAMES = 24, IMAGES = 8;
+const PORT = 9334, FRAMES = 24, IMAGES = 8, SIZE = +process.env.QA_SIZE || 320;   // QA_SIZE=480 이면 그림을 크게
 if (!OUT) { console.error('출력 폴더를 주세요'); process.exit(1); }
 fs.mkdirSync(OUT, { recursive: true });
 const CHROME = process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : 'google-chrome';
@@ -28,7 +28,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await send('Page.enable'); await send('Runtime.enable');
   await send('Page.navigate', { url: URL_ }); await sleep(4000);
   // 검사용 캔버스 하나를 화면에 붙인다
-  await evaluate(`(() => { const c = document.createElement('canvas'); c.id = 'qaCanvas'; c.width = c.height = 320; c.style.cssText = 'width:320px;height:320px;position:fixed;left:0;top:0;z-index:99999;background:#2c4b3e'; document.body.appendChild(c); return 'ok'; })()`);
+  await evaluate(`(() => { const c = document.createElement('canvas'); c.id = 'qaCanvas'; c.width = c.height = ${SIZE}; c.style.cssText = 'width:${SIZE}px;height:${SIZE}px;position:fixed;left:0;top:0;z-index:99999;background:#2c4b3e'; document.body.appendChild(c); return 'ok'; })()`);
   const ids = ONLY || await evaluate(`[...new Set([...Object.keys(MOVE_3D.PROC), ...Object.keys(MOVE_3D.CLIPS)])]`);
   console.log('동작', ids.length, '개');
   for (const sex of ['M', 'F']) {

@@ -340,7 +340,7 @@ ALLOW = [
     ("burpee", "PEN_BODY *-*Thigh"), ("burpee", "PEN_BODY *-*Shank"), ("burpee", "PEN_BODY *Thigh-Chest"), ("burpee", "HIP_FLEX *"),   # 웅크렸다 손 짚을 때 손·팔이 다리를 스치고 가슴이 허벅지에 닿는다
     ("kettlebell-swing", "PEN_BODY *-*Thigh"), ("walk", "PEN_BODY *-*Thigh"), ("squat", "PEN_BODY *Hand-*Thigh"),
     ("jump-rope", "PEN_BODY *Foot-*Shank"), ("treadmill", "PEN_BODY *Foot-*Shank"), ("run", "PEN_BODY *Thigh-*Shank"),
-    ("swim", "ANKLE_SIDE *"),                                                       # 발차기 때 발이 안으로 돈다
+    ("swim", "FLOOR*"),                                                             # 물속 — 바닥이 없다
     ("*", "PEN_BODY *UpperArm-Chest"),                                              # 위팔은 가슴 옆에 붙는다 (6cm 까지는 아래 tol 로, 그 이상만 잡히면 여기서)
     ("crunch", "PEN_BODY *Hand-Chest"),                                             # 머리 뒤에 댄 손이 목·어깨에 닿는다
     ("rowing", "HIP_FLEX *"), ("rowing", "PEN_BODY *Thigh-Chest"), ("leg-press", "PEN_BODY *Thigh-Chest"),   # 웅크리면 가슴이 허벅지에 닿는다

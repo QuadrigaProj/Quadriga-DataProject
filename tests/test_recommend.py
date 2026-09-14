@@ -46,10 +46,12 @@ def test_약점을_다루는_목적이_위로_온다():
 
 
 def test_스타일_테스트_결과가_점수를_올린다():
-    기본 = {x["목적"]: x["점수"] for x in rc.for_user("성인", limit=5)["추천"]}
+    """목적이 8개라 상위 몇 개엔 그 목적이 아예 없을 수 있다 — 없으면 0점으로 본다."""
+    기본 = {x["목적"]: x["점수"] for x in rc.for_user("성인", limit=12)["추천"]}
     반영 = {x["목적"]: x["점수"] for x in
-           rc.for_user("성인", style_purpose="유연성 강화", limit=5)["추천"]}
-    assert 반영["유연성 강화"] > 기본["유연성 강화"]
+           rc.for_user("성인", style_purpose="유연성 강화", limit=12)["추천"]}
+    assert "유연성 강화" in 반영
+    assert 반영["유연성 강화"] > 기본.get("유연성 강화", 0)
 
 
 def test_고른_종목이_점수와_주의부위에_반영된다():

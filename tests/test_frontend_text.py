@@ -2858,7 +2858,7 @@ def test_지금_목록에_없으면_전체를_받아_와서_찾는다():
     assert "await 전체추천얹기();" in 본문
     assert 본문.index("전체추천얹기") < 본문.index("showToast")      # 받아 보고 나서야 없다고 한다
     얹기 = html.split("async function 전체추천얹기()")[1].split("\n}")[0]
-    assert "limit: 60," in 얹기 and "ai: 0," in 얹기                  # 무료라 값이 안 든다
+    assert "limit: 80," in 얹기 and "ai: 0," in 얹기                  # 무료라 값이 안 든다 (목적 8 × 10 = 전부)
     assert "recoList.push(x)" in 얹기 and "if (!있음.has(열쇠))" in 얹기   # 보던 자리가 밀리지 않는다
     assert "추천저장();" in 얹기
 

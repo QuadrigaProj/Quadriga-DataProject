@@ -66,6 +66,16 @@ def load() -> dict:
             config[key] = {a: v for a, v in config[key].items() if a in AGE_GROUPS}
         for band in config["intensity"]["weeks"].values():
             band.pop("유아기", None)
+        # 나중에 더한 목적(벌크업 등)의 우선요인은 생성 파일의 체력항목에서 — 점수 추천·목적 목록이 쓴다
+        갈래 = {"근력/근지구력": ["근력", "근지구력"], "민첩성/순발력": ["민첩성", "순발력"]}
+        for p, spec in (generated["metadata"].get("purpose_factors") or {}).items():
+            p = p.replace("기초체력", "기초 체력")
+            if p in config["purpose_factors"] or not isinstance(spec, dict):
+                continue
+            요인 = []
+            for f in list(spec.get("primary") or []) + list(spec.get("secondary") or []):
+                요인 += [x for x in 갈래.get(f, [f]) if x not in 요인]
+            config["purpose_factors"][p] = 요인
         pools = {a: {p: {} for p in ("준비운동", "본운동", "정리운동")} for a in AGE_GROUPS}
         routines = {a: {p: [] for p in PURPOSES} for a in AGE_GROUPS}
         for entry in generated["routines"]:

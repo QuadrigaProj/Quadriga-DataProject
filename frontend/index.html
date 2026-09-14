@@ -8306,7 +8306,7 @@ async function 전체추천얹기(){
       style_purpose: state.styleTest?.result?.추천목적 || null,
       sports: (state.sports || []).join(','),
       week: programWeek(),
-      limit: 60,
+      limit: 80,                                 // 목적 8 × 10 = 전부
       ai: 0,
     });
     const 있음 = new Set(recoList.map(x => `${x.목적}|${x.루틴번호}`));

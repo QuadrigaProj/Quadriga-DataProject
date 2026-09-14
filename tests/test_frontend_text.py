@@ -2249,7 +2249,7 @@ def test_화면에_들어왔다고_AI를_부르지_않는다():
 def test_다시_받기는_반드시_한_번_묻는다():
     """값이 빠지는 일이다."""
     html = _index()
-    본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
+    본문 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
     assert "값을치를까(물음)" in 본문
     assert "다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다." in 본문
     # 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다
@@ -2280,7 +2280,11 @@ def test_AI_카드에도_같은_버튼이_있다():
     for 버튼 in ("이전 루틴", "더 쉬운 루틴", "더 어려운 루틴", "이 루틴으로 시작"):
         assert 버튼 in 본문, 버튼
     assert "recoBy === 'ai' ?" in 본문
-    assert "AI 추천 다시 받기" in 본문
+    # '그냥 다시 받기' 는 없다 — 지금 루틴을 바탕으로 방향을 골라 다시 짓는다
+    assert "AI 추천 다시 받기" not in 본문
+    assert "askAiRecommend('더 쉽게')" in 본문 and "더 쉽게 다시 받기" in 본문
+    assert "askAiRecommend('더 어렵게')" in 본문 and "더 어렵게 다시 받기" in 본문
+    assert "이전 루틴보다 ${x.조정}" in 본문                       # 어느 쪽으로 지었는지 카드에 적는다
 
 
 def test_받은_적_없으면_받기_버튼만_보여준다():
@@ -2979,7 +2983,7 @@ def test_저장하면_추천_화면이면_다시_그린다():
 def test_값을_치르기로_하면_언제부터_할지_묻는다():
     """받은 날이 곧 시작일이다. 봄에 받았다고 봄부터가 아니다."""
     html = _index()
-    본문 = html.split("async function askAiRecommend()")[1].split("\n}")[0]
+    본문 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
     assert "askStartDate(async () => {" in 본문
     assert 본문.index("값을치를까(물음)") < 본문.index("askStartDate(")   # 값을 묻고 나서 날짜를 묻는다
     창 = html.split("function askStartDate(then)")[1].split("\n}")[0]
@@ -3239,3 +3243,17 @@ def test_계절과_시간대가_따로_남아_있으면_버튼_없이_알아서_
     assert "autoFuseSeasonTime();" in 그리기                            # 그릴 때마다 살핀다
     assert "if (recoAiReady) autoFuseSeasonTime();" in html             # AI 가능이 나중에 확인돼도
 
+
+def test_더_쉽게_더_어렵게는_지금_루틴을_바탕으로_다시_짓는다():
+    """'다시 받기' 대신 방향을 고른다. 시작일은 다시 묻지 않고, 바탕 루틴(이름·강도·줄)과 방향을 서버에 보낸다."""
+    html = _index()
+    묻기 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
+    assert "지금 루틴을 바탕으로 ${방향} 다시 지어요. ${AI_PRICE}원이 결제됩니다." in 묻기
+    assert 묻기.index("값을치를까(물음)") < 묻기.index("recoAdjust = 방향")          # 값을 치르기로 한 뒤에만
+    assert "askStartDate" in 묻기 and 묻기.index("recoAdjust = 방향") < 묻기.index("askStartDate")   # 방향이 있으면 시작일은 그대로
+    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "const 조정 = ai ? recoAdjust : null; recoAdjust = null;" in 받기      # 한 번 쓰고 비운다
+    assert "조정: 조정 || null," in 받기 and "이전루틴: 조정 ? 이전AI루틴() : null," in 받기
+    바탕 = html.split("function 이전AI루틴()")[1].split("\n}")[0]
+    assert "recoList[recoAt]?.구성 === 'ai'" in 바탕 and "state.aiReco?.추천?.[0]" in 바탕
+    assert "동작: s.동작, 단계: s.단계, 수행량: s.수행량" in 바탕                 # AI 가 읽을 만큼만

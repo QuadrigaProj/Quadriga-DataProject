@@ -3318,7 +3318,8 @@ def test_홈_게이지_아래에_목표까지_몇_주인지_추정을_적는다(
     assert "API.fitnessAgeEta(재료)" in 본문 and "etaCache.열쇠 === 열쇠" in 본문   # 같은 측정·목표면 다시 묻지 않는다
     글 = html.split("function etaText(r, 목표){")[1].split("\n}")[0]
     assert "(추정)" in 글 and "이미 닿았어요" in 글 and "1년 안에는 어려워요" in 글
-    assert "renderPickedCard();\n  refreshEta();" in html                        # 홈에 들어올 때
+    홈 = html.split("async function loadHome(){")[1].split("\n}")[0]
+    assert "refreshEta();" in 홈                                                  # 홈에 들어올 때 (CRLF 체크아웃에서도 맞게 줄바꿈을 낀 문자열은 쓰지 않는다)
     커밋 = html.split("function commitResult(){")[1].split("\n}")[0]
     assert "refreshEta();" in 커밋                                                # 새로 쟀을 때
     api = Path(__file__).resolve().parents[1].joinpath("frontend", "js", "api.js").read_text(encoding="utf-8")

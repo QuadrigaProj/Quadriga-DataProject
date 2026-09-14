@@ -1661,7 +1661,8 @@ def _periods(body: "SeasonIn", 축: str, token: str | None, 시간대포함: boo
     구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정,
                        구간들=구간들, 시간대포함=(시간대포함 and 축 == "계절"))
     if not 구간:
-        raise HTTPException(503, f"지금은 {축}별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요.")
+        이유 = air.why_last_fail("periods")
+        raise HTTPException(503, f"지금은 {축}별 계획을 못 받았어요{' — ' + 이유 if 이유 else ''}. 잠시 뒤 다시 시도해주세요.")
     out = {"축": 축, 축: 구간, "루틴명": body.루틴.get("루틴명")}
     if 시작:
         out["시작"] = 시작

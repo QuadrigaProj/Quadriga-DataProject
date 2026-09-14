@@ -7729,6 +7729,7 @@ let recoCare = [];
 let recoBy = '점수';
 let recoSpare = null;     // AI 가 비는 칸마다 골라 준 것 {요일: [{시작,끝,분,할것,한줄}]}
 let recoSeason = null;    // '이 루틴 자세히 알아보기' 로 받은 것 {루틴명, 계절:[...], 시간대:[...]}
+let lastPeriodError = '';  // 구간 계획을 못 받은 까닭 (서버가 준 한 줄) — "못 받았어요" 만 띄우면 손쓸 방법이 없다
 const PERIOD_AXES = {
   계절: { 머리: '계절마다 이렇게 이어가요', 설명: '봄·여름·가을·겨울, 1년을 어떻게 이어갈지' },
   시간대: { 머리: '하루 중 이 시간엔 이렇게', 설명: '아침·낮·저녁·밤, 언제 무엇을 얼마나' },
@@ -8261,6 +8262,7 @@ function toggleDetail(key){
 async function fetchDetail(){
   const 고른것 = [...DETAIL_PICK];
   if (!고른것.length) return;
+  lastPeriodError = '';
   closeSheet();
   const 축들 = 고른것.filter(k => PERIOD_AXES[k]);
   if (고른것.includes('짬시간')) openSchedule();
@@ -8274,7 +8276,7 @@ async function fetchDetail(){
   const 결과 = await Promise.all(부를것.map(축 => fetchPeriods(축, { 조용히: true, 시간대포함: 둘다 })));
   const 됨 = 부를것.filter((_, i) => 결과[i]);
   if (됨.length) showToast(둘다 ? '계절마다 시간대까지 나눈 계획을 받았어요' : `${됨.map(k => k + '별').join(' · ')} 계획을 받았어요`);
-  if (됨.length < 부를것.length) showToast(`${부를것.filter((_, i) => !결과[i]).map(k => k + '별').join(' · ')} 계획은 못 받았어요. 잠시 뒤 다시 시도해주세요`);
+  if (됨.length < 부를것.length) showToast(lastPeriodError || `${부를것.filter((_, i) => !결과[i]).map(k => k + '별').join(' · ')} 계획은 못 받았어요. 잠시 뒤 다시 시도해주세요`);
 }
 
 /* 축(계절 | 시간대) 하나를 받아 온다. 받았으면 true.
@@ -8316,6 +8318,7 @@ async function fetchPeriods(축, { 조용히 = false, 시간대포함 = false } 
     paintRecommend();
     return true;
   } catch (e) {
+    lastPeriodError = e.message || '';
     if (!조용히) showToast(e.message || `${축}별 계획을 못 받았어요. 잠시 뒤 다시 시도해주세요`);
     return false;
   }

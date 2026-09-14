@@ -3257,3 +3257,17 @@ def test_더_쉽게_더_어렵게는_지금_루틴을_바탕으로_다시_짓는
     바탕 = html.split("function 이전AI루틴()")[1].split("\n}")[0]
     assert "recoList[recoAt]?.구성 === 'ai'" in 바탕 and "state.aiReco?.추천?.[0]" in 바탕
     assert "동작: s.동작, 단계: s.단계, 수행량: s.수행량" in 바탕                 # AI 가 읽을 만큼만
+
+
+def test_플레이어는_권장_용량대로_쓴_수행량과_노력을_보여준다():
+    """AI 가 "10회 × 3세트"·"30분" 으로 써도 플레이어가 "2세트" 만 보여 주면 용량을 올린 뜻이 없다."""
+    html = _index()
+    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert 받기.count("purpose: PURPOSE_TO_KO[state.purpose] || null,") == 2          # AI(POST)·무료(GET) 둘 다 고른 운동 단계를 보낸다
+    적용 = html.split("function applyAiRoutine(){")[1].split("\n}")[0]
+    assert "수행량: s.수행량 || ''," in 적용
+    단계 = html.split("function renderStep(){")[1].split("\n}")[0]
+    assert "$('playerSet').textContent = (step.수행량 || `${it.세트 ?? 2}세트`) +" in 단계
+    assert "const 노력 = [it.요령, it.노력].filter(Boolean).join(' · ');" in 단계
+    assert "$('playerDose').hidden = !(step.단계 === '본운동' && 노력);" in 단계
+    assert '<div class="player-dose" id="playerDose" hidden></div>' in html

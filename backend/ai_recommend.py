@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
 
 MODEL = "claude-opus-5"
 TIMEOUT_SEC = 20.0
@@ -454,6 +455,8 @@ COMPOSE_SYSTEM = """당신은 국민체력100 데이터로 운동을 처방하�
   - **목록에 없는 코드·id 를 쓰면 그 줄은 버려집니다.** 이름을 지어내지 마세요.
   - 준비운동 1~2개 → 본운동 3~6개 → 정리운동 1~2개. **본운동이 루틴의 몸통입니다 — 전체의 절반 이상.** 전체 5~10줄.
   - ★ 고른 종목은 되도록 넣습니다. 그 종목이 쓰는 요인을 본운동이 받쳐 주게 짭니다.
+    **고른 종목이 여럿이면 날마다 돌아가며 씁니다** — '오늘의 고른 종목' 줄에 적힌 것을 본운동에 먼저 넣고, 나머지 ★ 종목은
+    오늘은 넣지 않거나 그 요인을 받쳐 주는 동작으로 갈음합니다. 뒤처지는 요인에 제일 잘 맞는다고 같은 종목을 매일 넣지 않습니다.
   - 뒤처지는 요인을 먼저 다룹니다. 항목별 체력나이가 실제 나이보다 많이 높은 것이 뒤처진 것입니다.
   - 조심할 부위에 부담을 주는 동작은 피합니다.
   - **건강 상태가 있으면 그에 맞춥니다.** 그 상태에 해로울 수 있는 동작은 넣지 않고,
@@ -510,7 +513,8 @@ def _materials(연령대: str, 종목ids=None) -> tuple[str, dict]:
     """
     rt, sp, wi = _catalogs()
     고른 = set(종목ids or [])
-    줄, 표 = [], {"동작": {}, "종목": {}, "기록": {}}
+    # 이름 → 코드·id. AI 가 코드 대신 이름("요가", "스쿼트")을 써도 줄을 버리지 않고 찾는다
+    줄, 표 = [], {"동작": {}, "종목": {}, "기록": {}, "이름": {"동작": {}, "종목": {}, "기록": {}}}
 
     줄.append("동작 (코드 | 단계 | 동작 | 요인 | 도구 | 부담부위)")
     pools = rt.load()["pools"].get(연령대, {})
@@ -520,6 +524,8 @@ def _materials(연령대: str, 종목ids=None) -> tuple[str, dict]:
                 표["동작"][코드]["단계들"].add(단계)   # 같은 동작이 준비·정리 양쪽에 있을 수 있다
                 continue
             표["동작"][코드] = {"info": info, "단계들": {단계}}
+            if info.get("동작"):
+                표["이름"]["동작"].setdefault(_norm_name(info["동작"]), 코드)
             줄.append(f"{코드} | {단계} | {info.get('동작')} | "
                       f"{'·'.join(info.get('체력요인') or []) or '-'} | "
                       f"{info.get('도구') or '-'} | {'·'.join(info.get('부담부위') or []) or '-'}")
@@ -528,6 +534,7 @@ def _materials(연령대: str, 종목ids=None) -> tuple[str, dict]:
     줄.append("종목 (id | 이름 | 분류 | 요인 | 부담부위)   ★ = 사용자가 고른 것")
     for x in sp.catalog().get("종목", []):
         표["종목"][x["id"]] = x
+        표["이름"]["종목"][_norm_name(x["이름"])] = x["id"]
         별 = "★ " if x["id"] in 고른 else ""
         줄.append(f"{x['id']} | {별}{x['이름']} | {x.get('분류') or '-'} | "
                   f"{'·'.join(x.get('체력요인') or []) or '-'} | {'·'.join(x.get('부담부위') or []) or '-'}")
@@ -536,8 +543,29 @@ def _materials(연령대: str, 종목ids=None) -> tuple[str, dict]:
     줄.append("기록 (id | 이름 | 분류 | 요인)")
     for x in wi.catalog().get("종목", []):
         표["기록"][x["id"]] = x
+        표["이름"]["기록"][_norm_name(x["이름"])] = x["id"]
         줄.append(f"{x['id']} | {x['이름']} | {x.get('분류') or '-'} | {x.get('요인') or '-'}")
     return "\n".join(줄), 표
+
+
+def todays_sports(사용자: dict, 날짜: str | None = None) -> dict | None:
+    """고른 종목이 여럿이면 오늘 본운동에 먼저 넣을 것을 날짜로 돌아가며 정한다.
+
+    AI 는 뒤처지는 요인에 제일 잘 맞는 종목 하나(예: 수영)만 매번 골랐다 — 고른 다른 종목이 영영 안 나왔다.
+    루틴 시작일(없으면 오늘)로 돌리면 하루에 하나씩 차례가 오고, 같은 날 다시 받아도 같은 종목이라
+    '더 어렵게 / 더 쉽게' 와도 어긋나지 않는다. 넷 이상 골랐으면 하루 둘씩 — 안 그러면 한 바퀴가 너무 길다.
+    """
+    고른 = [str(x) for x in (사용자.get("고른 종목") or []) if x]
+    if len(고른) < 2:
+        return None
+    날 = 날짜 or (사용자.get("시작") or {}).get("시작일") or date.today().isoformat()
+    try:
+        n = date.fromisoformat(str(날)[:10]).toordinal()
+    except ValueError:
+        n = date.today().toordinal()
+    i = n % len(고른)
+    오늘 = [고른[i]] + ([고른[(i + 1) % len(고른)]] if len(고른) >= 4 else [])
+    return {"오늘": 오늘, "순서": 고른[i:] + 고른[:i]}
 
 
 def time_budget(일정: dict | None) -> dict:
@@ -572,6 +600,10 @@ def recommended_dose(사용자: dict, 여유: str | None = None) -> dict:
 
 def _compose_prompt(사용자: dict, 재료: str, 일정: dict | None) -> str:
     본문 = "사용자\n" + json.dumps(사용자, ensure_ascii=False, indent=1)
+    오늘의 = todays_sports(사용자)
+    if 오늘의:
+        본문 += ("\n\n오늘의 고른 종목: " + " · ".join(오늘의["오늘"])
+                + f" (고른 종목 {len(오늘의['순서'])}개를 날마다 돌아가며 — 순서: {' → '.join(오늘의['순서'])})")
     칸들 = (일정 or {}).get("요일별") or {}
     if 칸들:
         본문 += "\n\n비는 시간 (칸번호 · 시각 · 그 칸에서 할 수 있는 것)"
@@ -684,13 +716,29 @@ def _clean_routine(d: dict, 표: dict, 사용자: dict) -> dict | None:
     }
 
 
+def _norm_name(s) -> str:
+    """이름 비교용 — ★·공백을 빼고 소문자로."""
+    return "".join(str(s or "").replace("★", "").split()).casefold()
+
+
+def _lookup_key(표: dict, 종류: str, raw) -> str | None:
+    """응답이 쓴 코드·id, 아니면 이름으로 재료 표의 열쇠를 찾는다. 없으면 None."""
+    값 = str(raw or "").replace("★", "").strip()
+    if 값 in 표[종류]:
+        return 값
+    return (표.get("이름") or {}).get(종류, {}).get(_norm_name(값))
+
+
 def _resolve_step(x: dict, 표: dict) -> dict | None:
-    """응답 한 줄을 재료 표에서 찾아 화면 모양으로. 없으면 None."""
+    """응답 한 줄을 재료 표에서 찾아 화면 모양으로. 없으면 None.
+
+    코드·id 대신 이름을 써도 찾는다 — 예전엔 그 줄이 조용히 버려져 고른 종목이 빠진 채 루틴이 나왔다.
+    """
     단계 = str(x.get("단계") or "").strip()
     수행량 = str(x.get("수행량") or "").strip()[:24]     # 길면 설명이다 — 그건 왜 에 들어간다
     왜 = str(x.get("왜") or "").strip()[:80]
     if x.get("코드"):
-        항 = 표["동작"].get(str(x["코드"]).strip())
+        항 = 표["동작"].get(_lookup_key(표, "동작", x["코드"]) or "")
         if not 항:
             return None
         info = 항["info"]
@@ -701,7 +749,7 @@ def _resolve_step(x: dict, 표: dict) -> dict | None:
                 "유형": info.get("유형"), "부담부위": list(info.get("부담부위") or []),
                 "youtube_id": info.get("youtube_id"), "수행량": 수행량, "왜": 왜}
     if x.get("종목"):
-        sp = 표["종목"].get(str(x["종목"]).strip())
+        sp = 표["종목"].get(_lookup_key(표, "종목", x["종목"]) or "")
         if not sp:
             return None
         return {"출처": "종목", "단계": 단계 if 단계 in PHASES else "본운동",
@@ -710,7 +758,7 @@ def _resolve_step(x: dict, 표: dict) -> dict | None:
                 "유형": "시간", "부담부위": list(sp.get("부담부위") or []),
                 "youtube_id": None, "수행량": 수행량, "왜": 왜}
     if x.get("기록"):
-        it = 표["기록"].get(str(x["기록"]).strip())
+        it = 표["기록"].get(_lookup_key(표, "기록", x["기록"]) or "")
         if not it:
             return None
         기본단계 = "정리운동" if it.get("분류") == "스트레칭" else "본운동"

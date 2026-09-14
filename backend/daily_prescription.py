@@ -19,6 +19,8 @@ except ImportError:                      # backend/ 안에서 직접 실행할 �
 FILE = "daily_prescriptions_750.json"
 DEFAULT_CYCLE = 30
 FALLBACK_PURPOSE = "기초 체력 증진"
+# 나중에 더한 목적은 문구가 따로 없다 — 가장 가까운 목적의 문구를 쓴다
+PURPOSE_ALIAS = {"벌크업": "기초 체력 증진", "근육량 늘리기": "기초 체력 증진", "지구력 늘리기": "다이어트"}
 
 _data: dict | None = None
 
@@ -49,6 +51,7 @@ def tip(age_gbn: str, purpose: str, day: int) -> dict | None:
 
     # 어르신 × 수험생 체력 증진은 대상이 아니다. 기초 체력 문구로 대체한다.
     # (JSON 의 해당 배열 첫 줄은 사용자용이 아니라 개발 안내라 그대로 쓰지 않는다.)
+    purpose = PURPOSE_ALIAS.get(purpose, purpose)
     if age_gbn == "어르신" and purpose == "수험생 체력 증진":
         purpose = FALLBACK_PURPOSE
 

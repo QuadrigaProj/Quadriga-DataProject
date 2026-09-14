@@ -18,10 +18,11 @@ from backend.main import app                # noqa: E402
 client = TestClient(app)
 
 
-def test_데이터_20조합_200루틴():
+def test_데이터_32조합_320루틴():
+    """연령대 4 × 목적 8 (원래 5 + 벌크업·근육량 늘리기·지구력 늘리기)."""
     d = rt.load()
-    assert d["_meta"]["조합수"] == 20
-    assert d["_meta"]["루틴수"] == 200
+    assert d["_meta"]["조합수"] == 32
+    assert d["_meta"]["루틴수"] == 320
     for a in rt.AGE_GROUPS:
         for p in rt.PURPOSES:
             rs = d["routines"][a][p]
@@ -150,3 +151,34 @@ def test_program_routine_exclude_parts_없이_heavy만_보내도_가볍게_돌�
 def test_없는_연령대는_422():
     r = client.get("/program/routine", params={"age_gbn": "노년기", "purpose": "다이어트"})
     assert r.status_code == 422
+
+
+def test_벌크업_근육량_지구력_목적이_있다():
+    """운동 단계에 셋을 더했다 — 루틴은 backend/generate_official_routines.py 가 공식 영상으로 만든 것."""
+    assert rt.PURPOSES[-3:] == ("벌크업", "근육량 늘리기", "지구력 늘리기")
+    d = rt.load()
+    for a in rt.AGE_GROUPS:
+        for p in ("벌크업", "근육량 늘리기", "지구력 늘리기"):
+            assert len(d["routines"][a][p]) == 10, (a, p)
+    # 본운동은 목적에 맞는 요소만: 지구력은 심폐지구력을 우대해 절반 이상이 심폐지구력이어야 한다
+    본 = [d["pools"]["성인"]["본운동"][c] for r in d["routines"]["성인"]["지구력 늘리기"] for c in r["main"]]
+    assert sum(1 for s in 본 if "심폐지구력" in (s.get("체력요인") or s.get("ftns_fctr_nm") or "")) >= len(본) // 2
+    r = client.get("/program/routine", params={"age_gbn": "성인", "purpose": "벌크업", "day": 0, "week": 1}).json()
+    assert len(r["steps"]) == 5 and r["강도"]["세트"] == 3          # 1-4주 기본 2세트 + 벌크업 1세트
+    assert "무거운 기구" in r["강도"]["요령"]
+    r2 = client.get("/program/routine", params={"age_gbn": "성인", "purpose": "지구력 늘리기", "day": 3, "week": 1}).json()
+    assert r2["강도"]["세트"] == 2 and "15~20회" in r2["강도"]["요령"]
+    assert "요령" not in client.get("/program/routine", params={"age_gbn": "성인", "purpose": "다이어트", "day": 0}).json()["강도"]
+    assert client.get("/program/routine", params={"age_gbn": "성인", "purpose": "복근 만들기"}).status_code == 422
+
+
+def test_새_목적은_다른_곳에서도_안다():
+    from backend import ai_recommend as air, daily_prescription as dp, prescription as pr, style_test as st
+    for p in ("벌크업", "근육량 늘리기", "지구력 늘리기"):
+        assert p in air.PURPOSES and p in pr.PURPOSE_FACTORS and p in st.PURPOSE_KEY
+        assert dp.tip("성인", p, 0)                                    # 문구가 없어도 가까운 목적의 문구로
+    assert "벌크업" in air.COMPOSE_SYSTEM and "지구력 늘리기" in air.COMPOSE_SYSTEM
+    html = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text(encoding="utf-8")
+    for key, 이름 in (("bulk", "벌크업"), ("muscle", "근육량 늘리기"), ("endurance", "지구력 늘리기")):
+        assert f'data-p="{key}" onclick="selectPurpose(\'{key}\')"' in html and 이름 in html
+        assert f"{key}: '{이름}'" in html.split("const PURPOSE_TO_KO = {")[1].split("};")[0]

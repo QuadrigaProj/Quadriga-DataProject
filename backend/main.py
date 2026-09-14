@@ -164,6 +164,7 @@ Sex = Literal["M", "F"]
 Purpose = Literal[
     "다이어트", "기초 체력 증진",
     "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
+    "벌크업", "근육량 늘리기", "지구력 늘리기",
 ]
 
 # 한 번만 로드해 캐시한다 (요청마다 CSV 를 읽지 않는다)
@@ -509,6 +510,7 @@ def get_video_routine(
 ProgramAge = Literal[ "유소년", "청소년", "성인", "어르신"]
 ProgramPurpose = Literal[
     "다이어트", "기초 체력 증진", "재활 및 기능 회복", "수험생 체력 증진", "유연성 강화",
+    "벌크업", "근육량 늘리기", "지구력 늘리기",
 ]
 
 
@@ -551,7 +553,7 @@ def get_program_routine(
         raise HTTPException(404, str(e))
 
     offset = rt.start_offset(fitness_age, real_age)
-    intensity = rt.intensity_for(age_gbn, week, offset=offset, heavy=heavy)
+    intensity = rt.intensity_for(age_gbn, week, offset=offset, heavy=heavy, purpose=purpose)
     routine["강도"] = intensity
     if picked:
         routine["고른종목"] = [s["이름"] for s in sp.resolve(picked)]
@@ -586,7 +588,7 @@ def get_sports_summary(ids: str = Query("", description="쉼표로 구분한 종
 
 @app.get("/program/purposes")
 def get_program_purposes(age_gbn: ProgramAge | None = None) -> list[dict]:
-    """목적 5종 + (연령대를 주면) 그 연령대 재프레이밍 라벨."""
+    """목적 8종 + (연령대를 주면) 그 연령대 재프레이밍 라벨."""
     d = rt.load()["config"]
     out = []
     for p in rt.PURPOSES:
@@ -1312,7 +1314,7 @@ class RecommendIn(BaseModel):
     style_purpose: str | None = None
     sports: list[str] = Field(default_factory=list, max_length=100)
     target_gap: float | None = None
-    limit: int = Field(12, ge=1, le=60)
+    limit: int = Field(12, ge=1, le=80)
     week: int = Field(1, ge=1, le=13)
     ai: bool = True
     real_age: float | None = Field(None, ge=5, le=110)
@@ -1343,7 +1345,7 @@ def get_recommend_routines(
     style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
-    limit: int = Query(12, ge=1, le=60, description="난이도를 오갈 수 있게 넉넉히 준다. 60이면 전부다"),
+    limit: int = Query(12, ge=1, le=80, description="난이도를 오갈 수 있게 넉넉히 준다. 80이면 전부다 (목적 8 × 10)"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
     ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
     quadriga_session: str | None = Cookie(None),

@@ -11,7 +11,7 @@
  *   - 겉모습: 이음새를 합치고 법선을 다시 계산해 매끈하게, 회색 하나로 칠한다.
  *   - 크기: 파일의 단위가 무엇이든 사람 키(1.75m)로 맞춘다.
  *   - 무릎 푸시업은 푸시업의 다리를 덮어써 만든다 (TWEAKS).
- *   - 모션캡처가 없거나 설명과 다른 21개 동작은 docs/3d-exercise-form-notes.md 의 자세 설명을
+ *   - 모션캡처가 없거나 설명과 다른 22개 동작은 docs/3d-exercise-form-notes.md 의 자세 설명을
  *     세상 기준 방향·손발 목표(IK)로 옮겨 만든다 (PROC).
  *   - 기구가 필요한 동작엔 바벨·덤벨·케틀벨·줄·트레드밀·물을 손과 몸에 붙여 준다 (GEAR).
  *
@@ -25,7 +25,7 @@ const MOVE_3D = (() => {
 
   /* 동작 id → 동작 파일 (anim/<이름>.glb). 같은 파일을 여러 id 가 쓸 수 있다. */
   const CLIPS = {
-    'squat': 'squat', 'pushup': 'pushup', 'knee-pushup': 'pushup', 'plank': 'plank', 'crunch': 'crunch',
+    'squat': 'squat', 'pushup': 'pushup', 'knee-pushup': 'pushup', 'crunch': 'crunch',
     'burpee': 'burpee', 'barbell-squat': 'barbell-squat', 'dumbbell-curl': 'dumbbell-curl',
     'kettlebell-swing': 'kettlebell-swing', 'jump-rope': 'jump-rope', 'stair': 'stair',
     'shoulder-stretch': 'shoulder-stretch', 'neck-stretch': 'neck-stretch', 'deep-breath': 'deep-breath',
@@ -124,6 +124,17 @@ const MOVE_3D = (() => {
   const WALL_X = 0.56;                                                      // 종아리 스트레칭의 벽 (캐릭터 왼쪽, +X)
 
   const PROC = {
+    // 플랭크(팔꿈치 플랭크): 팔꿈치는 어깨 바로 아래 바닥에, 아래팔은 나란히 앞으로 손바닥 아래. 머리부터 뒤꿈치까지 한 직선(어깨 높이는
+    // 위팔 길이만큼, 발목 0.1 — 10~13° 기울기), 발끝을 세워 발볼로 딛는다. 숨 쉬는 만큼만 움직인다. 모션캡처 'Plank' 는 팔을 편 하이 플랭크라 쓰지 않는다.
+    'plank': { base: 'lying', period: 4, still: true, pose: (u, C) => {
+      const S = C.pos(L + 'Arm'), E = C.pos(L + 'ForeArm'), l1 = Math.hypot(S.x - E.x, S.y - E.y, S.z - E.z);   // 위팔 길이 (남·여가 다르다)
+      const hy = 0.006 + l1, sn = Math.max(0.05, Math.min(0.35, (hy - 0.1) / 0.9)), cs = Math.sqrt(1 - sn * sn);   // 엉덩이 높이(팔꿈치가 바닥 위 6cm 에 오게) → 몸 기울기
+      const up = [0, sn, -cs], down = [0, -sn, cs], front = [0, -1, 0];
+      const arm = side => ({ ik: () => { const P = C.pos(side + 'Arm'); return [P.x, 0.045, P.z - 0.2]; }, bend: [0, -1, 0.2], palmTo: [0, -1, 0] });   // 손은 어깨 앞 바닥에 — 팔꿈치가 어깨 아래에 온다
+      return { root: { pos: [0, hy + 0.005 * Math.sin(u * Math.PI * 2), 0], up, front },
+        bones: { ...spineAll(up, N(0, sn - 0.1, -cs), front), [L + 'Arm']: arm(L), [R + 'Arm']: arm(R),
+          ...both(down, down, N(0, -0.62, 0.78)) } };                                                         // 발끝 세움 (발등 굽힘 30°쯤)
+    } },
     // 자유형: 엎드려 뜬 채 팔을 번갈아 — 물속에서 팔꿈치를 높게 두고 손으로 몸 아래를 지나 엉덩이까지 밀고(캐치→풀→푸시),
     // 물 밖으로 팔꿈치를 높게 들어 앞으로 되돌려 다시 넣는다. 되돌리는 팔 쪽 어깨가 올라오게 몸통이 40° 굴러가고, 숨은 왼팔을 되돌릴 때 왼쪽으로.
     // 다리는 뻗은 채 엉덩이에서 작게 찬다(발끝은 뻗고). 모션캡처 'Swimming' 은 평영처럼 보여 쓰지 않는다. (머리는 -Z 쪽, 물은 y 0.15)
@@ -327,8 +338,8 @@ const MOVE_3D = (() => {
       const foot = (x, bx) => ({ ik: [x, ROWER.foot[1], ROWER.foot[2]], bend: [bx, 1, 0.2] });
       return { root: { pos: [0, ROWER.seatY, hz], up, front },
         bones: { ...spineAll(trunk), [L + 'UpLeg']: foot(ROWER.foot[0], 0), [R + 'UpLeg']: foot(-ROWER.foot[0], 0), [L + 'Foot']: { aim: footFollow(L, [1, 0, 0], 66) }, [R + 'Foot']: { aim: footFollow(R, [1, 0, 0], 66) },   // 발판 위 발은 발등 쪽으로 살짝
-          [L + 'Arm']: { ik: [hand[0] + 0.3, hand[1], hand[2]], bend: [0.6, -0.3, -0.7], palmTo: [0, -1, 0] },           // 팔은 무릎 바깥으로
-          [R + 'Arm']: { ik: [hand[0] - 0.3, hand[1], hand[2]], bend: [-0.6, -0.3, -0.7], palmTo: [0, -1, 0] } } };
+          [L + 'Arm']: { ik: [hand[0] + 0.32, hand[1], hand[2]], bend: [0.6, -0.3, -0.7], palmTo: [0, -1, 0] },          // 팔은 무릎 바깥으로
+          [R + 'Arm']: { ik: [hand[0] - 0.32, hand[1], hand[2]], bend: [-0.6, -0.3, -0.7], palmTo: [0, -1, 0] } } };
     } },
   };
 
@@ -611,8 +622,9 @@ const MOVE_3D = (() => {
     smoothAndGray(lib, body);
     scene.add(body);
     body.updateMatrixWorld(true);
-    // GLTFLoader 는 뼈 이름의 ':' 를 지운다(mixamorig:Hips → mixamorigHips). 글자만 남겨 맞춘다.
-    const norm = n => String(n).replace(/[^A-Za-z]/g, '');
+    // GLTFLoader 는 뼈 이름의 ':' 를 지운다(mixamorig:Hips → mixamorigHips). 글자와 숫자만 남겨 맞춘다 —
+    // 숫자를 빼면 Spine·Spine1·Spine2 가 한 이름이 돼 척추 위쪽만 움직였다.
+    const norm = n => String(n).replace(/[^A-Za-z0-9]/g, '');
     const map = new Map(); const boneList = [];
     body.traverse(o => { if (o.isBone) { map.set(norm(o.name), o); boneList.push(o); } });
     const bones = { get: n => map.get(norm(n)) };

@@ -1658,12 +1658,20 @@
         <div class="measure-head">
           <div class="measure-badge">2</div>
           <div>
-            <div class="measure-name">다리를 펴고 앉아 손끝이 닿는 거리</div>
+            <div class="measure-name">앉아 앞으로 숙였을 때 손끝 위치를 측정하세요. (발끝 = 0cm)</div>
           </div>
-          <button type="button" class="move-thumb" data-move="sit-reach" onclick="openMoveSheet('sit-reach')" aria-label="다리를 펴고 앉아 손끝이 닿는 거리 동작 보기"><img src="/img/moves/sit-reach.svg" alt="" /></button>
+          <button type="button" class="move-thumb" data-move="sit-reach" onclick="openMoveSheet('sit-reach')" aria-label="앉아 앞으로 숙였을 때 손끝 위치 동작 보기"><img src="/img/moves/sit-reach.svg" alt="" /></button>
+        </div>
+        <div class="measure-desc" id="flexHelp">
+          <p>다리를 모아 곧게 펴고 앉은 뒤, 무릎을 편 상태에서 두 손을 앞으로 최대한 뻗으세요.</p>
+          <ul>
+            <li>발끝보다 <strong>5cm 더 나감 → +5cm</strong></li>
+            <li>발끝에 <strong>정확히 닿음 → 0cm</strong></li>
+            <li>발끝까지 <strong>5cm 부족함 → -5cm</strong></li>
+          </ul>
         </div>
         <div class="field-row">
-          <input class="field-input" id="flexInput" type="number" placeholder="예: 12" />
+          <input class="field-input" aria-describedby="flexHelp" id="flexInput" type="number" placeholder="예: 12" />
           <div class="field-unit">cm</div>
         </div>
       </div>
@@ -5360,7 +5368,7 @@ async function calcAge(){
   if (state.weight === null) need.push('몸무게');
 
   if (m === 'home') {
-    if (state.flexibility === null) need.push('다리를 펴고 앉아 손끝이 닿는 거리');
+    if (state.flexibility === null) need.push('앉아 앞으로 숙였을 때 손끝 위치');
     if (state.strength === null) need.push(strengthLabel());
   } else {
     if (num('bfpInput') === null && num('smmInput') === null) need.push('체지방률 또는 골격근량');
@@ -6317,7 +6325,7 @@ async function renderRecheck(){
    파일을 그 경로에 넣으면 코드 수정 없이 바로 보인다.
    12번(F5)은 여기에 MOVE_CATEGORY_MEDIA 를 덧붙여 같은 시트를 쓴다. */
 const MOVE_MEDIA = {
-  'sit-reach':   { svg: '/img/moves/sit-reach.svg',   gif: '/img/moves/sit-reach.gif',   이름: '다리를 펴고 앉아 손끝이 닿는 거리' },
+  'sit-reach':   { svg: '/img/moves/sit-reach.svg',   gif: '/img/moves/sit-reach.gif',   이름: '앉아 앞으로 숙였을 때 손끝 위치' },
   'situp':       { svg: '/img/moves/situp.svg',       gif: '/img/moves/situp.gif',       이름: '윗몸일으키기' },
   'jump':        { svg: '/img/moves/jump.svg',        gif: '/img/moves/jump.gif',        이름: '30초 제자리 점프' },
   'knee-pushup': { svg: '/img/moves/knee-pushup.svg', gif: '/img/moves/knee-pushup.gif', 이름: '30초 무릎 푸시업' },

@@ -1332,12 +1332,11 @@
         <div class="measure-head">
           <div class="measure-badge">2</div>
           <div>
-            <div class="measure-name">앉아 앞으로 숙였을 때 손끝 위치를 측정하세요. (발끝 = 0cm)</div>
+            <div class="measure-name">앉아 앞으로 숙였을 때 손끝 위치</div>
           </div>
           <button type="button" class="move-thumb" data-move="sit-reach" onclick="openMoveSheet('sit-reach')" aria-label="앉아 앞으로 숙였을 때 손끝 위치 동작 보기"><img src="/img/moves/sit-reach.svg" alt="" /></button>
         </div>
         <div class="measure-desc" id="flexHelp">
-          <p>다리를 모아 곧게 펴고 앉은 뒤, 무릎을 편 상태에서 두 손을 앞으로 최대한 뻗으세요.</p>
           <ul>
             <li>발끝보다 <strong>5cm 더 나감 → +5cm</strong></li>
             <li>발끝에 <strong>정확히 닿음 → 0cm</strong></li>
@@ -4095,7 +4094,7 @@ async function calcAge(){
   if (state.weight === null) need.push('몸무게');
 
   if (m === 'home') {
-    if (state.flexibility === null) need.push('앉아 앞으로 숙였을 때 손끝 위치');
+    if (state.flexibility === null) need.push('유연성');
     if (state.strength === null) need.push(strengthLabel());
   } else {
     if (num('bfpInput') === null && num('smmInput') === null) need.push('체지방률 또는 골격근량');

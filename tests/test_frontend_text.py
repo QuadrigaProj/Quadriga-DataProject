@@ -95,7 +95,7 @@ def test_홈_체력측정_항목_문구가_원문과_같다():
     html = _index()
     for s in [
         "나이 · 성별",
-        "다리를 펴고 앉아 손끝이 닿는 거리",
+        "앉아 앞으로 숙였을 때 손끝 위치",
         "윗몸일으키기",
         "키 · 몸무게",
         "30초 제자리 점프", "두 발 모아 제자리에서 최대한 빠르게",
@@ -104,6 +104,18 @@ def test_홈_체력측정_항목_문구가_원문과_같다():
     ]:
         assert s in html, s
     assert 'id="homeExtra">' in html                    # 홈 추가 3종이 기본으로 보인다(hidden 아님)
+
+
+def test_유연성_측정_기준과_누락_항목명():
+    """발끝 기준 부호 예시와 짧은 필수값 안내를 유지한다."""
+    html = _index()
+    for text in [
+        "발끝보다 <strong>5cm 더 나감 → +5cm</strong>",
+        "발끝에 <strong>정확히 닿음 → 0cm</strong>",
+        "발끝까지 <strong>5cm 부족함 → -5cm</strong>",
+        "if (state.flexibility === null) need.push('유연성');",
+    ]:
+        assert text in html
 
 
 def test_홈_체력등급_표시_영역이_있다():

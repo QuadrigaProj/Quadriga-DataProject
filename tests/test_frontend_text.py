@@ -49,8 +49,8 @@ def test_로그인_메인_버튼():
 
 def test_개인정보_안내():
     html = _index()
-    assert "<b>수집 정보 최소화</b>" in html
-    assert "닉네임과 체력 측정값만 받으며, 전화번호나 주소 등 개인정보는 요구하지 않습니다." in html
+    assert "<b>수집 정보 최소화</b>" not in html
+    assert "닉네임과 체력 측정값만 받으며, 전화번호나 주소 등 개인정보는 요구하지 않습니다." not in html
     assert "받는 정보는" not in html
     assert "소셜 계정에서도 가져오지 않아요" not in html
 
@@ -95,7 +95,7 @@ def test_홈_체력측정_항목_문구가_원문과_같다():
     html = _index()
     for s in [
         "나이 · 성별",
-        "앉아 앞으로 숙였을 때 손끝 위치",
+        "앉아 앞으로 숙였을 때 손끝 위치를 측정",
         "윗몸일으키기",
         "키 · 몸무게",
         "30초 제자리 점프", "두 발 모아 제자리에서 최대한 빠르게",
@@ -265,7 +265,10 @@ def test_컨디션_선택지는_몸이_무거운_날_하나만():
     assert "몸이 무거운 날" in html
     assert "toggleHeavy()" in html
     assert "heavy: heavyOn" in html
-    assert "아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요" in html
+    assert "아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요" not in html
+    assert 'id="routineDose"' in html
+    assert "function exerciseDose(" in html
+    assert "현재 운동 ${dose}" in html
 
 
 # ---------- F3 신체나이 재측정 (즉시) ----------

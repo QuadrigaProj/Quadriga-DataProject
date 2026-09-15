@@ -75,7 +75,7 @@ def test_강도_12주_3구간():
     assert rt.intensity_for("청소년", 3)["구간"] == "1-4"
     assert rt.intensity_for("청소년", 6)["구간"] == "5-8"
     assert rt.intensity_for("청소년", 11)["구간"] == "9-12"
-    # 청소년·성인 기본 설계상 수행량 점증
+    # 주차에 따라 기존 수행량이 증가한다
     assert rt.intensity_for("성인", 2)["반복"] == 10
     assert rt.intensity_for("성인", 10)["반복"] == 15
 
@@ -91,10 +91,11 @@ def test_체력_낮으면_시작_강도를_낮춘다():
     assert 낮음["반복"] <= 기본["반복"]
 
 
-def test_몸무거운날은_1세트_시간절반():
+def test_몸무거운날은_한세트감소_시간절반():
     hard = rt.intensity_for("어르신", 6, heavy=True)
     soft = rt.intensity_for("어르신", 6, heavy=False)
-    assert hard["세트"] == 1
+    assert hard["세트"] == max(1, soft["세트"] - 1)
+    assert hard["반복"] == soft["반복"]
     assert hard["시간초"] == round(soft["시간초"] / 2)
 
 

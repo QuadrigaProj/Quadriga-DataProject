@@ -360,7 +360,7 @@ def intensity_for(age_gbn: str, week: int, *, offset: int = 0, heavy: bool = Fal
     rnd = per_age.get("round")
     if heavy:
         hd = d["config"]["intensity"]["heavy_day"]
-        sets = hd["sets"]                       # 모든 세트 1세트
+        sets = max(1, sets - 1)
         sec = round(sec * hd["time_ratio"])     # 시간형 운동은 시간 절반
     out = {"주차": int(week), "구간": bands[idx], "세트": sets, "시간초": sec}
     if reps is not None:

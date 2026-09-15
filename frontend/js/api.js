@@ -46,6 +46,7 @@ const API = (() => {
     },
 
     fitnessAge: (m) => post('/fitness-age', m),
+    fitnessAgeEta: (m) => post('/fitness-age/eta', m),       // 목표 체력나이에 언제 닿을지 (추정)
     recheck: (before, after) => post('/recheck', { 이전: before, 현재: after }),
     routine: (q) => call('/routine?' + qs(q)),
     videoRoutine: (q) => call('/video-routine?' + qs(q)),

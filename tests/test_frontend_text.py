@@ -3307,3 +3307,20 @@ def test_자세히_알아보기가_못_받으면_까닭을_띄운다():
     assert "lastPeriodError = e.message || '';" in 받기
     상세 = html.split("async function fetchDetail(){")[1].split("\n}")[0]
     assert "lastPeriodError = '';" in 상세 and "showToast(lastPeriodError || `" in 상세
+
+
+def test_홈_게이지_아래에_목표까지_몇_주인지_추정을_적는다():
+    """"얼마 후에 목표치에 도달할 수 있는지도 알 수 있어?" — 서버 추정(backend/projection.py)을 게이지 아래 한 줄로. 추정이라고 적는다."""
+    html = _index()
+    assert '<div class="gauge-eta" id="gaugeEta" hidden></div>' in html
+    본문 = html.split("async function refreshEta(){")[1].split("\n}")[0]
+    assert "const 재료 = { ...measurement(), target: 목표 };" in 본문            # /fitness-age 와 같은 값 + 목표
+    assert "API.fitnessAgeEta(재료)" in 본문 and "etaCache.열쇠 === 열쇠" in 본문   # 같은 측정·목표면 다시 묻지 않는다
+    글 = html.split("function etaText(r, 목표){")[1].split("\n}")[0]
+    assert "(추정)" in 글 and "이미 닿았어요" in 글 and "1년 안에는 어려워요" in 글
+    홈 = html.split("async function loadHome(){")[1].split("\n}")[0]
+    assert "refreshEta();" in 홈                                                  # 홈에 들어올 때 (CRLF 체크아웃에서도 맞게 줄바꿈을 낀 문자열은 쓰지 않는다)
+    커밋 = html.split("function commitResult(){")[1].split("\n}")[0]
+    assert "refreshEta();" in 커밋                                                # 새로 쟀을 때
+    api = Path(__file__).resolve().parents[1].joinpath("frontend", "js", "api.js").read_text(encoding="utf-8")
+    assert "fitnessAgeEta: (m) => post('/fitness-age/eta', m)," in api

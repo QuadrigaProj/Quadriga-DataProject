@@ -1014,6 +1014,8 @@
                  font-size:12.5px; color:var(--muted); }
   .gauge-legend > div{ white-space:nowrap; }
   .gauge-legend b{ color:var(--ink); }
+  .gauge-eta{ margin-top:8px; font-size:12px; color:var(--muted); line-height:1.5; }   /* 목표까지 몇 주 — 추정이라고 적는다 */
+  .gauge-eta b{ color:var(--pine-deep); }
   .sw{ display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:5px; }
   .sw-green{ background:#12B76A; }
   .sw-track{ background:#E4DACA; }
@@ -1883,6 +1885,7 @@
           <div><i class="sw sw-track"></i>처음 <b id="gaugeReal">—</b></div>
           <div id="gaugeAgeRow"><i class="sw sw-tick"></i>실제 <b id="gaugeAge">—</b></div>
         </div>
+        <div class="gauge-eta" id="gaugeEta" hidden></div>
       </div>
     </div>
 
@@ -2625,6 +2628,7 @@ function commitResult(){
   appendMeasureLog();
   saveProfile();
   paintGauges();
+  refreshEta();                   // 새로 쟀으니 목표까지 몇 주도 다시
   // 첫 점검에는 띄우지 않는다. 견줄 지난 기록이 없어 '어려졌다' 가 성립하지 않는다.
   if (!첫점검) showQuestClear(지난번, state.result?.체력나이);
 }
@@ -5685,6 +5689,34 @@ async function loadHome(){
   }
   renderDaypartRow();
   renderPickedCard();
+  refreshEta();                    // 목표까지 몇 주 — 기다리지 않는다
+}
+
+/* 목표 체력나이에 언제 닿을지 — 서버(backend/projection.py)가 지금 측정값에 12주 향상 폭을 얹어 추정한다.
+   같은 측정·같은 목표면 다시 묻지 않는다. 추정이라 '추정' 이라고 적고, 재측정하면 다시 잡힌다. */
+let etaCache = { 열쇠: null, 값: null };
+async function refreshEta(){
+  const el = $('gaugeEta');
+  if (!el) return;
+  const 목표 = targetAge();
+  if (state.result?.체력나이 == null || !목표 || !state.ageGbn) { el.hidden = true; return; }
+  const 재료 = { ...measurement(), target: 목표 };
+  const 열쇠 = JSON.stringify(재료);
+  let r = etaCache.열쇠 === 열쇠 ? etaCache.값 : null;
+  if (!r) {
+    try { r = await API.fitnessAgeEta(재료); } catch (e) { el.hidden = true; return; }
+    etaCache = { 열쇠, 값: r };
+  }
+  el.hidden = false;
+  el.innerHTML = etaText(r, 목표);
+}
+function etaText(r, 목표){
+  if (!r || r.가능 === false) return esc(r?.안내 || '');
+  if (r.이미도달) return `목표 ${목표}세에 <b>이미 닿았어요</b> · 다음 측정으로 확인해요`;
+  const 꼬리 = ` · ${esc(r.가정)} <span class="rec-start-note">(추정)</span>`;
+  if (r.빠르면주 == null) return `목표 ${목표}세까지 <b>1년 안에는 어려워요</b> · 목표를 가깝게 잡거나 용량을 올려요${꼬리}`;
+  if (r.늦으면주 == null) return `목표 ${목표}세까지 <b>빠르면 ${r.빠르면주}주</b>, 느리면 1년 넘게${꼬리}`;
+  return `목표 ${목표}세까지 <b>${r.빠르면주}~${r.늦으면주}주</b>${꼬리}`;
 }
 
 /* 고른 종목 칸 — 사용자가 고른 종목(수영·요가 같은 것, 출처 '종목')은 당일 루틴에서 빼 따로 둔다.

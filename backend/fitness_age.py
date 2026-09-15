@@ -12,6 +12,7 @@ data/processed/ (없으면 data/sample/) 의 fitness_distribution.csv 의 연령
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,17 @@ except ImportError:                      # backend/ 안에서 직접 실행할 �
     from paths import find_data
 
 BMI_IDEAL = 22.0
+
+
+def _given(v) -> bool:
+    """사용자가 실제로 잰 값인지 — None 은 물론, 어쩌다 섞여 들어온 NaN 도 '안 잰 것'으로 본다.
+
+    프런트는 빈 입력칸을 null 로 보내지만(placeholder 는 절대 값으로 쓰지 않는다),
+    그래도 이 함수를 거치지 않은 값이 NaN 으로 들어오면 아래 보간 계산이 조용히
+    NaN 을 퍼뜨릴 수 있다 — 있지도 않은 측정을 있는 것처럼 계산하지 않기 위한
+    마지막 방어선이다.
+    """
+    return v is not None and not (isinstance(v, float) and math.isnan(v))
 
 # 연령구간이 2개뿐이면 선형보간이 양 끝값에 붙어버려 누구나 같은 값이 나온다.
 MIN_BANDS = 3
@@ -152,34 +164,34 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
     """자가 측정 항목 → 체력나이. 없는 항목은 평균에서 제외한다."""
     parts: dict[str, float] = {}
 
-    if flexibility is not None:
+    if _given(flexibility):
         a = convert_age(d, age_gbn, sex, "앉아윗몸앞으로굽히기", flexibility)
         if a is not None:
             parts["유연성"] = a
 
-    if strength is not None:
+    if _given(strength):
         label, item = POWER_ITEM.get(age_gbn, DEFAULT_POWER)
         a = convert_age(d, age_gbn, sex, item, strength)
         if a is not None:
             parts[label] = a
 
-    if grip is not None:
+    if _given(grip):
         a = convert_age(d, age_gbn, sex, GRIP_ITEM, grip)
         if a is not None:
             parts["근력"] = a
 
     cardio = CARDIO_ITEM.get(age_gbn)
-    if endurance is not None and cardio:
+    if _given(endurance) and cardio:
         a = convert_age(d, age_gbn, sex, cardio, endurance)
         if a is not None:
             parts["심폐지구력"] = a
 
-    if bmi is not None:
+    if _given(bmi):
         a = u_shaped_age(d, age_gbn, sex, "BMI", bmi)
         if a is not None:
             parts["체성분"] = a
 
-    if body_fat is not None:
+    if _given(body_fat):
         # 체지방률은 높을수록 불리하고 나이 들수록 오르는 단조 항목 → 곡선에 직접 대조한다.
         a = convert_age(d, age_gbn, sex, "체지방률", body_fat)
         if a is not None:                        # 체지방률이 있으면 체성분을 이 값으로 대체(더 직접적)
@@ -223,27 +235,31 @@ def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,
 def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
                 flexibility=None, strength=None, bmi=None,
                 grip=None, endurance=None) -> dict:
-    """측정한 항목별로 또래 비교를 붙인다."""
+    """측정한 항목별로 또래 비교를 붙인다.
+
+    각 인자가 실제로 온 것(_given)일 때만 그 항목의 또래비교를 만든다 —
+    안 잰 항목은 이유 없이 상위/하위 %·또래 중앙값이 나오면 안 된다.
+    """
     out = {}
-    if flexibility is not None:
+    if _given(flexibility):
         r = peer_stats(d, age_gbn, sex, age, "앉아윗몸앞으로굽히기", flexibility)
         if r:
             out["유연성"] = r
-    if strength is not None:
+    if _given(strength):
         label, item = POWER_ITEM.get(age_gbn, DEFAULT_POWER)
         r = peer_stats(d, age_gbn, sex, age, item, strength)
         if r:
             out[label] = r
-    if grip is not None:
+    if _given(grip):
         r = peer_stats(d, age_gbn, sex, age, GRIP_ITEM, grip)
         if r:
             out["근력"] = r
     cardio = CARDIO_ITEM.get(age_gbn)
-    if endurance is not None and cardio:
+    if _given(endurance) and cardio:
         r = peer_stats(d, age_gbn, sex, age, cardio, endurance)
         if r:
             out["심폐지구력"] = r
-    if bmi is not None:
+    if _given(bmi):
         # BMI 는 U자형이라 "상위 몇 %" 가 성립하지 않는다.
         # 백분위 없이 또래 중앙값과의 차이만 준다.
         r = peer_stats(d, age_gbn, sex, age, "BMI", bmi)

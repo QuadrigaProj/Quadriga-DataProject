@@ -89,9 +89,16 @@ ERROR_HINT = {
 
 
 def hint(err: dict | None) -> str:
-    """사용자에게 보여 줄 한 줄. 모르는 코드면 일반 문구로 둔다."""
+    """사용자에게 보여 줄 한 줄.
+
+    카카오가 준 코드와 문구를 뒤에 붙인다. 모르는 코드일 때 "실패했어요" 만
+    보여 주면, 붙이는 사람도 무엇을 고쳐야 할지 알 수 없다.
+    """
     e = (err or {}).get("error") or {}
-    return ERROR_HINT.get(e.get("code"), "카카오페이 결제를 시작하지 못했어요.")
+    코드, 메시지 = e.get("code"), e.get("message")
+    앞 = ERROR_HINT.get(코드, "카카오페이 결제를 시작하지 못했어요.")
+    꼬리 = " · ".join(str(x) for x in (코드, 메시지) if x not in (None, ""))
+    return f"{앞} (카카오 {꼬리})" if 꼬리 else 앞
 
 
 def _headers() -> dict:

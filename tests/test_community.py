@@ -815,3 +815,516 @@ def test_댓글에도_글쓴이_아이디가_실린다():
     댓글 = a.get(f"/community/posts/{pid}").json()["댓글"][0]
     assert 댓글["작성자"] == "나" and 댓글["작성자아이디"] == hb
 
+
+# ---------- 내가 쓴 것 고치기·지우기 ----------
+
+def test_내_글은_고칠_수_있다():
+    a = _login(app, "a@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "스쿼트 3세트"}).json()["id"]
+    r = a.put(f"/community/posts/{pid}", json={"body": "스쿼트 5세트로 고침"})
+    assert r.status_code == 200
+    글 = r.json()
+    assert 글["본문"] == "스쿼트 5세트로 고침"
+    assert 글["수정시각"]                      # 고친 표시가 남는다
+    assert a.get("/community/posts").json()["posts"][0]["본문"] == "스쿼트 5세트로 고침"
+
+
+def test_남의_글은_못_고치고_못_지운다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    pid = a.post("/community/posts", json={"body": "내 글"}).json()["id"]
+    assert b.put(f"/community/posts/{pid}", json={"body": "가로채기"}).status_code == 403
+    assert b.delete(f"/community/posts/{pid}").status_code == 403
+    assert a.get(f"/community/posts/{pid}").json()["본문"] == "내 글"
+
+
+def test_빈_내용으로는_못_고친다():
+    a = _login(app, "a@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "무언가"}).json()["id"]
+    assert a.put(f"/community/posts/{pid}", json={"body": "   "}).status_code == 400
+
+
+def test_내_댓글은_고치고_지울_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    pid = a.post("/community/posts", json={"body": "같이 뛰실 분"}).json()["id"]
+    cid = b.post(f"/community/posts/{pid}/comments", json={"body": "저요"}).json()["id"]
+
+    assert b.put(f"/community/comments/{cid}", json={"body": "저요! 내일 가능"}).status_code == 200
+    댓글 = a.get(f"/community/posts/{pid}").json()["댓글"][0]
+    assert 댓글["본문"] == "저요! 내일 가능" and 댓글["수정시각"]
+
+    assert a.put(f"/community/comments/{cid}", json={"body": "가로채기"}).status_code == 403
+    assert a.delete(f"/community/comments/{cid}").status_code == 403
+    assert b.delete(f"/community/comments/{cid}").status_code == 200
+    assert a.get(f"/community/posts/{pid}").json()["댓글"] == []
+
+
+def test_글을_지우면_댓글과_이모지도_사라진다():
+    """이모지에는 글을 가리키는 외래키가 없다. 남으면 새 글에 붙는다."""
+    a = _login(app, "a@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "지울 글"}).json()["id"]
+    cid = a.post(f"/community/posts/{pid}/comments", json={"body": "댓글"}).json()["id"]
+    a.post("/community/reactions", json={"target_type": "post", "target_id": pid, "emoji": "👍"})
+    a.post("/community/reactions", json={"target_type": "comment", "target_id": cid, "emoji": "🔥"})
+    a.delete(f"/community/posts/{pid}")
+
+    with auth.db() as con:
+        남은 = con.execute("SELECT COUNT(*) c FROM community_reactions").fetchone()["c"]
+        댓글 = con.execute("SELECT COUNT(*) c FROM community_comments").fetchone()["c"]
+    assert 남은 == 0 and 댓글 == 0
+
+
+# ---------- 채팅 메시지 ----------
+
+def test_내_메시지는_고치고_지울_수_있다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    b.post(f"/community/rooms/{rid}/join")
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "7시에 만나요"}).json()["messages"][-1]["id"]
+
+    r = a.put(f"/community/messages/{mid}", json={"body": "8시에 만나요"})
+    assert r.status_code == 200
+    m = r.json()["messages"][-1]
+    assert m["본문"] == "8시에 만나요" and m["수정시각"]
+
+    assert b.put(f"/community/messages/{mid}", json={"body": "가로채기"}).status_code == 403
+    assert b.delete(f"/community/messages/{mid}").status_code == 403
+    assert a.delete(f"/community/messages/{mid}").status_code == 200
+    assert b.get(f"/community/rooms/{rid}/messages").json()["messages"] == []
+
+
+def test_채팅_메시지에_이모지를_남긴다():
+    """상대 글에도 남길 수 있다 — 내 글만 되면 쓸 데가 없다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    b.post(f"/community/rooms/{rid}/join")
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "오늘 10km"}).json()["messages"][-1]["id"]
+
+    r = b.post("/community/reactions",
+               json={"target_type": "message", "target_id": mid, "emoji": "🔥"})
+    assert r.status_code == 200 and r.json()["반응"]["counts"]["🔥"] == 1
+    # 목록에도 실린다
+    m = a.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]
+    assert m["반응"]["counts"]["🔥"] == 1 and m["반응"]["mine"] == []
+    assert b.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]["반응"]["mine"] == ["🔥"]
+
+
+def test_남의_방_메시지에는_이모지를_못_남긴다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "비밀 모임"}).json()["id"]
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "우리끼리"}).json()["messages"][-1]["id"]
+    r = b.post("/community/reactions",
+               json={"target_type": "message", "target_id": mid, "emoji": "🔥"})
+    assert r.status_code == 403
+
+
+def test_메시지를_지우면_이모지도_사라진다():
+    a = _login(app, "a@x.com", "가")
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "지울 말"}).json()["messages"][-1]["id"]
+    a.post("/community/reactions", json={"target_type": "message", "target_id": mid, "emoji": "👍"})
+    a.delete(f"/community/messages/{mid}")
+    with auth.db() as con:
+        남은 = con.execute("SELECT COUNT(*) c FROM community_reactions").fetchone()["c"]
+    assert 남은 == 0
+
+
+def test_메시지_목록은_최근_것을_준다():
+    """예전에는 앞에서부터 잘라서, 대화가 길어지면 맨 처음 것만 보였다."""
+    a = _login(app, "a@x.com", "가")
+    rid = a.post("/community/rooms", json={"name": "수다방"}).json()["id"]
+    for i in range(12):
+        a.post(f"/community/rooms/{rid}/messages", json={"body": f"{i}번째"})
+    본것 = [m["본문"] for m in
+          community.messages(1, rid, 0, limit=5)]
+    assert 본것 == ["7번째", "8번째", "9번째", "10번째", "11번째"]
+
+
+def test_고치기_지우기도_로그인이_필요하다():
+    c = TestClient(app)
+    assert c.put("/community/posts/1", json={"body": "x"}).status_code == 401
+    assert c.put("/community/comments/1", json={"body": "x"}).status_code == 401
+    assert c.delete("/community/comments/1").status_code == 401
+    assert c.put("/community/messages/1", json={"body": "x"}).status_code == 401
+    assert c.delete("/community/messages/1").status_code == 401
+
+
+def test_공유하는_기록은_너무_크면_막는다():
+    """항목별 지표와 그날 운동까지 담아도 한 줄에 들어갈 크기다."""
+    a = _login(app, "a@x.com", "가")
+    큰것 = {"요약": "x", "오늘운동": [{"이름": "가" * 100, "값": "나" * 100} for _ in range(50)]}
+    r = a.post("/community/posts", json={"kind": "record", "body": "기록", "record": 큰것})
+    assert r.status_code == 400
+
+    작은것 = {"요약": "추정 체력나이 28세", "항목별": {"근력": 27, "심폐지구력": 30},
+            "오늘운동": [{"이름": "스쿼트", "값": "3세트"}]}
+    r2 = a.post("/community/posts", json={"kind": "record", "body": "", "record": 작은것})
+    assert r2.status_code == 200
+    글 = a.get("/community/posts").json()["posts"][0]
+    assert 글["기록"]["항목별"]["근력"] == 27
+    assert 글["기록"]["오늘운동"][0]["이름"] == "스쿼트"
+
+
+# ---------- 채팅 답장 ----------
+
+def _방과_메시지(a, b=None):
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    if b is not None:
+        b.post(f"/community/rooms/{rid}/join")
+    mid = a.post(f"/community/rooms/{rid}/messages",
+                 json={"body": "7시에 만나요"}).json()["messages"][-1]["id"]
+    return rid, mid
+
+
+def test_답장도_그냥_메시지다():
+    """따로 매달아 두면 대화가 시간순으로 읽히지 않는다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid, mid = _방과_메시지(a, b)
+    b.post(f"/community/rooms/{rid}/messages", json={"body": "저 늦어요", "reply_to": mid})
+    a.post(f"/community/rooms/{rid}/messages", json={"body": "천천히 오세요"})
+
+    본것 = a.get(f"/community/rooms/{rid}/messages").json()["messages"]
+    # 답장이 목록 한가운데 그대로 끼어 있다 — 적은 차례 그대로다
+    assert [m["본문"] for m in 본것] == ["7시에 만나요", "저 늦어요", "천천히 오세요"]
+    assert 본것[1]["답장"]["id"] == mid
+    assert 본것[1]["답장"]["작성자"] == "가"
+    assert 본것[1]["답장"]["본문"] == "7시에 만나요"
+    assert 본것[0]["답장"] is None and 본것[2]["답장"] is None
+
+
+def test_답장도_고치고_지우고_이모지를_단다():
+    """답장이 메시지라서 따로 만들 것이 없다."""
+    a = _login(app, "a@x.com", "가")
+    rid, mid = _방과_메시지(a)
+    rid2 = a.post(f"/community/rooms/{rid}/messages",
+                  json={"body": "혼잣말", "reply_to": mid}).json()["messages"][-1]["id"]
+    assert a.put(f"/community/messages/{rid2}", json={"body": "고친 혼잣말"}).status_code == 200
+    assert a.post("/community/reactions",
+                  json={"target_type": "message", "target_id": rid2,
+                        "emoji": "👍"}).status_code == 200
+    assert a.delete(f"/community/messages/{rid2}").status_code == 200
+
+
+def test_다른_방_글에는_답장할_수_없다():
+    """그 방 사람만 볼 수 있는 글이다."""
+    a = _login(app, "a@x.com", "가")
+    rid, mid = _방과_메시지(a)
+    다른방 = a.post("/community/rooms", json={"name": "다른 방"}).json()["id"]
+    r = a.post(f"/community/rooms/{다른방}/messages",
+               json={"body": "엉뚱한 답장", "reply_to": mid})
+    assert r.status_code == 404
+
+
+def test_원글을_지워도_답장은_남는다():
+    """원글이 없어졌다는 이유로 남의 글까지 지울 수는 없다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    rid, mid = _방과_메시지(a, b)
+    b.post(f"/community/rooms/{rid}/messages", json={"body": "저 늦어요", "reply_to": mid})
+    a.delete(f"/community/messages/{mid}")
+
+    본것 = b.get(f"/community/rooms/{rid}/messages").json()["messages"]
+    assert [m["본문"] for m in 본것] == ["저 늦어요"]
+    assert 본것[0]["답장"] is None          # 가리킬 원글이 없으니 머리말도 없다
+
+
+def test_예전_댓글은_메시지로_옮겨진다():
+    """따로 두던 자리를 없애면서, 이미 달아 둔 댓글이 사라지면 안 된다."""
+    a = _login(app, "a@x.com", "가")
+    rid, mid = _방과_메시지(a)
+    with auth.db() as con:
+        con.execute(
+            "INSERT INTO chat_replies (message_id, user_id, body, created_at)"
+            " VALUES (?,?,?,?)", (mid, 1, "예전에 단 댓글", 1757000000))
+    community.init_db()          # 옮겨 담기가 여기서 돈다
+
+    본것 = a.get(f"/community/rooms/{rid}/messages").json()["messages"]
+    옮긴것 = [m for m in 본것 if m["본문"] == "예전에 단 댓글"]
+    assert len(옮긴것) == 1 and 옮긴것[0]["답장"]["id"] == mid
+    with auth.db() as con:
+        assert con.execute("SELECT COUNT(*) c FROM chat_replies").fetchone()["c"] == 0
+    community.init_db()          # 두 번 돌아도 그대로다
+    assert len([m for m in a.get(f"/community/rooms/{rid}/messages").json()["messages"]
+                if m["본문"] == "예전에 단 댓글"]) == 1
+
+
+# ---------- 글 공개 범위 ----------
+
+def _서로친구(a, b):
+    ha = a.get("/community/me/handle").json()["아이디"]
+    hb = b.get("/community/me/handle").json()["아이디"]
+    a.post("/community/friends", json={"handle": hb})
+    b.post("/community/friends", json={"handle": ha})
+    return ha, hb
+
+
+def test_전체_공개는_누구나_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    a.post("/community/posts", json={"body": "아무나 보세요", "audience": "all"})
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["아무나 보세요"]
+
+
+def test_친구_공개는_친구만_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    _서로친구(a, b)
+    pid = a.post("/community/posts",
+                 json={"body": "친구만", "audience": "friends"}).json()["id"]
+
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["친구만"]
+    assert c.get("/community/posts").json()["posts"] == []
+    # 남남은 글이 있다는 것도 알 수 없다
+    assert c.get(f"/community/posts/{pid}").status_code == 404
+    assert b.get(f"/community/posts/{pid}").status_code == 200
+    # 내 글은 늘 보인다
+    assert a.get(f"/community/posts/{pid}").json()["공개범위"] == "friends"
+
+
+def test_한쪽만_신청한_사이는_친구가_아니다():
+    """친구 신청을 걸어 두기만 해도 보이면, 아무나 신청해서 볼 수 있다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    b.post("/community/friends", json={"handle": ha})      # 나 → 가 만 걸어 둔 상태
+    a.post("/community/posts", json={"body": "친구만", "audience": "friends"})
+    assert b.get("/community/posts").json()["posts"] == []
+
+
+def test_고른_친구만_본다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    c = _login(app, "c@x.com", "다")
+    ha, hb = _서로친구(a, b)
+    _서로친구(a, c)
+    hc = c.get("/community/me/handle").json()["아이디"]
+
+    a.post("/community/posts",
+           json={"body": "너한테만", "audience": "chosen", "to": [hb]})
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["너한테만"]
+    assert c.get("/community/posts").json()["posts"] == []   # 친구지만 안 골랐다
+
+
+def test_친구가_아닌_사람은_고를_수_없다():
+    """친구가 아닌 사람을 담아 두면, 나중에 친구가 되는 순간
+    예전 글까지 한꺼번에 보이게 된다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    r = a.post("/community/posts",
+               json={"body": "너한테만", "audience": "chosen", "to": [hb]})
+    assert r.status_code == 400
+    assert a.put("/community/share/chosen", json={"handles": [hb]}).status_code == 400
+
+
+def test_아무도_안_고르면_나만_본다():
+    """'고른 친구' 인데 비어 있으면 아무나 보이는 쪽으로 새지 않는다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    _서로친구(a, b)
+    a.post("/community/posts", json={"body": "혼잣말", "audience": "chosen", "to": []})
+    assert b.get("/community/posts").json()["posts"] == []
+    assert [p["본문"] for p in a.get("/community/posts").json()["posts"]] == ["혼잣말"]
+
+
+def test_자주_고르는_친구를_기억한다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha, hb = _서로친구(a, b)
+    assert a.put("/community/share/chosen",
+                 json={"handles": [hb]}).json()["고른친구"][0]["아이디"] == hb
+    assert a.get("/community/share/chosen").json()["고른친구"][0]["닉네임"] == "나"
+    # to 를 안 주면 기억해 둔 묶음을 쓴다
+    a.post("/community/posts", json={"body": "기억한 사람들에게", "audience": "chosen"})
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["기억한 사람들에게"]
+
+
+def test_친구가_아니게_되면_묶음에서_빠진다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha, hb = _서로친구(a, b)
+    a.put("/community/share/chosen", json={"handles": [hb]})
+    a.request("DELETE", f"/community/friends/{hb}")
+    assert a.get("/community/share/chosen").json()["고른친구"] == []
+
+
+def test_예전_글은_전체_공개로_읽는다():
+    """그때는 전체 공개뿐이었다. 값이 없다고 숨겨 버리면 글이 사라진다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    a.post("/community/posts", json={"body": "예전 글"})
+    with auth.db() as con:
+        con.execute("UPDATE community_posts SET audience=NULL")
+    assert [p["본문"] for p in b.get("/community/posts").json()["posts"]] == ["예전 글"]
+
+
+def test_기록_공유는_어느_날_기록인지_적는다():
+    a = _login(app, "a@x.com", "가")
+    r = a.post("/community/posts", json={
+        "kind": "record", "body": "", "record": {"요약": "9월 8일 체력나이 28세"},
+        "record_date": "2026-09-08"}).json()
+    assert r["기록날짜"] == "2026-09-08"
+    assert a.get("/community/posts").json()["posts"][0]["기록날짜"] == "2026-09-08"
+
+
+def test_날짜_모양이_아니면_막는다():
+    a = _login(app, "a@x.com", "가")
+    assert a.post("/community/posts", json={
+        "kind": "record", "record": {"요약": "x"},
+        "record_date": "어제"}).status_code == 422
+
+
+# ---------- 앱 내 아이디 ----------
+
+def test_아이디는_12자_대소문자와_숫자다():
+    """이메일을 식별자로 쓰면 가입 여부가 새어 나가고, 길어서 주고받기도 어렵다."""
+    assert community.HANDLE_LEN == 12
+    assert set("ABCXYZabcxyz0123456789") <= set(community.HANDLE_ALPHABET)
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    assert len(h) == 12
+    assert set(h) <= set(community.HANDLE_ALPHABET)
+
+
+def test_아이디는_대소문자를_구분한다():
+    """눕혀서 찾으면 'Ab1' 과 'ab1' 이 같은 사람이 된다."""
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    뒤집기 = h.swapcase()
+    assert 뒤집기 != h
+    assert a.get(f"/community/users/{h}").status_code == 200
+    assert a.get(f"/community/users/{뒤집기}").status_code == 404
+
+
+def test_예전_6자_아이디도_그대로_찾는다():
+    """아이디는 한 번 발급하면 고정이다. 규칙이 바뀌어도 옛 아이디는 살아 있어야 한다."""
+    a = _login(app, "a@x.com", "가")
+    a.get("/community/me/handle")
+    with auth.db() as con:
+        con.execute("UPDATE user_handles SET handle='abc123'")
+    assert a.get("/community/users/abc123").json()["닉네임"] == "가"
+
+
+def test_아이디는_바꾸는_길이_없다():
+    """마음대로 바꿀 수 없어야 한다 — 고치는 엔드포인트를 두지 않는다."""
+    a = _login(app, "a@x.com", "가")
+    h = a.get("/community/me/handle").json()["아이디"]
+    assert a.put("/community/me/handle", json={"handle": "newone"}).status_code in (404, 405)
+    assert a.post("/community/me/handle", json={"handle": "newone"}).status_code in (404, 405)
+    assert a.get("/community/me/handle").json()["아이디"] == h
+
+
+def test_한_번_발급하면_다시_불러도_같다():
+    a = _login(app, "a@x.com", "가")
+    첫 = a.get("/community/me/handle").json()["아이디"]
+    assert a.get("/community/me/handle").json()["아이디"] == 첫
+
+
+def test_사람마다_아이디가_다르다():
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    assert (a.get("/community/me/handle").json()["아이디"]
+            != b.get("/community/me/handle").json()["아이디"])
+
+
+def test_채팅_메시지에도_글쓴이_아이디가_실린다():
+    """프로필을 열려면 아이디가 있어야 한다. 닉네임은 겹칠 수 있다."""
+    a = _login(app, "a@x.com", "가")
+    b = _login(app, "b@x.com", "나")
+    ha = a.get("/community/me/handle").json()["아이디"]
+    rid = a.post("/community/rooms", json={"name": "달리기"}).json()["id"]
+    b.post(f"/community/rooms/{rid}/join")
+    a.post(f"/community/rooms/{rid}/messages", json={"body": "7시에 만나요"})
+
+    m = b.get(f"/community/rooms/{rid}/messages").json()["messages"][-1]
+    assert m["작성자"] == "가" and m["작성자아이디"] == ha
+    # 그 아이디로 프로필을 열 수 있어야 한다
+    assert b.get(f"/community/users/{m['작성자아이디']}").json()["닉네임"] == "가"
+
+
+# ---------- 안 읽은 메시지 ----------
+
+def _room(c, rid: int) -> dict:
+    """그 사람 눈에 보이는 방 한 줄."""
+    방들 = c.get("/community/rooms").json()["rooms"]
+    return next(x for x in 방들 if x["id"] == rid)
+
+def test_남이_쓴_글만_안_읽은_것으로_센다():
+    """내가 쓴 글은 쓰는 순간 읽은 것이다. 세면 늘 안 읽은 것이 남는다."""
+    가 = _login(app, "un1@x.com", "가")
+    나 = _login(app, "un2@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "안읽음방"}).json()["id"]
+    나.post(f"/community/rooms/{rid}/join")
+
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "첫 글"})
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "둘째 글"})
+
+    내방 = _room(나, rid)
+    assert 내방["안읽음"] == 2
+    # 글쓴이 쪽은 0 이다 — 자기 글이 안 읽은 것으로 잡히면 안 된다
+    assert _room(가, rid)["안읽음"] == 0
+
+
+def test_방을_열어_보면_안_읽은_수가_0_이_된다():
+    가 = _login(app, "un3@x.com", "가")
+    나 = _login(app, "un4@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "읽음방"}).json()["id"]
+    나.post(f"/community/rooms/{rid}/join")
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "안녕"})
+    assert _room(나, rid)["안읽음"] == 1
+
+    r = 나.get(f"/community/rooms/{rid}/messages").json()
+    assert r["읽은자리"] > 0
+    assert _room(나, rid)["안읽음"] == 0
+
+    # 그 뒤에 온 글은 다시 안 읽은 것이 된다
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "또 왔어요"})
+    assert _room(나, rid)["안읽음"] == 1
+
+
+def test_읽은_자리를_뒤로_되돌리지_않는다():
+    """예전 글을 다시 봤다고 안 읽은 수가 늘면 읽지도 않은 글이 생긴 셈이다."""
+    가 = _login(app, "un5@x.com", "가")
+    나 = _login(app, "un6@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "되돌림방"}).json()["id"]
+    나.post(f"/community/rooms/{rid}/join")
+    for i in range(3):
+        가.post(f"/community/rooms/{rid}/messages", json={"body": f"글 {i}"})
+    나.get(f"/community/rooms/{rid}/messages")
+    assert _room(나, rid)["안읽음"] == 0
+
+    # after 로 앞쪽만 다시 받아 봐도 뒤로 가지 않는다
+    나.get(f"/community/rooms/{rid}/messages", params={"after": 0})
+    assert _room(나, rid)["안읽음"] == 0
+
+
+def test_안_들어간_방에는_안_읽음이_없다():
+    """아직 내 대화가 아니다."""
+    가 = _login(app, "un7@x.com", "가")
+    나 = _login(app, "un8@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "구경방"}).json()["id"]
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "안녕"})
+    방 = _room(나, rid)
+    assert 방["참여중"] is False
+    assert 방["안읽음"] == 0
+    assert 방["메시지수"] == 1        # 전체 수는 그대로 보인다
+
+
+def test_들어가기_전_글은_안_읽은_것으로_잡힌다():
+    """가입한 뒤 처음 열 때까지는 못 본 글이 맞다."""
+    가 = _login(app, "un9@x.com", "가")
+    나 = _login(app, "un10@x.com", "나")
+    rid = 가.post("/community/rooms", json={"name": "늦게방"}).json()["id"]
+    가.post(f"/community/rooms/{rid}/messages", json={"body": "먼저 온 글"})
+    나.post(f"/community/rooms/{rid}/join")
+    assert _room(나, rid)["안읽음"] == 1

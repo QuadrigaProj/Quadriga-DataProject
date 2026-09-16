@@ -83,8 +83,11 @@ const MOVE_3D = (() => {
     return { 'mixamorig:Spine': e, 'mixamorig:Spine1': e, 'mixamorig:Spine2': e, 'mixamorig:Neck': h, 'mixamorig:Head': h };
   };
   // ik 목표는 함수로 줄 수 있다 — 몸통과 다른 팔이 자리 잡은 뒤(2단계)에 계산된다
-  const handsOnHips = (C, y = 0.12, x = 0.18) => ({ [L + 'Arm']: { ik: () => add(C.pos('mixamorig:Hips'), [x, y, 0.03]), bend: [1, -0.2, -0.7] },      // 골반뼈 위(허리)에 — 고관절 높이면 허벅지를 뚫는다
-                                                [R + 'Arm']: { ik: () => add(C.pos('mixamorig:Hips'), [-x, y, 0.03]), bend: [-1, -0.2, -0.7] } });
+  // 골반뼈 위(허리)에 — 고관절 높이면 허벅지를 뚫는다. 손가락은 앞·아래로 허리를 감싸고 손바닥은 몸 쪽 —
+  // 예전엔 손이 아래팔 방향 그대로 이어져 허리 앞에 떠 보였다 (리뷰)
+  const handsOnHips = (C, y = 0.12, x = 0.18, hand = true) => ({ [L + 'Arm']: { ik: () => add(C.pos('mixamorig:Hips'), [x, y, 0.03]), bend: [1, -0.2, -0.7], palmTo: [-1, 0, 0] },
+                                                [R + 'Arm']: { ik: () => add(C.pos('mixamorig:Hips'), [-x, y, 0.03]), bend: [-1, -0.2, -0.7], palmTo: [1, 0, 0] },
+                                                ...(hand ? { [L + 'Hand']: N(-0.35, -0.45, 0.82), [R + 'Hand']: N(0.35, -0.45, 0.82) } : {}) });   // 손가락은 선 자세 기준 — 숙인 자세는 끈다
   const STAND = { pos: [0, 1.03, 0], up: [0, 1, 0], front: [0, 0, 1] };
   const LIE = { pos: [0, 0.11, 0], up: [0, 0, -1], front: [0, 1, 0] };     // 바로 누움: 머리는 -Z 쪽, 배는 위
   const both = (up, leg, foot) => ({ [L + 'UpLeg']: up, [L + 'Leg']: leg, [L + 'Foot']: foot, [R + 'UpLeg']: up, [R + 'Leg']: leg, [R + 'Foot']: foot });
@@ -109,7 +112,7 @@ const MOVE_3D = (() => {
     if (x && y && typeof x === 'object' && typeof y === 'object') {
       x = asObj(x); y = asObj(y);
       const o = { ...(k < 0.5 ? x : y) };
-      for (const f of ['aim', 'front', 'bend']) if (Array.isArray(x[f]) && Array.isArray(y[f])) o[f] = N(...mix(x[f], y[f], k));
+      for (const f of ['aim', 'front', 'bend', 'palmTo']) if (Array.isArray(x[f]) && Array.isArray(y[f])) o[f] = N(...mix(x[f], y[f], k));   // 손바닥 방향도 섞는다 — 절반에서 홱 뒤집히지 않게
       if (x.ik && y.ik) { const fx = typeof x.ik === 'function' ? x.ik : () => x.ik, fy = typeof y.ik === 'function' ? y.ik : () => y.ik; o.ik = p => mix(fx(p), fy(p), k); }
       if (typeof x.roll === 'number' && typeof y.roll === 'number') o.roll = mix(x.roll, y.roll, k);
       return o;
@@ -127,12 +130,17 @@ const MOVE_3D = (() => {
     // 플랭크(팔꿈치 플랭크): 팔꿈치는 어깨 바로 아래 바닥에, 아래팔은 나란히 앞으로 손바닥 아래. 머리부터 뒤꿈치까지 한 직선(어깨 높이는
     // 위팔 길이만큼, 발목 0.1 — 10~13° 기울기), 발끝을 세워 발볼로 딛는다. 숨 쉬는 만큼만 움직인다. 모션캡처 'Plank' 는 팔을 편 하이 플랭크라 쓰지 않는다.
     'plank': { base: 'lying', period: 4, still: true, pose: (u, C) => {
-      const S = C.pos(L + 'Arm'), E = C.pos(L + 'ForeArm'), l1 = Math.hypot(S.x - E.x, S.y - E.y, S.z - E.z);   // 위팔 길이 (남·여가 다르다)
-      const hy = 0.006 + l1, sn = Math.max(0.05, Math.min(0.35, (hy - 0.1) / 0.9)), cs = Math.sqrt(1 - sn * sn);   // 엉덩이 높이(팔꿈치가 바닥 위 6cm 에 오게) → 몸 기울기
+      const S = C.pos(L + 'Arm'), E = C.pos(L + 'ForeArm'), Hd = C.pos(L + 'Hand');
+      const l1 = Math.hypot(S.x - E.x, S.y - E.y, S.z - E.z), l2 = Math.hypot(E.x - Hd.x, E.y - Hd.y, E.z - Hd.z);   // 위팔·아래팔 길이 (남·여가 다르다)
+      // 팔꿈치가 바닥(살 두께 4cm)에 놓이려면 어깨가 정확히 (위팔 길이 + 4cm) 높이에, 손은 팔꿈치에서 아래팔 길이만큼 앞에 있어야 한다.
+      // 어깨는 엉덩이에서 척추 축으로 0.37 위, 배 쪽으로 0.04 벗어나 있어 몸 기울기(sn = (hy-0.1)/0.9)에 따라 엉덩이보다 0.37·sn - 0.04 높다 —
+      // 그 식을 hy 로 풀었다. 예전엔 엉덩이를 위팔 길이로 둬 팔꿈치가 바닥에서 3cm 떠 아래팔이 기울었다 (리뷰)
+      const hy = Math.max(0.2, (l1 + 0.04 + 0.039 + 0.37 * 0.1 / 0.9) / (1 + 0.37 / 0.9));
+      const sn = Math.max(0.05, Math.min(0.35, (hy - 0.1) / 0.9)), cs = Math.sqrt(1 - sn * sn);                     // 엉덩이 높이 → 몸 기울기
       const up = [0, sn, -cs], down = [0, -sn, cs], front = [0, -1, 0];
-      const arm = side => ({ ik: () => { const P = C.pos(side + 'Arm'); return [P.x, 0.045, P.z - 0.2]; }, bend: [0, -1, 0.2], palmTo: [0, -1, 0] });   // 손은 어깨 앞 바닥에 — 팔꿈치가 어깨 아래에 온다
+      const arm = side => ({ ik: () => { const P = C.pos(side + 'Arm'); return [P.x, 0.045, P.z - l2]; }, bend: [0, -1, 0.2], palmTo: [0, -1, 0] });   // 손은 어깨 앞 아래팔 길이만큼, 바닥에 — 팔꿈치가 어깨 바로 아래 바닥에 온다
       return { root: { pos: [0, hy + 0.005 * Math.sin(u * Math.PI * 2), 0], up, front },
-        bones: { ...spineAll(up, N(0, sn - 0.1, -cs), front), [L + 'Arm']: arm(L), [R + 'Arm']: arm(R),
+        bones: { ...spineAll(up, N(0, sn - 0.1, -cs), front), [L + 'Arm']: arm(L), [R + 'Arm']: arm(R), [L + 'Hand']: [0, 0, -1], [R + 'Hand']: [0, 0, -1],   // 손은 바닥에 평평히 앞으로
           ...both(down, down, N(0, -0.62, 0.78)) } };                                                         // 발끝 세움 (발등 굽힘 30°쯤)
     } },
     // 자유형: 엎드려 뜬 채 팔을 번갈아 — 물속에서 팔꿈치를 높게 두고 손으로 몸 아래를 지나 엉덩이까지 밀고(캐치→풀→푸시),
@@ -141,14 +149,14 @@ const MOVE_3D = (() => {
     'swim': { base: 'lying', period: 2.4, gear: 'water', still: true, pose: (u, C) => {
       const r = -40 * D * Math.sin(u * Math.PI * 2);                                                                    // 굴림: 왼팔이 물 밖일 때(u 0.5~1) 왼쪽 어깨가 올라온다
       const upv = [Math.sin(r), Math.cos(r), 0], leftv = [-Math.cos(r), Math.sin(r), 0], front = [-Math.sin(r), -Math.cos(r), 0];   // 엎드리면 캐릭터의 왼쪽은 -X
-      const PATH = [[0, 0.1, -0.05, -0.5], [0.15, 0.1, -0.25, -0.35], [0.35, 0.05, -0.32, 0], [0.5, 0.15, -0.15, 0.35], [0.62, 0.3, 0.12, 0.3], [0.8, 0.32, 0.15, -0.15], [1, 0.1, -0.05, -0.5]];   // [진행, 바깥, 위, 뒤] 어깨 기준, 세상 축 (엎드리면 왼쪽은 -X)
+      const PATH = [[0, 0.1, -0.05, -0.5], [0.15, 0.1, -0.25, -0.35], [0.35, 0.05, -0.32, 0], [0.5, 0.2, -0.1, 0.38], [0.62, 0.38, 0.18, 0.22], [0.8, 0.38, 0.2, -0.2], [1, 0.1, -0.05, -0.5]];   // [진행, 바깥, 위, 뒤] 어깨 기준. 되돌리기는 팔을 거의 편 채 옆으로 넘긴다 — 팔꿈치를 높이 접으면 살이 꼬여 보였다 (리뷰)
       const arm = (side, ph, sgn) => {
         ph = ((ph % 1) + 1) % 1; let i = 0; while (PATH[i + 1][0] < ph) i++;
         const a = PATH[i], b = PATH[i + 1], t = sstep((ph - a[0]) / (b[0] - a[0]));
         const x = mix(a[1], b[1], t) * sgn, y = mix(a[2], b[2], t), z = mix(a[3], b[3], t);
         const w = hold(ph, 0.48, 0.58, 0.95, 1);                                                                       // 물 밖(되돌리기)이면 1
         return { ik: () => { const S = C.pos(side + 'Arm'); return [S.x + x, S.y + y, S.z + z]; },
-          bend: [sgn, 0.8, 0],                                                                                         // 팔꿈치는 바깥·위(높게)
+          bend: [sgn, 0.35, 0],                                                                                        // 팔꿈치는 바깥, 조금 위
           palmTo: N(...mix([0, 0, 1], [0, -1, 0], w)) };                                                               // 물속에선 손바닥이 뒤(발 쪽)를 밀고, 물 밖에선 아래를 본다
       };
       const k = Math.sin(u * Math.PI * 4);                                                                              // 발차기 — 한 바퀴에 두 번, 좌우 번갈아
@@ -180,8 +188,8 @@ const MOVE_3D = (() => {
     // 데드버그: 누워 팔은 천장, 엉덩이·무릎 90°. 한 팔은 머리 위로, 반대 다리는 앞으로 천천히 — 허리는 바닥에
     'dead-bug': { base: 'lying', period: 5.2, still: true, pose: u => {
       const side = u < 0.5 ? 0 : 1, a = hold(u - side * 0.5, 0.04, 0.24, 0.3, 0.48);
-      const neutral = { ...both([0, 1, 0.08], [0, 0.05, 1], N(0, 0.85, 0.53)), [L + 'Arm']: [0.05, 1, 0], [L + 'ForeArm']: [0, 1, 0], [R + 'Arm']: [-0.05, 1, 0], [R + 'ForeArm']: [0, 1, 0] };
-      const moved = { [R + 'Arm']: N(-0.15, 0.2, -0.97), [R + 'ForeArm']: N(-0.1, 0.1, -0.99), [L + 'UpLeg']: N(0, 0.35, 0.94), [L + 'Leg']: N(0, 0.2, 0.98), [L + 'Foot']: N(0, 0.95, 0.32) };
+      const neutral = { ...both([0, 1, 0.08], [0, 0.05, 1], N(0, 0.85, 0.53)), [L + 'Arm']: [0.05, 1, 0], [L + 'ForeArm']: { aim: [0, 1, 0], palmTo: [-1, 0, 0] }, [R + 'Arm']: [-0.05, 1, 0], [R + 'ForeArm']: { aim: [0, 1, 0], palmTo: [1, 0, 0] } };   // 손바닥은 서로 마주 보게 — 바깥을 보면 어색하다 (리뷰)
+      const moved = { [R + 'Arm']: N(-0.15, 0.2, -0.97), [R + 'ForeArm']: { aim: N(-0.1, 0.1, -0.99), palmTo: [1, 0, 0] }, [L + 'UpLeg']: N(0, 0.35, 0.94), [L + 'Leg']: N(0, 0.2, 0.98), [L + 'Foot']: N(0, 0.95, 0.32) };   // 머리 위로 넘어가도 손바닥은 안쪽
       return { root: LIE, bones: { ...spineAll([0, 0, -1]), ...blend(neutral, side ? mirror(moved) : moved, a) } };
     } },
     // 크런치: 머리와 어깨만 말아 올린다 — 허리는 바닥에, 손은 뒤통수(당기지 않는다), 턱은 살짝 당긴 채
@@ -190,7 +198,9 @@ const MOVE_3D = (() => {
       return { root: LIE, bones: { ...kneesUp,
         'mixamorig:Spine': N(...mix([0, 0, -1], [0, 0.12, -0.99], c)), 'mixamorig:Spine1': N(...mix([0, 0, -1], [0, 0.42, -0.9], c)), 'mixamorig:Spine2': N(...mix([0, 0, -1], [0, 0.7, -0.72], c)),
         'mixamorig:Neck': N(...mix([0, 0.05, -1], [0, 0.8, -0.6], c)), 'mixamorig:Head': N(...mix([0, 0.05, -1], [0, 0.85, -0.53], c)),
-        [L + 'Arm']: { ik: () => add(C.pos('mixamorig:Head'), [0.11, 0.02, -0.1]), bend: [1, 0.4, 0] }, [R + 'Arm']: { ik: () => add(C.pos('mixamorig:Head'), [-0.11, 0.02, -0.1]), bend: [-1, 0.4, 0] } } };
+        // 손은 뒤통수를 받쳐 쥐듯: 손목은 뒤통수 옆·바닥 쪽(누워 있으니 뒤통수는 아래), 손바닥은 머리를 보고, 손가락은 가운데로 감싼다. 팔꿈치는 옆으로 넓게 (리뷰·참고 영상)
+        [L + 'Arm']: { ik: () => add(C.pos('mixamorig:Head'), [0.08, -0.02, -0.1]), bend: [1, 0.45, 0.2], palmTo: 'head' }, [L + 'Hand']: { aim: p => { const h = p('mixamorig:Head'), w = p(L + 'Hand'); return [h.x - w.x, (h.y - 0.03) - w.y, (h.z - 0.02) - w.z]; } },
+        [R + 'Arm']: { ik: () => add(C.pos('mixamorig:Head'), [-0.08, -0.02, -0.1]), bend: [-1, 0.45, 0.2], palmTo: 'head' }, [R + 'Hand']: { aim: p => { const h = p('mixamorig:Head'), w = p(R + 'Hand'); return [h.x - w.x, (h.y - 0.03) - w.y, (h.z - 0.02) - w.z]; } } } };
     } },
     // 데드리프트: 바를 발 가운데 위에, 엉덩이를 뒤로 빼 힌지, 등은 평평, 팔은 곧게 늘어뜨려 잡고 그냥 똑바로 선다
     'deadlift': { base: 'idle', period: 3.4, gear: 'barbell', fist: true, pose: u => {
@@ -202,21 +212,29 @@ const MOVE_3D = (() => {
           [L + 'Arm']: N(0.06, -0.97, 0.24), [L + 'ForeArm']: { aim: N(0.03, -0.97, 0.24), palmTo: [0, 0, -1] },      // 바가 허벅지 앞에 닿는 자리
           [R + 'Arm']: N(-0.06, -0.97, 0.24), [R + 'ForeArm']: { aim: N(-0.03, -0.97, 0.24), palmTo: [0, 0, -1] } } };
     } },
-    // 숄더프레스: 덤벨을 어깨 높이에서, 팔꿈치는 살짝 앞(45°), 손바닥은 머리 쪽, 어깨 위로 곧장 밀어 팔꿈치를 편다. 갈비뼈는 내린다
-    'shoulder-press': { base: 'idle', period: 2.4, gear: 'dumbbells', fist: true, pose: u => {
+    // 숄더프레스(앉아서 덤벨): 벤치 끝에 앉아 발은 바닥, 상체 곧게. 덤벨은 귀 높이에서 팔꿈치 90°(어깨보다 살짝 앞), 손바닥은 앞.
+    // 어깨 위로 곧장 밀어 팔을 거의 펴고(잠그지 않는다) 덤벨이 위에서 살짝 모인다. 천천히 귀 높이로 내린다 (리뷰·참고 영상).
+    // 예전엔 서서 손바닥을 머리 쪽으로 돌려 아래팔이 크게 비틀려 어깨·겨드랑이·팔꿈치 살이 깨져 보였다
+    'shoulder-press': { base: 'idle', period: 2.6, gear: 'seatpress', fist: true, still: true, pose: u => {
       const p = hold(u, 0.05, 0.42, 0.5, 0.92);
-      return { bones: { ...spineAll([0, 1, 0]),
-        [L + 'Arm']: N(...mix([0.72, -0.35, 0.55], [0.1, 1, 0.02], p)), [L + 'ForeArm']: { aim: N(...mix([0.05, 0.99, 0.08], [0.02, 1, 0], p)), palmTo: 'head' },
-        [R + 'Arm']: N(...mix([-0.72, -0.35, 0.55], [-0.1, 1, 0.02], p)), [R + 'ForeArm']: { aim: N(...mix([-0.05, 0.99, 0.08], [-0.02, 1, 0], p)), palmTo: 'head' } } };
+      return { root: { pos: [0, 0.6, 0], up: [0, 1, 0], front: [0, 0, 1] },                                        // 벤치 위 0.45 에 앉는다
+        bones: { ...spineAll([0, 1, 0]),
+          [L + 'UpLeg']: N(0.2, 0, 0.98), [L + 'Leg']: N(0.03, -1, 0.02), [L + 'Foot']: FLAT, [R + 'UpLeg']: N(-0.2, 0, 0.98), [R + 'Leg']: N(-0.03, -1, 0.02), [R + 'Foot']: FLAT,
+          [L + 'Arm']: N(...mix([0.85, -0.3, 0.42], [0.22, 0.96, 0.15], p)), [L + 'ForeArm']: { aim: N(...mix([0.05, 0.99, 0.1], [0.02, 1, 0.02], p)), palmTo: [0, 0, 1] },
+          [R + 'Arm']: N(...mix([-0.85, -0.3, 0.42], [-0.22, 0.96, 0.15], p)), [R + 'ForeArm']: { aim: N(...mix([-0.05, 0.99, 0.1], [-0.02, 1, 0.02], p)), palmTo: [0, 0, 1] } } };
     } },
     // 한 발 서기: 손은 허리, 한 발을 바닥에서 든다(무릎 살짝 굽힘), 딛는 무릎은 잠그지 않는다, 시선은 앞
     'one-leg': { base: 'idle', period: 6, pose: (u, C) => ({
       root: { dpos: [-0.04 + 0.01 * Math.sin(u * Math.PI * 4), 0, 0] },
       bones: { ...spineAll([0, 1, 0]), ...handsOnHips(C), [L + 'UpLeg']: N(0.02, -0.94, 0.34), [L + 'Leg']: N(0, -0.8, -0.6), [L + 'Foot']: N(0, -0.7, 0.7) } }) },
-    // 복식 호흡: 한 손은 가슴, 한 손은 배 — 들이마실 때 배가 부푼다 (바탕 동작이 숨을 쉰다)
-    'deep-breath': { base: 'deep-breath', period: 6, pose: (u, C) => ({
-      bones: { [R + 'Arm']: { ik: () => add(C.pos('mixamorig:Spine2'), [-0.04, 0.08, 0.2]), bend: [-0.9, -0.2, -0.4], palmTo: [0, 0, -1] },     // 가슴 위
-               [L + 'Arm']: { ik: () => add(C.pos('mixamorig:Spine'), [0.04, -0.05, 0.19]), bend: [0.9, -0.2, -0.4], palmTo: [0, 0, -1] } } }) },   // 배 위
+    // 복식 호흡: 누워 무릎을 세우고(설명의 '처음' 자세) 한 손은 가슴, 한 손은 배 — 들이마실 때 배 손만 올라온다. 예전엔 서 있었다 (리뷰)
+    'deep-breath': { base: 'lying', period: 6, still: true, pose: (u, C) => {
+      const b = 0.5 - 0.5 * Math.cos(u * Math.PI * 2);                                                            // 0 → 1 → 0: 들이마시고 내쉰다
+      return { root: LIE, bones: { ...spineAll([0, 0, -1]), ...kneesUp,
+        // 손은 몸 위(가슴 살 두께 0.14)에 얹고 팔꿈치는 옆 바닥 쪽으로 — 손이 어깨에 너무 가까우면 팔꿈치가 접혀 살이 꼬이니 손은 아래쪽(명치·아랫배)에
+        [R + 'Arm']: { ik: () => add(C.pos('mixamorig:Spine1'), [-0.04, 0.145, 0.03]), bend: [-1, -0.1, 0.15], palmTo: [0, -1, 0] },                   // 명치 위
+        [L + 'Arm']: { ik: () => add(C.pos('mixamorig:Spine'), [0.05, 0.13 + 0.025 * b, 0.04]), bend: [1, -0.1, 0.15], palmTo: [0, -1, 0] } } };   // 배꼽 위 — 숨 따라 2.5cm 오르내린다 (더 아래면 세운 허벅지에 닿는다)
+    } },
     // 어깨 스트레칭(크로스 바디): 한 팔을 어깨 높이로 가슴 앞을 가로지르고 반대 손으로 팔꿈치 위를 가볍게 당긴다. 어깨는 내린 채. 좌우 번갈아
     'shoulder-stretch': { base: 'idle', period: 10, pose: (u, C) => {
       const wL = hold(u, 0.02, 0.1, 0.42, 0.48), wR = hold(u, 0.52, 0.6, 0.92, 0.98);                                // 앞 절반은 왼팔, 뒤 절반은 오른팔 — 사이엔 두 팔 다 내린다
@@ -230,12 +248,19 @@ const MOVE_3D = (() => {
     // 목 스트레칭: 귀를 같은 쪽 어깨로 기울이고, 그쪽 손을 머리 반대편에 얹어 무게만 살짝 (누르지 않는다). 좌우 번갈아
     'neck-stretch': { base: 'idle', period: 10, pose: (u, C) => {
       const s = alt(u), upL = 1 - hold(u, 0.44, 0.5, 0.94, 1), upR = hold(u, 0.5, 0.56, 0.88, 0.94);              // 내려오는 손이 먼저, 올라가는 손은 그 다음 — 두 손이 가슴 앞에서 만나지 않게
-      const down = side => ({ ik: () => add(C.pos('mixamorig:Hips'), [side === L ? 0.14 : -0.14, 0.05, 0.25]), bend: [side === L ? 0.9 : -0.9, -0.4, -0.2] });   // 쉬는 손은 배 앞에 (머리와 오갈 때 가슴 앞을 지난다)
-      const onHead = side => ({ ik: () => add(C.pos('mixamorig:Head'), [side === L ? -0.1 : 0.1, 0.15, 0.06]), bend: [side === L ? 0.7 : -0.7, 0.6, 0.4] });
+      // 손은 옆구리 앞(쉴 때)과 머리 위 반대편 귀 쪽(얹을 때)을 오간다. 곧장 가면 가슴을 뚫고 지나가서, 어깨 바깥의 경유점을 지나는
+      // 굽은 길(2차 베지어)로 돈다. 얹은 손바닥은 머리를 감싼다 (누르지 않는다)
+      const sgn = side => (side === L ? 1 : -1);
+      const rest = side => add(C.pos('mixamorig:Hips'), [0.24 * sgn(side), 0.02, 0.16]);
+      const via = side => add(C.pos(side + 'Arm'), [0.32 * sgn(side), 0.18, 0.1]);                                    // 어깨 바깥·위 — 가슴 앞을 가로지르지 않고 팔꿈치도 덜 접힌다
+      const top = side => add(C.pos('mixamorig:Head'), [-0.07 * sgn(side), 0.12, 0.04]);
+      const bez = (a, b, c, w) => a.map((_, i) => (1 - w) * (1 - w) * a[i] + 2 * (1 - w) * w * b[i] + w * w * c[i]);
+      const armAt = (side, w) => ({ ik: () => bez(rest(side), via(side), top(side), w), bend: N(...mix([0.9 * sgn(side), -0.4, -0.2], [0.7 * sgn(side), 0.6, 0.4], w)), ...(w > 0.5 ? { palmTo: 'head' } : {}) });
       const right = { 'mixamorig:Neck': N(-0.15, 0.99, 0), 'mixamorig:Head': N(-0.5, 0.87, 0) };
       const left = { 'mixamorig:Neck': N(0.15, 0.99, 0), 'mixamorig:Head': N(0.5, 0.87, 0) };
-      return { bones: { 'mixamorig:Spine': [0, 1, 0], 'mixamorig:Spine1': [0, 1, 0], 'mixamorig:Spine2': [0, 1, 0], ...blend(left, right, s),
-        ...blend({ [L + 'Arm']: down(L) }, { [L + 'Arm']: onHead(L) }, upL), ...blend({ [R + 'Arm']: down(R) }, { [R + 'Arm']: onHead(R) }, upR) } };
+      // 앞 절반(s = 1)은 왼손이 머리에 있으니 머리는 왼 어깨로(left), 뒤 절반은 오른 어깨로 — 예전엔 반대로 기울었다 (리뷰)
+      return { bones: { 'mixamorig:Spine': [0, 1, 0], 'mixamorig:Spine1': [0, 1, 0], 'mixamorig:Spine2': [0, 1, 0], ...blend(right, left, s),
+        [L + 'Arm']: armAt(L, upL), [R + 'Arm']: armAt(R, upR) } };                                              // 손은 아래팔을 따라 머리 위에 얹힌다 — 손가락을 따로 내리면 손목이 100° 넘게 꺾였다
     } },
     // 고관절 스트레칭(반무릎): 뒷무릎은 엉덩이 아래, 상체는 곧게, 손은 허리. 골반을 말고 2~3cm 앞으로 옮긴다
     'hip-stretch': { base: 'kneel', period: 6, pose: (u, C) => ({
@@ -244,15 +269,14 @@ const MOVE_3D = (() => {
         [L + 'UpLeg']: N(0, 0.04, 1), [L + 'Leg']: N(0, -0.92, 0.39), [L + 'Foot']: FLAT,                           // 앞다리: 고관절·무릎 90° 가까이, 발은 평평
         [R + 'UpLeg']: N(0, -0.99, -0.15), [R + 'Leg']: [0, 0, -1], [R + 'Foot']: N(0, -0.25, -0.97) } }) },      // 뒷다리: 무릎은 바닥, 정강이는 뒤로 눕고 발등이 바닥
     // 햄스트링 스트레칭(선 자세): 한 발 앞에 뒤꿈치, 발끝 위로, 다리는 편 채. 엉덩이를 빼며 등을 평평하게 숙인다
-    'hamstring-stretch': { base: 'idle', period: 6, pose: u => {
+    'hamstring-stretch': { base: 'idle', period: 6, pose: (u, C) => {
       const h = hold(u, 0.1, 0.35, 0.65, 0.9);
       const up = N(...mix([0, 0.7, 0.72], [0, 0.5, 0.87], h)), front = N(...mix([0, -0.72, 0.7], [0, -0.87, 0.5], h));
-      return { root: { pos: [0, 0.97, -0.1], up, front },
+      return { root: { pos: [0, 0.95, -0.16], up, front },                                                               // 앞다리를 곧게 뻗어 뒤꿈치가 바닥에 닿는 높이. 숙이는 건 상체다
         bones: { ...spineAll(up, N(...mix([0, 0.85, 0.53], [0, 0.72, 0.7], h))),
-          [L + 'UpLeg']: N(0, -0.92, 0.39), [L + 'Leg']: N(0, -0.92, 0.39), [L + 'Foot']: N(0, -0.2, 0.98),           // 앞다리 곧게, 뒤꿈치 바닥에 발끝 위로
-          [R + 'UpLeg']: N(0, -0.98, -0.2), [R + 'Leg']: N(0, -0.86, 0.51), [R + 'Foot']: FLAT,                       // 뒷다리는 살짝 굽혀 엉덩이 아래
-          [L + 'Arm']: N(0.06, -0.85, 0.5), [L + 'ForeArm']: N(...mix([0, -0.8, 0.6], [0, -0.74, 0.67], h)),
-          [R + 'Arm']: N(-0.06, -0.85, 0.5), [R + 'ForeArm']: N(...mix([0, -0.8, 0.6], [0, -0.74, 0.67], h)) } };
+          [L + 'UpLeg']: N(0, -0.9, 0.44), [L + 'Leg']: N(0, -0.9, 0.44), [L + 'Foot']: N(0, 0.05, 1),               // 앞다리 곧게 앞으로, 뒤꿈치만 바닥에 발끝은 위로 (참고 영상)
+          [R + 'UpLeg']: N(0, -0.94, -0.34), [R + 'Leg']: N(0, -0.86, 0.51), [R + 'Foot']: FLAT,                      // 뒷다리는 무릎을 굽혀 엉덩이 아래로 — 앞다리와 같은 높이만큼 내려온다
+          ...handsOnHips(C, 0.17, 0.2, false) } };                                                                  // 손은 허리 — 등을 평평하게 두고 힌지한다
     } },
     // 종아리 스트레칭(벽): 벽에 손을 대고 한 발을 뒤로. 뒷다리는 곧게, 뒤꿈치는 바닥에. 앞무릎을 굽히며 몸을 앞으로 기울인다
     // (옆에서 보이게 벽은 +X 쪽에 두고 그쪽을 본다)
@@ -260,8 +284,10 @@ const MOVE_3D = (() => {
       const c = hold(u, 0.1, 0.4, 0.6, 0.9), up = N(0.34, 0.94, 0), flatX = N(0.85, -0.53, 0);                    // 벽(+X) 쪽을 보고 평평하게 디딘 발
       return { root: { pos: [mix(-0.1, -0.16, c), 0.95, 0], up, front: N(0.94, -0.34, 0) },
         bones: { ...spineAll(up, N(0.2, 1, 0), N(0.94, -0.34, 0)),
-          [L + 'Arm']: N(0.98, -0.15, 0.12), [L + 'ForeArm']: { aim: N(1, -0.05, 0.05), palmTo: [1, 0, 0] },
-          [R + 'Arm']: N(0.98, -0.15, -0.12), [R + 'ForeArm']: { aim: N(1, -0.05, -0.05), palmTo: [1, 0, 0] },
+          // 손바닥을 벽에 짚는다: 손목은 벽 앞 2cm, 어깨 높이, 팔꿈치는 살짝 굽혀 아래로, 손은 벽을 따라 위로(손가락 위) — 예전엔 팔을 벽에 곧게 꽂아
+          // 손가락이 벽을 뚫고 손바닥 방향이 팔 축과 겹쳐 아래팔 비틀림이 제멋대로였다 (리뷰)
+          [L + 'Arm']: { ik: [WALL_X - 0.02, 1.27, -0.17], bend: [0, -1, 0] }, [L + 'Hand']: N(0.12, 0.99, 0),          // +X 를 보는 몸의 왼쪽은 -Z
+          [R + 'Arm']: { ik: [WALL_X - 0.02, 1.27, 0.17], bend: [0, -1, 0] }, [R + 'Hand']: N(0.12, 0.99, 0),
           [L + 'UpLeg']: N(-0.42, -0.91, 0), [L + 'Leg']: N(-0.42, -0.91, 0), [L + 'Foot']: flatX,                    // 뒷다리 곧게 25°, 뒤꿈치 바닥 (발등 굽힘 25°)
           [R + 'UpLeg']: N(0.62, -0.79, 0), [R + 'Leg']: [0, -1, 0], [R + 'Foot']: flatX } };                          // 앞무릎은 발목 위
     } },
@@ -289,6 +315,7 @@ const MOVE_3D = (() => {
       const up = N(0, 0.31, -0.95), front = [1, 0, 0];                                                              // 머리 쪽이 18° 올라간 한 직선 — 아래 어깨가 팔꿈치 위에 온다
       return { root: { pos: [0, 0.42 + 0.01 * Math.sin(u * Math.PI * 2), 0], up, front },
         bones: { ...spineAll(up, up, front), ...both(N(0, -0.31, 0.95), N(0, -0.31, 0.95), N(0.8, -0.15, 0.58)),   // 포갠 발은 앞(+X)을 본다
+          [R + 'UpLeg']: N(0, -0.39, 0.92), [R + 'Leg']: N(0, -0.39, 0.92),                                          // 위(오른) 다리는 조금 더 기울여 아래 다리 위에 포갠다 — 벌어져 있었다 (리뷰)
           [L + 'Arm']: N(0.3, -0.95, 0), [L + 'ForeArm']: { aim: [1, 0, 0], palmTo: [0, -1, 0] }, [L + 'Hand']: [1, 0, 0],   // 위팔은 바닥으로, 아래팔·손은 앞으로 곧게 눕힌다
           [R + 'Arm']: N(-0.1, 0.99, 0), [R + 'ForeArm']: N(-0.05, 1, 0), [R + 'Hand']: N(-0.05, 1, 0) } };
     } },
@@ -322,10 +349,11 @@ const MOVE_3D = (() => {
     // 실내 자전거: 안장은 페달이 맨 아래일 때 무릎이 살짝 굽는 높이. 엉덩이에서 힌지해 상체를 살짝 앞으로, 팔꿈치는 부드럽게
     'cycle': { base: 'idle', period: 2.0, gear: 'bike', fist: true, pose: (u, C) => {
       const th = u * Math.PI * 2, up = N(0, 0.92, 0.39);
-      const pedal = (side, x, a) => ({ ik: [x, BIKE.crank[1] + BIKE.r * Math.sin(a) + 0.09, BIKE.crank[2] + BIKE.r * Math.cos(a) - 0.03], bend: [x * 0.4, 0.6, 0.8] });   // 발목은 페달 위 9cm
+      // 발볼이 페달 가운데에 놓이게 — 발목은 페달보다 10cm 뒤·7cm 위 (발은 발목에서 앞·아래로 0.146). 각도는 -th 라 앞으로 돈다 (위 → 앞 → 아래 → 뒤). 예전엔 뒤로 돌았다 (리뷰)
+      const pedal = (side, x, a) => ({ ik: [x, BIKE.crank[1] + BIKE.r * Math.sin(a) + 0.07, BIKE.crank[2] + BIKE.r * Math.cos(a) - 0.1], bend: [x * 0.4, 0.6, 0.8] });
       return { root: { pos: [0, 1.0, -0.05], up, front: N(0, -0.39, 0.92) },
         bones: { ...spineAll(up, N(0, 0.99, 0.15)),
-          [L + 'UpLeg']: pedal(L, BIKE.x, th), [R + 'UpLeg']: pedal(R, -BIKE.x, th + Math.PI), [L + 'Foot']: { aim: footFollow(L, [1, 0, 0], 50) }, [R + 'Foot']: { aim: footFollow(R, [1, 0, 0], 50) },
+          [L + 'UpLeg']: pedal(L, BIKE.x, -th), [R + 'UpLeg']: pedal(R, -BIKE.x, -th + Math.PI), [L + 'Foot']: { aim: footFollow(L, [1, 0, 0], 50) }, [R + 'Foot']: { aim: footFollow(R, [1, 0, 0], 50) },
           [L + 'Arm']: { ik: [BIKE.bar[0], BIKE.bar[1], BIKE.bar[2]], bend: [0.3, -1, 0], palmTo: [0, -1, 0] },
           [R + 'Arm']: { ik: [-BIKE.bar[0], BIKE.bar[1], BIKE.bar[2]], bend: [-0.3, -1, 0], palmTo: [0, -1, 0] } } };
     } },
@@ -345,7 +373,7 @@ const MOVE_3D = (() => {
 
   /* ---- 기구 ---- 동작 id → 기구. 손·몸 뼈의 세상 좌표를 따라 매 프레임 옮긴다. (PROC 의 gear 가 우선) */
   const GEAR = {
-    'barbell-squat': 'backbar', 'deadlift': 'barbell', 'dumbbell-curl': 'dumbbells', 'shoulder-press': 'dumbbells',
+    'barbell-squat': 'backbar', 'deadlift': 'barbell', 'dumbbell-curl': 'dumbbells', 'shoulder-press': 'seatpress',
     'kettlebell-swing': 'kettlebell', 'jump-rope': 'rope', 'treadmill': 'treadmill', 'swim': 'water',
     'bench-press': 'bench', 'lat-pulldown': 'pulldown', 'leg-press': 'legpress', 'cycle': 'bike', 'rowing': 'rower', 'calf-stretch': 'wall',
   };
@@ -429,7 +457,7 @@ const MOVE_3D = (() => {
     // 손이 쥐는 자리(손바닥 가운데)와 그때의 손 방향
     const grip = (side, out, qOut) => {
       ctx.pos('mixamorig:' + side + 'Hand', out); ctx.quat('mixamorig:' + side + 'Hand', q);
-      out.add(b.set(0, GRIP.along, 0).applyQuaternion(q));
+      out.add(b.set(0, (ctx.hand[side] && ctx.hand[side].along) || GRIP.along, 0).applyQuaternion(q));
       if (ctx.hand[side] && GRIP.side) out.add(b.copy(ctx.hand[side].palm).applyQuaternion(q).multiplyScalar(GRIP.side));   // 손바닥 쪽으로
       if (qOut) qOut.copy(q);
       return out;
@@ -453,12 +481,16 @@ const MOVE_3D = (() => {
       case 'backbar': {
         const g = add(bar(1.8, 0.014, 0.17));
         return { update(){
-          ctx.pos('mixamorig:Neck', a); g.position.copy(a); g.position.y -= 0.04; g.position.z -= 0.09;   // 목 뒤 어깨 위
+          ctx.pos('mixamorig:Neck', a); g.position.copy(a); g.position.y -= 0.005; g.position.z -= 0.08;  // 목 뒤 승모근 위 — 더 낮추면 어깨를 뚫는다 (리뷰)
           ctx.pos('mixamorig:LeftShoulder', a); ctx.pos('mixamorig:RightShoulder', b);
           g.quaternion.setFromUnitVectors(X, a.sub(b).normalize());
         } };
       }
       case 'dumbbells': { const L = add(dumbbell()), R = add(dumbbell()); return { update(){ inHand(L, 'Left'); inHand(R, 'Right'); } }; }
+      case 'seatpress': {                                                                                            // 앉아서 하는 덤벨 프레스 — 벤치 끝에 앉는다
+        const seat = mesh(new T.BoxGeometry(0.36, 0.45, 0.42), soft); seat.position.set(0, 0.225, -0.06); add(seat);
+        const L = add(dumbbell()), R = add(dumbbell()); return { pad: 0.3, update(){ inHand(L, 'Left'); inHand(R, 'Right'); } };
+      }
       case 'kettlebell': {
         const g = new T.Group();
         const ball = mesh(new T.SphereGeometry(0.085, 24, 18)); ball.position.y = -0.11; g.add(ball);
@@ -544,7 +576,7 @@ const MOVE_3D = (() => {
         return { pad: 0.7, update(){
           const th = (ctx.u || 0) * Math.PI * 2;
           [0, 1].forEach(i => {
-            const ang = th + i * Math.PI, x = i ? -BIKE.x : BIKE.x;
+            const ang = -th + i * Math.PI, x = i ? -BIKE.x : BIKE.x;                                                 // 다리와 같은 방향(앞으로)
             const p = V(x, crank.y + BIKE.r * Math.sin(ang), crank.z + BIKE.r * Math.cos(ang));
             pedals[i].position.copy(p);
             arms[i].position.copy(crank).add(p).multiplyScalar(0.5); arms[i].position.x = x * 0.45;   // 크랭크 암은 페달보다 안쪽
@@ -651,7 +683,9 @@ const MOVE_3D = (() => {
       const palm = new T.Vector3(0, -1, 0).applyQuaternion(inv).normalize();          // 손 기준 손바닥 방향
       const across = new T.Vector3().crossVectors(palm, new T.Vector3(0, 1, 0)).normalize();   // 손가락(Y)·손바닥에 수직 = 손바닥 가로축
       const curl = new T.Vector3().crossVectors(across, new T.Vector3(0, 1, 0)).dot(palm) > 0 ? across.clone() : across.clone().negate();
-      hand[side] = { bone: hb, palm, across, curl };
+      const m1 = bones.get('mixamorig:' + side + 'HandMiddle1');
+      const along = m1 ? hb.getWorldPosition(new T.Vector3()).distanceTo(m1.getWorldPosition(new T.Vector3())) * 0.89 : GRIP.along;   // 손바닥 가운데 = 손 뼈 → 가운뎃손가락 밑마디의 0.89
+      hand[side] = { bone: hb, palm, across, curl, along };                  // 여성 리깅은 손 뼈가 손목 위쪽에 있어 고정 5.5cm 면 기구가 손목에 걸렸다 (리뷰)
     }
 
     const mixer = new T.AnimationMixer(body);
@@ -761,6 +795,9 @@ const MOVE_3D = (() => {
     // 실제로는 어깨·고관절이 돌아간 것이므로, 위팔·허벅지를 제 축으로 돌려 경첩 방향을 굽는 쪽에 맞추고 아래팔·정강이는 세상 방향을 그대로 둔다.
     // 우리가 방향을 정한 뼈에만 한다 (모션캡처는 사람이 한 것이라 그대로). docs/3d-joint-kinematics.md
     const HINGES = [['LeftArm', 'LeftForeArm', [0, 0, 1]], ['RightArm', 'RightForeArm', [0, 0, 1]], ['LeftUpLeg', 'LeftLeg', [0, 0, -1]], ['RightUpLeg', 'RightLeg', [0, 0, -1]]];
+    // 아래팔이 위팔에 대해 비틀리는 한도. 엎침·뒤침은 실제로 각 75~85° 지만 이 리깅엔 비틀림 뼈가 없어 아래팔 살이 통째로 꼬인다 —
+    // 45° 를 넘기면 아래팔이 짧고 얇아 보이고 팔꿈치가 관절 없이 휘는 것처럼 보였다 (리뷰). 손바닥 방향은 그만큼 덜 맞아도 팔이 팔처럼 보이는 쪽을 택한다
+    const TWIST_LIMIT = 45 * D, TWIST_LIMIT_STRAIGHT = 80 * D;         // 곧게 편 팔은 살이 덜 꼬여 더 돌려도 된다 — 바를 쥔 손바닥이 바를 감싸야 한다 (데드리프트)
     const _q3 = new T.Quaternion(), _q4 = new T.Quaternion(), _v7 = new T.Vector3(), _v8 = new T.Vector3(), _v9 = new T.Vector3();
     const alignHinges = table => {
       for (const [pn, cn, flex0] of HINGES) {
@@ -770,25 +807,27 @@ const MOVE_3D = (() => {
         const axis = _v7.subVectors(c.getWorldPosition(_v1), p.getWorldPosition(_v2)).normalize();          // 위팔·허벅지 축
         const bend = _v8.subVectors(g.getWorldPosition(_v1), c.getWorldPosition(_v2)).normalize();          // 아래팔·정강이 방향
         bend.addScaledVector(axis, -bend.dot(axis));                                                         // 축에 수직인 성분 = 굽는 쪽
-        if (bend.length() < 0.17) {                                                                          // 거의 곧게 편 팔다리는 굽는 쪽이 없다 (10° 미만)
-          if (flex0[2] > 0) continue;                                                                        //   팔은 그대로
-          const gg = g.children.find(x => x.isBone); if (!gg) continue;                                      //   다리는 발끝 반대쪽을 '뒤'로 — 무릎이 발끝을 본다
-          bend.subVectors(gg.getWorldPosition(_v1), g.getWorldPosition(_v2)).normalize().negate();
-          bend.addScaledVector(axis, -bend.dot(axis));
-          if (bend.length() < 0.17) continue;
+        let straight = bend.length() < 0.17;                                                                 // 거의 곧게 편 팔다리는 굽는 쪽이 없다 (10° 미만)
+        if (straight && flex0[2] <= 0) {                                                                     //   다리는 발끝 반대쪽을 '뒤'로 — 무릎이 발끝을 본다
+          const gg = g.children.find(x => x.isBone);
+          if (gg) { bend.subVectors(gg.getWorldPosition(_v1), g.getWorldPosition(_v2)).normalize().negate(); bend.addScaledVector(axis, -bend.dot(axis)); straight = bend.length() < 0.17; }
         }
-        bend.normalize();
-        p.getWorldQuaternion(_q1); _q3.copy(restQ.get(p)).invert(); _q1.multiply(_q3);                       // 처음 자세에서 지금까지의 회전
-        const hinge = _v9.fromArray(flex0).applyQuaternion(_q1);                                             // 지금 경첩이 굽는 방향
-        hinge.addScaledVector(axis, -hinge.dot(axis)).normalize();
-        const angle = Math.atan2(_v1.crossVectors(hinge, bend).dot(axis), hinge.dot(bend));
-        if (Math.abs(angle) < 0.02) continue;
-        c.getWorldQuaternion(_q4);
-        p.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), angle)); p.updateMatrixWorld(true);   // 제 축으로 돌린다
-        c.quaternion.copy(p.getWorldQuaternion(_q2).invert().multiply(_q4)); c.updateMatrixWorld(true);    // 아래팔·정강이(와 그 아래)는 그대로
+        _q3.copy(restQ.get(p)).invert();                                                                     // 처음 자세의 역 — 아래 비틀림 계산도 쓴다
+        if (!straight) {                                                                                     // 1) 위팔·허벅지를 제 축으로 돌려 경첩이 굽는 쪽을 보게 (곧게 편 팔은 굽는 쪽이 없어 건너뛴다)
+          bend.normalize();
+          p.getWorldQuaternion(_q1); _q1.multiply(_q3);                                                      // 처음 자세에서 지금까지의 회전
+          const hinge = _v9.fromArray(flex0).applyQuaternion(_q1);                                           // 지금 경첩이 굽는 방향
+          hinge.addScaledVector(axis, -hinge.dot(axis)).normalize();
+          const angle = Math.atan2(_v1.crossVectors(hinge, bend).dot(axis), hinge.dot(bend));
+          if (Math.abs(angle) >= 0.02) {
+            c.getWorldQuaternion(_q4);
+            p.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), angle)); p.updateMatrixWorld(true);   // 제 축으로 돌린다
+            c.quaternion.copy(p.getWorldQuaternion(_q2).invert().multiply(_q4)); c.updateMatrixWorld(true);    // 아래팔·정강이(와 그 아래)는 그대로
+          }
+        }
         // 아래팔·정강이는 위팔·허벅지에 대해 비틀리지 않게 — 경첩 축(굽는 방향 × 뼈 축)을 부모와 나란히. 손바닥 방향을 정한 아래팔은 그대로 둔다
         const hc = table && table.get(c), hp = table && table.get(p);
-        if ((hc && (hc.palmTo || hc.roll)) || (hp && hp.ik && hp.palmTo)) continue;
+        const keepTwist = !!((hc && (hc.palmTo || hc.roll)) || (hp && hp.ik && hp.palmTo));   // 손바닥 방향을 정한 아래팔은 그 비틀림을 두되 한도 안에서
         const axis0 = _v1.set(0, 1, 0).applyQuaternion(restQ.get(p)), h0 = _v2.fromArray(flex0).cross(axis0);      // 처음 자세의 경첩 축
         const hpar = _v9.copy(h0).applyQuaternion(_q1.copy(p.getWorldQuaternion(_q2)).multiply(_q3));                // 부모의 지금 경첩 축 (_q3 = 처음 자세의 역)
         const cax = _v7.subVectors(g.getWorldPosition(_v8), c.getWorldPosition(_v1)).normalize();                     // 아래팔·정강이 축
@@ -797,10 +836,14 @@ const MOVE_3D = (() => {
         if (hpar.lengthSq() < 0.05 || hch.lengthSq() < 0.05) continue;
         hpar.normalize(); hch.normalize();
         const tw = Math.atan2(_v1.crossVectors(hch, hpar).dot(cax), hch.dot(hpar));
-        if (Math.abs(tw) < 0.02) continue;
-        g.getWorldQuaternion(_q4);
-        c.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), tw)); c.updateMatrixWorld(true);
-        g.quaternion.copy(c.getWorldQuaternion(_q2).invert().multiply(_q4)); g.updateMatrixWorld(true);    // 손·발(과 그 아래)은 그대로
+        // 아래팔은 위팔에 대해 ±TWIST_LIMIT 까지만 비튼다 (엎침·뒤침의 실제 범위). 그 이상은 어깨가 도는 것이라 뼈 하나로 비틀면 팔꿈치 살이 꼬여 얇아진다
+        const limit = straight ? TWIST_LIMIT_STRAIGHT : TWIST_LIMIT;
+        const turn = keepTwist ? (Math.abs(tw) > limit ? tw - Math.sign(tw) * limit : 0) : tw;
+        if (Math.abs(turn) >= 0.02) {
+          g.getWorldQuaternion(_q4);
+          c.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), turn)); c.updateMatrixWorld(true);
+          g.quaternion.copy(c.getWorldQuaternion(_q2).invert().multiply(_q4)); g.updateMatrixWorld(true);  // 손·발(과 그 아래)은 그대로
+        }
         // 손·발도 아래팔·정강이에 대해 비틀리지 않게 — 옆으로 누운 자세에서 발바닥이 바닥을 보는 식으로 돌아가지 않는다
         const gax = _v7.set(0, 1, 0).applyQuaternion(g.getWorldQuaternion(_q2)).normalize();
         const hc2 = _v9.copy(h0).applyQuaternion(_q1.copy(c.getWorldQuaternion(_q2)).multiply(_q4.copy(restQ.get(c)).invert()));
@@ -854,6 +897,14 @@ const MOVE_3D = (() => {
       };
       ikPass(); ikPass();                                                     // 2) 두 번 — 다른 팔의 팔꿈치를 잡는 손은 그 팔이 자리 잡은 뒤에
       aimPass();                                                              // 3) IK 로 움직인 팔다리 끝에 달린 손·발은 부모가 정해진 뒤 다시 맞춘다
+      if (pose.fist || proc.fist) {                                           // 기구를 쥔 손은 손목을 곧게 — 아래팔을 그대로 잇는다. 바탕 동작의 손목 각도가 남으면
+        for (const side of [L, R]) {                                          // 기구가 손바닥이 아니라 손목에 걸린다 (여성 캐릭터의 숄더프레스·데드리프트, 리뷰)
+          const h = bones.get(side + 'Hand'), f = bones.get(side + 'ForeArm');
+          if (!h || !f || table.has(h)) continue;
+          const d = h.getWorldPosition(_v1).sub(f.getWorldPosition(_v2));
+          if (d.lengthSq() > 1e-6) aimBone(h, d.normalize().toArray());
+        }
+      }
       alignHinges(table);                                                     // 4) 팔꿈치·무릎이 굽는 쪽에 위팔·허벅지의 비틀림을 맞춘다
       if (pose.fist || proc.fist) fist();
       body.updateMatrixWorld(true);

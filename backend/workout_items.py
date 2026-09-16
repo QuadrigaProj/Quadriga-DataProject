@@ -33,5 +33,19 @@ def catalog() -> dict:
             "요인": d.get("요인", [])}
 
 
+# 기록 종목 가운데 국민체력100 공식 영상이 있는 것 — 연령대별 youtube id (data/processed/kspo_candidate_pool/official_video_catalog.json).
+# 영상이 있으면 3D 대신 영상을 보여 준다 (리뷰: "영상 자료에 있으면 영상 쓰는 게 좋을 듯"). 유소년은 청소년 영상을 쓴다.
+OFFICIAL_VIDEO = {
+    "shoulder-stretch": {"성인": "tmZ87GjdId4", "어르신": "yC9FdKEaqCI", "청소년": "gXUCHOXzDQA", "유소년": "gXUCHOXzDQA"},   # 등/어깨 뒤쪽 스트레칭 · 어깨 스트레칭 · 팔 당기기
+    "neck-stretch": {"성인": "d1tYcRykLPk", "어르신": "z2N8VCjEHdY", "청소년": "J_AwzVFuq9Q", "유소년": "J_AwzVFuq9Q"},       # 목 스트레칭
+    "hip-stretch": {"어르신": "MsP05OfVP4c"},                                                                              # 고관절 스트레칭 (어르신만 있다)
+}
+
+
+def video_for(item_id: str, 연령대: str | None) -> str | None:
+    """그 기록 종목에 그 연령대의 공식 영상이 있으면 youtube id, 없으면 None (그러면 3D 로 보여 준다)."""
+    return OFFICIAL_VIDEO.get(item_id, {}).get(연령대 or "")
+
+
 def by_id() -> dict[str, dict]:
     return {s["id"]: s for s in load()["종목"]}

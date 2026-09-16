@@ -1293,3 +1293,23 @@ def test_구간_계획은_넉넉한_제한_시간으로_부르고_실패한_까�
     _fake_sdk(monkeypatch, "이건 JSON 이 아니에요")
     assert air.periods(루틴, {}, "성인", None, 축="계절") is None
     assert air.why_last_fail("periods") == "AI 응답을 읽지 못했어요"
+
+
+def test_공식_영상이_있는_기록_종목은_영상으로_보여준다(monkeypatch):
+    """어깨·목 스트레칭은 국민체력100 공식 영상이 있다 — 3D 로 만든 것보다 영상이 낫다 (리뷰). 연령대별로 고르고, 없으면 3D 그대로."""
+    from backend import workout_items as wi
+    assert wi.video_for("shoulder-stretch", "성인") == "tmZ87GjdId4" and wi.video_for("neck-stretch", "어르신") == "z2N8VCjEHdY"
+    assert wi.video_for("hip-stretch", "성인") is None and wi.video_for("squat", "성인") is None       # 없는 건 3D
+    줄 = [
+        {"코드": _코드("준비운동"), "단계": "준비운동", "수행량": "30초", "왜": "몸을 풀어요"},
+        {"기록": "squat", "단계": "본운동", "수행량": "12회 × 3세트", "왜": "하체"},
+        {"기록": "shoulder-stretch", "단계": "정리운동", "수행량": "30초 × 3", "왜": "어깨"},
+        {"기록": "neck-stretch", "단계": "정리운동", "수행량": "30초 × 3", "왜": "목"},
+    ]
+    _fake_sdk(monkeypatch, _지은응답(동작=줄))
+    steps = air.compose(사용자, "성인", 종목ids=[])["루틴"]["steps"]
+    by = {s.get("id"): s for s in steps if s["출처"] == "기록"}
+    assert by["shoulder-stretch"]["youtube_id"] == "tmZ87GjdId4" and by["neck-stretch"]["youtube_id"] == "d1tYcRykLPk"
+    assert by["squat"]["youtube_id"] is None
+    steps = air.compose(사용자, "어르신", 종목ids=[])["루틴"]["steps"]
+    assert {s.get("id"): s["youtube_id"] for s in steps if s["출처"] == "기록"}["shoulder-stretch"] == "yC9FdKEaqCI"

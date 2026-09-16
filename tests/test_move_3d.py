@@ -127,7 +127,7 @@ def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
     assert "'knee-pushup': { bones: {" in 손봄 and "'mixamorig:LeftUpLeg': { aim: thighToFloor('Left') }" in 손봄 and "'mixamorig:LeftLeg': { aim: shinBack }" in 손봄     # 무릎을 바닥에, 정강이는 뒤로 눕힌다
     만듦 = _proc()
     assert "'deadlift': { base: 'idle', period: 3.4, gear: 'barbell', fist: true" in 만듦                   # 힌지해서 바를 잡고 똑바로 선다
-    assert "'shoulder-press': { base: 'idle', period: 2.4, gear: 'dumbbells', fist: true" in 만듦          # 어깨 위로 밀어 올린다
+    assert "'shoulder-press': { base: 'idle', period: 2.6, gear: 'seatpress', fist: true, still: true" in 만듦   # 벤치에 앉아 어깨 위로 밀어 올린다
     assert "palmTo: 'head'" in 만듦                                                                          # 손바닥은 머리 쪽으로
     assert "'one-leg': { base: 'idle', period: 6" in 만듦 and "handsOnHips(C)" in 만듦                     # 손은 허리, 한 발 들기
     assert "const clipName = (TWEAKS[id] && TWEAKS[id].base) || (PROC[id] && PROC[id].base) || CLIPS[id] || FALLBACK_CLIP;" in js
@@ -141,12 +141,12 @@ def test_비슷한_동작은_뼈를_손봐_원래_동작에_가깝게():
 def test_기구가_필요한_동작엔_기구를_붙인다():
     js = _js()
     기구 = js.split("const GEAR = {")[1].split("\n  };")[0]
-    for id_, 이름 in (("barbell-squat", "backbar"), ("deadlift", "barbell"), ("dumbbell-curl", "dumbbells"), ("shoulder-press", "dumbbells"),
+    for id_, 이름 in (("barbell-squat", "backbar"), ("deadlift", "barbell"), ("dumbbell-curl", "dumbbells"), ("shoulder-press", "seatpress"),
                      ("kettlebell-swing", "kettlebell"), ("jump-rope", "rope"), ("treadmill", "treadmill"), ("swim", "water"),
                      ("bench-press", "bench"), ("lat-pulldown", "pulldown"), ("leg-press", "legpress"), ("cycle", "bike"), ("rowing", "rower"), ("calf-stretch", "wall")):
         assert f"'{id_}': '{이름}'" in 기구, id_
     만들기 = js.split("function makeGear(T, name, ctx)")[1].split("\n  }")[0]
-    for 이름 in ("barbell", "backbar", "dumbbells", "kettlebell", "rope", "treadmill", "water", "bench", "pulldown", "legpress", "bike", "rower", "wall"):
+    for 이름 in ("barbell", "backbar", "dumbbells", "seatpress", "kettlebell", "rope", "treadmill", "water", "bench", "pulldown", "legpress", "bike", "rower", "wall"):
         assert f"case '{이름}':" in 만들기, 이름
     assert "grip('Left', a); grip('Right', b2);" in 만들기                                     # 손바닥 가운데를 잡는다
     assert "out.add(b.set(0, GRIP.along, 0).applyQuaternion(q));" in 만들기

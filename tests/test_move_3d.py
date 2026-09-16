@@ -149,7 +149,7 @@ def test_기구가_필요한_동작엔_기구를_붙인다():
     for 이름 in ("barbell", "backbar", "dumbbells", "seatpress", "kettlebell", "rope", "treadmill", "water", "bench", "pulldown", "legpress", "bike", "rower", "wall"):
         assert f"case '{이름}':" in 만들기, 이름
     assert "grip('Left', a); grip('Right', b2);" in 만들기                                     # 손바닥 가운데를 잡는다
-    assert "out.add(b.set(0, GRIP.along, 0).applyQuaternion(q));" in 만들기
+    assert "out.add(b.set(0, (ctx.hand[side] && ctx.hand[side].along) || GRIP.along, 0).applyQuaternion(q));" in 만들기   # 손바닥 자리는 리깅마다 잰다
     assert "new T.TubeGeometry(new T.CatmullRomCurve3(pts), 48, 0.008, 6, false)" in 만들기   # 줄넘기 줄은 손잡이 사이를 돈다
     assert "ctx.jump = { peak0:" in js                                                         # 뛰어오를 때 발밑을 지난다
     assert "if (gear.update) gear.update(clock.elapsedTime, action.time);" in js

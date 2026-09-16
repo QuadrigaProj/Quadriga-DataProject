@@ -95,7 +95,7 @@ def test_홈_체력측정_항목_문구가_원문과_같다():
     html = _index()
     for s in [
         "나이 · 성별",
-        "다리를 펴고 앉아 손끝이 닿는 거리",
+        "앉아 앞으로 숙였을 때 손끝 위치를 측정하세요. (발끝 = 0cm)",                                   # 2dca879 에서 문구를 바꿨다 (발끝 = 0cm 기준)
         "윗몸일으키기",
         "키 · 몸무게",
         "30초 제자리 점프", "두 발 모아 제자리에서 최대한 빠르게",
@@ -2172,7 +2172,7 @@ def test_계산_전에_필수_측정값이_비면_막는다():
     assert "need.push('나이')" in body
     assert "need.push('키')" in body
     assert "need.push('몸무게')" in body
-    assert "need.push('다리를 펴고 앉아 손끝이 닿는 거리')" in body
+    assert "need.push('앉아 앞으로 숙였을 때 손끝 위치')" in body
     assert "need.push(strengthLabel())" in body
     assert "if (need.length)" in body and "return;" in body
 

@@ -195,7 +195,7 @@
 
 ### hamstring-stretch 햄스트링 스트레칭 (선 자세)
 - 한 발을 앞에 두고 뒤꿈치를 바닥에, 발끝은 위로. 앞 다리는 편다. 뒷무릎은 살짝 굽힌다.
-- 엉덩이를 뒤로 빼며 **등을 평평하게 유지한 채** 힌지해 앞으로 숙인다. 손은 허리에 두면 등이 말리지 않는다.
+- 엉덩이를 뒤로 빼며 **등을 평평하게 유지한 채** 힌지해 앞으로 숙인다. 손은 허벅지 위에 가볍게 얹는다 (무릎을 누르지 않는다).
 - 다리 뒤쪽이 당기는 지점에서 15~30초, 반대쪽.
 - 흔한 실수: 등을 둥글게 말아 숙임.
 - 출처: [Popular Science](https://www.popsci.com/health/hamstring-stretches-physical-therapist/), [Hinge Health](https://www.hingehealth.com/resources/articles/hamstring-stretch/), [Mayo Clinic](https://www.mayoclinic.org/healthy-lifestyle/fitness/in-depth/stretching/art-20546848)

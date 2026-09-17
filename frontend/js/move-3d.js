@@ -54,7 +54,9 @@ const MOVE_3D = (() => {
   // 허벅지: 엉덩이에서 뒤로 눕혀 무릎이 바닥(관절 높이 0.06)에 닿게 — 엉덩이 높이에 따라 각도가 달라진다
   const thighToFloor = side => p => { const h = p('mixamorig:' + side + 'UpLeg'), b = shinBack(p), bl = Math.hypot(b[0], b[2]) || 1;
     const dy = Math.max(0.05, Math.min(0.42, h.y - 0.06)), dz = Math.sqrt(0.437 * 0.437 - dy * dy); return [b[0] / bl * dz, -dy, b[2] / bl * dz]; };
-  const footBack = p => { const b = shinBack(p), l = Math.hypot(b[0], b[2]) || 1; return [b[0] / l * 0.98, 0.21, b[2] / l * 0.98]; };   // 발등을 바닥에 (발끝만 12° 들어 발바닥 굽힘 50° 안)
+  // 발등을 바닥에: 정강이는 앞면이 바닥을 보고 누워 있고, 발은 선 자세에서 정강이 선보다 앞(= 누우면 아래)으로 58° 나와 있다. 발바닥 굽힘 45° 면
+  // 정강이 선보다 13° '아래'다 — 예전엔 12° '위'로 두었는데 그건 발바닥 굽힘 70° 라 사람 발목이 못 간다 (각도 검사는 부호를 못 봤다)
+  const footBack = p => { const b = shinBack(p), l = Math.hypot(b[0], b[2]) || 1; return [b[0] / l * 0.974, -0.225, b[2] / l * 0.974]; };
   // 달리기: 동작 파일은 팔꿈치를 옆으로 35° 넘게 벌리고 뛴다(덩치 큰 캐릭터용) — 어깨선 기준으로 위팔의 '바깥' 성분과 아래팔의 '안쪽' 성분을
   // 줄여 팔을 몸 가까이 붙인다. 앞뒤로 흔드는 움직임은 그대로다 (리뷰: 러닝도 팔이 이상해)
   const tuck = (side, from, to, keep, inward) => p => {
@@ -68,7 +70,8 @@ const MOVE_3D = (() => {
   const TWEAKS = {
     'run': { bones: runArms },
     'knee-pushup': { bones: { 'mixamorig:LeftUpLeg': { aim: thighToFloor('Left') }, 'mixamorig:RightUpLeg': { aim: thighToFloor('Right') },
-                              'mixamorig:LeftLeg': { aim: shinBack }, 'mixamorig:RightLeg': { aim: shinBack }, 'mixamorig:LeftFoot': { aim: footBack }, 'mixamorig:RightFoot': { aim: footBack } } },
+                              'mixamorig:LeftLeg': { aim: shinBack }, 'mixamorig:RightLeg': { aim: shinBack }, 'mixamorig:LeftFoot': { aim: footBack }, 'mixamorig:RightFoot': { aim: footBack },
+                              'mixamorig:LeftToeBase': { rest: true }, 'mixamorig:RightToeBase': { rest: true } } },   // 발끝으로 버티던 푸시업의 젖혀진 발가락을 편다
   };
 
   /* ---- 학습한 자세로 만든 동작 (PROC) ----
@@ -167,7 +170,9 @@ const MOVE_3D = (() => {
       const hy = Math.max(0.2, (l1 + 0.04 + 0.039 + 0.37 * 0.1 / 0.9) / (1 + 0.37 / 0.9));
       const sn = Math.max(0.05, Math.min(0.35, (hy - 0.1) / 0.9)), cs = Math.sqrt(1 - sn * sn);                     // 엉덩이 높이 → 몸 기울기
       const up = [0, sn, -cs], down = [0, -sn, cs], front = [0, -1, 0];
-      const arm = side => ({ ik: () => { const P = C.pos(side + 'Arm'); return [P.x, 0.045, P.z - l2]; }, bend: [0, -1, 0.2], palmTo: [0, -1, 0] });   // 손은 어깨 앞 아래팔 길이만큼, 바닥에 — 팔꿈치가 어깨 바로 아래 바닥에 온다
+      // 손은 어깨 앞 아래팔 길이만큼, 바닥에 — 팔꿈치가 어깨 바로 아래 바닥에 온다. 손 방향은 아래에서 통째로 정하니 여기에 palmTo 를 또 주지 않는다:
+      // IK 단계의 palmTo 는 '그 전에 놓인 손'을 보고 아래팔을 돌리는데, 손은 곧 다시 놓이므로 아래팔만 엉뚱하게 100° 돌아가 오른 손목이 170° 꼬였다 (리뷰: 플랭크 손목)
+      const arm = side => ({ ik: () => { const P = C.pos(side + 'Arm'); return [P.x, 0.045, P.z - l2]; }, bend: [0, -1, 0.2] });
       return { root: { pos: [0, hy + 0.005 * Math.sin(u * Math.PI * 2), 0], up, front },
         bones: { ...spineAll(up, N(0, sn - 0.1, -cs), front), [L + 'Arm']: arm(L), [R + 'Arm']: arm(R), [L + 'Hand']: { aim: [0, 0, -1], palm: [0, -1, 0] }, [R + 'Hand']: { aim: [0, 0, -1], palm: [0, -1, 0] },   // 손은 앞으로 뻗고 손바닥은 바닥에 (리뷰)
           ...both(down, down, N(0, -0.62, 0.78)) } };                                                         // 발끝 세움 (발등 굽힘 30°쯤)
@@ -183,10 +188,11 @@ const MOVE_3D = (() => {
         ph = ((ph % 1) + 1) % 1; let i = 0; while (PATH[i + 1][0] < ph) i++;
         const a = PATH[i], b = PATH[i + 1], t = sstep((ph - a[0]) / (b[0] - a[0]));
         const x = mix(a[1], b[1], t) * sgn, y = mix(a[2], b[2], t), z = mix(a[3], b[3], t);
-        const w = hold(ph, 0.48, 0.58, 0.95, 1);                                                                       // 물 밖(되돌리기)이면 1
         return { ik: () => { const S = C.pos(side + 'Arm'); return [S.x + x, S.y + y, S.z + z]; },
-          bend: [sgn, 0.8, 0],                                                                                         // 팔꿈치는 바깥·위(높게)
-          palmTo: N(...mix([0, 0, 1], [0, -1, 0], w)) };                                                               // 물속에선 손바닥이 뒤(발 쪽)를 밀고, 물 밖에선 아래를 본다
+          bend: [sgn, 0.8, 0] };                                                                                       // 팔꿈치는 바깥·위(높게)
+        // 손바닥 방향은 따로 정하지 않는다 — 아래팔을 위팔에 대해 비틀지 않은 채(경첩 맞추기) 팔꿈치만 높게 두면 손바닥은 저절로 뻗을 땐 아래·바깥,
+        // 당길 땐 뒤(발 쪽 — 물을 민다), 밀어 끝낼 땐 뒤·위, 되돌릴 땐 뒤·아래를 본다. 전엔 '물속 = 뒤, 물 밖 = 아래'를 palmTo 로 주었는데, 다 밀어 팔이
+        // 뒤로 뻗는 순간 목표(뒤)가 아래팔과 나란해져 비틀 각이 ±180° 를 오가며 아래팔이 한 프레임에 90~200° 뒤집혔다 (리뷰 3차 떨림 측정)
       };
       const k = Math.sin(u * Math.PI * 4);                                                                              // 발차기 — 한 바퀴에 두 번, 좌우 번갈아
       const leg = (side, sgn) => { const d = Math.max(0, k * sgn); return { [side + 'UpLeg']: N(0, -0.08 - 0.1 * k * sgn, 1), [side + 'Leg']: N(0, -0.05 - 0.25 * d, 1), [side + 'Foot']: { aim: footFollow(side, leftv, 20) } }; };
@@ -206,11 +212,14 @@ const MOVE_3D = (() => {
     // 바벨 스쿼트: 몸은 모션캡처 그대로, 손만 등에 멘 바를 쥔다. 바는 숙인 등을 따라 움직이는데(기구 backbar) 손은 동작 파일의 자리에
     // 남아 앉을 때 바와 어긋났다 — 손목을 바의 쥘 자리 아래에 두고 손가락은 바를 넘어 감싼다 (손바닥은 앞·위)
     'barbell-squat': { base: 'barbell-squat', period: 2.27, gear: 'backbar', fist: true, pose: (u, C) => {
-      const n = C.pos('mixamorig:Neck'), ls = C.pos(L + 'Arm'), rs = C.pos(R + 'Arm'), off = C.carry('mixamorig:Spine2', BACKBAR);
-      const ax = N(ls.x - rs.x, ls.y - rs.y, ls.z - rs.z), half = ls.distanceTo(rs) / 2 + 0.22;                           // 어깨너비보다 한 뼘 넓게
+      const off = C.carry('mixamorig:Spine2', BACKBAR);
       const up = N(...C.carry('mixamorig:Spine2', [0, 0.94, -0.34])), palm = N(...C.carry('mixamorig:Spine2', [0, 0.34, 0.94]));
-      const arm = (side, sgn) => { const k = C.along(side === L ? 'Left' : 'Right');
-        return { ik: [0, 1, 2].map(i => [n.x, n.y, n.z][i] + off[i] + ax[i] * sgn * half - up[i] * k - palm[i] * 0.024), bend: C.carry('mixamorig:Spine2', [sgn * 0.25, -1, -0.15]) }; };
+      // 쥘 자리는 IK 를 풀 때(빗장뼈를 제자리에 놓은 뒤) 셈한다 — 자세를 만들 때 미리 어깨 관절 자리를 읽으면, 그 자리가 앞 프레임에 우리가 놓은
+      // 것인지 동작 파일이 막 덮어쓴 것인지에 따라 달라져 손이 한 프레임씩 4cm 튀었다 (리뷰: 잔 떨림). 바의 방향은 기구와 같이 빗장뼈 뿌리로 잰다
+      const arm = (side, sgn) => ({ bend: C.carry('mixamorig:Spine2', [sgn * 0.25, -1, -0.15]), ik: p => {
+        const n = p('mixamorig:Neck'), lc = p(L + 'Shoulder'), rc = p(R + 'Shoulder'), ls = p(L + 'Arm'), rs = p(R + 'Arm');
+        const ax = N(lc.x - rc.x, lc.y - rc.y, lc.z - rc.z), half = ls.distanceTo(rs) / 2 + 0.22, k = C.along(side === L ? 'Left' : 'Right');   // 어깨너비보다 한 뼘 넓게
+        return [0, 1, 2].map(i => [n.x, n.y, n.z][i] + off[i] + ax[i] * sgn * half - up[i] * k - palm[i] * 0.024); } });
       return { bones: { [L + 'Arm']: arm(L, 1), [R + 'Arm']: arm(R, -1), [L + 'Hand']: { aim: up, palm }, [R + 'Hand']: { aim: up, palm } } };
     } },
     // 브리지: 누워 무릎 세우고, 뒤꿈치로 밀어 무릎–엉덩이–어깨가 한 직선. 위에서 1~2초 조인다
@@ -300,11 +309,15 @@ const MOVE_3D = (() => {
                                palm: p => { const { h, u } = crown(), w = p(side + 'Hand'); return [h.x + u[0] * 0.1 - w.x, h.y + u[1] * 0.1 - w.y, h.z + u[2] * 0.1 - w.z]; } });   // 손가락은 반대편 귀 위쪽으로 내려간다
       const bez = (a, b, c, w) => a.map((_, i) => (1 - w) * (1 - w) * a[i] + 2 * (1 - w) * w * b[i] + w * w * c[i]);
       const armAt = (side, w) => ({ ik: () => bez(rest(side), via(side), top(side), w), bend: N(...mix([0.9 * sgn(side), -0.4, -0.2], [0.7 * sgn(side), 0.6, 0.4], w)) });
+      // 손은 내려와 있을 땐 아래팔을 잇고 손바닥은 몸 쪽, 머리에 가까워질수록 머리를 감싸는 쪽으로 서서히 — 0.9 에서 켜고 끄면 손이 한 프레임에 100° 돌았다 (리뷰: 잔 떨림)
+      const handAt = (side, w) => { const k = ramp(w, 0.55, 1), d = drape(side);
+        return { aim: p => { const e = p(side + 'ForeArm'), h = p(side + 'Hand'); return mix(N(h.x - e.x, h.y - e.y, h.z - e.z), N(...d.aim(p)), k); },
+                 palm: p => mix(N(-0.8 * sgn(side), 0, -0.6), N(...d.palm(p)), k) }; };
       const right = { 'mixamorig:Neck': N(-0.15, 0.99, 0), 'mixamorig:Head': N(-0.5, 0.87, 0) };
       const left = { 'mixamorig:Neck': N(0.15, 0.99, 0), 'mixamorig:Head': N(0.5, 0.87, 0) };
       // 앞 절반(s = 1)은 왼손이 머리에 있으니 머리는 왼 어깨로(left), 뒤 절반은 오른 어깨로 — 예전엔 반대로 기울었다 (리뷰)
       return { bones: { 'mixamorig:Spine': [0, 1, 0], 'mixamorig:Spine1': [0, 1, 0], 'mixamorig:Spine2': [0, 1, 0], ...blend(right, left, s),
-        [L + 'Arm']: armAt(L, upL), [R + 'Arm']: armAt(R, upR), ...(upL > 0.9 ? { [L + 'Hand']: drape(L) } : {}), ...(upR > 0.9 ? { [R + 'Hand']: drape(R) } : {}) } };                                              // 손은 아래팔을 따라 머리 위에 얹힌다 — 손가락을 따로 내리면 손목이 100° 넘게 꺾였다
+        [L + 'Arm']: armAt(L, upL), [R + 'Arm']: armAt(R, upR), [L + 'Hand']: handAt(L, upL), [R + 'Hand']: handAt(R, upR) } };                                              // 손은 아래팔을 따라 머리 위에 얹힌다 — 손가락을 따로 내리면 손목이 100° 넘게 꺾였다
     } },
     // 고관절 스트레칭(반무릎): 뒷무릎은 엉덩이 아래, 상체는 곧게, 손은 허리. 골반을 말고 2~3cm 앞으로 옮긴다
     'hip-stretch': { base: 'kneel', period: 6, pose: (u, C) => ({
@@ -342,7 +355,7 @@ const MOVE_3D = (() => {
     } },
     // 종아리 스트레칭(벽): 벽에 손을 대고 한 발을 뒤로. 뒷다리는 곧게, 뒤꿈치는 바닥에. 앞무릎을 굽히며 몸을 앞으로 기울인다
     // (옆에서 보이게 벽은 +X 쪽에 두고 그쪽을 본다)
-    'calf-stretch': { base: 'idle', period: 6, gear: 'wall', pose: u => {
+    'calf-stretch': { base: 'idle', period: 6, gear: 'wall', open: true, pose: u => {
       const c = hold(u, 0.1, 0.4, 0.6, 0.9), up = N(0.34, 0.94, 0), flatX = N(0.85, -0.53, 0);                    // 벽(+X) 쪽을 보고 평평하게 디딘 발
       return { root: { pos: [mix(-0.1, -0.16, c), 0.95, 0], up, front: N(0.94, -0.34, 0) },
         bones: { ...spineAll(up, N(0.2, 1, 0), N(0.94, -0.34, 0)),
@@ -359,7 +372,7 @@ const MOVE_3D = (() => {
       const wB = hold(s1, 0.0, 0.06, 0.44, 0.5), wT = hold(s1, 0.06, 0.18, 0.38, 0.46);                             // 아래 다리를 먼저 펴고(wB) 위 다리를 넘긴다(wT) — 두 다리가 서로 지나가지 않게
       // 팔은 늘 IK 로 — T 자로 편 팔(방향)과 무릎을 누르는 팔(IK)을 섞으면 중간이 없어 절반에서 팔이 홱 튀고, 남아 있던 아래팔 방향이
       // IK 뒤에 다시 적용돼 손이 무릎에 닿지도 않았다 (리뷰: 팔이 떨리고 사라진다). 편 팔도 '어깨 옆 50cm' 를 짚는 IK 라 두 자세가 매끈하게 이어진다
-      const armT = side => ({ ik: p => add(p(side + 'Arm'), [side === L ? 0.5 : -0.5, -0.02, 0.02]), bend: [0, -0.3, 1] });
+      const armT = side => ({ ik: p => add(p(side + 'Arm'), [side === L ? 0.5 : -0.5, -0.02, 0.02]), bend: [0, -0.7, -0.7] });   // 팔꿈치는 아래·머리 쪽 — 그래야 바닥 짚은 손바닥이 아래팔 중립에 가깝다 (발 쪽이면 손목이 180° 꼬였다, 리뷰)
       const along = side => p => { const e = p(side + 'ForeArm'), w = p(side + 'Hand'); return [w.x - e.x, w.y - e.y, w.z - e.z]; };   // 손은 아래팔을 잇는다
       const handT = side => ({ aim: along(side), palm: [0, -1, 0] });                                                  // 편 팔의 손바닥은 바닥에
       const arms = { [L + 'Arm']: armT(L), [R + 'Arm']: armT(R), [L + 'Hand']: handT(L), [R + 'Hand']: handT(R) };
@@ -369,7 +382,7 @@ const MOVE_3D = (() => {
       const center = { ...arms, ...kneesUp, 'mixamorig:Head': { aim: [0, 0.05, -1], front: [0, 1, 0] } };
       const left = { ...arms, [L + 'UpLeg']: N(-0.61, 0.61, 0.51), [L + 'Leg']: N(-0.6, -0.62, 0.5), [L + 'Foot']: { aim: footFollow(L, N(1 - 0.13 * wT, 0.5 * wT, 0), 55) },   // 위 다리: 무릎을 들어 아래 다리 위를 넘긴다 (발의 '왼쪽' 은 30° 돌아간 골반을 따라간다 — 세상 기준이면 발목이 옆으로 30° 꺾였다)
         [R + 'UpLeg']: [0, 0, 1], [R + 'Leg']: [0, 0, 1], [R + 'Foot']: N(0, 0.7, 0.7),
-        [R + 'Arm']: { ik: p => press(p).w, bend: [0, 1, 0] },                                                            // 손은 무릎 살 위에 (거울에선 반대 무릎)
+        [R + 'Arm']: { ik: p => press(p).w, bend: [-1, -0.15, -0.2] },                                                   // 손은 무릎 살 위에 (거울에선 반대 무릎). 팔꿈치는 몸 바깥으로 — 천장 쪽으로 두면 어깨가 160° 안으로 돌아야 해 위팔이 꼬였다
         [R + 'Hand']: { aim: p => { const { k, a, w } = press(p); return [k.x + a[0] * 0.06 - w[0], k.y + 0.04 - w[1], k.z + a[2] * 0.06 - w[2]]; },
                         palm: p => { const { k, w } = press(p); return [k.x - w[0], k.y - w[1], k.z - w[2]]; } },
         'mixamorig:Head': { aim: [0, 0.05, -1], front: N(0.7, 0.7, 0) } };
@@ -426,13 +439,18 @@ const MOVE_3D = (() => {
       // 발볼이 페달 윗면에 놓인다: 발끝은 위(a = 90°)에서 25°, 아래에서 5° 내리고(발목이 덜 꺾인다), 발목은 그 발 방향에서 거꾸로 셈한다 —
       // 발볼은 발 뼈를 따라 12.5cm, 발바닥 쪽으로 3cm. 예전엔 발목을 페달 위에 두어 발이 페달 앞에 떠 있었다 (리뷰)
       const footDir = a => { const g = (32 + 15 + 10 * Math.sin(a)) * D; return [0, -Math.sin(g), Math.cos(g)]; };
+      const HAND_ON_BAR = { dir: N(0, -0.3, 0.954), palm: N(0, -0.954, -0.3) };
+      const gripBar = sgn => { const k = C.along(sgn > 0 ? 'Left' : 'Right'), d = HAND_ON_BAR.dir, n = HAND_ON_BAR.palm;
+        return [sgn * BIKE.bar[0], BIKE.bar[1] - d[1] * k - n[1] * 0.027, BIKE.bar[2] - d[2] * k - n[2] * 0.027]; };
       const pedal = (side, x, a) => { const f = footDir(a), py = BIKE.crank[1] + BIKE.r * Math.sin(a) + 0.012, pz = BIKE.crank[2] + BIKE.r * Math.cos(a);
         return { ik: [x, py - 0.125 * f[1] + 0.03 * f[2], pz - 0.125 * f[2] - 0.03 * f[1]], bend: [x * 0.4, 0.6, 0.8] }; };
       return { root: { pos: [0, 1.0, -0.05], up, front: N(0, -0.39, 0.92) },
         bones: { ...spineAll(up, N(0, 0.99, 0.15)),
           [L + 'UpLeg']: pedal(L, BIKE.x, -th), [R + 'UpLeg']: pedal(R, -BIKE.x, -th + Math.PI), [L + 'Foot']: footDir(-th), [R + 'Foot']: footDir(-th + Math.PI),          // 발바닥은 페달 위에
-          [L + 'Arm']: { ik: [BIKE.bar[0], BIKE.bar[1], BIKE.bar[2]], bend: [0.3, -1, 0], palmTo: [0, -1, 0] },
-          [R + 'Arm']: { ik: [-BIKE.bar[0], BIKE.bar[1], BIKE.bar[2]], bend: [-0.3, -1, 0], palmTo: [0, -1, 0] } } };
+          // 손잡이는 손바닥 가운데 아래에 온다: 손은 앞·살짝 아래로 뻗고 손바닥은 아래·뒤(손잡이 쪽). 손목은 거기서 손바닥 자리만큼(리깅마다 다르다)
+          // 물러나고 손잡이 굵기만큼 뜬다 — 예전엔 손목 관절을 손잡이 자리에 두어 손잡이가 손목을 뚫었다 (리뷰)
+          [L + 'Arm']: { ik: gripBar(1), bend: [0.3, -1, 0] }, [R + 'Arm']: { ik: gripBar(-1), bend: [-0.3, -1, 0] },
+          [L + 'Hand']: { aim: HAND_ON_BAR.dir, palm: HAND_ON_BAR.palm }, [R + 'Hand']: { aim: HAND_ON_BAR.dir, palm: HAND_ON_BAR.palm } } };
     } },
     // 로잉머신: 캐치(정강이 수직, 팔 편 채, 상체 살짝 앞) → 드라이브(다리 → 엉덩이 → 팔, 손잡이는 갈비뼈 아래) → 리커버리는 팔 → 상체 → 다리 순으로 두 배 천천히
     'rowing': { base: 'idle', period: 3.0, gear: 'rower', fist: true, pose: u => {
@@ -1059,8 +1077,9 @@ const MOVE_3D = (() => {
       const table = typeof tweak.bones === 'function' ? tweak.bones(t) : tweak.bones;
       if (!table) return;
       for (const [name, how] of Object.entries(table)) {
-        const bone = bones.get(name); if (!bone || !how.set) continue;
-        bone.quaternion.setFromEuler(_e.set(how.set[0] * D, how.set[1] * D, how.set[2] * D));
+        const bone = bones.get(name); if (!bone) continue;
+        if (how.rest && restLocalQ.has(bone)) bone.quaternion.copy(restLocalQ.get(bone));                  // rest: 부모에 대해 처음(T) 자세 그대로
+        if (how.set) bone.quaternion.setFromEuler(_e.set(how.set[0] * D, how.set[1] * D, how.set[2] * D));
       }
       body.updateMatrixWorld(true);
       // 부모부터 — 자식의 방향은 부모가 정해진 뒤에 맞춘다
@@ -1101,6 +1120,10 @@ const MOVE_3D = (() => {
         const deg = (m[2] === 'Thumb' ? GRIP.thumbCurl : GRIP.curl) * (m[3] === '1' ? 0.75 : 1);
         bone.quaternion.copy(restLocalQ.get(bone)).multiply(_q1.setFromAxisAngle(h.curl, deg * D));
       }
+    };
+    // 편 손: 손가락을 처음(T) 자세대로 곧게 — 바탕 동작의 살짝 말린 손가락이 남으면 벽·바닥을 짚은 손이 접혀 보인다 (리뷰: 종아리 스트레칭)
+    const openHands = () => {
+      for (const bone of boneList) if (/(Left|Right)Hand(Thumb|Index|Middle|Ring|Pinky)[123]$/.test(bone.name) && restLocalQ.has(bone)) bone.quaternion.copy(restLocalQ.get(bone));
     };
     // 기구
     const v = new T.Vector3();
@@ -1158,8 +1181,8 @@ const MOVE_3D = (() => {
     const HINGES = [['LeftArm', 'LeftForeArm', [0, 0, 1]], ['RightArm', 'RightForeArm', [0, 0, 1]], ['LeftUpLeg', 'LeftLeg', [0, 0, -1]], ['RightUpLeg', 'RightLeg', [0, 0, -1]]];
     // 아래팔이 위팔에 대해 비틀리는 한도. 엎침·뒤침은 실제로 각 75~85° 지만 이 리깅엔 비틀림 뼈가 없어 아래팔 살이 통째로 꼬인다 —
     // 45° 를 넘기면 아래팔이 짧고 얇아 보이고 팔꿈치가 관절 없이 휘는 것처럼 보였다 (리뷰). 손바닥 방향은 그만큼 덜 맞아도 팔이 팔처럼 보이는 쪽을 택한다
-    const TWIST_LIMIT = 45 * D, TWIST_LIMIT_STRAIGHT = 80 * D;         // 곧게 편 팔은 살이 덜 꼬여 더 돌려도 된다 — 바를 쥔 손바닥이 바를 감싸야 한다 (데드리프트)
-    const _q3 = new T.Quaternion(), _q4 = new T.Quaternion(), _v7 = new T.Vector3(), _v8 = new T.Vector3(), _v9 = new T.Vector3();
+    const TWIST_LIMIT = 100 * D, TWIST_LIMIT_STRAIGHT = 100 * D;         // 비틀림 뼈(addArmHelpers)가 생긴 뒤로는 실제 범위까지 — 그 전엔 45° 를 넘기면 아래팔이 통째로 꼬였다
+    const _q3 = new T.Quaternion(), _q4 = new T.Quaternion(), _v7 = new T.Vector3(), _v8 = new T.Vector3(), _v9 = new T.Vector3(), _vh = new T.Vector3();
     const lastBend = new Map();                                        // 위팔 → 마지막으로 팔꿈치가 굽었던 쪽(세상 기준)
     const alignHinges = table => {
       for (const [pn, cn, flex0] of HINGES) {
@@ -1199,7 +1222,9 @@ const MOVE_3D = (() => {
         // 아래팔·정강이는 위팔·허벅지에 대해 비틀리지 않게 — 경첩 축(굽는 방향 × 뼈 축)을 부모와 나란히. 손바닥 방향을 정한 아래팔은 그대로 둔다
         const hc = table && table.get(c), hp = table && table.get(p);
         const keepTwist = !!((hc && (hc.palmTo || hc.roll)) || (hp && hp.ik && hp.palmTo));   // 손바닥 방향을 정한 아래팔은 그 비틀림을 두되 한도 안에서
-        const axis0 = _v1.set(0, 1, 0).applyQuaternion(restQ.get(p)), h0 = _v2.fromArray(flex0).cross(axis0);      // 처음 자세의 경첩 축
+        // 처음 자세의 경첩 축. 제 벡터(_vh)에 둔다 — 임시 벡터(_v2)에 두었더니 아래에서 정강이를 돌릴 때(_v2.set(0,1,0)) 덮여, 돌린 프레임엔 발 맞추기가
+        // '위(0,1,0)'를 기준으로 셈됐다. 발끝을 편 발은 그 기준이 발 축과 거의 나란해 맞추기가 됐다 안 됐다 하며 발이 한 프레임씩 30° 돌았다 (리뷰: 무릎 푸시업의 발)
+        const axis0 = _v1.set(0, 1, 0).applyQuaternion(restQ.get(p)), h0 = _vh.fromArray(flex0).cross(axis0);
         const hpar = _v9.copy(h0).applyQuaternion(_q1.copy(p.getWorldQuaternion(_q2)).multiply(_q3));                // 부모의 지금 경첩 축 (_q3 = 처음 자세의 역)
         const cax = _v7.subVectors(g.getWorldPosition(_v8), c.getWorldPosition(_v1)).normalize();                     // 아래팔·정강이 축
         const hch = _v8.copy(h0).applyQuaternion(_q1.copy(c.getWorldQuaternion(_q2)).multiply(_q4.copy(restQ.get(c)).invert()));   // 자식의 지금 경첩 축
@@ -1217,14 +1242,15 @@ const MOVE_3D = (() => {
         }
         const limit = straight ? TWIST_LIMIT_STRAIGHT : TWIST_LIMIT;
         const turn = keepTwist ? (Math.abs(tw) > limit ? tw - Math.sign(tw) * limit : 0) : tw;
-        if (Math.abs(turn) < 0.02) continue;
-        g.getWorldQuaternion(_q4);
-        c.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), turn)); c.updateMatrixWorld(true);
-        g.quaternion.copy(c.getWorldQuaternion(_q2).invert().multiply(_q4)); g.updateMatrixWorld(true);    // 손·발(과 그 아래)은 그대로
+        if (Math.abs(turn) >= 0.02) {
+          g.getWorldQuaternion(_q4);
+          c.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), turn)); c.updateMatrixWorld(true);
+          g.quaternion.copy(c.getWorldQuaternion(_q2).invert().multiply(_q4)); g.updateMatrixWorld(true);  // 손·발(과 그 아래)은 그대로
+        }                                                                                                   // (돌릴 게 없어도 아래의 손·발 맞추기는 한다 — 여기서 건너뛰어 무릎 푸시업의 발이 정강이에 대해 50°·160° 비틀린 채였다, 리뷰)
         // 손바닥 방향을 정한 팔은 손을 다시 맞추지 않는다 — palmToward 가 손의 비틀림까지 셈해 아래팔을 돌렸는데 손을 또 돌리면 손바닥이 돌아간다
-        // (브리지·런지에서 손이 돌아가 보였다, 리뷰). 한도 때문에 되돌린 만큼만 손목에서 40° 까지 메운다
+        // (브리지·런지에서 손이 돌아가 보였다, 리뷰)
         const hg = table && table.get(g), fixedHand = !!(hg && (hg.palm || hg.front));                        // 손 방향을 통째로 정한 자세 — 손은 그대로 둔다
-        if (keepTwist) { if (!fixedHand) { const fill = Math.max(-40 * D, Math.min(40 * D, -turn)); g.quaternion.multiply(_q1.setFromAxisAngle(_v2.set(0, 1, 0), fill)); g.updateMatrixWorld(true); } continue; }
+        if (keepTwist) continue;                                                                           // 한도를 넘는 만큼은 손바닥이 덜 돌아간 채로 둔다 — 손목에서 메우면 손목이 꼬인다
         if (fixedHand) continue;
         // 손·발도 아래팔·정강이에 대해 비틀리지 않게 — 옆으로 누운 자세에서 발바닥이 바닥을 보는 식으로 돌아가지 않는다
         const gax = _v7.set(0, 1, 0).applyQuaternion(g.getWorldQuaternion(_q2)).normalize();
@@ -1254,8 +1280,24 @@ const MOVE_3D = (() => {
       body.updateMatrixWorld(true);
       const table = new Map();
       for (const [n, how] of Object.entries(pose.bones || {})) { const b = bones.get(n); if (b && how) table.set(b, how); }
+      // 빗장뼈(Shoulder)는 자세 표가 안 정하면 우리가 놓는다: 몸통만 따라간 제자리 + 들어 올린 각(lifts). aimPass 가 부모 → 자식 순서로
+      // 지나갈 때 제 차례에 놓는다 — 몸통이 정해진 뒤, 위팔을 겨누기 전.
+      const lifts = new Map(), clavicles = new Set();
+      for (const side of [L, R]) { const cl = bones.get(side + 'Shoulder'); if (cl && cl.parent && !table.has(cl) && restQ.has(cl.parent)) clavicles.add(cl); }
+      const placeClavicle = cl => {
+        const carry = _q3.copy(cl.parent.getWorldQuaternion(_q1)).multiply(_q4.copy(restQ.get(cl.parent)).invert());     // 몸통이 T 자세에서 지금까지 돈 만큼
+        const restWorld = _q2.copy(carry).multiply(restQ.get(cl));                                                    // 몸통만 따라간 빗장뼈의 방향
+        const lift = lifts.get(cl) || 0;
+        if (lift > 0) {
+          const upB = _v7.set(0, 1, 0).applyQuaternion(carry).normalize(), d0 = _v9.set(0, 1, 0).applyQuaternion(restWorld).normalize();
+          const axis = _v1.crossVectors(d0, upB);
+          if (axis.lengthSq() > 1e-6) restWorld.premultiply(_q1.setFromAxisAngle(axis.normalize(), lift));
+        }
+        cl.quaternion.copy(cl.parent.getWorldQuaternion(_q4).invert().multiply(restWorld)); cl.updateMatrixWorld(true);
+      };
       const aimPass = () => {                                                 // 방향 — 부모부터 (aim 이 함수면 뼈 위치 조회 함수를 받아 방향을 돌려준다)
         for (const bone of boneList) {
+          if (clavicles.has(bone)) { placeClavicle(bone); continue; }
           const how = table.get(bone); if (!how || how.ik) continue;
           const aim = (Array.isArray(how) || how === 'rest') ? how : how.aim;
           if (aim) { const dir = aim === 'rest' ? restDir(bone) : (typeof aim === 'function' ? aim(posOf) : aim);
@@ -1266,6 +1308,14 @@ const MOVE_3D = (() => {
           const how = table.get(bone); if (how && !how.ik && how.palmTo) palmToward(bone, how.palmTo);
         }
       };
+      // 0) 팔은 자세가 정하는데 손은 안 정한 쪽은 손목을 중립(아래팔을 곧게 잇고 비틀림 없이)으로 둔다 — 부모에 대한 처음 자세 그대로.
+      //    멈춰 둔 바탕 동작의 손목 각도(좌우가 다르고 70° 씩 비틀려 있기도 하다)가 남으면 기구가 손목에 걸리고 두 손이 짝짝이가 된다 (리뷰).
+      //    palmTo 가 아래팔을 돌리기 전에 해 둬야 늘 같은 손을 보고 돌린다
+      for (const side of [L, R]) {
+        const h = bones.get(side + 'Hand'), f = bones.get(side + 'ForeArm'), arm = bones.get(side + 'Arm');
+        if (!h || !f || table.has(h) || !restLocalQ.has(h)) continue;
+        if (pose.fist || proc.fist || table.has(f) || (arm && table.get(arm) && table.get(arm).ik)) { h.quaternion.copy(restLocalQ.get(h)); h.updateMatrixWorld(true); }
+      }
       aimPass();                                                              // 1) 방향
       const ikPass = () => {                                                  // 손·발 목표 — 두 마디를 한 번에
         for (const bone of boneList) {
@@ -1281,41 +1331,24 @@ const MOVE_3D = (() => {
       ikPass(); ikPass();                                                     // 2) 두 번 — 다른 팔의 팔꿈치를 잡는 손은 그 팔이 자리 잡은 뒤에
       aimPass();                                                              // 3) IK 로 움직인 팔다리 끝에 달린 손·발은 부모가 정해진 뒤 다시 맞춘다
       // 3.5) 어깨뼈 리듬: 팔을 수평보다 위로 들면 빗장뼈(Shoulder)가 따라 올라간다 (어깨 관절 2 : 어깨뼈 1). 자세 표는 위팔만 돌려서
-      //      머리 위로 든 팔의 어깨·겨드랑이 살이 접혀 깨져 보였다 (숄더프레스·크런치, 리뷰). 빗장뼈를 올린 뒤 팔 자세를 다시 푼다
+      //      머리 위로 든 팔의 어깨·겨드랑이 살이 접혀 깨져 보였다 (숄더프레스·크런치, 리뷰). 빗장뼈를 올린 뒤 팔 자세를 다시 푼다.
+      //      올림각은 늘 '빗장뼈를 제자리에 두고 푼 팔'에서 잰다 — 지금 빗장뼈(앞 프레임에 우리가 올려 둔 것일 수도, 동작 파일이 막 덮어쓴 것일 수도
+      //      있다)에서 재면 프레임마다 출발점이 달라 어깨가 1cm 씩 오르내렸다 (리뷰: 목·종아리 스트레칭의 잔 떨림)
       let shrugged = false;
-      for (const side of [L, R]) {
-        const cl = bones.get(side + 'Shoulder'), arm = bones.get(side + 'Arm'), fore = bones.get(side + 'ForeArm');
-        if (!cl || !arm || !fore || !cl.parent || table.has(cl) || !restQ.has(cl.parent)) continue;
-        const carry = _q3.copy(cl.parent.getWorldQuaternion(_q1)).multiply(_q4.copy(restQ.get(cl.parent)).invert());     // 몸통이 T 자세에서 지금까지 돈 만큼
+      for (const cl of clavicles) {
+        const arm = cl.children.find(x => x.isBone && !x.helperOf), fore = arm && arm.children.find(x => x.isBone && !x.helperOf); if (!fore) continue;
+        const carry = _q3.copy(cl.parent.getWorldQuaternion(_q1)).multiply(_q4.copy(restQ.get(cl.parent)).invert());
         const upB = _v7.set(0, 1, 0).applyQuaternion(carry).normalize();
         const armDir = _v8.subVectors(fore.getWorldPosition(_v1), arm.getWorldPosition(_v2)).normalize();
         const elev = Math.acos(Math.max(-1, Math.min(1, -armDir.dot(upB))));                                         // 0 = 내린 팔, π = 머리 위
-        const lift = Math.max(0, Math.min(35 * D, (elev - 80 * D) * 0.45));
-        const restWorld = _q2.copy(carry).multiply(restQ.get(cl));                                                    // 몸통만 따라간 빗장뼈의 방향
-        const d0 = _v9.set(0, 1, 0).applyQuaternion(restWorld).normalize();
-        const axis = _v1.crossVectors(d0, upB); if (axis.lengthSq() < 1e-6) continue; axis.normalize();
-        const target = _q1.setFromAxisAngle(axis, lift).multiply(restWorld);
-        const was = _q2.copy(cl.quaternion);
-        cl.quaternion.copy(cl.parent.getWorldQuaternion(_q4).invert().multiply(target)); cl.updateMatrixWorld(true);
-        if (was.angleTo(cl.quaternion) > 0.003) shrugged = true;               // 빗장뼈가 조금이라도 움직였으면 팔을 다시 푼다 — 안 그러면 손이 목표에서 몇 cm 빗나간다 (허리 짚기)
+        // 많이 올리면(전엔 35° 까지) 빗장뼈에 붙은 윗가슴·승모근 살이 통째로 들려 어깨가 귀까지 솟고 가슴이 사다리꼴로 좁아졌다 (리뷰: 크런치의 어깨~가슴).
+        // 어깨 살은 이제 보조 뼈(addArmHelpers)가 맡으니 빗장뼈는 살짝만(12° 까지) 따라간다
+        const lift = Math.max(0, Math.min(12 * D, (elev - 80 * D) * 0.15));
+        if (lift > 0.002) { lifts.set(cl, lift); shrugged = true; }
       }
       if (shrugged) { aimPass(); ikPass(); ikPass(); aimPass(); }
-      {                                                                       // 기구를 쥔 손은 손목을 곧게 — 아래팔을 그대로 잇는다. 바탕 동작의 손목 각도가 남으면
-        for (const side of [L, R]) {                                          // 기구가 손바닥이 아니라 손목에 걸린다 (여성 캐릭터의 숄더프레스·데드리프트, 리뷰)
-          const h = bones.get(side + 'Hand'), f = bones.get(side + 'ForeArm'), arm = bones.get(side + 'Arm');
-          if (!h || !f || table.has(h)) continue;
-          // 팔은 자세가 정했는데 손은 안 정했을 때도 같다 — 멈춰 둔 바탕 동작의 손목 각도가 좌우 다르게 남아 데드버그의 두 손이 짝짝이였다 (리뷰)
-          if (!(pose.fist || proc.fist || table.has(f) || (arm && table.get(arm) && table.get(arm).ik))) continue;
-          // 손의 지금 방향에서 아래팔 방향으로 '기울이기만' 한다 — 처음 자세에서 다시 겨누면(aimBone) 아래팔 비틀림으로 맞춘 손바닥 방향이 지워져
-          // 덤벨을 쥔 손바닥이 앞이 아니라 안쪽·뒤를 봤다
-          const want = h.getWorldPosition(new T.Vector3()).sub(f.getWorldPosition(new T.Vector3())); if (want.lengthSq() < 1e-6) continue; want.normalize();
-          const cur = h.getWorldQuaternion(new T.Quaternion()), curDir = new T.Vector3(0, 1, 0).applyQuaternion(cur);
-          const worldQ = new T.Quaternion().setFromUnitVectors(curDir, want).multiply(cur);
-          h.quaternion.copy(h.parent.getWorldQuaternion(new T.Quaternion()).invert().multiply(worldQ)); h.updateMatrixWorld(true);
-        }
-      }
       alignHinges(table);                                                     // 4) 팔꿈치·무릎이 굽는 쪽에 위팔·허벅지의 비틀림을 맞춘다
-      if (pose.fist || proc.fist) fist();
+      if (pose.fist || proc.fist) fist(); else if (pose.open || proc.open) openHands();
       body.updateMatrixWorld(true);
     };
     // 보조 뼈 구동 — 본래 뼈의 지금 방향에서 '제 축 비틀림' θ 를 잰다: 기준 방향(dir0)의 뼈 방향 q0 을 지금 뻗은 쪽으로 가장 짧게
@@ -1323,14 +1356,35 @@ const MOVE_3D = (() => {
     // 비틀림 뼈는 (1 − τ)·θ 를 되감고, 나눠 도는 뼈는 묶인 방향에서 '비틀림을 뺀 지금 방향'까지의 f 만큼만 돈다.
     // 동작 파일이든 자세 표든 자세를 다 잡은 뒤 매 프레임 한 번
     const _ht = new T.Quaternion(), _h0 = new T.Quaternion(), _hr = new T.Quaternion(), _hY = new T.Vector3(0, 1, 0), _hd = new T.Vector3();
+    const twistNow = j => {                                                     // 이 뼈의 제 축 비틀림 (−π ~ π)
+      const q = j.bone.quaternion;
+      _hd.copy(_hY).applyQuaternion(q).normalize();
+      _hr.setFromUnitVectors(j.dir0, _hd).multiply(j.q0);                       // 비틀림 없는 기준 방향
+      _ht.copy(_hr).invert().multiply(q);                                       // 기준에서 지금까지 = 제 축(Y) 회전
+      if (_ht.w < 0) _ht.set(-_ht.x, -_ht.y, -_ht.z, -_ht.w);
+      return 2 * Math.atan2(_ht.y, _ht.w);
+    };
+    // 손목은 비틀리지 않는다 — 손바닥을 뒤집는 것은 아래팔(노뼈가 자뼈를 돈다)이다. 손이 아래팔에 대해 제 축으로 비틀려 있으면(자세 표가 손 방향을
+    // 통째로 정했거나, 동작 파일이 엎침을 손목에 나눠 실었거나) 손목 살이 사탕 포장지처럼 꼬이며 갑자기 가늘어진다 (리뷰: 허리 비틀기·사이드 플랭크·
+    // 플랭크의 손목). 그 비틀림을 아래팔로 넘긴다: 아래팔을 제 축으로 그만큼 돌리고 손은 세상 방향 그대로 — 아래팔의 비틀림은 비틀림 뼈들이
+    // 팔꿈치 → 손목으로 고르게 나눠 갖는다. 아래팔이 위팔에 대해 돌 수 있는 범위(TWIST_LIMIT)까지만. 런지의 허리 짚은 손이 이렇게 돼 있었다
+    const FOREARM_TWIST_MAX = TWIST_LIMIT;
+    for (const r of helperRig) r.hand = r.lower.bone.children.find(x => x.isBone && !x.helperOf) || null;
+    const untwistWrist = r => {
+      const hand = r.hand, fore = r.lower.bone; if (!hand || !restLocalQ.has(hand)) return;
+      _h0.copy(restLocalQ.get(hand)).invert().multiply(hand.quaternion);        // 처음 자세에서 지금까지, 손 기준 = 꺾임 × 제 축 비틀림
+      if (_h0.w < 0) _h0.set(-_h0.x, -_h0.y, -_h0.z, -_h0.w);
+      const tw = 2 * Math.atan2(_h0.y, _h0.w); r.short = 0; if (Math.abs(tw) < 0.01) return;
+      const tf = twistNow(r.lower), to = Math.max(Math.min(-FOREARM_TWIST_MAX, tf), Math.min(Math.max(FOREARM_TWIST_MAX, tf), tf + tw)), turn = to - tf;
+      if (Math.abs(turn) >= 0.005) { fore.quaternion.multiply(_hr.setFromAxisAngle(_hY, turn)); hand.quaternion.premultiply(_hr.setFromAxisAngle(_hY, -turn)); }
+      // 아래팔이 다 못 받은 나머지는 손을 제 축으로 되돌려 없앤다 — 손바닥이 그만큼 덜 돌아가지만 손목은 꼬이지 않는다 (자세가 무리한 것이라 검사에서 본다: short)
+      r.short = tw - turn;
+      if (Math.abs(r.short) >= 0.005) hand.quaternion.multiply(_hr.setFromAxisAngle(_hY, -r.short));
+    };
     const driveHelpers = () => {
-      for (const r of helperRig) for (const j of [r.upper, r.lower]) {
+      for (const r of helperRig) { untwistWrist(r); for (const j of [r.upper, r.lower]) {
         const q = j.bone.quaternion;
-        _hd.copy(_hY).applyQuaternion(q).normalize();
-        _hr.setFromUnitVectors(j.dir0, _hd).multiply(j.q0);                     // 비틀림 없는 기준 방향
-        _ht.copy(_hr).invert().multiply(q);                                     // 기준에서 지금까지 = 제 축(Y) 회전
-        if (_ht.w < 0) _ht.set(-_ht.x, -_ht.y, -_ht.z, -_ht.w);
-        let th = 2 * Math.atan2(_ht.y, _ht.w);
+        let th = twistNow(j);
         if (j.natural) th -= j.natural * smoothStep(NATURAL_FROM, NATURAL_TO, Math.asin(Math.max(-1, Math.min(1, _hd.dot(j.up)))));
         if (j.prev !== null) { while (th - j.prev > Math.PI) th -= 2 * Math.PI; while (th - j.prev < -Math.PI) th += 2 * Math.PI; }   // ±180° 를 넘어가도 이어서 센다 (안 그러면 중간 뼈가 반대로 감긴다)
         if (Math.abs(th) > 200 * D) th -= 2 * Math.PI * Math.round(th / (2 * Math.PI));
@@ -1339,17 +1393,19 @@ const MOVE_3D = (() => {
         _h0.copy(q).multiply(_ht.setFromAxisAngle(_hY, -th));                   // 비틀림을 뺀 지금 방향
         j.swing = j.bindQ.angleTo(_h0);
         for (const h of j.swings) h.bone.quaternion.copy(j.bindQ).slerp(_h0, h.f);
-      }
+      } }
     };
     const cycle = proc ? proc.period : clip.duration;                       // 한 바퀴 — 카메라·줄넘기 박자가 이것을 본다
-    // 믹서는 값이 안 바뀐 프레임엔 뼈를 다시 쓰지 않는다. 그래서 우리가 덮어쓴 엉덩이(root.dpos, pitchAtHands)를
-    // 다음 프레임 전에 '믹서가 마지막에 준 값'으로 되돌려 둔다 — 처음 자세로 되돌리면 엉덩이 높이가 일정한
-    // 동작(무릎꿇기 등)에서 믹서가 안 써서 몸이 떠 버리고, 안 되돌리면 dpos 가 쌓인다.
+    // 믹서는 값이 안 바뀐 프레임엔 뼈를 다시 쓰지 않는다. 그래서 우리가 덮어쓴 뼈를 다음 프레임 전에 '믹서가 마지막에 준 값'으로
+    // 되돌려 둔다 — 처음 자세로 되돌리면 엉덩이 높이가 일정한 동작(무릎꿇기 등)에서 믹서가 안 써서 몸이 떠 버리고, 안 되돌리면 dpos 가 쌓인다.
+    // 엉덩이(root.dpos, pitchAtHands)만이 아니라 모든 뼈를 되돌린다: 손목 비틀림을 아래팔로 넘기거나(untwistWrist) 손·발을 맞추며(alignHinges)
+    // 돌려 둔 아래팔·손이 그대로 남으면, 믹서가 둘 중 하나만 새로 쓴 프레임에 한 번 더(또는 덜) 돌아 손목이 한 프레임씩 30~70° 튀었다
+    // (스쿼트·덤벨 컬·케틀벨·줄넘기, 리뷰 3차 떨림 측정). 매 프레임은 늘 '믹서가 준 자세'에서 시작한다
     const hipsBone = bones.get('mixamorig:Hips');
-    const hipsMixed = hipsBone ? hipsBone.position.clone() : null, hipsMixedQ = hipsBone ? hipsBone.quaternion.clone() : null;
-    const restoreHips = () => { if (hipsBone) { hipsBone.position.copy(hipsMixed); hipsBone.quaternion.copy(hipsMixedQ); } };
-    const rememberHips = () => { if (hipsBone) { hipsMixed.copy(hipsBone.position); hipsMixedQ.copy(hipsBone.quaternion); } };
-    const poseAt = t => { restoreHips(); mixer.setTime(stillBase ? 0 : t % clip.duration); rememberHips(); body.updateMatrixWorld(true); applyTweaks(t); applyProc(t); driveHelpers(); body.updateMatrixWorld(true); };
+    const hipsMixed = hipsBone ? hipsBone.position.clone() : null, mixedQ = boneList.map(b => b.quaternion.clone());
+    const restoreMixed = () => { if (hipsBone) hipsBone.position.copy(hipsMixed); for (let i = 0; i < boneList.length; i++) boneList[i].quaternion.copy(mixedQ[i]); };
+    const rememberMixed = () => { if (hipsBone) hipsMixed.copy(hipsBone.position); for (let i = 0; i < boneList.length; i++) mixedQ[i].copy(boneList[i].quaternion); };
+    const poseAt = t => { restoreMixed(); mixer.setTime(stillBase ? 0 : t % clip.duration); rememberMixed(); body.updateMatrixWorld(true); applyTweaks(t); applyProc(t); driveHelpers(); body.updateMatrixWorld(true); };
     if (GEAR[id] === 'rope') {
       const hips = bones.get('mixamorig:Hips'); const N = 60, ys = [];
       for (let i = 0; i < N; i++) { poseAt(clip.duration * i / N); ys.push(hips.getWorldPosition(v).y); }
@@ -1384,9 +1440,9 @@ const MOVE_3D = (() => {
     const clock = new T.Clock();
     const frame = () => {
       if (me.dead) return;
-      restoreHips();
+      restoreMixed();
       const dt = clock.getDelta(); mixer.update(stillBase ? 0 : dt);
-      rememberHips();
+      rememberMixed();
       body.updateMatrixWorld(true);
       applyTweaks(clock.elapsedTime);
       applyProc(clock.elapsedTime);
@@ -1406,7 +1462,8 @@ const MOVE_3D = (() => {
       // view 를 주면 그 각도·그 뼈를 가까이서 찍는다 (팔·손 검토용) — place 와 같은 꼴
       seek(t, view){ poseAt(t); if (gear.update) gear.update(t, action.time); place(0, view ? { a: 34, e: 14, ...view } : null); renderer.render(scene, camera); },
       joints(){ const o = {}; for (const b of boneList) { b.getWorldPosition(v); b.getWorldQuaternion(_q1); o[b.name] = [v.x, v.y, v.z, _q1.x, _q1.y, _q1.z, _q1.w].map(x => +x.toFixed(5)); } return o; },
-      helpers(){ const o = {}; for (const r of helperRig) for (const j of [r.upper, r.lower]) o[j.bone.name] = [+(j.twist / D).toFixed(1), +(j.swing / D).toFixed(1)]; return o; },   // 보조 뼈가 나눠 갖는 비틀림·휘두름(도)
+      helpers(){ const o = {}; for (const r of helperRig) { for (const j of [r.upper, r.lower]) o[j.bone.name] = [+(j.twist / D).toFixed(1), +(j.swing / D).toFixed(1)];
+        if (r.hand) o[r.hand.name] = [+((r.short || 0) / D).toFixed(1), 0]; } return o; },   // 보조 뼈가 나눠 갖는 비틀림·휘두름(도), 손은 '손바닥이 덜 돌아간 만큼'(자세가 무리하면 0 이 아니다)
       rest(){ const o = {}; for (const b of boneList) { const q = restQ.get(b); o[b.name] = [q.x, q.y, q.z, q.w].map(x => +x.toFixed(5)); } return o; },
       // 뼈마다 살 두께 — 묶인 자세에서 그 뼈에 가장 많이 붙은 꼭짓점들이 뼈 축에서 얼마나 떨어져 있나 (80% 지점)
       radii(){

@@ -231,7 +231,7 @@ def test_학습한_자세로_만든_동작이_빈_동작을_다_채운다():
         assert f"### {id_} " in 노트, id_                                                                # 동작마다 자세 설명이 있다
     js = _js()
     for 조각 in ("const ik2 = (a, target, l1, l2, bend) =>", "const orientBone = (bone, up, front) =>", "typeof how.ik === 'function' ? how.ik(posOf) : how.ik",
-                 "const restoreHips = () =>", "rememberHips();", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
+                 "const restoreMixed = () =>", "rememberMixed();", "applyProc(clock.elapsedTime);", "const cycle = proc ? proc.period : clip.duration;"):
         assert 조각 in js, 조각
 
 
@@ -272,7 +272,7 @@ def test_팔꿈치_무릎은_사람처럼_한쪽으로만_굽는다():
     assert "const HINGES = [['LeftArm', 'LeftForeArm', [0, 0, 1]]" in js and "['LeftUpLeg', 'LeftLeg', [0, 0, -1]]" in js
     적용 = js.split("const applyProc = t => {")[1].split("\n    };")[0]
     assert 적용.count("aimPass();") == 4 and "alignHinges(table);" in 적용          # 방향 → IK(두 번) → 손·발 다시 → (어깨뼈 리듬이면 한 번 더) → 경첩
-    assert "if (shrugged) { aimPass(); ikPass(); ikPass(); aimPass(); }" in 적용 and "(elev - 80 * D) * 0.45" in 적용   # 팔을 수평 위로 들면 빗장뼈가 따라 올라간다
+    assert "if (shrugged) { aimPass(); ikPass(); ikPass(); aimPass(); }" in 적용 and "Math.min(12 * D, (elev - 80 * D) * 0.15)" in 적용   # 팔을 수평 위로 들면 빗장뼈가 살짝(12° 까지) 따라 올라간다
     assert 적용.index("aimPass();") < 적용.index("ikPass(); ikPass();") < 적용.rindex("aimPass();") < 적용.index("alignHinges(table);")
     손봄 = js.split("const applyTweaks = t => {")[1].split("\n    };")[0]
     assert "alignHinges(byBone);" in 손봄
@@ -326,12 +326,54 @@ def test_손과_기구는_몸을_따라간다():
     assert "[L + 'UpLeg']: straight, [L + 'Leg']: straight" in 햄 and "[R + 'UpLeg']: { ik: [-half - 0.01, 0.086, BACK_Z], bend: [0, 0, 1] }" in 햄   # 뒷무릎은 앞으로 굽는다
     assert "[L + 'Arm']: { ik: p => [p(L + 'Arm').x + 0.15, 0.035, 0.07]" in proc.split("'bridge'")[1].split("} },")[0]   # 브리지: 손목을 바닥에 박아 둔다
     적용 = js.split("const applyProc = t => {")[1].split("\n    };")[0]
-    assert "if (was.angleTo(cl.quaternion) > 0.003) shrugged = true;" in 적용                                 # 빗장뼈가 움직였으면 팔을 다시 푼다 — 손이 목표에서 빗나갔다
+    assert "if (clavicles.has(bone)) { placeClavicle(bone); continue; }" in 적용 and "if (lift > 0.002) { lifts.set(cl, lift); shrugged = true; }" in 적용   # 빗장뼈는 늘 제자리에서 다시 놓는다
     assert "table.has(f) || (arm && table.get(arm) && table.get(arm).ik)" in 적용                             # 팔만 정한 자세는 손목을 곧게
     정렬 = js.split("const alignHinges = table => {")[1].split("\n    };")[0]
     assert "bend.fromArray(hp0.bend).negate();" in 정렬 and "lastBend.has(p)" in 정렬               # 편 팔은 IK 가 굽힐 쪽·마지막으로 굽었던 쪽을 이어 쓴다 (팔 떨림)
     손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
     assert "'run': { bones: runArms }" in 손봄 and "const tuck = (side, from, to, keep, inward) => p => {" in js   # 달리기: 벌어진 팔을 몸 가까이
+
+
+def test_떨림과_손목_꼬임을_막는다():
+    """리뷰 3차: 목·종아리 스트레칭·바벨 스쿼트의 잔 떨림, 손목이 갑자기 가늘어지며 꼬이는 것, 무릎 푸시업의 발목.
+    ① 빗장뼈의 올림각을 '지금 빗장뼈'에서 재면 프레임마다 출발점이 달라(동작 파일이 덮어쓴 프레임 / 우리가 올려 둔 프레임) 어깨가 1cm 씩 오르내린다
+    ② 손목은 비틀리지 않는다 — 손의 제 축 비틀림은 아래팔이 가져가고(비틀림 뼈가 나눠 갖는다), 못 받은 만큼은 손바닥을 덜 돌린다
+    ③ 아래팔·정강이를 돌릴 게 없을 때 손·발 비틀림 맞추기까지 건너뛰던 버그
+    ④ 우리가 돌려 둔 뼈가 다음 프레임에 남아(믹서는 값이 안 바뀐 뼈를 다시 쓰지 않는다) 한 번 더·덜 돌던 것 — 매 프레임 믹서가 준 자세에서 시작한다
+    ⑤ 경첩 축을 임시 벡터에 두어 정강이를 돌린 프레임엔 발 맞추기가 엉뚱한 축으로 셈되던 것 (무릎 푸시업의 발이 한 프레임씩 30° 돌았다)
+    ⑥ 수영: 손바닥 목표가 아래팔과 나란해지는 순간 아래팔이 한 프레임에 뒤집히던 것"""
+    js = _js()
+    적용 = js.split("const applyProc = t => {")[1].split("\n    };")[0]
+    assert "const lifts = new Map(), clavicles = new Set();" in 적용 and "lifts.get(cl) || 0" in 적용          # 첫 풀이는 늘 들지 않은 자리에서
+    assert 적용.index("h.quaternion.copy(restLocalQ.get(h));") < 적용.index("aimPass();")                       # 손목 중립은 palmTo 가 아래팔을 돌리기 전에, 늘 같은 값으로
+    assert "if (pose.fist || proc.fist) fist(); else if (pose.open || proc.open) openHands();" in 적용
+    assert "const openHands = () => {" in js and "'calf-stretch': { base: 'idle', period: 6, gear: 'wall', open: true" in _proc()   # 벽 짚은 손은 편다
+    시작 = js.split("function setup(lib, me, clip){")[1]
+    손목 = 시작.split("const untwistWrist = r => {")[1].split("\n    };")[0]
+    assert "fore.quaternion.multiply(_hr.setFromAxisAngle(_hY, turn)); hand.quaternion.premultiply(_hr.setFromAxisAngle(_hY, -turn));" in 손목   # 아래팔이 돌고 손은 세상 방향 그대로
+    assert "hand.quaternion.multiply(_hr.setFromAxisAngle(_hY, -r.short));" in 손목                            # 못 받은 만큼은 손을 되돌린다 — 손목에 남기지 않는다
+    assert "const FOREARM_TWIST_MAX = TWIST_LIMIT;" in 시작 and "const TWIST_LIMIT = 100 * D, TWIST_LIMIT_STRAIGHT = 100 * D;" in 시작
+    assert "for (const r of helperRig) { untwistWrist(r); for (const j of [r.upper, r.lower]) {" in 시작       # 비틀림 뼈를 놓기 전에
+    정렬 = js.split("const alignHinges = table => {")[1].split("\n    };")[0]
+    assert "if (Math.abs(turn) >= 0.02) {" in 정렬 and "if (Math.abs(turn) < 0.02) continue;" not in 정렬      # 돌릴 게 없어도 손·발 맞추기는 한다
+    assert "if (keepTwist) continue;" in 정렬 and "fill" not in 정렬                                          # 손목에서 메우지 않는다
+    assert "return [b[0] / l * 0.974, -0.225, b[2] / l * 0.974]; };" in js                                    # 무릎 푸시업: 발은 정강이 선보다 아래로 13° (발바닥 굽힘 45°)
+    손봄 = js.split("const TWEAKS = {")[1].split("\n  };")[0]
+    assert "'mixamorig:LeftToeBase': { rest: true }" in 손봄 and "if (how.rest && restLocalQ.has(bone)) bone.quaternion.copy(restLocalQ.get(bone));" in js
+    proc = _proc()
+    assert "[L + 'Arm']: { ik: gripBar(1), bend: [0.3, -1, 0] }" in proc and "const HAND_ON_BAR = { dir: N(0, -0.3, 0.954), palm: N(0, -0.954, -0.3) };" in proc   # 자전거: 손바닥이 손잡이에
+    스쿼트 = proc.split("'barbell-squat': { base: 'barbell-squat'")[1].split("} },")[0]
+    assert "ik: p => {" in 스쿼트 and "const n = C.pos('mixamorig:Neck')" not in 스쿼트                        # 쥘 자리는 IK 를 풀 때 셈한다 (미리 읽으면 손이 튄다)
+    비틀기 = proc.split("'twist'")[1].split("} },")[0]
+    assert "bend: [0, -0.7, -0.7] });" in 비틀기 and "bend: [-1, -0.15, -0.2] }," in 비틀기                     # 팔꿈치 방향이 맞아야 아래팔·위팔이 덜 비틀린다
+    플랭크 = proc.split("'plank'")[1].split("} },")[0]
+    assert "bend: [0, -1, 0.2] });" in 플랭크                                                                  # 손 방향을 통째로 정한 팔엔 palmTo 를 또 주지 않는다
+    assert "const handAt = (side, w) => {" in proc and "upL > 0.9 ?" not in proc                              # 목 스트레칭: 손 방향은 서서히
+    assert "mixedQ = boneList.map(b => b.quaternion.clone());" in 시작                                         # ④ 모든 뼈를 믹서가 마지막에 준 값으로 되돌려 두고 시작한다
+    assert 시작.count("restoreMixed();") == 2 and 시작.count("rememberMixed();") == 2                           #    화면용(frame)·검사용(poseAt) 둘 다
+    assert "h0 = _vh.fromArray(flex0).cross(axis0);" in 정렬 and "h0 = _v2" not in 정렬                        # ⑤ 경첩 축은 제 벡터에
+    수영 = proc.split("'swim': {")[1].split("} },")[0]
+    assert "palmTo" not in 수영.split("return { ik:")[1].split("};")[0]                                         # ⑥ 손바닥 방향은 따로 정하지 않는다 (아래팔 비틀림 0)
 
 
 def test_발은_바닥과_정강이를_기준으로_둔다():

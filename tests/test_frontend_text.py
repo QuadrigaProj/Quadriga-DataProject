@@ -49,8 +49,8 @@ def test_로그인_메인_버튼():
 
 def test_개인정보_안내():
     html = _index()
-    assert "<b>수집 정보 최소화</b>" in html
-    assert "닉네임과 체력 측정값만 받으며, 전화번호나 주소 등 개인정보는 요구하지 않습니다." in html
+    assert "<b>수집 정보 최소화</b>" not in html
+    assert "닉네임과 체력 측정값만 받으며, 전화번호나 주소 등 개인정보는 요구하지 않습니다." not in html
     assert "받는 정보는" not in html
     assert "소셜 계정에서도 가져오지 않아요" not in html
 
@@ -95,7 +95,7 @@ def test_홈_체력측정_항목_문구가_원문과_같다():
     html = _index()
     for s in [
         "나이 · 성별",
-        "다리를 펴고 앉아 손끝이 닿는 거리",
+        "앉아 앞으로 숙였을 때 손끝 위치를 측정",
         "윗몸일으키기",
         "키 · 몸무게",
         "30초 제자리 점프", "두 발 모아 제자리에서 최대한 빠르게",
@@ -104,6 +104,18 @@ def test_홈_체력측정_항목_문구가_원문과_같다():
     ]:
         assert s in html, s
     assert 'id="homeExtra">' in html                    # 홈 추가 3종이 기본으로 보인다(hidden 아님)
+
+
+def test_유연성_측정_기준과_누락_항목명():
+    """발끝 기준 부호 예시와 짧은 필수값 안내를 유지한다."""
+    html = _index()
+    for text in [
+        "발끝보다 <strong>5cm 더 나감 → +5cm</strong>",
+        "발끝에 <strong>정확히 닿음 → 0cm</strong>",
+        "발끝까지 <strong>5cm 부족함 → -5cm</strong>",
+        "if (state.flexibility === null) need.push('유연성');",
+    ]:
+        assert text in html
 
 
 def test_홈_체력등급_표시_영역이_있다():
@@ -253,7 +265,10 @@ def test_컨디션_선택지는_몸이_무거운_날_하나만():
     assert "몸이 무거운 날" in html
     assert "toggleHeavy()" in html
     assert "heavy: heavyOn" in html
-    assert "아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요" in html
+    assert "아무것도 누르지 않으면 오늘의 원래 루틴 그대로예요" not in html
+    assert 'id="routineDose"' in html
+    assert "function exerciseDose(" in html
+    assert "현재 운동 ${dose}" in html
 
 
 # ---------- F3 신체나이 재측정 (즉시) ----------
@@ -2172,7 +2187,7 @@ def test_계산_전에_필수_측정값이_비면_막는다():
     assert "need.push('나이')" in body
     assert "need.push('키')" in body
     assert "need.push('몸무게')" in body
-    assert "need.push('다리를 펴고 앉아 손끝이 닿는 거리')" in body
+    assert "need.push('유연성')" in body
     assert "need.push(strengthLabel())" in body
     assert "if (need.length)" in body and "return;" in body
 

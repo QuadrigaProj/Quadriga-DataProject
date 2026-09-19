@@ -2802,9 +2802,36 @@ def test_지은_루틴에는_더_쉬운_더_어려운_버튼이_없다():
     본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
     assert "const 지은것 = x.구성 === 'ai';" in 본문
     actions = 본문.split('<div class="reco-actions">')[1].split("</div>")[0]
-    assert actions.index("${지은것 ? '' : `<button") < actions.index("이전 루틴")
-    assert actions.index("더 어려운 루틴") < actions.index("`}")   # 셋이 한 묶음으로 빠진다
-    assert "이 루틴으로 시작" in actions.split("`}")[1]           # 시작은 늘 있다
+    assert actions.index("이전 루틴") < actions.index("${지은것 ?")   # '이전 루틴' 은 지은 루틴에도 있다 (아래 테스트)
+    묶음 = actions.split("${지은것 ?")[1]
+    assert 묶음.index("다음 루틴") < 묶음.index(": `<button") < 묶음.index("더 쉬운 루틴") < 묶음.index("더 어려운 루틴")   # 지은 루틴이면 쉬운·어려운 둘이 한 묶음으로 빠진다
+    assert "이 루틴으로 시작" in 묶음.split("더 어려운 루틴")[1]   # 시작은 늘 있다
+
+
+def test_지은_루틴도_이전_루틴으로_돌아간다():
+    """'더 쉽게 · 더 어렵게 다시 받기' 는 값을 치르고 새 루틴을 받는다. 받기 전 루틴도 값을 치른 것이라 버리지 않는다 —
+    새 루틴이 마음에 안 들면 돈을 또 내지 않고 '이전 루틴' 으로 되돌아간다. (전엔 지은 루틴에선 '이전 루틴' 버튼째 감췄다)"""
+    html = _index()
+    본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
+    assert 'onclick="backRecommend()" ${hasBackReco() ? \'\' : \'disabled\'}>이전 루틴</button>' in 본문
+    assert 'onclick="forwardAiReco()">다음 루틴</button>' in 본문
+    assert "이전에 받은 루틴이에요" in 본문                              # 물러나 있을 땐 그렇다고 적는다
+    갈곳 = html.split("function hasBackReco()")[1].split("\n}")[0]
+    assert "recoBack.length > 0" in 갈곳 and "recoBy === 'ai' && (state.aiRecoPast || []).length > 0" in 갈곳
+    되돌아가기 = html.split("function backRecommend()")[1].split("\n}")[0]
+    assert "if (recoBy === 'ai') backAiReco();" in 되돌아가기            # 목록 안에 되돌아갈 자리가 없으면 이전에 받은 루틴으로
+    for 이름 in ("function backAiReco()", "function forwardAiReco()"):
+        몸 = html.split(이름)[1].split("\n}")[0]
+        assert "추천되살리기(state.aiReco, 'ai');" in 몸 and "saveProfile();" in 몸, 이름   # 짬시간·계절 계획까지 그 루틴의 것으로
+    받기 = html.split("async function fetchRecommend(")[1].split("\n}")[0]
+    assert 받기.index("if (recoBy === 'ai') 이전AI추천쌓기();") < 받기.index("추천저장();")   # 덮어쓰기 전에 쌓는다
+    쌓기 = html.split("function 이전AI추천쌓기()")[1].split("\n}")[0]
+    assert "[...(state.aiRecoPast || []), ...(state.aiRecoNext || []), state.aiReco]" in 쌓기   # 방금 보던 것이 맨 위
+    assert "const AI_PAST_MAX = 2;" in html and ".slice(-AI_PAST_MAX)" in html   # 스냅샷이 무거워지지 않게 둘까지만
+    # 저장하고 되살리고 비운다
+    assert "aiRecoPast: state.aiRecoPast," in html and "aiRecoNext: state.aiRecoNext," in html
+    assert "state.aiRecoPast = 되살린이전추천(saved?.aiRecoPast);" in html
+    assert html.count("state.aiRecoPast = [];") >= 3 and html.count("state.aiRecoNext = [];") >= 4   # 초기화 세 자리 (+ 새로 받으면 앞쪽은 비운다)
 
 
 def test_지은_루틴은_왜_이_사람인지를_말한다():

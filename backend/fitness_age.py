@@ -179,10 +179,34 @@ def band_mid(b: str) -> float:
     return (lo + float(hi)) / 2
 
 
-def load(path: Path | None = None) -> pd.DataFrame:
+def load(path: Path | None = None, windows_path: Path | None = None) -> pd.DataFrame:
+    """분포 표. 또래 비교용 좁은 창(fitness_peer_windows.csv)이 있으면 d.attrs["windows"] 에 같이 싣는다.
+
+    좁은 창은 없어도 된다 — 없으면 또래 비교도 5세 구간으로 한다(지금까지와 같다).
+    path 를 직접 준 호출(테스트 · 도구)은 windows_path 도 직접 줘야 싣는다: 남의 표에 이 저장소의 창을 붙이지 않는다.
+    """
     d = pd.read_csv(path or find_data("fitness_distribution.csv"))
     d["age_mid"] = d["연령구간"].map(band_mid)
+    try:
+        wp = windows_path or (None if path else find_data("fitness_peer_windows.csv"))
+    except FileNotFoundError:
+        wp = None
+    if wp:
+        w = pd.read_csv(wp)
+        d.attrs["windows"] = {(r["연령군"], r["성별"], int(r["나이"]), r["항목"]): r for r in w.to_dict("records")}
     return d
+
+
+def _peer_row(d: pd.DataFrame, age_gbn: str, sex: str, age: float, item: str):
+    """또래 비교에 쓸 한 줄 — 좁은 창이 있으면 그 나이의 창, 없으면 가장 가까운 5세 구간."""
+    win = (d.attrs.get("windows") or {}).get((age_gbn, sex, int(age), item))
+    if win:
+        return win, str(win["구간"]), True
+    sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == item)]
+    if sub.empty:
+        return None, None, False
+    row = sub.iloc[(sub["age_mid"] - age).abs().to_numpy().argmin()]
+    return row, str(row["연령구간"]), False
 
 
 def convert_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float) -> float | None:
@@ -320,10 +344,9 @@ def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,
 
     반환값의 백분위는 100에 가까울수록 좋다.
     """
-    sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == item)]
-    if sub.empty:
+    row, band, narrow = _peer_row(d, age_gbn, sex, age, item)
+    if row is None:
         return None
-    row = sub.iloc[(sub["age_mid"] - age).abs().to_numpy().argmin()]
 
     xs = np.array([float(row[f"p{p}"]) for p in PCTS])
     ys = np.array(PCTS, dtype=float)
@@ -338,7 +361,8 @@ def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,
         "또래중앙값": round(float(row["p50"]), 1),
         "백분위": round(pct, 1),
         "표본수": int(row["n"]),
-        "비교구간": str(row["연령구간"]),
+        "비교구간": band,                 # 좁은 창이면 "20~22", 아니면 5세 구간 "19~24"
+        "좁은창": narrow,
     }
 
 

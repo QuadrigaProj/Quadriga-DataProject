@@ -794,6 +794,71 @@ def test_성장기_근지구력_기준표는_공식_값이다():
     assert fa.growth_endurance_item(12.9) == "윗몸말아올리기" and fa.growth_endurance_item(13) == "반복점프"
 
 
+def _가짜_원자료():
+    """집계기를 시험할 작은 원자료 — 나이가 어릴수록 많고(20대 초반 600명씩), 40대는 드물다(나이당 120명)."""
+    import numpy as np
+    import pandas as pd
+    rnd = np.random.default_rng(3)
+    rows = []
+    for age in range(19, 65):
+        n = 600 if age <= 24 else 120 if 40 <= age <= 49 else 320
+        for sex in ("M", "F"):
+            rows.append(pd.DataFrame({"age": age, "age_gbn": "성인", "test_sex": sex,
+                                      "item_f019": rnd.normal(50 - age * 0.4, 8, n).round(),      # 윗몸일으키기 — 나이 들수록 준다
+                                      "item_f012": rnd.normal(10, 8, n).round(1)}))
+    for age in range(65, 99):
+        n = max(8, 340 - (age - 65) * 22)
+        rows.append(pd.DataFrame({"age": age, "age_gbn": "어르신", "test_sex": "F", "item_f023": rnd.normal(20 - (age - 65) * 0.3, 4, n).round()}))
+    return pd.concat(rows, ignore_index=True)
+
+
+def test_또래_비교용_좁은_창을_만든다():
+    """21세를 19~24세가 아니라 20~22세와 견준다 (예현 요청: 비교군을 최대한 좁게).
+    창은 자기 나이 ±1 에서 시작해 표본이 300 에 못 미치면 한 살씩 넓힌다. 연령군의 경계는 넘지 않는다."""
+    from backend import build_distribution as bd
+    win = bd.peer_windows(_가짜_원자료())
+    칸 = {(r["연령군"], r["성별"], r["나이"], r["항목"]): r for r in win.to_dict("records")}
+    assert 칸[("성인", "M", 21, "교차윗몸일으키기")]["구간"] == "20~22" and 칸[("성인", "M", 21, "교차윗몸일으키기")]["n"] == 1800
+    assert 칸[("성인", "M", 19, "교차윗몸일으키기")]["구간"] == "19~20"            # 18세는 성장기다 — 경계를 넘지 않는다
+    assert 칸[("성인", "M", 64, "교차윗몸일으키기")]["구간"] == "63~64"
+    assert 칸[("성인", "F", 45, "교차윗몸일으키기")]["구간"] == "44~46"            # 120 × 3 = 360 ≥ 300
+    # 표본이 모자라면 넓힌다 — 어르신 끝쪽은 위로 열린 창("93+")이 되고, 그래도 모자라면 내지 않는다
+    어르신 = {k[2]: v for k, v in 칸.items() if k[0] == "어르신"}
+    assert 어르신[66]["구간"] == "65~67"
+    넓힌 = [v for v in 어르신.values() if "~" in v["구간"] and int(v["구간"].split("~")[1]) - int(v["구간"].split("~")[0]) > 2]
+    assert 넓힌 and all(v["n"] >= bd.WINDOW_MIN_N for v in 어르신.values())
+    assert max(어르신) < 95                                                         # 맨 끝 나이는 ±5 로도 300명이 안 된다 → 5세 구간으로 되돌아간다
+    # 가운데 나이가 같은 창끼리는 중앙값이 나이를 따라 움직인다
+    assert 칸[("성인", "M", 21, "교차윗몸일으키기")]["p50"] > 칸[("성인", "M", 60, "교차윗몸일으키기")]["p50"]
+    assert list(win.columns)[:7] == ["연령군", "성별", "나이", "구간", "항목코드", "항목", "n"]
+
+
+@needs_data
+def test_좁은_창이_있으면_또래_비교는_그_창으로_한다(tmp_path):
+    """환산나이 곡선은 5세 구간 그대로 두고(좁히면 중앙값이 들쭉날쭉해 나이가 튄다) 또래 비교만 좁은 창으로.
+    파일이 없으면 지금까지와 똑같이 5세 구간이다."""
+    from backend import build_distribution as bd, fitness_age as fa
+    from backend.paths import find_data
+    기본 = fa.load(find_data("fitness_distribution.csv"))
+    assert "windows" not in 기본.attrs
+    r0 = fa.peer_stats(기본, "성인", "M", 21, "교차윗몸일으키기", 40)
+    assert r0["비교구간"] == "19~24" and r0["좁은창"] is False
+
+    창파일 = tmp_path / "fitness_peer_windows.csv"
+    bd.peer_windows(_가짜_원자료()).to_csv(창파일, index=False, encoding="utf-8-sig")
+    d = fa.load(find_data("fitness_distribution.csv"), windows_path=창파일)
+    r1 = fa.peer_stats(d, "성인", "M", 21, "교차윗몸일으키기", 40)
+    assert r1["비교구간"] == "20~22" and r1["좁은창"] is True and r1["표본수"] == 1800
+    assert 0 <= r1["백분위"] <= 100
+    # 창에 없는 항목 · 나이는 5세 구간으로 되돌아간다
+    assert fa.peer_stats(d, "성인", "M", 21, "상대악력", 60)["비교구간"] == "19~24"
+    # 환산나이는 창과 상관없이 같다
+    assert fa.convert_age(d, "성인", "M", "교차윗몸일으키기", 40) == fa.convert_age(기본, "성인", "M", "교차윗몸일으키기", 40)
+    # 또래비교 묶음에도 그대로 실린다
+    묶음 = fa.peer_report(d, "성인", "M", 21, strength=40)
+    assert 묶음["근지구력"]["비교구간"] == "20~22"
+
+
 @needs_data
 def test_80세_이상_구간은_100세가_아니라_80대_초반으로_읽는다():
     """'80+' 를 80~120(대표 100세)으로 보면 85세의 또래가 75~79세로 잡히고, 80대의 평균 기록이 100세로 읽힌다.

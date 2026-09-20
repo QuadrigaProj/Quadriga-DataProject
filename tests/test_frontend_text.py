@@ -2914,6 +2914,16 @@ def test_유료_확인은_한_자리에서_한다():
     assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2 (AI 추천 · 시간표 사진)
 
 
+def test_누구와_견줬는지_적는다():
+    """또래 비교 아래에 비교 구간을 적는다 — 서버가 준 값 그대로("만 19~24세", 좁은 창이 있으면 "만 20~22세")."""
+    html = _index()
+    assert "function peerBandLabel(b){ b = String(b); return b.endsWith('+') ? `만 ${b.slice(0, -1)}세 이상` : `만 ${b}세`; }" in html
+    비교 = html.split("function renderPeerComparison(r)")[1].split("\n}")[0]
+    assert "const 구간 = [...new Set(ranked.map(([, v]) => v.비교구간).filter(Boolean))];" in 비교
+    assert "${구간.map(peerBandLabel).join(' · ')} ${SEX_LABEL[state.sex] || ''}과 견줬어요" in 비교
+    assert "'국민체력100 데이터 기준 (동일 성별·연령)'" in 비교            # 구간을 못 받으면 예전 문구 그대로
+
+
 def test_자세히_도전하기는_AI_추천에서만_보인다():
     """무료 추천에서는 눌러도 유료 안내만 뜬다 — 아예 없는 편이 낫다."""
     html = _index()

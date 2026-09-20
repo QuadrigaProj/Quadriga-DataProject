@@ -3180,8 +3180,8 @@ async function saveEdits(){
 
     // 나이·성별이 바뀌면 기준표가 달라진다. 값이 있으면 다시 계산한다.
     state.ageGbn = ageGroup(age);
-    if (recalc && state.result && state.flexibility !== null && state.strength !== null) {
-      try { state.result = await API.fitnessAge(measurement()); } catch (e) { /* 이전 값 유지 */ }
+    if (recalc && state.result) {
+      try { await recalcForPerson(); } catch (e) { /* 이전 값 유지 */ }
     }
     await saveProfile();
     updateGreeting();
@@ -3440,6 +3440,41 @@ async function migrateCalc(){
     if ($('s5')?.classList.contains('active')) renderProfile();
   } catch (e) { /* 다음에 불러올 때 다시 */ }
   finally { migrateCalc.busy = false; }
+}
+
+/* 성별(이나 나이)을 바꾸면 그 사람의 기준으로 체력나이를 다시 낸다 (예현 요청).
+
+   체력나이는 같은 성별 · 같은 나이대의 분포에 견줘 나오는 값이라, 잰 기록이 같아도 기준이 바뀌면 숫자가 달라진다.
+   전에는 프로필에서 성별을 바꿔도 ① 유연성 · 근지구력을 둘 다 잰 사람만 다시 냈고 ② 다시 내도 옛 기준에 얹어 둔
+   추정치(activityAge)가 남아 있어 게이지 · 프로필의 숫자는 그대로였다.
+   지금 결과 · 첫 점검(잰 값이 남아 있다) · 마지막 점검 기록 줄을 새 기준으로 맞추고, 옛 추정치는 버린 뒤 다시 뽑는다.
+   순서는 migrateCalc 와 같다. 다시 냈으면 true. */
+async function recalcForPerson(){
+  if (!state.result || !ageGroup(state.age) || recalcForPerson.busy) return false;
+  recalcForPerson.busy = true;
+  try {
+    const 지금 = await API.fitnessAge(measurement());
+    if (!Number.isFinite(지금?.체력나이)) return false;
+    // 첫 점검은 같은 나이대일 때만 다시 낸다 — 나이대가 바뀌면 재는 항목(윗몸일으키기 ↔ 의자 일어서기)이 달라 옛 기록을 새 기준에 견줄 수 없다
+    const 첫측정 = state.first?.측정;
+    let 보낼처음 = null, 처음 = null;
+    if (첫측정 && 첫측정.age_gbn === state.ageGbn) {
+      보낼처음 = { ...첫측정, sex: state.sex, age: state.age };
+      try { 처음 = await API.fitnessAge(보낼처음); } catch (e) { 처음 = null; }
+    }
+    state.result = 지금;
+    if (처음 && Number.isFinite(처음.체력나이)) state.first = { 측정: 보낼처음, 결과: 처음 };
+    const 기록 = Array.isArray(state.measureLog) ? state.measureLog : [];
+    const 끝줄 = 기록[기록.length - 1];
+    if (끝줄) Object.assign(끝줄, { 체력나이: 지금.체력나이, 신뢰구간: 지금.신뢰구간 ?? null, 항목별: { ...(지금.항목별 || {}) } });
+    state.activityAge = null;            // 옛 기준에 얹어 둔 추정치는 버린다
+    state.dayAges = {};                  // 그날그날의 추정치도 — 아래에서 새 기준으로 다시 뽑는다
+    await saveProfile();
+    paintGauges(); renderResult(); refreshEta(); updateGreeting();
+    if ($('s5')?.classList.contains('active')) renderProfile();
+    (async () => { try { await refreshActivityAge(); await refreshLogAges({ 전부: true }); await saveProfile(); paintGauges(); } catch (e) { /* 다음에 기록 화면을 열 때 채운다 */ } })();
+    return true;
+  } finally { recalcForPerson.busy = false; }
 }
 
 /* 저장된 값을 화면에 되돌린다. 없으면 첫 점검부터. */
@@ -5603,8 +5638,11 @@ function onAgeChange(){
 }
 
 function selectSex(sex){
+  const 바뀜 = state.sex !== sex;
   state.sex = sex;
   document.querySelectorAll('#sexSeg button').forEach(b=>b.classList.toggle('on', b.dataset.sex===sex));
+  // 결과를 본 뒤에 성별을 바꿨으면 그 성별의 기준으로 다시 낸다 — 남성 기준으로 나온 숫자를 여성에게 보여 주면 안 된다 (예현 요청)
+  if (바뀜 && state.result && state.user) recalcForPerson().catch(() => {});
 }
 
 /* 입력칸 하나를 실제 사용자 입력값으로만 읽는다 — placeholder(예: "예: 12")는

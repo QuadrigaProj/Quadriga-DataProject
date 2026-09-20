@@ -88,10 +88,25 @@ def test_비회원_시작_버튼():
 def test_유지되는_요소():
     """A6 가 손대지 말라고 한 것들 — 소셜 버튼·탭·입력칸·정책 링크. (닉네임 링크는 예현 요청으로 없앴다 — test_비회원_시작_버튼)"""
     html = _index()
-    for s in ("구글로 계속하기", "네이버로 계속하기", "카카오로 계속하기",
+    for s in ("카카오로 계속하기",
               'id="tabLogin"', 'id="tabSignup"', 'placeholder="이메일"', 'placeholder="비밀번호 (8자 이상)"',
               "개인정보처리방침", "이용약관", "또는 이메일로"):
         assert s in html, s
+
+
+def test_소셜_로그인은_카카오만_둔다():
+    """구글 · 네이버는 로그인 화면에서 뺐다 (예현, 2026-09-21: "그냥 포기하는 게 나을 듯. 로그인창에서도 빼 줘").
+    두 곳 모두 배포 서버에서 토큰 교환이 막혔다(구글 invalid_client). 안 되는 버튼을 심사위원 앞에 둘 수는 없다.
+    서버의 코드는 남겨 둔다 — 콘솔 설정을 맞추면 버튼만 되돌려 다시 켤 수 있게."""
+    html = _index()
+    상자 = html.split('id="socialBox">')[1].split('id="socialHint"')[0]
+    assert 상자.count("<button") == 1 and """onclick="social('kakao')">""" in 상자
+    for 없는것 in ("구글로 계속하기", "네이버로 계속하기", """social('google')""", """social('naver')""", ".s-google{", ".s-naver{"):
+        assert 없는것 not in html, 없는것
+    from backend import auth
+    assert {"google", "naver", "kakao"} <= set(auth.PROVIDERS)                 # 서버 쪽은 그대로다
+    개인정보 = client.get("/privacy").text                                     # 받지 않는 곳을 받는다고 적어 두지 않는다
+    assert "구글" not in 개인정보 and "네이버" not in 개인정보 and "카카오" in 개인정보
 
 
 # ---------- C1·C2·A5 ----------

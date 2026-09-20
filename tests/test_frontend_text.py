@@ -141,8 +141,8 @@ def test_타이머는_측정_카드마다_하나씩이다():
     assert 'data-timer="jump" data-seconds="30"' in html
     assert 'data-timer="kneePushup" data-seconds="30"' in html
     assert 'data-timer="highKnee" data-seconds="120"' in html
-    assert html.count('class="timer-btn"') == 5           # 측정 카드 넷 + 프로필의 '측정하러 가기' 시트 하나 (같은 타이머 함수를 쓴다)
-    assert html.split("function openAxisMeasure(k)")[1].split("\n}")[0].count('class="timer-btn"') == 1
+    assert html.count('class="timer-btn"') == 6           # 측정 카드 넷 + 프로필의 '측정하러 가기' 시트 둘 (타이머 · 박자 — 같은 모양)
+    assert html.split("function openAxisMeasure(k)")[1].split("\n}")[0].count('class="timer-btn"') == 2
     assert '<div class="timer-time">02:00</div>' in html  # 2분 타이머 초기 표시
 
 
@@ -545,11 +545,37 @@ def test_나이로_바꾸지_않는_항목은_또래_순위로_보여_준다():
     html = _index()
     body = html.split("const 순서 = axisOrder(r.항목별);")[1].split("}).join('');")[0]
     assert "const 순위만 = !잰것 && typeof pr?.백분위 === 'number';" in body
-    assert "값 = `또래 ${posLabel(pr.백분위)}`;" in body and "starStr(starFromPct(pr.백분위))" in body
+    assert "값 = `또래 ${posLabel(pr.백분위)}${pr.어림 ? '쯤' : ''}`;" in body and "starStr(starFromPct(pr.백분위))" in body   # 공식 기준으로 어림한 값엔 '쯤'
+    assert "const nRef = Math.max(0, ...ranked.map(([, v]) => v.표본수 || 0));" in html   # 어림한 항목(표본수 0)은 '몇 명 중' 에 세지 않는다
     assert "axis-row${잰것 || 순위만 ? '' : ' todo'}" in body            # 잰 항목이다 — '측정하러 가기' 를 두지 않는다
     assert "function starFromPct(pct){ return Math.max(1, Math.min(5, Math.floor(pct / 20) + 1)); }" in html
     저장 = html.split("async function saveAxisMeasure(k)")[1].split("\n}")[0]
-    assert "`${k} 또래 ${posLabel(순위)} · 기록했어요`" in 저장
+    assert "`${k} 또래 ${posLabel(순위)}${또래.어림 ? '쯤' : ''} · 기록했어요`" in 저장
+
+
+def test_성장기_근지구력은_프로필에서_잰다():
+    """성장기의 strength 는 순발력(제자리 멀리뛰기)이라 근지구력을 따로 받는다: 만 12세까지 윗몸말아올리기(3초 박자),
+    13세부터 반복점프(30초). 서버가 공식 등급 기준으로 또래 순위를 어림해 또래비교로만 돌려준다."""
+    html = _index()
+    assert "muscleEndurance: null," in html and "muscleEndurance: state.muscleEndurance," in html
+    assert "state.muscleEndurance = saved?.muscleEndurance ?? null;" in html
+    보냄 = html.split("function measurement()")[1].split("\n}")[0]
+    assert "muscle_endurance: state.ageGbn === '성장기' ? state.muscleEndurance : null," in 보냄   # 성인·어르신은 strength 가 근지구력이다
+    body = html.split("function axisMeasure(k)")[1].split("\n}")[0]
+    assert "if (k === '근지구력' && g === '성장기') return Number.isFinite(state.age) && state.age <= 12" in body
+    assert "이름: '윗몸말아올리기', 단위: '회', 예: 26, 최소: 0, 박자: 3, 순위만: true," in body
+    assert "이름: '반복점프', 단위: '회', 예: 40, 최소: 0, 초: 30, 순위만: true," in body
+    assert "순위만: g === '성장기'," in body                                          # 성장기 심폐도 순위만
+    열기 = html.split("function openAxisMeasure(k)")[1].split("\n}")[0]
+    assert 'id="cadenceBox" data-every="${m.박자}"' in 열기 and 'onclick="toggleCadence()"' in 열기
+    assert "${m.순위만 ? '기록하기' : '기록하고 체력나이 다시 계산'}" in 열기            # 체력나이에 안 들어가는 항목은 그렇게 말한다
+    assert "발달 수준(체력나이) 계산에는 넣지 않아요" in 열기
+    박자 = html.split("function toggleCadence()")[1].split("\n}")[0]
+    assert "$('axisMeasureInput').value = cadence.n;" in 박자                          # 멈추면 그때까지의 횟수가 기록 칸에
+    assert "if (!$('cadenceCount')) { stopCadence(); return; }" in 박자                # 시트를 닫으면 스스로 멈춘다
+    assert "(parseFloat(box.dataset.every) || 3) * 1000" in 박자
+    저장 = html.split("async function saveAxisMeasure(k)")[1].split("\n}")[0]
+    assert 저장.index("stopCadence();") < 저장.index("closeSheet();")
 
 
 def test_선택값을_서버로_보낸다():

@@ -2528,7 +2528,8 @@ const state = {
   credit: 0,           // I1·K3: AI 추천 선결제 잔액(원). 미리 결제해 둘 수 있다
   creditLog: [],       // I1: [{date, 종류:'충전'|'사용', 금액, 잔액}]
   gripKg: null,        // G6 선택 입력: 악력(kg) — 몸무게로 나눠 상대악력으로 본다
-  endurance: null,     // G6 선택 입력: 심폐지구력(성인 왕복오래달리기 / 어르신 2분제자리걷기)
+  endurance: null,     // G6 선택 입력: 심폐지구력(성인·성장기 왕복오래달리기 / 어르신 2분제자리걷기)
+  muscleEndurance: null,   // 성장기 근지구력(만 11~12세 윗몸말아올리기 · 13~18세 반복점프, 회) — 프로필의 '측정하러 가기' 로 적는다
 };
 
 const PURPOSE_LABEL = {
@@ -3137,7 +3138,7 @@ function snapshot(){
     age: state.age, sex: state.sex, ageGbn: state.ageGbn,
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
-    gripKg: state.gripKg, endurance: state.endurance,
+    gripKg: state.gripKg, endurance: state.endurance, muscleEndurance: state.muscleEndurance,
     purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
     first: state.first, result: state.result,
@@ -3209,6 +3210,7 @@ function applyProfile(saved){
   state.creditLog = [];
   state.gripKg = saved?.gripKg ?? null;
   state.endurance = saved?.endurance ?? null;
+  state.muscleEndurance = saved?.muscleEndurance ?? null;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
   if (!state.measureLog.length && state.first?.결과?.체력나이 != null) {
     const f = state.first.결과;
@@ -5293,6 +5295,7 @@ function measurement(){
     flexibility: state.flexibility, strength: state.strength,
     height_cm: state.height, weight_kg: state.weight,
     grip_kg: state.gripKg, endurance: state.endurance,   // 잰 사람만 (G6)
+    muscle_endurance: state.ageGbn === '성장기' ? state.muscleEndurance : null,   // 성장기만 — 성인·어르신의 근지구력은 strength 다
   };
 }
 
@@ -5622,7 +5625,7 @@ function renderPeerComparison(r){
 
   // 종합 등수: 측정한 항목들의 백분위 평균 (계산은 기존 그대로)
   const avgPct = ranked.reduce((a, [, v]) => a + v.백분위, 0) / ranked.length;
-  const nRef = Math.max(...ranked.map(([, v]) => v.표본수));
+  const nRef = Math.max(0, ...ranked.map(([, v]) => v.표본수 || 0));   // 공식 기준으로 어림한 항목(표본수 0)은 빼고 센다
   const myRank = Math.max(1, Math.round((100 - avgPct) / 100 * nRef));
   rankEl.innerHTML =
     `또래 ${fmtInt(nRef)}명 중<br/><span class="big">약 ${fmtInt(myRank)}등</span> (${posLabel(avgPct)})`;
@@ -6289,7 +6292,7 @@ function renderProfile(){
     const 순위만 = !잰것 && typeof pr?.백분위 === 'number';   // 성장기 심폐지구력 — 나이로 환산하지 않고 또래 순위만 온다
     let 값, 오른쪽;
     if (순위만) {
-      값 = `또래 ${posLabel(pr.백분위)}`;
+      값 = `또래 ${posLabel(pr.백분위)}${pr.어림 ? '쯤' : ''}`;      // 어림: 분포가 아니라 공식 등급 기준 세 점으로 잰 것 (성장기 근지구력)
       오른쪽 = `<div class="stars">${starStr(starFromPct(pr.백분위))}</div>`;
     } else if (!잰것) {
       const 잴것 = axisMeasure(k), 적어둔값 = 잴것 ? state[잴것.필드] : null;
@@ -6331,7 +6334,8 @@ function renderProfile(){
    /fitness-age 를 다시 불러 체력나이 · 별점 · 약점을 새로 받는다. 항목과 입력은 1번 화면과 같다:
      유연성      앉아 앞으로 숙였을 때 손끝 위치 (flexibility)
      근력        악력 kg → 서버가 몸무게로 나눠 상대악력으로 (gripKg)
-     근지구력    성인 윗몸일으키기 · 어르신 의자에 앉았다 일어서기 (strength) — 성장기는 이 값이 순발력이다
+     근지구력    성인 윗몸일으키기 · 어르신 의자에 앉았다 일어서기 (strength) — 성장기는 strength 가 순발력이라 따로 받는다:
+                 만 11~12세 윗몸말아올리기(3초 박자) · 13~18세 반복점프(30초) (muscleEndurance). 공식 등급 기준으로 또래 순위를 어림한다
      심폐지구력  성인 왕복오래달리기 · 어르신 2분제자리걷기 (endurance) — 성장기는 공개 분포가 없다
    재는 항목이 없으면 null. */
 function axisMeasure(k){
@@ -6340,9 +6344,14 @@ function axisMeasure(k){
     설명: '발끝보다 <strong>5cm 더 나감 → +5cm</strong> · 발끝에 <strong>정확히 닿음 → 0cm</strong> · 발끝까지 <strong>5cm 부족함 → -5cm</strong>' };
   if (k === '근력') return { 필드: 'gripKg', 입력: 'gripInput', 이름: '악력', 단위: 'kg', 예: 42, 최소: 0, 양수: true,
     설명: '악력계로 더 센 손을 잽니다. 몸무게로 나눠 상대악력으로 봐요. 악력계가 없으면 체력인증센터에서 잴 수 있어요.' };
+  if (k === '근지구력' && g === '성장기') return Number.isFinite(state.age) && state.age <= 12
+    ? { 필드: 'muscleEndurance', 입력: null, 이름: '윗몸말아올리기', 단위: '회', 예: 26, 최소: 0, 박자: 3, 순위만: true,
+        설명: '누워 무릎을 세우고 손바닥을 허벅지에 얹어요. 3초에 한 번 울리는 신호에 맞춰 손이 무릎을 덮을 만큼 상체를 말아 올렸다가 머리가 바닥에 닿게 내려오면 1회예요. 박자를 놓치거나 발바닥이 떨어지면 끝 — 그때까지의 횟수를 적어요.' }
+    : { 필드: 'muscleEndurance', 입력: null, 이름: '반복점프', 단위: '회', 예: 40, 최소: 0, 초: 30, 순위만: true,
+        설명: '30cm쯤 되는 낮은 장애물(상자·쿠션)을 옆에 두고, 몸은 정면을 본 채 두 발을 모아 좌우로 30초 동안 넘은 횟수예요. 두 발이 같이 뜨고 같이 닿아야 하고, 장애물을 건드린 것은 세지 않아요.' };
   if ((k === '근지구력' && 힘 && g !== '성장기') || (k === '순발력' && g === '성장기' && 힘))
     return { 필드: 'strength', 입력: 'strengthInput', 이름: 힘.name, 단위: 힘.unit, 예: 힘.init, 최소: 0, 설명: 힘.desc, 초: 힘.timer ? (힘.seconds || 30) : 0 };
-  if (k === '심폐지구력' && 심폐) return { 필드: 'endurance', 입력: 'enduranceInput', 이름: 심폐.이름, 단위: '회', 예: g === '어르신' ? 100 : 60, 최소: 0,
+  if (k === '심폐지구력' && 심폐) return { 필드: 'endurance', 입력: 'enduranceInput', 이름: 심폐.이름, 단위: '회', 예: g === '어르신' ? 100 : 60, 최소: 0, 순위만: g === '성장기',
     설명: 심폐.이름 === '왕복오래달리기'
       ? 심폐.설명 + '예요. 신호음 안에 선에 닿지 못한 것이 두 번이면 끝 — 그때까지 달린 횟수를 적어주세요 (구간 한 번 = 1회).'
       : 심폐.설명 + '를 적어주세요.' };
@@ -6359,6 +6368,9 @@ function openAxisMeasure(k){
       ${m.초 ? `<div class="timer-box" data-timer="axisMeasure" data-seconds="${m.초}">
         <div class="timer-time">${fmtTimer(m.초)}</div>
         <button type="button" class="timer-btn" onclick="toggleTimer('axisMeasure')">시작</button></div>` : ''}
+      ${m.박자 ? `<div class="timer-box" id="cadenceBox" data-every="${m.박자}">
+        <div class="timer-time" id="cadenceCount">0회</div>
+        <button type="button" class="timer-btn" id="cadenceBtn" onclick="toggleCadence()">박자 시작</button></div>` : ''}
       <div class="field-row">
         <input class="field-input" id="axisMeasureInput" type="number" step="any"
                placeholder="예: ${m.예}" aria-label="${m.이름} (${m.단위})"
@@ -6366,11 +6378,49 @@ function openAxisMeasure(k){
         <div class="field-unit">${m.단위}</div>
       </div>
       <div class="axis-measure-actions">
-        <button type="button" class="reco-btn go" id="axisMeasureSave" onclick="saveAxisMeasure('${k}')">기록하고 체력나이 다시 계산</button>
+        <button type="button" class="reco-btn go" id="axisMeasureSave" onclick="saveAxisMeasure('${k}')">${m.순위만 ? '기록하기' : '기록하고 체력나이 다시 계산'}</button>
       </div>
-      <div class="axis-measure-note">다른 측정값은 그대로 두고 이 항목만 더해요. 체력나이와 별점에 바로 반영됩니다.</div>
+      <div class="axis-measure-note">${m.순위만
+        ? '이 연령대의 이 항목은 또래와 견준 순위와 별점으로 보여줘요. 발달 수준(체력나이) 계산에는 넣지 않아요.'
+        : '다른 측정값은 그대로 두고 이 항목만 더해요. 체력나이와 별점에 바로 반영됩니다.'}</div>
     </div>`);
   $('axisMeasureInput').focus({ preventScroll: true });
+}
+
+/* 박자 신호 — 윗몸말아올리기는 시간이 아니라 '3초에 한 번' 의 박자를 따라가는 검사다. 신호가 울릴 때마다 1회를 세고,
+   못 따라가서 멈추면 그때까지의 횟수를 입력칸에 넣는다. 시트가 닫혀 상자가 없어지면 스스로 멈춘다. */
+const cadence = { handle: null, n: 0, ctx: null };
+function cadenceBeep(){
+  try {
+    cadence.ctx = cadence.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = cadence.ctx.createOscillator(), g = cadence.ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.15;
+    o.connect(g); g.connect(cadence.ctx.destination);
+    o.start(); o.stop(cadence.ctx.currentTime + 0.12);
+  } catch (e) { /* 소리를 못 내는 환경이면 화면의 횟수만 센다 */ }
+}
+function stopCadence(){
+  if (cadence.handle) { clearInterval(cadence.handle); cadence.handle = null; }
+  if ($('cadenceBtn')) $('cadenceBtn').textContent = '박자 다시';
+}
+function toggleCadence(){
+  const box = $('cadenceBox');
+  if (!box) return;
+  if (cadence.handle) {                                  // 멈춤 — 여기까지의 횟수를 기록 칸에
+    stopCadence();
+    if ($('axisMeasureInput')) $('axisMeasureInput').value = cadence.n;
+    return;
+  }
+  cadence.n = 0;
+  $('cadenceCount').textContent = '0회';
+  $('cadenceBtn').textContent = '그만 (못 따라가면)';
+  cadenceBeep();                                         // 첫 신호 — 올라가기 시작
+  cadence.handle = setInterval(() => {
+    if (!$('cadenceCount')) { stopCadence(); return; }   // 시트가 닫혔다
+    cadence.n += 1;
+    $('cadenceCount').textContent = cadence.n + '회';
+    cadenceBeep();
+  }, (parseFloat(box.dataset.every) || 3) * 1000);
 }
 
 async function saveAxisMeasure(k){
@@ -6392,18 +6442,19 @@ async function saveAxisMeasure(k){
     state.result = 새결과;
   } catch (e) {
     되돌리기();
-    btn.disabled = false; btn.textContent = '기록하고 체력나이 다시 계산';
+    btn.disabled = false; btn.textContent = m.순위만 ? '기록하기' : '기록하고 체력나이 다시 계산';
     showToast('계산하지 못했어요. 잠시 뒤 다시 시도해주세요');
     return;
   }
   resetTimer('axisMeasure');
+  stopCadence();
   closeSheet();
   commitResult();                                // 점검 기록(오늘 줄) · 저장 · 게이지 · 도달 시점까지
   if ($('resultBlock')?.style.display === 'block') renderResult();   // 측정 화면에 결과가 떠 있으면 그 숫자도 새 값으로
   renderProfile();
-  const 나이 = state.result.항목별?.[k], 순위 = state.result.또래비교?.[k]?.백분위;
+  const 나이 = state.result.항목별?.[k], 또래 = state.result.또래비교?.[k], 순위 = 또래?.백분위;
   showToast(Number.isFinite(나이) ? `${k} ${나이}세 수준 · 체력나이를 다시 계산했어요`
-    : typeof 순위 === 'number' ? `${k} 또래 ${posLabel(순위)} · 기록했어요`      // 성장기 심폐 — 나이로 환산하지 않는다
+    : typeof 순위 === 'number' ? `${k} 또래 ${posLabel(순위)}${또래.어림 ? '쯤' : ''} · 기록했어요`   // 성장기 심폐·근지구력 — 나이로 환산하지 않는다
     : '기록했어요. 이 항목은 또래 자료가 부족해 체력나이에는 더하지 못했어요');
 }
 

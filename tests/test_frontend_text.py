@@ -22,10 +22,14 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 
 def _index() -> str:
-    """index.html 본문. tests/test_api.py 의 test_frontend_served 와 같은 경로."""
+    """index.html 본문. tests/test_api.py 의 test_frontend_served 와 같은 경로.
+
+    줄 끝은 LF 로 맞춰서 돌려준다. 윈도우에서 core.autocrlf=true 로 꺼낸 파일은 CRLF 라서, 줄바꿈을 끼워 찾는
+    단언("…;\n  next();")이 그 PC 에서만 깨진다 — 저장소 안과 배포 서버 · CI 는 LF 다.
+    """
     r = client.get("/")
     assert r.status_code == 200
-    return r.text
+    return r.text.replace("\r\n", "\n")
 
 
 # ---------- A6 로그인 문구 ----------

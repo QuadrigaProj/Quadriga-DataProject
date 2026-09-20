@@ -536,7 +536,7 @@ def _materials(연령대: str, 종목ids=None) -> tuple[str, dict]:
     rt, sp, wi = _catalogs()
     고른 = set(종목ids or [])
     # 이름 → 코드·id. AI 가 코드 대신 이름("요가", "스쿼트")을 써도 줄을 버리지 않고 찾는다
-    줄, 표 = [], {"동작": {}, "종목": {}, "기록": {}, "이름": {"동작": {}, "종목": {}, "기록": {}}}
+    줄, 표 = [], {"동작": {}, "종목": {}, "기록": {}, "이름": {"동작": {}, "종목": {}, "기록": {}}, "연령대": 연령대}
 
     줄.append("동작 (코드 | 단계 | 동작 | 요인 | 도구 | 부담부위)")
     pools = rt.load()["pools"].get(연령대, {})
@@ -788,5 +788,6 @@ def _resolve_step(x: dict, 표: dict) -> dict | None:
                 "id": it["id"], "동작": it["이름"],
                 "체력요인": [it["요인"]] if it.get("요인") else [], "도구": it.get("분류"),
                 "유형": "시간" if "시간" in (it.get("입력") or []) else "횟수",
-                "부담부위": [], "youtube_id": None, "수행량": 수행량, "왜": 왜}
+                # 공식 영상이 있는 스트레칭은 영상으로 — 없으면 3D (docs/3d)
+                "부담부위": [], "youtube_id": _catalogs()[2].video_for(it["id"], 표.get("연령대")), "수행량": 수행량, "왜": 왜}
     return None

@@ -233,9 +233,14 @@ def capsules(F: Frame) -> dict[str, Cap]:
     C = {}
     for side in ("Left", "Right"):
         C[side + "Thigh"] = Cap(side + "Thigh", F.P(side + "UpLeg"), F.P(side + "Leg"), F.rad(side + "UpLeg"))
-        C[side + "Shank"] = Cap(side + "Shank", F.P(side + "Leg"), F.P(side + "Foot"), F.rad(side + "Leg"))
+        # 정강이도 둥글지 않다 — 앞뒤(종아리)가 옆보다 두껍다. 나란히 붙인 두 다리가 겹친 것으로 나오지 않게 옆 방향은 잰 너비로
+        C[side + "Shank"] = Cap(side + "Shank", F.P(side + "Leg"), F.P(side + "Foot"), F.rad(side + "Leg"),
+                                max(F.rad(side + "Leg", 1) * 1.4, 0.04), F.rad(side + "Leg"), F.rotdir(side + "Leg", [1, 0, 0]), F.rotdir(side + "Leg", [0, 0, 1]))
         if F.has(side + "ToeBase"):
-            C[side + "Foot"] = Cap(side + "Foot", F.P(side + "Foot"), F.P(side + "ToeBase"), F.rad(side + "Foot"))
+            # 발은 납작하다: 발목→발가락 축에서 발바닥 쪽으로는 7cm, 옆으로는 4cm 안팎. 둥근 캡슐(7cm)로 재면 나란히 붙인 두 발
+            # (사이드 플랭크의 포갠 발, 모아 선 발)이 4cm 씩 겹친 것으로 나와, 옆 방향은 잰 너비(80% 지점 × 1.4)로 따로 본다
+            C[side + "Foot"] = Cap(side + "Foot", F.P(side + "Foot"), F.P(side + "ToeBase"), F.rad(side + "Foot"),
+                                   max(F.rad(side + "Foot", 1) * 1.4, 0.035), F.rad(side + "Foot"), F.rotdir(side + "Foot", [1, 0, 0]), F.rotdir(side + "Foot", [0, 0, 1]))
         C[side + "UpperArm"] = Cap(side + "UpperArm", F.P(side + "Arm"), F.P(side + "ForeArm"), F.rad(side + "Arm"))
         C[side + "ForeArm"] = Cap(side + "ForeArm", F.P(side + "ForeArm"), F.P(side + "Hand"), F.rad(side + "ForeArm"))
         tip = F.P(side + "HandMiddle1") if F.has(side + "HandMiddle1") else F.P(side + "Hand") + unit(F.seg(side + "ForeArm", side + "Hand")) * 0.08
@@ -344,6 +349,7 @@ ALLOW = [
     ("*", "PEN_BODY *UpperArm-Chest"),                                              # 위팔은 가슴 옆에 붙는다 (6cm 까지는 아래 tol 로, 그 이상만 잡히면 여기서)
     ("crunch", "PEN_BODY *Hand-Chest"),                                             # 머리 뒤에 댄 손이 목·어깨에 닿는다
     ("rowing", "HIP_FLEX *"), ("rowing", "PEN_BODY *Thigh-Chest"), ("leg-press", "PEN_BODY *Thigh-Chest"),   # 웅크리면 가슴이 허벅지에 닿는다
+    ("twist", "PEN_BODY *Hand-*Thigh"),                                             # 넘긴 무릎을 반대 손으로 누른다 — 손바닥이 허벅지 살에 닿는다 (여성은 손 캡슐이 굵게 재진다)
 ]
 
 

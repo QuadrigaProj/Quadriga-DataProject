@@ -460,6 +460,16 @@
   .rec-cap{ font-size:11.5px; color:var(--muted); margin-top:4px; }
   .rec-block{ margin-top:22px; }
   .rec-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+  /* 묶음 접기 · 펼치기 — 제목이 곧 버튼이다 */
+  button.rec-fold{ display:flex; align-items:center; gap:8px; width:100%; padding:6px 0; border:none; background:none;
+    font-family:inherit; text-align:left; cursor:pointer; }
+  .rec-fold .rec-count{ font-weight:500; font-variant-numeric:tabular-nums; }
+  .rec-fold .rec-chev{ margin-left:auto; width:9px; height:9px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted);
+    transform:rotate(-135deg); margin-right:4px; }
+  .rec-fold[aria-expanded="false"] .rec-chev{ transform:rotate(45deg); }
+  .rec-fold[aria-expanded="false"]{ margin-bottom:0; }
+  .rec-rest-btn{ display:block; width:100%; margin-top:10px; padding:11px 0; border-radius:12px; border:1px solid var(--line);
+    background:var(--paper); color:var(--pine-deep); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; }
   .rec-age-row{
     display:flex; align-items:center; justify-content:space-around;
     padding:18px 12px; border-radius:16px; background:var(--pine-tint);
@@ -788,21 +798,32 @@
     color:var(--pine-deep); cursor:pointer; text-decoration:underline;
     text-underline-offset:3px; margin-top:14px; }
 
-  /* 네 버튼을 같은 크기·같은 모양으로 (I2). 2×2 로 놓고 칸을 똑같이 나눈다.
+  /* 버튼을 같은 크기·같은 모양으로 (I2). 두 칸 격자에 놓고 칸을 똑같이 나눈다.
      이름을 .reco-actions 로 둔 것은 기록 화면의 .rec-actions 와 겹치지 않게 하려는 것이다. */
   .reco-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
+  /* 추천 카드: '이 루틴으로 시작' 은 맨 아래에 가로로 길게, 나머지는 그 위에 네모로 모은다 (예현 요청).
+     시작 버튼이 맨 끝에 올 때만 걸린다 — 'AI 추천 받기' 처럼 맨 앞에 오는 카드는 그대로다.
+     나머지가 홀수 개면(무료 추천 3개 · '다음 루틴' 이 붙은 5개) 혼자 남는 마지막 버튼도 가로로 채운다. */
+  .reco-actions > .reco-btn.go:last-child{ grid-column:1 / -1; min-height:56px; font-size:15.5px; }
+  .reco-actions:has(> .reco-btn.go:last-child) > .reco-btn:nth-last-child(2):nth-child(odd){ grid-column:1 / -1; }
   .reco-btn{
     width:100%; min-height:52px; padding:0 10px; margin:0;
     display:flex; align-items:center; justify-content:center;
     border:1.5px solid var(--line); border-radius:14px;
     background:var(--paper); color:var(--pine-deep);
     font:inherit; font-size:14.5px; font-weight:600; line-height:1.3;
-    text-align:center; cursor:pointer;
+    text-align:center; cursor:pointer; word-break:keep-all;      /* '받 / 기' 처럼 낱말 가운데에서 꺾이지 않게 */
   }
   .reco-btn:not(:disabled):hover{ background:var(--pine-tint); }
   .reco-btn:disabled{ color:var(--muted); border-color:var(--line); cursor:default; opacity:0.55; }
   .reco-btn.go{ background:var(--pine); border-color:var(--pine); color:#fff; }
   .reco-btn.go:not(:disabled):hover{ background:var(--pine-deep); }
+  /* AI 가 짓는 동안 — 예상 소요시간 · 흐른 시간 */
+  .ai-wait-title{ font-size:15px; font-weight:700; color:var(--ink); }
+  .ai-wait-est{ margin-top:6px; font-size:13.5px; color:var(--pine-deep); font-weight:700; font-variant-numeric:tabular-nums; }
+  .ai-wait-bar{ height:8px; border-radius:4px; background:var(--line); overflow:hidden; margin:14px auto 8px; max-width:260px; }
+  .ai-wait-bar i{ display:block; height:100%; width:0; background:var(--pine); border-radius:4px; transition:width .5s linear; }
+  .ai-wait-now{ font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
   /* ===================== SCREEN 11 : 당일 기록 작성 (G3·G4) ===================== */
   .wlog-group{ margin-top:22px; }
@@ -1073,6 +1094,10 @@
   .btn-guest:hover{ background:var(--pine-tint); }
   .guest-alt{ display:inline-block; margin-top:12px; font-size:12.5px;
               color:var(--pine-deep); text-decoration:underline; }
+  /* 가입 없이 쓰기 — 닉네임 한 칸 */
+  .nick-box{ margin-top:26px; }
+  .nick-title{ font-size:16px; font-weight:700; margin-bottom:12px; }
+  .nick-note{ font-size:12.5px; color:var(--muted); line-height:1.55; margin:12px 0 0; }
 
   /* ---- 게스트 안내 배너 (프로필 화면) ---- */
   .guest-banner{
@@ -1107,6 +1132,31 @@
   .tool-name b{ font-variant-numeric:tabular-nums; }
   .tool-sub{ font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4; }
   .share-canvas{ display:block; width:100%; height:auto; border-radius:16px; border:1px solid var(--line); }
+  /* 운동 스타일 결과 — 대표 그림 · 네 글자 코드 · 성향 막대 */
+  .style-hero{ display:flex; align-items:center; gap:16px; margin-bottom:14px; }
+  .style-art{ flex:none; width:112px; height:112px; }
+  .style-art svg{ display:block; width:100%; height:100%; }
+  .style-code{ font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif; font-size:40px; font-weight:700; letter-spacing:.08em; line-height:1; color:var(--pine-deep); }
+  .style-code-sub{ font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.45; }
+  .style-kind{ font-size:13px; font-weight:700; color:var(--pine-deep); margin:-4px 0 8px; }
+  /* 얼마나 그런지 단계로 답하는 문항 — 동그라미 다섯 개. 양 끝이 크고 가운데가 작다 */
+  .style-scale{ margin-top:26px; }
+  .style-scale-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .style-dot{ flex:none; border-radius:50%; border:2.5px solid var(--pine); background:var(--paper); cursor:pointer; padding:0; }
+  .style-dot.s0, .style-dot.s4{ width:58px; height:58px; } .style-dot.s1, .style-dot.s3{ width:48px; height:48px; } .style-dot.s2{ width:38px; height:38px; }
+  .style-dot.s0, .style-dot.s1{ border-color:var(--clay); } .style-dot.s2{ border-color:var(--muted); }
+  .style-dot.selected.s0, .style-dot.selected.s1{ background:var(--clay); } .style-dot.selected.s2{ background:var(--muted); }
+  .style-dot.selected.s3, .style-dot.selected.s4{ background:var(--pine); }
+  .style-scale-ends{ display:flex; justify-content:space-between; margin-top:12px; font-size:13.5px; font-weight:700; }
+  .style-scale-ends span:first-child{ color:var(--clay); } .style-scale-ends span:last-child{ color:var(--pine-deep); }
+  .style-scale-now{ text-align:center; min-height:1.5em; margin-top:14px; font-size:14px; color:var(--muted); }
+  .style-axes{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
+  .style-axis-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); }
+  .style-axis-head b{ font-size:14px; color:var(--ink); }
+  .style-axis-head .on{ color:var(--pine-deep); font-weight:700; }
+  .style-axis-bar{ position:relative; height:8px; border-radius:4px; background:var(--line); margin-top:6px; }
+  .style-axis-bar i{ position:absolute; top:0; bottom:0; border-radius:4px; background:var(--pine); }
+  .style-axis-say{ font-size:12.5px; color:var(--muted); margin-top:5px; }
   .share-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
   .axis-go{ flex-shrink:0; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer;
     color:var(--pine-deep); background:var(--pine-tint); border:1px solid var(--pine-tint);
@@ -1629,11 +1679,23 @@
         <button class="btn btn-primary" style="margin-top:14px;" id="authBtn"
                 onclick="submitAuth()">이메일로 시작하기</button>
         <div class="guest-box">
-          <button type="button" class="btn btn-guest" onclick="enterAsGuest()">
+          <button type="button" class="btn btn-guest" onclick="localOnly()">
             가입 없이 이 기기에서만 써볼게요</button>
-          <a href="#" class="guest-alt" onclick="localOnly();return false;">
-            닉네임을 정해서 시작할래요 →</a>
         </div>
+      </div>
+
+      <!-- 가입 없이 쓰기 — 닉네임만 정하면 바로 시작한다 -->
+      <div class="nick-box" id="nickBox" hidden>
+        <div class="nick-title">닉네임만 정하면 바로 시작해요</div>
+        <div class="field-row" style="margin-top:0;">
+          <input class="field-input" id="nickInput" type="text" placeholder="닉네임" maxlength="20"
+                 autocomplete="nickname" enterkeyhint="go"
+                 onkeydown="if(event.key==='Enter')loginLocal()" />
+        </div>
+        <div class="login-err" id="nickErr"></div>
+        <button class="btn btn-primary" style="margin-top:14px;" onclick="loginLocal()">이 기기에서 시작하기</button>
+        <p class="nick-note">기록은 이 브라우저에만 저장돼요. 나중에 계정을 만들면 지금 기록을 그대로 옮길 수 있어요.</p>
+        <a href="#" class="guest-alt" onclick="localOnly(false);return false;">← 로그인 · 회원가입으로 돌아가기</a>
       </div>
 
       <div class="profile-list" id="profileList" style="display:none;"></div>
@@ -2037,7 +2099,7 @@
       </div>
 
       <div class="guest-banner" id="guestBanner" style="display:none;">
-        <b>지금은 게스트로 쓰고 있어요</b>
+        <b>지금은 이 기기에서만 쓰고 있어요</b>
         기록이 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 기기에서 열면
         지금까지의 기록은 보이지 않아요. 계정을 만들면 <b style="display:inline">지금 기록 그대로</b>
         옮겨서 어디서든 이어볼 수 있습니다.
@@ -2176,26 +2238,33 @@
       </div>
 
       <div class="rec-block">
-        <div class="rec-head">운동한 날</div>
-        <div id="recList"></div>
+        <button type="button" class="rec-head rec-fold" data-fold="list" aria-expanded="true" aria-controls="recListBody"
+                onclick="toggleRecBlock('list')"><span>운동한 날</span><span class="rec-count" id="recCount-list"></span><span class="rec-chev" aria-hidden="true"></span></button>
+        <div class="rec-body" id="recListBody"><div id="recList"></div></div>
         <button type="button" class="rec-log-btn" onclick="logTargetDate = null; goTo('s11')">당일 기록 작성</button>
       </div>
 
       <div class="rec-block" id="recManualBlock" style="display:none;">
-        <div class="rec-head">직접 적은 운동</div>
-        <div id="recManual"></div>
-        <div class="rec-actions">
-          <button type="button" class="rec-del" id="recManualDeleteBtn" disabled
-                  onclick="deleteSelectedManual()">삭제할 기록을 고르세요</button>
+        <button type="button" class="rec-head rec-fold" data-fold="manual" aria-expanded="true" aria-controls="recManualBody"
+                onclick="toggleRecBlock('manual')"><span>직접 적은 운동</span><span class="rec-count" id="recCount-manual"></span><span class="rec-chev" aria-hidden="true"></span></button>
+        <div class="rec-body" id="recManualBody">
+          <div id="recManual"></div>
+          <div class="rec-actions">
+            <button type="button" class="rec-del" id="recManualDeleteBtn" disabled
+                    onclick="deleteSelectedManual()">삭제할 기록을 고르세요</button>
+          </div>
         </div>
         <div class="rec-note" id="recManualDeleteNote"></div>
       </div>
 
       <div class="rec-block" id="recMeasureBlock" style="display:none;">
-        <div class="rec-head">점검 기록</div>
-        <div id="recMeasures"></div>
-        <div class="rec-note">점검 기록은 여기서 지우지 않아요.
-          그날 운동 기록을 지우면 함께 사라집니다.</div>
+        <button type="button" class="rec-head rec-fold" data-fold="measure" aria-expanded="true" aria-controls="recMeasureBody"
+                onclick="toggleRecBlock('measure')"><span>점검 기록</span><span class="rec-count" id="recCount-measure"></span><span class="rec-chev" aria-hidden="true"></span></button>
+        <div class="rec-body" id="recMeasureBody">
+          <div id="recMeasures"></div>
+          <div class="rec-note">점검 기록은 여기서 지우지 않아요.
+            그날 운동 기록을 지우면 함께 사라집니다.</div>
+        </div>
       </div>
     </div>
 
@@ -2262,8 +2331,17 @@
       </div>
 
       <div id="styleResult" style="display:none;">
+        <div class="style-hero" id="styleHero">
+          <div class="style-art" id="styleArt"></div>
+          <div><div class="style-code" id="styleCode"></div><div class="style-code-sub" id="styleCodeSub"></div></div>
+        </div>
         <h1 class="title" id="styleName">—</h1>
+        <div class="style-kind" id="styleKind"></div>
         <p class="sub" id="styleDesc"></p>
+        <div class="program-card" id="styleAxesCard" hidden>
+          <div class="prescribe-label">내 성향 네 글자</div>
+          <div class="style-axes" id="styleAxes"></div>
+        </div>
         <div class="program-card">
           <div class="prescribe-label">추천 목적</div>
           <div class="prescribe-text" id="stylePurpose">—</div>
@@ -2274,6 +2352,7 @@
           <div class="sport-grid" id="styleSports" style="margin-top:12px;"></div>
           <button type="button" class="btn btn-line" id="styleSportBtn" onclick="styleAddSports()">이 종목 담기</button>
         </div>
+        <button type="button" class="btn btn-line" style="margin-top:14px;" onclick="openStyleCard()">결과 카드 만들기</button>
         <div class="review-link" style="margin:18px 0 0;"><button type="button" onclick="restartStyleTest()">다시 해볼래요</button></div>
       </div>
     </div>
@@ -2515,6 +2594,7 @@
 <script src="js/api.js"></script>
 <script src="js/gauge.js"></script>
 <script src="js/move-art.js"></script>
+<script src="js/style-art.js"></script>
 <script src="js/move-notes.js"></script>
 <script src="js/move-3d.js"></script>
 <script>
@@ -2782,10 +2862,8 @@ function $(id) { return document.getElementById(id); }
 const PROVIDER_LABEL = {
   google: '구글로 로그인', naver: '네이버로 로그인', kakao: '카카오로 로그인',
   password: '이메일로 로그인',
-  device: '이 기기에만 저장', guest: '게스트 · 이 기기에만 저장',
+  device: '이 기기에만 저장',
 };
-const GUEST_NAME = '게스트';
-const LOCAL_MODES = new Set(['device', 'guest']);
 const SEX_LABEL = { M: '남성', F: '여성' };
 
 /* 로고를 누르면 돌아갈 곳. 점검 결과가 있으면 홈, 없으면 첫 점검. */
@@ -3143,7 +3221,7 @@ async function enterAsAccount(name, provider){
     try {
       await API.pushMeasurement(carryOver);
       latest = carryOver;
-      setStatus('게스트로 쌓은 기록을 계정으로 옮겼어요');
+      setStatus('이 기기에 쌓은 기록을 계정으로 옮겼어요');
       setTimeout(() => setStatus(''), 4000);
     } catch (e) { /* 실패하면 그냥 새 계정으로 시작한다 */ }
   }
@@ -3151,16 +3229,16 @@ async function enterAsAccount(name, provider){
   applyProfile(latest);
 }
 
-function localOnly(){
-  $('socialBox').style.display = 'none';
-  document.querySelector('.divider').style.display = 'none';
-  $('tabLogin').parentElement.style.display = 'none';
-  $('authEmail').placeholder = '닉네임';
-  $('authEmail').type = 'text';
-  $('authPw').parentElement.style.display = 'none';
-  $('authBtn').textContent = '이 기기에서 시작하기';
-  $('authBtn').setAttribute('onclick', 'loginLocal()');
-  $('loginErr').style.display = 'none';
+/* 가입 없이 쓰기 — '이 기기에서만 써볼게요' 를 누르면 로그인 칸들을 접고 닉네임 한 칸만 남긴다.
+   닉네임만 넣으면 바로 시작한다. localOnly(false) 는 원래 로그인 화면으로 되돌린다.
+   (예전에는 이 버튼이 닉네임 없이 '게스트' 로 들어갔고, 닉네임은 아래 링크를 따로 눌러야 정할 수 있었다) */
+function localOnly(on = true){
+  ['socialBox', 'socialHint'].forEach(id => { $(id).style.display = on ? 'none' : ''; });
+  document.querySelector('#s0 .divider').style.display = on ? 'none' : '';
+  document.querySelector('#s0 .login-form').style.display = on ? 'none' : '';
+  $('nickBox').hidden = !on;
+  $('nickErr').style.display = 'none';
+  if (on) $('nickInput').focus();
 }
 
 const STORE_KEY = 'quadriga.profiles';
@@ -3366,9 +3444,9 @@ function renderProfileList(){
       ? `${p.ageGbn === '성장기' ? '발달 수준' : '체력나이'} ${Math.round(p.result.체력나이)}세 · ${p.updated}`
       : '첫 점검 전';
     return `<div class="profile-item">
-      <div class="profile-avatar">${n.trim()[0] || '?'}</div>
+      <div class="profile-avatar">${esc(n.trim()[0] || '?')}</div>
       <div style="flex:1;min-width:0;" onclick="loginLocal(${JSON.stringify(n).replace(/"/g,'&quot;')})">
-        <div class="profile-name">${n}</div>
+        <div class="profile-name">${esc(n)}</div>
         <div class="profile-meta">${meta}</div>
       </div>
       <button class="profile-del" onclick="removeProfile(${JSON.stringify(n).replace(/"/g,'&quot;')})">삭제</button>
@@ -3381,17 +3459,6 @@ function removeProfile(name){
   delete all[name];
   writeProfiles(all);
   renderProfileList();
-}
-
-/* 게스트 — 닉네임도 안 묻고 바로 들어간다.
-   같은 브라우저에서 다시 들어오면 이전 게스트 기록을 그대로 이어받는다. */
-function enterAsGuest(){
-  $('loginErr').style.display = 'none';
-  state.user = GUEST_NAME;
-  state.account = false;
-  state.provider = 'guest';
-  applyProfile(readProfiles()[GUEST_NAME]);
-  saveProfile();
 }
 
 /* 게스트/기기 프로필 → 계정으로. 지금 기록을 들고 로그인 화면으로 돌아간다. */
@@ -3412,8 +3479,14 @@ function authNotice(msg){
 }
 
 function loginLocal(name){
-  const id = (name !== undefined ? name : $('authEmail').value).trim();
-  if (!id) return authError('닉네임을 입력해주세요.');
+  const id = (name !== undefined ? name : $('nickInput').value).trim();
+  if (!id) {                                     // 닉네임 칸의 안내는 그 칸 아래에 띄운다 (로그인 칸들은 접혀 있다)
+    $('nickErr').textContent = '닉네임을 입력해주세요.';
+    $('nickErr').style.display = 'block';
+    $('nickInput').focus();
+    return;
+  }
+  $('nickErr').style.display = 'none';
   $('loginErr').style.display = 'none';
   state.user = id;
   state.account = false;
@@ -3458,6 +3531,8 @@ async function doDelete(){
   state.styleTest = null;
   $('authEmail').value = '';
   $('authPw').value = '';
+  $('nickInput').value = '';
+  localOnly(false);
   renderProfileList();
   goTo('s0');
 }
@@ -3493,6 +3568,8 @@ async function logout(){
   state.styleTest = null;
   $('authEmail').value = '';
   $('authPw').value = '';
+  $('nickInput').value = '';
+  localOnly(false);
   renderProfileList();
   goTo('s0');
 }
@@ -3538,6 +3615,8 @@ async function resetSettings(){
   $('flexInput').value = '';
   $('authEmail').value = '';
   $('authPw').value = '';
+  $('nickInput').value = '';
+  localOnly(false);
   renderProfileList();
   alert('초기화되었습니다.');
   goTo('s0');
@@ -3640,7 +3719,7 @@ async function renderRecords(){
   }
 
   $('recList').innerHTML = log.length
-    ? log.slice(0, 30).map(e => `<div class="rec-item">
+    ? log.map(e => `<div class="rec-item">
         <div class="rec-date">${fmtDate(e.date)}</div>
         <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
         <div class="rec-check">✓</div>
@@ -3648,6 +3727,7 @@ async function renderRecords(){
       </div>`).join('')
     : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
+  foldRecList('list', $('recList'), log.length);
 
   renderMeasureRecords();
   renderManualRecords();
@@ -3749,6 +3829,52 @@ function renderMeasureRecords(){
           <div class="rec-name">체력나이 ${Math.round(r.체력나이 * 10) / 10}세</div>
           ${moreToggle(r.출처 === '측정' ? measureDetailHtml(r) : dayAgeHtml(r.date))}
         </div>`).join('');
+  foldRecList('measure', $('recMeasures'), rows.length);
+}
+
+/* ---- 기록 묶음 접기 · 펼치기 ----
+   날짜별 기록이 쌓일수록 화면이 끝없이 길어진다 (예현 요청).
+     ① 묶음 제목을 누르면 그 묶음을 통째로 접는다 — 제목 옆에 개수는 남는다.
+     ② 펼쳐 둔 묶음도 처음에는 최근 REC_PREVIEW 개만 보인다. 나머지는 '이전 기록 N개 더 보기' 로 연다.
+   접어 둔 상태는 이 기기에만 기억한다 — 기록이 아니라 보기 설정이라 프로필(서버)에 넣지 않는다.
+   목록은 지금처럼 통째로 그린 뒤 여기서 나눠 담는다: 줄을 그리는 코드는 건드리지 않는다. */
+const REC_PREVIEW = 5;
+const REC_FOLD_KEY = 'quadriga.recFold';
+let recFold = (() => { try { return JSON.parse(localStorage.getItem(REC_FOLD_KEY) || '{}') || {}; } catch (e) { return {}; } })();
+function saveRecFold(){ try { localStorage.setItem(REC_FOLD_KEY, JSON.stringify(recFold)); } catch (e) { /* 저장이 막혀도 이번에는 그대로 쓴다 */ } }
+
+function foldRecList(key, box, count){
+  const head = document.querySelector(`.rec-fold[data-fold="${key}"]`);
+  const closed = !!recFold[key + '.closed'];
+  $('recCount-' + key).textContent = count ? `${count}개` : '';
+  head.setAttribute('aria-expanded', String(!closed));
+  $(head.getAttribute('aria-controls')).hidden = closed;
+  const items = [...box.children].filter(el => el.classList.contains('rec-item'));
+  if (items.length <= REC_PREVIEW) return;
+  const open = !!recFold[key + '.all'];
+  const rest = document.createElement('div');
+  rest.className = 'rec-rest'; rest.hidden = !open;
+  items.slice(REC_PREVIEW).forEach(el => rest.appendChild(el));
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'rec-rest-btn';
+  btn.setAttribute('aria-expanded', String(open));
+  btn.textContent = open ? '최근 기록만 보기' : `이전 기록 ${rest.children.length}개 더 보기`;
+  btn.onclick = () => toggleRecRest(key, rest, btn);
+  box.append(rest, btn);
+}
+function toggleRecRest(key, rest, btn){
+  const open = rest.hidden;
+  rest.hidden = !open;
+  recFold[key + '.all'] = open; saveRecFold();
+  btn.setAttribute('aria-expanded', String(open));
+  btn.textContent = open ? '최근 기록만 보기' : `이전 기록 ${rest.children.length}개 더 보기`;
+}
+function toggleRecBlock(key){
+  const head = document.querySelector(`.rec-fold[data-fold="${key}"]`);
+  const closed = head.getAttribute('aria-expanded') === 'true';        // 지금 열려 있으면 닫는다
+  recFold[key + '.closed'] = closed; saveRecFold();
+  head.setAttribute('aria-expanded', String(!closed));
+  $(head.getAttribute('aria-controls')).hidden = closed;
 }
 
 /* ---------------------------------------------------------------------------
@@ -6586,32 +6712,99 @@ function drawShareCard(cv){
 function openShareCard(){
   if (!state.result) { showToast('먼저 체력나이를 재 주세요'); return; }
   if (!state.result.또래비교) { showToast('서버에 연결되지 않아 지금은 예시 값이에요 — 연결된 뒤에 카드를 만들 수 있어요'); return; }
-  openSheet('내 체력나이 카드', `
-    <canvas class="share-canvas" id="shareCanvas" aria-label="체력나이 ${Math.round(displayAge())}세 결과 카드"></canvas>
+  const cv = openCardSheet('내 체력나이 카드', `체력나이 ${Math.round(displayAge())}세 결과 카드`, '이름은 들어가지 않아요. 나이와 항목별 결과만 담깁니다.',
+    { 파일: 'fitage-card.png', 제목: '내 체력나이', 글: `내 체력나이는 ${Math.round(displayAge())}세 — Fitage` });
+  drawShareCard(cv);
+}
+/* 카드 시트 — 체력나이 카드와 운동 스타일 카드가 같이 쓴다. meta = { 파일, 제목, 글 } 은 저장 · 공유할 때 쓴다 */
+let shareCardMeta = null;
+function openCardSheet(title, label, note, meta){
+  shareCardMeta = meta;
+  openSheet(title, `
+    <canvas class="share-canvas" id="shareCanvas" aria-label="${label}"></canvas>
     <div class="share-actions">
       <button type="button" class="reco-btn" onclick="saveShareCard()">이미지 저장</button>
       <button type="button" class="reco-btn go" onclick="shareShareCard()">공유하기</button>
     </div>
-    <div class="axis-measure-note">이름은 들어가지 않아요. 나이와 항목별 결과만 담깁니다.</div>`);
-  drawShareCard($('shareCanvas'));
+    <div class="axis-measure-note">${note}</div>`);
+  return $('shareCanvas');
 }
 function shareCardBlob(){ return new Promise(res => $('shareCanvas').toBlob(res, 'image/png')); }
 async function saveShareCard(){
   const blob = await shareCardBlob();
-  if (blob) { saveBlob(blob, 'fitage-card.png'); showToast('이미지를 저장했어요'); }
+  if (blob) { saveBlob(blob, shareCardMeta.파일); showToast('이미지를 저장했어요'); }
 }
 async function shareShareCard(){
   const blob = await shareCardBlob();
   if (!blob) return;
-  const file = new File([blob], 'fitage-card.png', { type: 'image/png' });
+  const file = new File([blob], shareCardMeta.파일, { type: 'image/png' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: '내 체력나이', text: `내 체력나이는 ${Math.round(displayAge())}세 — Fitage` });
+      await navigator.share({ files: [file], title: shareCardMeta.제목, text: shareCardMeta.글 });
       return;
     }
   } catch (e) { if (e && e.name === 'AbortError') return; }      // 공유 창을 그냥 닫은 것
-  saveBlob(blob, 'fitage-card.png');                              // 공유를 못 하는 브라우저면 저장으로
+  saveBlob(blob, shareCardMeta.파일);                             // 공유를 못 하는 브라우저면 저장으로
   showToast('이 브라우저는 바로 공유를 못 해서 이미지로 저장했어요');
+}
+
+/* ---- 내 운동 스타일 카드 ----
+   체력나이 카드와 같은 크기(1080×1350) · 같은 틀. 대표 그림, 네 글자 코드, 유형 이름과 설명, 성향 막대 넷, 추천 종목.
+   이름은 넣지 않는다. 그림은 STYLE_ART 의 SVG 를 이미지로 바꿔 그린다 — 못 바꾸면 그림 없이 그린다. */
+async function openStyleCard(){
+  const r = state.styleTest?.result;
+  if (!r?.유형) { showToast('먼저 운동 스타일 테스트를 해 주세요'); return; }
+  const t = r.유형, 코드 = r.코드?.글자 || '';
+  const cv = openCardSheet('내 운동 스타일 카드', `운동 스타일 ${코드} ${t.이름} 결과 카드`, '이름은 들어가지 않아요. 유형과 성향만 담깁니다.',
+    { 파일: 'fitage-style.png', 제목: '내 운동 스타일', 글: `내 운동 스타일은 ${코드 ? 코드 + ' · ' : ''}${t.이름} — Fitage` });
+  let img = null;
+  try { img = await STYLE_ART.image(t.id, 560); } catch (e) { /* 그림 없이 */ }
+  if ($('shareCanvas') === cv) drawStyleCard(cv, r, img);
+}
+function drawStyleCard(cv, r, img){
+  const W = 1080, H = 1350, L = 120, R = W - 120, g = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  const css = getComputedStyle(document.documentElement), c = (n, d) => css.getPropertyValue(n).trim() || d;
+  const sans = '-apple-system, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif', serif = '"Iowan Old Style", "Palatino Linotype", Georgia, serif';
+  const ink = c('--ink', '#20261F'), muted = c('--muted', '#666F62'), pine = c('--pine', '#2E5B4B'), line = c('--line', '#DCDCC9');
+  const t = r.유형 || {}, code = r.코드, tone = STYLE_ART.tone(t.id);
+  g.fillStyle = tone ? tone[1] : c('--pine-deep', '#1F4136'); g.fillRect(0, 0, W, H);      // 바깥 틀은 그 유형의 선색
+  g.fillStyle = c('--paper', '#FAFAF4');
+  const x0 = 60, y0 = 60, w = W - 120, h = H - 120, rad = 48;
+  g.beginPath(); g.moveTo(x0 + rad, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, rad); g.arcTo(x0 + w, y0 + h, x0, y0 + h, rad);
+  g.arcTo(x0, y0 + h, x0, y0, rad); g.arcTo(x0, y0, x0 + w, y0, rad); g.closePath(); g.fill();
+  g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+  g.fillStyle = pine; g.font = `700 44px ${sans}`; g.fillText('Fitage', L, 160);
+  g.fillStyle = muted; g.font = `500 30px ${sans}`; g.textAlign = 'right'; g.fillText('운동 스타일 테스트', R, 160); g.textAlign = 'left';
+  // 그림과 코드
+  if (img) g.drawImage(img, L, 210, 280, 280);
+  const tx = img ? L + 320 : L;
+  g.fillStyle = muted; g.font = `600 34px ${sans}`; g.fillText('내 운동 스타일', tx, 290);
+  g.fillStyle = tone ? tone[1] : pine; g.font = `700 ${code ? 124 : 72}px ${serif}`;
+  g.fillText(code ? code.글자 : (t.이름 || ''), tx - 4, 410);
+  if (code) { g.fillStyle = muted; g.font = `500 28px ${sans}`; g.fillText(code.축.map(a => a.이름).join(' · '), tx, 468); }
+  // 이름과 설명
+  g.fillStyle = ink; g.font = `700 60px ${sans}`; g.fillText(t.이름 || '', L, 590);
+  if (t.갈래) { const nw = g.measureText(t.이름 || '').width; g.fillStyle = muted; g.font = `600 28px ${sans}`; g.fillText(t.갈래, L + nw + 20, 590); }
+  g.fillStyle = muted; g.font = `500 30px ${sans}`;
+  const 설명 = wrapCanvasText(g, t.설명 || '', R - L).slice(0, 3);
+  설명.forEach((s, i) => g.fillText(s, L, 648 + i * 44));
+  // 성향 막대 넷
+  let y = 648 + 설명.length * 44 + 46;
+  (code?.축 || []).forEach(a => {
+    const 앞 = a.글자 === a.양쪽[0].글자, 몫 = 앞 ? a.비율 : 100 - a.비율, bw = R - L;
+    g.font = `${앞 ? 700 : 500} 28px ${sans}`; g.fillStyle = 앞 ? ink : muted; g.textAlign = 'left';
+    g.fillText(`${a.양쪽[0].글자}  ${a.양쪽[0].이름}${앞 ? `  ${몫}%` : ''}`, L, y);
+    g.font = `${앞 ? 500 : 700} 28px ${sans}`; g.fillStyle = 앞 ? muted : ink; g.textAlign = 'right';
+    g.fillText(`${앞 ? '' : `${몫}%  `}${a.양쪽[1].이름}  ${a.양쪽[1].글자}`, R, y); g.textAlign = 'left';
+    g.fillStyle = line; g.fillRect(L, y + 16, bw, 12);
+    g.fillStyle = tone ? tone[1] : pine; g.fillRect(앞 ? L : R - bw * 몫 / 100, y + 16, bw * 몫 / 100, 12);
+    y += 88;
+  });
+  // 추천 종목과 발
+  const 종목 = (r.종목 || []).map(s => s.이름).filter(Boolean);
+  if (종목.length) { g.fillStyle = muted; g.font = `500 28px ${sans}`; g.fillText(`잘 맞는 운동 · ${종목.join(' · ')}`, L, Math.min(y + 14, 1178)); }
+  g.fillStyle = pine; g.font = `600 27px ${sans}`; g.fillText(location.host || 'Fitage', L, 1246);
 }
 
 /* ---- 프로필에서 안 잰 항목 재러 가기 ----
@@ -7325,6 +7518,16 @@ function renderStyleQuestion(){
   $('styleQNo').textContent = `${styleIdx + 1} / ${qs.length}`;
   $('styleQ').textContent = q.질문;
   const picked = styleAnswers[styleIdx];
+  // 얼마나 그런지 단계로 답하는 문항은 동그라미 다섯 개로 — 양 끝에 말을 적고, 고른 단계의 말은 아래에 보여 준다
+  if (q.모양 === '척도') {
+    $('styleChoices').innerHTML = `<div class="style-scale" role="radiogroup" aria-label="${q.질문}">
+      <div class="style-scale-row">${q.선택지.map((c, i) => `
+        <button type="button" class="style-dot s${i}${picked === i ? ' selected' : ''}" role="radio" aria-checked="${picked === i}"
+                aria-label="${c}" title="${c}" onclick="styleAnswer(${i})"></button>`).join('')}</div>
+      <div class="style-scale-ends"><span>${q.선택지[0]}</span><span>${q.선택지[q.선택지.length - 1]}</span></div>
+      <div class="style-scale-now">${picked != null ? q.선택지[picked] : '얼마나 그런지 골라 주세요'}</div></div>`;
+    return;
+  }
   $('styleChoices').innerHTML = q.선택지.map((c, i) => `
     <button type="button" class="purpose-card${picked === i ? ' selected' : ''}" onclick="styleAnswer(${i})">
       <div><div class="purpose-title">${c}</div></div>
@@ -7371,10 +7574,46 @@ function renderStyleResult(r){
   back.textContent = '돌아가기';
   $('styleDots').innerHTML = (r.답변 || []).map(() => '<div class="d on"></div>').join('');
   $('styleName').textContent = t.이름 || '';
+  $('styleKind').textContent = t.갈래 || '';           // 이름은 은유(바람의 야생마)라 무슨 유형인지 풀이를 작게 붙인다
   $('styleDesc').textContent = t.설명 || '';
+  renderStyleCode(r);
   $('stylePurpose').textContent = t.추천목적 || '';
   $('styleMinutes').textContent = t.하루투자분 ? `하루 ${t.하루투자분}분이면 충분해요.` : '';
   renderStyleSports(r);
+}
+
+/* 대표 그림 + MBTI 처럼 읽는 네 글자 성향 코드 + 축마다 어느 쪽으로 얼마나 기울었는지.
+   글자와 비율은 서버(style_test.type_code)가 준다 — 기준은 data/sample/style_test.json 의 "코드" 에 있다.
+   코드가 생기기 전에 저장된 결과에는 코드가 없다. 답은 남아 있으니 조용히 한 번 다시 채점해 채운다. */
+function renderStyleCode(r){
+  const t = r.유형 || {}, code = r.코드;
+  $('styleArt').innerHTML = STYLE_ART.svg(t.id, 112, `${t.이름 || ''} 그림`);
+  $('styleArt').style.display = STYLE_ART.has(t.id) ? '' : 'none';
+  $('styleCode').textContent = code?.글자 || '';
+  $('styleCodeSub').textContent = code ? code.축.map(a => a.이름).join(' · ') : '';
+  $('styleAxesCard').hidden = !code;
+  if (!code) { refillStyleCode(); return; }
+  $('styleAxes').innerHTML = code.축.map(a => {
+    const 앞 = a.글자 === a.양쪽[0].글자, 몫 = 앞 ? a.비율 : 100 - a.비율;       // 고른 쪽의 몫
+    return `<div><div class="style-axis-head">
+        <span class="${앞 ? 'on' : ''}"><b>${a.양쪽[0].글자}</b> ${a.양쪽[0].이름}${앞 ? ` ${몫}%` : ''}</span>
+        <span class="${앞 ? '' : 'on'}">${앞 ? '' : `${몫}% `}${a.양쪽[1].이름} <b>${a.양쪽[1].글자}</b></span></div>
+      <div class="style-axis-bar" role="img" aria-label="${a.이름} ${몫}퍼센트"><i style="${앞 ? 'left:0' : 'right:0'}; width:${몫}%"></i></div>
+      <div class="style-axis-say">${a.말}</div></div>`;
+  }).join('');
+}
+async function refillStyleCode(){
+  const saved = state.styleTest;
+  if (!saved || saved.result?.코드 || !Array.isArray(saved.answers) || refillStyleCode.busy) return;
+  refillStyleCode.busy = true;
+  try {
+    const r = await API.styleTestResult(saved.answers);
+    if (r?.코드 && state.styleTest === saved) { saved.result = r; saveProfile(); if (styleView === 'result') renderStyleResult(r); }
+  } catch (e) {
+    // 문항이 바뀌기 전(9문항)의 답은 다시 채점할 수 없다 — 결과는 그대로 두고, 다시 해 보라고만 알린다
+    if (styleView === 'result') $('styleCodeSub').textContent = '테스트가 새로 바뀌었어요. 다시 해 보면 네 글자 유형이 나와요.';
+  }
+  finally { refillStyleCode.busy = false; }
 }
 
 /* 추천 종목 3개를 기존 종목 카드(.sport-card)로 그린다. 이미 담긴 종목은 .on. */
@@ -7736,7 +7975,7 @@ function renderManualRecords(){
   manualPicked = new Set([...manualPicked].filter(i => i < all.length));
   if (!rows.length) { manualPicked.clear(); box.style.display = 'none'; return; }
   box.style.display = 'block';
-  $('recManual').innerHTML = rows.slice(0, 20).map(({ w, i }) => `
+  $('recManual').innerHTML = rows.map(({ w, i }) => `
         <div class="rec-item rec-pick">
           <label class="rec-pick-main">
             <input type="checkbox" ${manualPicked.has(i) ? 'checked' : ''}
@@ -7746,6 +7985,7 @@ function renderManualRecords(){
           </label>
           ${moreToggle(manualDetailHtml(w))}
         </div>`).join('');
+  foldRecList('manual', $('recManual'), rows.length);
   paintManualDeleteBtn();
 }
 
@@ -8435,16 +8675,59 @@ async function askAiRecommend(방향){
   if (!값을치를까(물음)) return;
   if (방향) {                                                      // 시작일은 그대로 — 같은 루틴을 방향만 바꿔 다시 짓는다
     recoAdjust = 방향;
-    $('recoBody').innerHTML = `<div class="rec-empty">AI 가 ${방향} 다시 짓는 중이에요…</div>`;
+    const 끝 = showAiWait(`AI 가 ${방향} 다시 짓는 중이에요…`);
     await fetchRecommend(true);
+    끝(recoBy === 'ai');
     return;
   }
   // 값을 치르기로 했으면 언제부터 할지 묻는다. 받은 날이 곧 시작일이라
   // 봄에 받았다고 봄부터가 아니다 — 그날의 계절·날씨에 맞춰 짓는다.
   askStartDate(async () => {
-    $('recoBody').innerHTML = '<div class="rec-empty">AI 가 짓는 중이에요…</div>';
+    const 끝 = showAiWait('AI 가 짓는 중이에요…');
     await fetchRecommend(true);
+    끝(recoBy === 'ai');
   });
+}
+
+/* ---- AI 가 짓는 동안 ----
+   값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). 예상 소요시간과 흐른 시간을 같이 보여 준다.
+   예상은 어림값을 박아 두지 않고 이 기기에서 최근에 실제로 걸린 시간(다섯 번까지)의 가운데값을 쓴다.
+   아직 기록이 없으면 AI_WAIT_DEFAULT — 서버가 루틴 하나를 짓는 데 주는 시간이 60초이고 보통 그 절반 남짓 걸린다.
+   AI 가 실제로 지어 준 때만 기록한다: 실패 · 폴백은 금방 끝나서 다음 예상을 터무니없이 줄인다. */
+const AI_WAIT_KEY = 'quadriga.aiWait';
+const AI_WAIT_DEFAULT = 35;      // 초
+const AI_WAIT_MAX = 60;          // 서버의 제한 (backend/ai_recommend.py COMPOSE_TIMEOUT_SEC)
+let aiWaitTimer = null;
+
+function aiWaitLog(){
+  try { return (JSON.parse(localStorage.getItem(AI_WAIT_KEY) || '[]') || []).filter(n => Number.isFinite(n) && n > 0); }
+  catch (e) { return []; }
+}
+function aiWaitEstimate(){
+  const a = aiWaitLog().sort((x, y) => x - y);
+  return a.length ? a[Math.floor(a.length / 2)] : AI_WAIT_DEFAULT;
+}
+function showAiWait(text){
+  const est = aiWaitEstimate(), t0 = Date.now();
+  $('recoBody').innerHTML = `<div class="rec-empty ai-wait" role="status">
+      <div class="ai-wait-title">${text}</div>
+      <div class="ai-wait-est">예상 소요시간 약 ${est}초</div>
+      <div class="ai-wait-bar" aria-hidden="true"><i id="aiWaitFill"></i></div>
+      <div class="ai-wait-now" id="aiWaitNow">0초 지났어요</div>
+    </div>`;
+  clearInterval(aiWaitTimer);
+  aiWaitTimer = setInterval(() => {
+    const now = $('aiWaitNow'), fill = $('aiWaitFill');
+    if (!now || !fill) { clearInterval(aiWaitTimer); return; }       // 결과가 그려지면 이 자리가 사라진다
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    fill.style.width = Math.min(100, sec / est * 100) + '%';
+    now.textContent = sec <= est ? `${sec}초 지났어요` : `${sec}초 지났어요 · 조금 더 걸리고 있어요 (길어도 ${AI_WAIT_MAX}초쯤)`;
+  }, 500);
+  return 지었나 => {
+    clearInterval(aiWaitTimer);
+    if (!지었나) return;
+    try { localStorage.setItem(AI_WAIT_KEY, JSON.stringify([...aiWaitLog(), Math.round((Date.now() - t0) / 1000)].slice(-5))); } catch (e) {}
+  };
 }
 
 /* ---- 시작일 ----
@@ -8653,11 +8936,11 @@ function paintRecommend(){
         ${지은것 ? (state.aiRecoNext?.length ? `<button type="button" class="reco-btn" onclick="forwardAiReco()">다음 루틴</button>` : '')
         : `<button type="button" class="reco-btn" onclick="easierRecommend()">더 쉬운 루틴</button>
         <button type="button" class="reco-btn" onclick="harderRecommend()">더 어려운 루틴</button>`}
-        <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
           onclick="askDetail()">이 루틴 자세히 알아보기</button>
         <button type="button" class="reco-btn" onclick="askAiRecommend('더 쉽게')">더 쉽게 다시 받기</button>
         <button type="button" class="reco-btn" onclick="askAiRecommend('더 어렵게')">더 어렵게 다시 받기</button>` : ''}
+        <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
       </div>
     </div>`;
   autoFuseSeasonTime();     // 계절·시간대가 따로 남아 있으면 알아서 섞는다

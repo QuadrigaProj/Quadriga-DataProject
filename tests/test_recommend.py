@@ -207,8 +207,22 @@ def test_버튼이_모두_같은_크기_같은_모양이다():
     assert len(btns) >= 4, btns
     # 색만 다르고(마지막 go) 크기·모양을 정하는 클래스는 하나뿐이다
     assert {c.replace(" go", "").strip() for c in btns} == {"reco-btn"}
-    assert "wide" not in actions            # 한 칸을 통째로 먹던 버튼이 없다
+    assert "wide" not in actions            # 버튼마다 따로 붙이는 크기 클래스는 없다 — 배치는 아래 CSS 한 곳에서 정한다
     assert "btn-primary" not in actions and "btn-ghost" not in actions
+
+
+def test_시작_버튼은_맨_아래에_가로로_길게():
+    """'이 루틴으로 시작' 은 맨 아래 가로로 길게, 나머지는 그 위에 네모(2×2)로 모은다 (예현 요청).
+    예전(I2)에는 시작 버튼도 다른 버튼과 같은 칸이었다."""
+    html = client.get("/").text
+    card = html.split("function paintRecommend()")[1]
+    actions = card.split('<div class="reco-actions">')[1].split("</div>")[0]
+    assert actions.rstrip().endswith('<button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>')
+    assert actions.index("더 어렵게 다시 받기") < actions.index("이 루틴으로 시작")          # AI 의 세 버튼도 시작보다 위
+    assert ".reco-actions > .reco-btn.go:last-child{ grid-column:1 / -1;" in html            # 맨 끝에 올 때만 — 'AI 추천 받기' 카드는 그대로
+    # 나머지가 홀수 개면(무료 3개 · '다음 루틴' 이 붙은 5개) 혼자 남는 마지막 버튼도 가로로 채운다
+    assert ".reco-actions:has(> .reco-btn.go:last-child) > .reco-btn:nth-last-child(2):nth-child(odd){ grid-column:1 / -1; }" in html
+    assert "word-break:keep-all;" in html.split(".reco-btn{")[1].split("}")[0]               # '받 / 기' 처럼 꺾이지 않게
 
 
 def test_기록_화면_버튼과_이름이_겹치지_않는다():

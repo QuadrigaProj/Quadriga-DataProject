@@ -44,7 +44,7 @@ def test_로그인_메인_버튼():
     assert "이메일로 시작하기</button>" in html
     assert "textContent = '이메일로 시작하기'" in html          # setAuthMode 가 되돌리지 않는다
     assert "'회원가입' : '로그인'" not in html
-    assert "'이 기기에서 시작하기'" in html                     # localOnly 닉네임 모드는 그대로
+    assert "이 기기에서 시작하기</button>" in html               # 닉네임 칸의 버튼 (예전에는 localOnly 가 이메일 버튼의 글을 바꿨다)
 
 
 def test_개인정보_안내():
@@ -56,20 +56,37 @@ def test_개인정보_안내():
 
 
 def test_비회원_시작_버튼():
+    """가입 없이 쓰기 — 버튼을 누르면 닉네임 한 칸만 남고, 닉네임만 넣으면 바로 시작한다 (예현 요청 2026-09-20).
+    예전에는 이 버튼이 닉네임 없이 '게스트' 로 들어갔고 닉네임은 '닉네임을 정해서 시작할래요' 링크를 따로 눌러야 했다."""
     html = _index()
     assert "가입 없이 이 기기에서만 써볼게요</button>" in html
-    assert 'onclick="enterAsGuest()"' in html
+    assert '<button type="button" class="btn btn-guest" onclick="localOnly()">' in html
+    assert "닉네임을 정해서 시작할래요" not in html and "enterAsGuest" not in html and "GUEST_NAME" not in html
+    assert 'id="nickBox" hidden' in html and 'id="nickInput" type="text" placeholder="닉네임" maxlength="20"' in html
+    assert '''onkeydown="if(event.key==='Enter')loginLocal()"''' in html           # 엔터로도 시작
+    assert 'onclick="localOnly(false);return false;">← 로그인 · 회원가입으로 돌아가기</a>' in html
+    접기 = html.split("function localOnly(on = true)")[1].split("\n}")[0]
+    assert "document.querySelector('#s0 .login-form').style.display = on ? 'none' : '';" in 접기
+    assert "$('nickBox').hidden = !on;" in 접기 and "if (on) $('nickInput').focus();" in 접기
+    시작 = html.split("function loginLocal(name)")[1].split("\n}")[0]
+    assert "(name !== undefined ? name : $('nickInput').value).trim();" in 시작
+    assert "$('nickErr').textContent = '닉네임을 입력해주세요.';" in 시작             # 안내는 닉네임 칸 아래에 (로그인 칸은 접혀 있다)
+    assert "state.provider = 'device';" in 시작
+    assert html.count("$('nickInput').value = '';\n  localOnly(false);") == 3       # 로그아웃 · 계정 삭제 · 초기화 뒤에는 원래 로그인 화면으로
+    # 닉네임은 사용자가 넣은 글이다 — 저장된 프로필 목록에 그대로 innerHTML 로 넣지 않는다
+    assert '<div class="profile-name">${esc(n)}</div>' in html
+    assert "지금은 이 기기에서만 쓰고 있어요" in html and "지금은 게스트로 쓰고 있어요" not in html
     assert "게스트로 바로 시작하기" not in html
     assert "guest-note" not in html                            # 마크업·CSS 모두 삭제
     assert "나중에 계정을 만들면 지금까지의 기록을 그대로 옮겨드립니다" not in html
 
 
 def test_유지되는_요소():
-    """A6 가 손대지 말라고 한 것들 — 소셜 버튼·탭·입력칸·닉네임 링크·정책 링크."""
+    """A6 가 손대지 말라고 한 것들 — 소셜 버튼·탭·입력칸·정책 링크. (닉네임 링크는 예현 요청으로 없앴다 — test_비회원_시작_버튼)"""
     html = _index()
     for s in ("구글로 계속하기", "네이버로 계속하기", "카카오로 계속하기",
               'id="tabLogin"', 'id="tabSignup"', 'placeholder="이메일"', 'placeholder="비밀번호 (8자 이상)"',
-              "닉네임을 정해서 시작할래요", "개인정보처리방침", "이용약관", "또는 이메일로"):
+              "개인정보처리방침", "이용약관", "또는 이메일로"):
         assert s in html, s
 
 
@@ -619,11 +636,13 @@ def test_체력나이_카드를_이미지로_만든다():
     assert "의학적 진단이 아니에요." in 그림
     열기 = html.split("function openShareCard()")[1].split("\n}")[0]
     assert "if (!state.result) {" in 열기 and "if (!state.result.또래비교) {" in 열기
-    assert 'onclick="saveShareCard()">이미지 저장</button>' in 열기 and 'onclick="shareShareCard()">공유하기</button>' in 열기
+    assert "파일: 'fitage-card.png'" in 열기 and "drawShareCard(cv);" in 열기
+    시트 = html.split("function openCardSheet(title, label, note, meta)")[1].split("\n}")[0]   # 운동 스타일 카드와 같이 쓰는 시트
+    assert 'onclick="saveShareCard()">이미지 저장</button>' in 시트 and 'onclick="shareShareCard()">공유하기</button>' in 시트
     공유 = html.split("async function shareShareCard()")[1].split("\n}")[0]
     assert "navigator.canShare && navigator.canShare({ files: [file] })" in 공유 and "await navigator.share({ files: [file]," in 공유
     assert "e.name === 'AbortError'" in 공유                   # 공유 창을 그냥 닫은 것은 실패가 아니다
-    assert "saveBlob(blob, 'fitage-card.png');" in 공유        # 공유를 못 하는 브라우저면 저장으로
+    assert "saveBlob(blob, shareCardMeta.파일);" in 공유       # 공유를 못 하는 브라우저면 저장으로
 
 
 def test_체성분을_나이로_못_읽어도_BMI_줄은_그대로_보인다():
@@ -866,6 +885,33 @@ def test_토글은_줄_안에서_상세를_찾는다():
     assert "closest('.rec-item, .post-record')" in 본문
     assert "querySelector('.rec-detail')" in 본문
     assert "nextElementSibling" not in 본문
+
+
+def test_기록_묶음은_접고_펼칠_수_있다():
+    """날짜별 기록이 쌓일수록 기록 화면이 끝없이 길어진다 (예현 요청). 묶음 제목을 누르면 통째로 접히고,
+    펼쳐 둔 묶음도 처음에는 최근 5개만 보인다. 접어 둔 상태는 이 기기에만 기억한다(기록이 아니라 보기 설정)."""
+    html = _index()
+    for key, 제목, 몸통 in (("list", "운동한 날", "recListBody"), ("manual", "직접 적은 운동", "recManualBody"), ("measure", "점검 기록", "recMeasureBody")):
+        assert (f'<button type="button" class="rec-head rec-fold" data-fold="{key}" aria-expanded="true" aria-controls="{몸통}"\n'
+                f'                onclick="toggleRecBlock(\'{key}\')"><span>{제목}</span><span class="rec-count" id="recCount-{key}"></span>') in html, key
+        assert f'id="{몸통}"' in html
+    assert "const REC_PREVIEW = 5;" in html and "const REC_FOLD_KEY = 'quadriga.recFold';" in html
+    # 세 목록 모두 그린 뒤에 나눠 담는다 — 줄을 그리는 코드는 그대로다
+    assert "foldRecList('list', $('recList'), log.length);" in html
+    assert "foldRecList('manual', $('recManual'), rows.length);" in html
+    assert "foldRecList('measure', $('recMeasures'), rows.length);" in html
+    assert "log.slice(0, 30).map(e =>" not in html and "rows.slice(0, 20).map(" not in html      # 접어 두니 개수를 자르지 않는다 (제목의 개수와 맞아야 한다)
+    접기 = html.split("function foldRecList(key, box, count)")[1].split("\n}")[0]
+    assert "if (items.length <= REC_PREVIEW) return;" in 접기
+    assert "items.slice(REC_PREVIEW).forEach(el => rest.appendChild(el));" in 접기
+    assert "`이전 기록 ${rest.children.length}개 더 보기`" in 접기 and "'최근 기록만 보기'" in 접기
+    assert "$(head.getAttribute('aria-controls')).hidden = closed;" in 접기                          # 다시 그려도 접어 둔 묶음은 접힌 채로
+    묶음 = html.split("function toggleRecBlock(key)")[1].split("\n}")[0]
+    assert "recFold[key + '.closed'] = closed; saveRecFold();" in 묶음
+    assert "localStorage.setItem(REC_FOLD_KEY, JSON.stringify(recFold));" in html
+    assert "recFold" not in html.split("function snapshot()")[1].split("\n}")[0]                # 프로필(서버)에는 넣지 않는다
+    # '당일 기록 작성' 은 기록이 아니라 할 일이다 — 묶음을 접어도 남는다
+    assert '<div class="rec-body" id="recListBody"><div id="recList"></div></div>\n        <button type="button" class="rec-log-btn"' in html
 
 
 def test_세_목록_모두_자세히_보기가_있다():
@@ -2914,6 +2960,24 @@ def test_유료_확인은_한_자리에서_한다():
     assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2 (AI 추천 · 시간표 사진)
 
 
+def test_AI_가_짓는_동안_예상_소요시간을_보여_준다():
+    """값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). 예상 소요시간 · 흐른 시간 · 막대를 같이 보여 준다.
+    예상은 이 기기에서 최근에 실제로 걸린 시간의 가운데값이고, AI 가 실제로 지어 준 때만 기록한다(폴백은 금방 끝나 예상을 망친다)."""
+    html = _index()
+    물음 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
+    assert "const 끝 = showAiWait(`AI 가 ${방향} 다시 짓는 중이에요…`);" in 물음 and "const 끝 = showAiWait('AI 가 짓는 중이에요…');" in 물음
+    assert 물음.count("끝(recoBy === 'ai');") == 2                       # 실제로 AI 가 지었을 때만 걸린 시간을 기록한다
+    assert 물음.index("showAiWait(") < 물음.index("await fetchRecommend(true);")
+    기다림 = html.split("function showAiWait(text)")[1].split("\n}")[0]
+    assert "예상 소요시간 약 ${est}초" in 기다림 and "`${sec}초 지났어요`" in 기다림
+    assert "조금 더 걸리고 있어요 (길어도 ${AI_WAIT_MAX}초쯤)" in 기다림    # 예상을 넘겨도 멈춘 게 아니라고 알린다
+    assert "if (!지었나) return;" in 기다림 and ".slice(-5)" in 기다림
+    assert "if (!now || !fill) { clearInterval(aiWaitTimer); return; }" in 기다림   # 결과가 그려지면 스스로 멈춘다
+    assert "const AI_WAIT_DEFAULT = 35;" in html and "const AI_WAIT_MAX = 60;" in html
+    예상 = html.split("function aiWaitEstimate()")[1].split("\n}")[0]
+    assert "a[Math.floor(a.length / 2)]" in 예상 and "AI_WAIT_DEFAULT" in 예상   # 가운데값 — 한 번 오래 걸린 것에 끌려가지 않는다
+
+
 def test_다이어트를_고르면_관리_부위도_고른다():
     """다이어트를 고르면 그 카드 아래에 '관리하고 싶은 부위' 가 펼쳐진다 — 여러 개, 안 골라도 된다 (예현 요청).
     고른 부위는 루틴 추천(무료 GET · AI POST)으로 가고, 다이어트가 아닐 때는 보내지 않는다."""
@@ -2934,7 +2998,7 @@ def test_다이어트를_고르면_관리_부위도_고른다():
     assert "areas: dietAreas()," in 받기 and "areas: dietAreas().join(',')," in 받기
     assert "purpose: state.purpose, dietAreas: state.dietAreas, method: state.method," in html      # 스냅샷
     assert "state.dietAreas = Array.isArray(saved?.dietAreas) ? saved.dietAreas.filter(a => DIET_AREAS.includes(a)) : [];" in html
-    assert html.count("  state.purpose = null;\n  state.dietAreas = [];") == 3                   # 로그아웃 · 계정 삭제 · 초기화
+    assert html.count("  state.dietAreas = [];") == 3                                          # 로그아웃 · 계정 삭제 · 초기화 (줄바꿈을 끼워 찾지 않는다 — 윈도우 체크아웃은 CRLF 다)
     assert "renderDietAreas();" in html.split("function renderPurpose()")[1].split("\n}")[0]
     # AI 에게도 간다 — 부위별로 빠진다는 말은 못 하게 막는다
     from pathlib import Path

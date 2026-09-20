@@ -26,11 +26,8 @@ def _db(monkeypatch):
     """AI 추천은 이용권을 서버 원장에서 깎는다 — DB 가 있어야 한다."""
     import tempfile
     if auth.is_postgres():
-        with auth.db() as con:
-            auth.init_db(); community.init_db(); billing.init_db()
-            for t in ("credit_ledger", "pay_orders", "measurements", "sessions",
-                      "oauth_states", "users"):
-                con.execute(f"DELETE FROM {t}")
+        from pg_reset import reset_postgres
+        reset_postgres()                        # 전부 비우고 번호도 1 부터 — 아래 _paid 가 "첫 사용자는 1번" 이라고 적는다
     else:
         monkeypatch.setattr(auth, "DB_PATH", Path(tempfile.mkdtemp()) / "t.db")
         auth.init_db(); community.init_db(); billing.init_db()

@@ -2555,7 +2555,7 @@ const state = {
   muscleEndurance: null,   // 성장기 근지구력(만 11~12세 윗몸말아올리기 · 13~18세 반복점프, 회) — 프로필의 '측정하러 가기' 로 적는다
   // 선택 항목(운동체력) — 프로필의 '측정하러 가기' 로 적는다. 성인: 제자리 멀리뛰기(cm) · 10m 4회 왕복달리기(초) / 어르신: 3m 표적 돌아오기(초) · 8자보행(초)
   longJump: null, shuttle10m: null, target3m: null, figure8: null,
-  calcVer: 2,              // 이 기록이 어느 계산 기준으로 저장됐나 (CALC_VER) — 옛 기준이면 불러올 때 한 번 고친다
+  calcVer: 3,              // 이 기록이 어느 계산 기준으로 저장됐나 (CALC_VER) — 옛 기준이면 불러올 때 한 번 고친다
   strengthFrom30s: false,  // 윗몸일으키기 횟수가 예전 30초 기록을 1분으로 환산한 값인가 (다시 재면 꺼진다)
 };
 
@@ -3217,13 +3217,15 @@ async function saveProfile(){
 /* ---- 계산 기준이 바뀌면 저장된 기록을 불러올 때 한 번 고친다 ----
    기준 1 (표시 없음)  윗몸일으키기를 30초로 쟀고, 분포의 '왕복오래달리기'가 실은 10m 왕복달리기(초)였다
    기준 2             윗몸일으키기 1분 · 달리기 필드 바로잡음 (2026-09-20)
+   기준 3             어르신 환산 바로잡음 — '80세 이상' 구간을 100세가 아니라 82세로, 남성 어르신의 BMI 는 나이로 읽지 않는다
+                      (기준 2 → 3 은 ② ③ 만 한다. ①의 환산은 기준 1 에서 올 때 한 번뿐이다 — 두 번 곱하면 안 된다)
    옛 기준으로 남은 기록은 다시 재라고 하지 않고 고쳐 준다:
      ① 성인의 윗몸일으키기 횟수(30초)를 1분 횟수로 환산한다 — 뒤 30초엔 속도가 떨어지므로 2배가 아니라 1.8배.
         (2배로 잡으면 실제보다 좋게 나온다. 어르신의 의자에 앉았다 일어서기는 공식도 30초라 그대로다)
      ② 지금 측정값과 첫 점검을 새 기준으로 서버에서 다시 계산한다 — 늘 62세로 나오던 심폐지구력도 이때 바로잡힌다.
      ③ 점검 기록의 마지막 줄(지금 측정값으로 낸 것)을 새 값으로 바꾼다. 그 앞 줄들은 원값이 남아 있지 않아 그대로 둔다.
    서버를 못 부르면 아무것도 바꾸지 않는다 — 다음에 불러올 때 다시 한다. */
-const CALC_VER = 2;
+const CALC_VER = 3;
 const SITUP_30S_TO_1MIN = 1.8;
 const SITUP_1MIN_FROM = '2026-09-21';      // 이 날부터 잰 윗몸일으키기는 1분 횟수다 (기준이 바뀐 9/20 의 기록은 30초로 본다)
 
@@ -3234,8 +3236,9 @@ async function migrateCalc(){
   const 기록 = (state.measureLog || []).filter(m => m?.date);
   const 마지막날 = 기록.length ? 기록[기록.length - 1].date : (state.programStart || '');
   const 처음날 = 기록.length ? 기록[0].date : (state.programStart || '');
-  const 지금환산 = state.ageGbn === '성인' && Number.isFinite(state.strength) && 마지막날 < SITUP_1MIN_FROM;
-  const 처음환산 = state.first?.측정?.age_gbn === '성인' && Number.isFinite(state.first.측정.strength) && 처음날 < SITUP_1MIN_FROM;
+  const 옛30초 = state.calcVer < 2;                      // 30초 → 1분 환산은 기준 1 의 기록에만 (이미 환산한 값에 또 곱하지 않는다)
+  const 지금환산 = 옛30초 && state.ageGbn === '성인' && Number.isFinite(state.strength) && 마지막날 < SITUP_1MIN_FROM;
+  const 처음환산 = 옛30초 && state.first?.측정?.age_gbn === '성인' && Number.isFinite(state.first.측정.strength) && 처음날 < SITUP_1MIN_FROM;
   const 옛값 = { 지금: state.strength, 처음: state.first?.측정?.strength };
   try {
     const 보낼지금 = { ...measurement(), ...(지금환산 ? { strength: 환산(state.strength) } : {}) };
@@ -6374,7 +6377,12 @@ function renderProfile(){
     const 잰것 = Number.isFinite(v);
     const 순위만 = !잰것 && typeof pr?.백분위 === 'number';   // 성장기 심폐지구력 — 나이로 환산하지 않고 또래 순위만 온다
     let 값, 오른쪽;
-    if (순위만) {
+    if (k === '체성분' && pr) {
+      // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
+      // 환산나이가 없어도(어르신 남성 — 곡선이 거꾸로 움직여 나이로 읽지 않는다) 이 줄은 그대로 나온다.
+      값 = `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`;
+      오른쪽 = `<div class="stars" style="font-size:13px;color:var(--muted)">${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}</div>`;
+    } else if (순위만) {
       값 = `또래 ${posLabel(pr.백분위)}${pr.어림 ? '쯤' : ''}`;      // 어림: 분포가 아니라 공식 등급 기준 세 점으로 잰 것 (성장기 근지구력)
       오른쪽 = `<div class="stars">${starStr(starFromPct(pr.백분위))}</div>`;
     } else if (!잰것) {
@@ -6384,15 +6392,11 @@ function renderProfile(){
       오른쪽 = 잴것
         ? `<button type="button" class="axis-go" onclick="openAxisMeasure('${k}')">${Number.isFinite(적어둔값) ? '다시 적기' : '측정하러 가기'}</button>`
         : '<div class="axis-none">이 연령대는 재는 항목이 없어요</div>';
-    } else if (k === '체성분' && pr) {
-      // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
-      값 = `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`;
-      오른쪽 = `<div class="stars" style="font-size:13px;color:var(--muted)">${pr.또래대비 > 0 ? '+' : ''}${pr.또래대비}</div>`;
     } else {
       값 = `${v}세 수준`;
       오른쪽 = `<div class="stars">${starStr(starCount(v))}</div>`;
     }
-    return `<div class="axis-row${잰것 || 순위만 ? '' : ' todo'}"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
+    return `<div class="axis-row${잰것 || 순위만 || (k === '체성분' && pr) ? '' : ' todo'}"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
       <div class="axis-name">${MOVE_ART.factor(k, 'axis-icon')}${k}</div>
       <div class="axis-val">${값}</div>
       ${오른쪽}
@@ -6475,8 +6479,8 @@ function shareCardRows(){
   const r = state.result || {}, peers = r.또래비교 || {};
   return axisOrder(r.항목별).map(k => {
     const v = r.항목별?.[k], pr = peers[k];
-    if (Number.isFinite(v)) return k === '체성분' && pr ? { 이름: k, 값: `BMI ${pr.내기록}`, 별: null }
-      : { 이름: k, 값: `${v}세 수준`, 별: starCount(v) };
+    if (k === '체성분' && pr) return { 이름: k, 값: `BMI ${pr.내기록}`, 별: null };
+    if (Number.isFinite(v)) return { 이름: k, 값: `${v}세 수준`, 별: starCount(v) };
     if (typeof pr?.백분위 === 'number') return { 이름: k, 값: `또래 ${posLabel(pr.백분위)}${pr.어림 ? '쯤' : ''}`, 별: starFromPct(pr.백분위) };
     return null;
   }).filter(Boolean);

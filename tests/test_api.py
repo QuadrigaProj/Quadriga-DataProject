@@ -795,6 +795,43 @@ def test_성장기_근지구력_기준표는_공식_값이다():
 
 
 @needs_data
+def test_선택_항목으로_운동체력_축이_늘어난다():
+    """성인 순발력(제자리 멀리뛰기 cm) · 민첩성(10M 4회 왕복달리기 초), 어르신 평형성(3M 표적 돌아오기 초) · 협응력(8자보행 초).
+    국민체력100 공식 분류이고 분포가 있다. 잰 사람만 넣고, 넣어도 다른 항목의 값은 그대로다."""
+    기본 = client.post("/fitness-age", json={**ADULT, "age": 34}).json()
+    더함 = client.post("/fitness-age", json={**ADULT, "age": 34, "long_jump": 220, "shuttle_10m": 10.2}).json()
+    assert {"순발력", "민첩성"} <= set(더함["항목별"]) and not {"순발력", "민첩성"} & set(기본["항목별"])
+    for k in 기본["항목별"]:
+        assert 더함["항목별"][k] == 기본["항목별"][k]
+    assert 더함["또래비교"]["민첩성"]["항목"] == "10m왕복달리기" and 더함["또래비교"]["순발력"]["항목"] == "제자리멀리뛰기"
+    # 초는 작을수록 좋다 — 빠를수록 젊게, 또래 순위는 높게
+    빠름 = client.post("/fitness-age", json={**ADULT, "age": 34, "shuttle_10m": 9.5}).json()
+    느림 = client.post("/fitness-age", json={**ADULT, "age": 34, "shuttle_10m": 14.0}).json()
+    assert 빠름["항목별"]["민첩성"] < 느림["항목별"]["민첩성"]
+    assert 빠름["또래비교"]["민첩성"]["백분위"] > 느림["또래비교"]["민첩성"]["백분위"]
+    # 어르신
+    어르신 = {"age_gbn": "어르신", "sex": "F", "age": 72, "flexibility": 8, "strength": 17, "height_cm": 155, "weight_kg": 56}
+    e = client.post("/fitness-age", json={**어르신, "target_3m": 5.5, "figure8": 22, "long_jump": 150}).json()
+    assert {"평형성", "협응력"} <= set(e["항목별"]) and "순발력" not in e["항목별"]      # 성인 항목은 어르신에게 쓰지 않는다
+    assert e["또래비교"]["평형성"]["항목"] == "3m표적돌아오기" and e["또래비교"]["협응력"]["항목"] == "8자보행"
+    굼뜸 = client.post("/fitness-age", json={**어르신, "target_3m": 9.0}).json()
+    assert 굼뜸["항목별"]["평형성"] > e["항목별"]["평형성"]
+    # 성장기의 순발력은 strength(제자리멀리뛰기)다 — 선택 항목은 쓰지 않는다
+    성장기 = client.post("/fitness-age", json={"age_gbn": "성장기", "sex": "M", "age": 15, "flexibility": 9, "strength": 200,
+                                            "height_cm": 168, "weight_kg": 58, "long_jump": 100, "figure8": 20}).json()
+    assert 성장기["항목별"]["순발력"] == 15 and "협응력" not in 성장기["항목별"]
+
+
+@needs_data
+def test_도달_시점도_선택_항목을_같이_본다():
+    """/fitness-age 와 /fitness-age/eta 가 같은 항목으로 '지금' 을 내야 게이지와 추정이 어긋나지 않는다."""
+    보냄 = {**ADULT, "age": 34, "long_jump": 220, "shuttle_10m": 10.2}
+    지금 = client.post("/fitness-age", json=보냄).json()["체력나이"]
+    eta = client.post("/fitness-age/eta", json={**보냄, "target": 25}).json()
+    assert eta["지금"] == 지금
+
+
+@needs_data
 def test_왕복오래달리기는_횟수로_견준다():
     """분포의 '왕복오래달리기'가 실은 10m 왕복달리기(초)였다 — 9~17초짜리 분포에 횟수를 견줘 몇 회를 적든 62세가 나왔다.
     많이 달릴수록 젊게, 적게 달릴수록 늙게 나와야 하고, 또래 중앙값은 '회'다운 숫자여야 한다."""

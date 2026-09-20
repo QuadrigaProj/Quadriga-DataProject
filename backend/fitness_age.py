@@ -59,6 +59,27 @@ GRIP_ITEM = "상대악력"
 CARDIO_ITEM = {"성인": "왕복오래달리기", "어르신": "2분제자리걷기", "성장기": "왕복오래달리기"}
 CARDIO_NO_AGE = {"성장기"}          # 심폐를 환산나이로 바꾸지 않는 연령군 (또래비교에는 들어간다)
 
+# 선택 항목(운동체력) — 잰 사람만 넣는다. 입력 이름 → {연령군: (축 이름, 분포의 항목)}.
+# 축 이름은 국민체력100 공식 분류다: 성인 순발력 = 제자리 멀리뛰기(cm) · 민첩성 = 10M 4회 왕복달리기(초),
+# 어르신 평형성 = 의자에 앉아 3M 표적 돌아오기(초) · 협응력 = 8자보행(초). 넷 다 분포에 1.9만~4.7만 건이 있고
+# 나이에 따라 한쪽으로만 움직여 환산나이로 읽을 수 있다. 성장기의 순발력은 strength(제자리멀리뛰기)가 맡는다.
+EXTRA_ITEMS = {
+    "long_jump":   {"성인": ("순발력", "제자리멀리뛰기")},
+    "shuttle_10m": {"성인": ("민첩성", "10m왕복달리기")},
+    "target_3m":   {"어르신": ("평형성", "3m표적돌아오기")},
+    "figure8":     {"어르신": ("협응력", "8자보행")},
+}
+
+
+def extra_items(age_gbn: str, extras: dict | None):
+    """이 연령군에서 쓰는 선택 항목만 (축 이름, 분포 항목, 값) 으로 — 잰 것만."""
+    for key, by_group in EXTRA_ITEMS.items():
+        v = (extras or {}).get(key)
+        if _given(v) and age_gbn in by_group:
+            label, item = by_group[age_gbn]
+            yield label, item, v
+
+
 # 성장기 근지구력 — 공식 항목(윗몸말아올리기 item_f009 · 반복점프 item_f010)이 아직 분포 파일에 없다.
 # 대신 국민체력100 인증기준의 등급 기준 값을 쓴다 (문화체육관광부고시 제2025-27호 「체력인증의 등급별 기준과
 # 절차에 관한 규정」 별표2·별표5, https://nfa.kspo.or.kr 인증기준 표와 같다). 같은 고시 제6조에 따라
@@ -222,7 +243,7 @@ def aggregate_age(parts: dict[str, float], age_gbn: str, age=None) -> dict:
 
 
 def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
-                body_fat=None, grip=None, endurance=None, age=None) -> dict:
+                body_fat=None, grip=None, endurance=None, age=None, extras=None) -> dict:
     """자가 측정 항목 → 체력나이. 없는 항목은 평균에서 제외한다."""
     parts: dict[str, float] = {}
 
@@ -247,6 +268,11 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
         a = convert_age(d, age_gbn, sex, cardio, endurance)
         if a is not None:
             parts["심폐지구력"] = a
+
+    for label, item, v in extra_items(age_gbn, extras):
+        a = convert_age(d, age_gbn, sex, item, v)
+        if a is not None:
+            parts[label] = a
 
     if _given(bmi):
         a = u_shaped_age(d, age_gbn, sex, "BMI", bmi)
@@ -296,7 +322,7 @@ def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,
 
 def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
                 flexibility=None, strength=None, bmi=None,
-                grip=None, endurance=None, muscle_endurance=None) -> dict:
+                grip=None, endurance=None, muscle_endurance=None, extras=None) -> dict:
     """측정한 항목별로 또래 비교를 붙인다.
 
     각 인자가 실제로 온 것(_given)일 때만 그 항목의 또래비교를 만든다 —
@@ -325,6 +351,10 @@ def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
         r = growth_endurance_stats(sex, age, muscle_endurance)
         if r:
             out["근지구력"] = r
+    for label, item, v in extra_items(age_gbn, extras):
+        r = peer_stats(d, age_gbn, sex, age, item, v)
+        if r:
+            out[label] = r
     if _given(bmi):
         # BMI 는 U자형이라 "상위 몇 %" 가 성립하지 않는다.
         # 백분위 없이 또래 중앙값과의 차이만 준다.

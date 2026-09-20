@@ -1012,12 +1012,34 @@ def auth_start(provider: str, request: Request) -> RedirectResponse:
     return RedirectResponse(conf["authorize"] + "?" + urlencode(params))
 
 
+def _login_failed(provider: str, 단계: str, error=None, desc: str | None = None) -> RedirectResponse:
+    """소셜 로그인 실패 — 어디서 · 왜 실패했는지 서버 로그에 한 줄 남기고, 화면에도 단계를 알려 준다.
+
+    전에는 무엇이 잘못돼도 "/?login=failed" 뿐이라, 구글 · 네이버만 안 될 때 까닭을 알 길이 없었다
+    (동의 화면에서 막혔는지, Client Secret 이 틀렸는지, 프로필을 못 읽었는지).
+    제공자가 준 오류 이름(invalid_client · access_denied …)만 남긴다 — 코드 · 토큰 · 비밀 값은 적지 않는다.
+    """
+    이름 = str(error or "")[:60]
+    print(f"[oauth] {provider} 로그인 실패 · 단계={단계} · {이름} · {(desc or '')[:200]}", flush=True)
+    q = {"login": "failed", "why": 단계, "p": provider}
+    if 이름:
+        q["e"] = 이름
+    return RedirectResponse("/?" + urlencode(q))
+
+
 @app.get("/auth/{provider}/callback", name="auth_callback")
 async def auth_callback(provider: str, request: Request,
-                        code: str | None = None, state: str | None = None
+                        code: str | None = None, state: str | None = None,
+                        error: str | None = None, error_description: str | None = None,
                         ) -> RedirectResponse:
     if provider not in auth.PROVIDERS:
         raise HTTPException(404, "지원하지 않는 로그인 수단입니다.")
+    if error:
+        # 제공자가 돌려보냈다 — 동의 화면에서 취소했거나, 아직 허용되지 않은 계정이다
+        # (구글 OAuth 동의 화면이 '테스트' 상태면 등록한 테스트 사용자만, 네이버 앱이 '개발 중' 이면 등록한 아이디만 된다)
+        if state:
+            auth.take_state(state)
+        return _login_failed(provider, "denied", error, error_description)
     if not code and not state:
         # 주소창에 직접 친 경우다. 에러가 아니라 원래 이렇게 동작한다.
         return HTMLResponse(
@@ -1030,8 +1052,8 @@ async def auth_callback(provider: str, request: Request,
             "<p>콘솔에 등록할 주소는 <a href='/auth/setup'>/auth/setup</a> 에서 확인하세요.</p>"
             "<p><a href='/'>← 서비스로 돌아가기</a></p></div>", status_code=200)
     if not code or not state or auth.take_state(state) != provider:
-        # state 가 안 맞으면 남이 만든 요청이다. 진행하지 않는다.
-        return RedirectResponse("/?login=failed")
+        # state 가 안 맞으면 남이 만든 요청이다. 진행하지 않는다. (10분이 지나 만료된 것도 여기로 온다)
+        return _login_failed(provider, "state")
 
     client_id, client_secret = auth.client_config(provider)
     conf = auth.PROVIDERS[provider]
@@ -1044,18 +1066,32 @@ async def auth_callback(provider: str, request: Request,
     if client_secret:                    # 카카오는 콘솔에서 안 켜면 값이 없다
         form["client_secret"] = client_secret
 
-    async with httpx.AsyncClient(timeout=10) as http:
-        tok = await http.post(conf["token"], data=form,
-                              headers={"Accept": "application/json"})
-        access = (tok.json() or {}).get("access_token")
-        if not access:
-            return RedirectResponse("/?login=failed")
-        me = await http.get(conf["profile"],
-                            headers={"Authorization": f"Bearer {access}"})
-        profile = auth.normalize_profile(provider, me.json() or {})
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            tok = await http.post(conf["token"], data=form,
+                                  headers={"Accept": "application/json"})
+            try:
+                body = tok.json() or {}
+            except ValueError:
+                body = {}
+            access = body.get("access_token") if isinstance(body, dict) else None
+            if not access:
+                # invalid_client = Client ID/Secret 이 콘솔의 것과 다르다 · redirect_uri_mismatch = 콘솔에 등록한 주소와 다르다
+                # · invalid_grant = 코드가 만료됐거나 이미 썼다
+                return _login_failed(provider, "token", (body.get("error") if isinstance(body, dict) else None) or tok.status_code,
+                                     body.get("error_description") if isinstance(body, dict) else None)
+            me = await http.get(conf["profile"],
+                                headers={"Authorization": f"Bearer {access}"})
+            try:
+                raw = me.json() or {}
+            except ValueError:
+                raw = {}
+            profile = auth.normalize_profile(provider, raw if isinstance(raw, dict) else {})
+    except httpx.HTTPError as e:
+        return _login_failed(provider, "network", type(e).__name__)
 
     if not profile.get("uid"):
-        return RedirectResponse("/?login=failed")
+        return _login_failed(provider, "profile", me.status_code)
 
     uid = auth.upsert_user(provider, profile["uid"],
                            email=profile.get("email"), name=profile.get("name"))

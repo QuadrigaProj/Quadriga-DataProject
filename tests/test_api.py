@@ -510,6 +510,67 @@ def test_콜백을_직접_열면_설명이_나온다():
     assert "통로" in r.text
 
 
+_진짜_AsyncClient = __import__("httpx").AsyncClient      # 끼우기 전의 것을 잡아 둔다 — 끼운 것을 또 감싸면 transport 가 겹친다
+
+
+def _가짜_제공자(monkeypatch, 토큰응답, 프로필응답=None, 상태=200):
+    """구글 · 네이버 대신 대답한다 — 토큰 주소에는 토큰응답을, 프로필 주소에는 프로필응답을."""
+    import httpx
+    from backend import main as m
+    진짜 = _진짜_AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "token" in str(request.url):
+            return httpx.Response(상태, json=토큰응답)
+        return httpx.Response(200, json=프로필응답 or {})
+
+    monkeypatch.setattr(m.httpx, "AsyncClient", lambda **kw: 진짜(transport=httpx.MockTransport(handler), **kw))
+
+
+def test_소셜_로그인이_실패하면_어디서_왜인지_알려_준다(monkeypatch, capsys):
+    """전에는 무엇이 잘못돼도 "/?login=failed" 뿐이라 구글 · 네이버만 안 될 때 까닭을 알 길이 없었다 (예현, 2026-09-20).
+    단계(why)와 제공자가 준 오류 이름(e)을 화면으로 돌려주고, 서버 로그에도 한 줄 남긴다. 코드 · 토큰 · 비밀 값은 남기지 않는다."""
+    from urllib.parse import parse_qs, urlparse
+    from backend import auth
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "test-secret-XYZ")
+    c = _fresh()
+
+    def 실패(url):
+        r = c.get(url, follow_redirects=False)
+        assert r.status_code in (302, 307), r.status_code
+        return {k: v[0] for k, v in parse_qs(urlparse(r.headers["location"]).query).items()}
+
+    # ① 동의 화면에서 막혔다 — 취소했거나, 허용되지 않은 계정(구글 '테스트' 상태 · 네이버 '개발 중')
+    q = 실패("/auth/google/callback?error=access_denied&error_description=not+a+test+user&state=" + auth.new_state("google"))
+    assert q == {"login": "failed", "why": "denied", "p": "google", "e": "access_denied"}
+    # ② state 가 안 맞는다 (남이 만든 요청 · 10분이 지나 만료)
+    assert 실패("/auth/google/callback?code=abc&state=없는값")["why"] == "state"
+    # ③ 토큰을 못 받았다 — Client Secret 이 틀리면 invalid_client
+    _가짜_제공자(monkeypatch, {"error": "invalid_client", "error_description": "Unauthorized"}, 상태=401)
+    q = 실패("/auth/google/callback?code=code-SECRET-456&state=" + auth.new_state("google"))
+    assert q["why"] == "token" and q["e"] == "invalid_client"
+    # ④ 프로필에 회원 번호가 없다
+    _가짜_제공자(monkeypatch, {"access_token": "tok-SECRET-123"}, {"email": "x@ex.com"})
+    assert 실패("/auth/google/callback?code=code-SECRET-456&state=" + auth.new_state("google"))["why"] == "profile"
+    로그 = capsys.readouterr().out
+    assert "[oauth] google 로그인 실패 · 단계=token · invalid_client" in 로그 and "[oauth] google 로그인 실패 · 단계=denied · access_denied" in 로그
+    assert "code-SECRET-456" not in 로그 and "tok-SECRET-123" not in 로그 and "test-secret-XYZ" not in 로그      # 코드 · 토큰 · 비밀 값은 적지 않는다
+    # ⑤ 잘 되면 예전 그대로
+    _가짜_제공자(monkeypatch, {"access_token": "tok-SECRET-123"}, {"sub": "g-123", "email": "ok@ex.com", "name": "가"})
+    r = c.get("/auth/google/callback?code=abc&state=" + auth.new_state("google"), follow_redirects=False)
+    assert r.headers["location"] == "/?login=ok" and "quadriga_session" in r.headers.get("set-cookie", "")
+
+
+def test_화면은_소셜_로그인이_막힌_단계를_말해_준다():
+    html = client.get("/").text
+    말 = html.split("function socialFailText(q)")[1].split("/* ---- 시작 ---- */")[0]
+    for 단계 in ("denied:", "state:", "token:", "profile:", "network:"):
+        assert 단계 in 말, 단계
+    assert "return why ? `${말} (${why}${e ? ': ' + e : ''})` : 말;" in 말                # 끝의 괄호는 관리자가 보고 고치라는 표시
+    assert "authError(socialFailText(new URLSearchParams(location.search)));" in html
+
+
 # ---------- 배포 ----------
 
 def test_프록시_뒤에서_https로_인식한다():

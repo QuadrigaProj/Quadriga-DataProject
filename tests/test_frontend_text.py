@@ -578,6 +578,51 @@ def test_나이로_바꾸지_않는_항목은_또래_순위로_보여_준다():
     assert "`${k} 또래 ${posLabel(순위)}${또래.어림 ? '쯤' : ''} · 기록했어요`" in 저장
 
 
+def test_다음_점검일을_캘린더에_넣는다():
+    """측정 → 처방 → 실행 → 재측정의 마지막 고리. 알림 서버를 두지 않고 캘린더 파일(.ics) 한 장을 내려 준다.
+    점검일은 기간 시작일(programStart)에서 12주(84일) 뒤이고, 이미 지났으면 캘린더 대신 바로 다시 재러 간다."""
+    html = _index()
+    역 = chr(92)
+    assert '<button type="button" class="axis-go" id="nextCheckBtn" onclick="onNextCheckTap()">캘린더에 추가</button>' in html
+    날 = html.split("function nextCheckDate()")[1].split("\n}")[0]
+    assert "state.programStart || todayIso()" in 날 and "d.getDate() + 84" in 날
+    ics = html.split("function recheckIcs()")[1].split("\n}")[0]
+    for 줄 in ("'BEGIN:VCALENDAR'", "'VERSION:2.0'", "`DTSTART;VALUE=DATE:${ymd(day)}`", "`DTEND;VALUE=DATE:${ymd(isoDate(d2))}`",
+              "'BEGIN:VALARM'", "'TRIGGER;RELATED=START:PT9H'", "'END:VEVENT'", "'END:VCALENDAR'"):
+        assert 줄 in ics, 줄
+    # 줄 끝은 CRLF, 한 줄은 75옥텟까지 — 한글은 글자당 3옥텟이라 접어야 한다 (RFC 5545)
+    assert f".map(icsFold).join('{역}r{역}n') + '{역}r{역}n'" in ics
+    접기 = html.split("function icsFold(line)")[1].split("\n}")[0]
+    assert "if (n + b > 75)" in 접기 and f"'{역}r{역}n '" in 접기 and "new TextEncoder()" in 접기
+    assert "saveBlob(new Blob([recheckIcs()], { type: 'text/calendar;charset=utf-8' }), 'fitage-recheck.ics');" in html
+    assert "function onNextCheckTap(){ daysToNextCheck() > 0 ? addRecheckToCalendar() : remeasure(); }" in html
+    그림 = html.split("function renderProfile()")[1].split("\n}")[0]
+    assert "$('nextCheckBtn').textContent = 남은날 > 0 ? '캘린더에 추가' : '다시 재러 가기';" in 그림
+    assert "$('profileTools').hidden = false;" in 그림
+
+
+def test_체력나이_카드를_이미지로_만든다():
+    """결과를 이미지 한 장(1080×1350)으로 — 이름은 넣지 않는다. 항목 줄은 프로필과 같은 순서·같은 별점이고,
+    서버에 못 붙어 예시 값일 때는 만들지 않는다(예시 값이 돌아다니면 안 된다)."""
+    html = _index()
+    assert '<button type="button" class="axis-go" onclick="openShareCard()">카드 만들기</button>' in html
+    줄 = html.split("function shareCardRows()")[1].split("\n}")[0]
+    assert "axisOrder(r.항목별)" in 줄 and "starCount(v)" in 줄 and "starFromPct(pr.백분위)" in 줄 and "posLabel(pr.백분위)" in 줄
+    그림 = html.split("function drawShareCard(cv)")[1].split("\n}")[0]
+    assert "const W = 1080, H = 1350" in 그림 and "Math.round(displayAge())" in 그림
+    assert "isGrowth() ? '내 발달 수준' : '내 체력나이'" in 그림                      # 성장기는 체력나이가 아니라 발달 수준이다
+    assert "peerAgeText(Math.round(displayAge()) - state.age).replace(/<[^>]+>/g, '')" in 그림   # 화면과 같은 문장
+    assert "state.user" not in 그림 and "state.name" not in 그림                       # 이름은 넣지 않는다
+    assert "의학적 진단이 아니에요." in 그림
+    열기 = html.split("function openShareCard()")[1].split("\n}")[0]
+    assert "if (!state.result) {" in 열기 and "if (!state.result.또래비교) {" in 열기
+    assert 'onclick="saveShareCard()">이미지 저장</button>' in 열기 and 'onclick="shareShareCard()">공유하기</button>' in 열기
+    공유 = html.split("async function shareShareCard()")[1].split("\n}")[0]
+    assert "navigator.canShare && navigator.canShare({ files: [file] })" in 공유 and "await navigator.share({ files: [file]," in 공유
+    assert "e.name === 'AbortError'" in 공유                   # 공유 창을 그냥 닫은 것은 실패가 아니다
+    assert "saveBlob(blob, 'fitage-card.png');" in 공유        # 공유를 못 하는 브라우저면 저장으로
+
+
 def test_운동체력_축도_프로필에서_잰다():
     """성인 순발력 · 민첩성, 어르신 평형성 · 협응력 — 안 쟀어도 자리를 둬서 '측정하러 가기' 로 적을 수 있다."""
     html = _index()

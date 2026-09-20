@@ -1090,6 +1090,15 @@
   /* 안 잰 항목의 줄: 안내 문구는 줄어들 수 있고(두 줄로 꺾인다) 버튼은 제 크기를 지킨다 */
   .axis-row.todo .axis-val{ flex:1; min-width:0; text-align:right; line-height:1.35; word-break:keep-all; }
   .axis-foot{ font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px; }
+  /* 프로필 도구 줄 — 다음 점검일을 캘린더에, 체력나이 카드 */
+  .profile-tools{ margin-top:16px; border:1px solid var(--line); border-radius:16px; background:var(--paper); padding:4px 14px; }
+  .tool-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 0; }
+  .tool-row + .tool-row{ border-top:1px solid var(--line); }
+  .tool-name{ font-size:14px; font-weight:600; }
+  .tool-name b{ font-variant-numeric:tabular-nums; }
+  .tool-sub{ font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4; }
+  .share-canvas{ display:block; width:100%; height:auto; border-radius:16px; border:1px solid var(--line); }
+  .share-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
   .axis-go{ flex-shrink:0; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer;
     color:var(--pine-deep); background:var(--pine-tint); border:1px solid var(--pine-tint);
     border-radius:999px; padding:6px 11px; }
@@ -1999,6 +2008,19 @@
       </div>
 
       <div style="margin-top:18px;" id="axisRows"></div>
+
+      <div class="profile-tools" id="profileTools" hidden>
+        <div class="tool-row">
+          <div><div class="tool-name"><span id="nextCheckName">다음 점검일</span> <b id="nextCheckDate">—</b></div>
+            <div class="tool-sub" id="nextCheckSub">12주 프로그램이 끝나는 날 — 같은 방법으로 다시 재서 견줘 봐요</div></div>
+          <button type="button" class="axis-go" id="nextCheckBtn" onclick="onNextCheckTap()">캘린더에 추가</button>
+        </div>
+        <div class="tool-row">
+          <div><div class="tool-name">내 체력나이 카드</div>
+            <div class="tool-sub">결과를 이미지 한 장으로 저장하거나 공유해요</div></div>
+          <button type="button" class="axis-go" onclick="openShareCard()">카드 만들기</button>
+        </div>
+      </div>
 
       <div class="guest-banner" id="guestBanner" style="display:none;">
         <b>지금은 게스트로 쓰고 있어요</b>
@@ -6378,6 +6400,15 @@ function renderProfile(){
   }).join('') + (state.strengthFrom30s && state.ageGbn === '성인'
     ? `<div class="axis-foot">근지구력은 예전에 30초로 잰 윗몸일으키기 횟수를 1분 횟수로 환산(${SITUP_30S_TO_1MIN}배)해 계산했어요.</div>` : '');
 
+  // 다음 점검일 — 12주가 남았으면 캘린더에, 이미 지났으면 바로 다시 재러 간다
+  const 남은날 = daysToNextCheck();
+  $('profileTools').hidden = false;
+  $('nextCheckName').textContent = 남은날 > 0 ? '다음 점검일' : '다시 잴 때가 됐어요';
+  $('nextCheckDate').textContent = 남은날 > 0 ? fmtDate(nextCheckDate()) : '';
+  $('nextCheckSub').textContent = 남은날 > 0 ? `12주 프로그램이 끝나는 날 — ${남은날}일 남았어요. 같은 방법으로 다시 재서 견줘 봐요`
+                                            : `12주가 지났어요(${fmtDate(nextCheckDate())}) — 같은 방법으로 다시 재서 처음과 견줘 봐요`;
+  $('nextCheckBtn').textContent = 남은날 > 0 ? '캘린더에 추가' : '다시 재러 가기';
+
   // 집중 개선 영역 (A3) — 서버가 극단적으로 부족하다고 표시한 항목이 있으면 그것,
   // 없으면 약점(개선 효과가 가장 큰 항목). 항목명은 계산 결과에서 동적으로 온다.
   const focus = r.집중개선영역 || [];
@@ -6389,6 +6420,153 @@ function renderProfile(){
     $('weakText').textContent = '측정 항목이 하나뿐이라 비교가 어려워요.';
     $('weakArrow').textContent = '';
   }
+}
+
+/* ---- 다음 점검일을 캘린더에 ----
+   측정 → 처방 → 실행 → 재측정의 마지막 고리. 알림 서버를 두지 않고 캘린더 파일(.ics) 한 장을 내려 준다 —
+   휴대폰·PC 의 캘린더가 그날 아침에 알려 준다. 점검일은 기간 시작일(programStart)에서 12주 뒤다. */
+function nextCheckDate(){
+  const d = new Date((state.programStart || todayIso()) + 'T00:00:00');
+  d.setDate(d.getDate() + 84);
+  return isoDate(d);
+}
+function daysToNextCheck(){
+  return Math.round((new Date(nextCheckDate() + 'T00:00:00') - new Date(todayIso() + 'T00:00:00')) / 86400000);
+}
+function onNextCheckTap(){ daysToNextCheck() > 0 ? addRecheckToCalendar() : remeasure(); }
+/* 캘린더 파일은 한 줄이 75옥텟까지다(RFC 5545). 한글은 글자당 3옥텟이라 금방 넘는다 — 글자 중간을 자르지 않고 접는다 */
+function icsFold(line){
+  const enc = new TextEncoder();
+  let out = '', cur = '', n = 0;
+  for (const ch of line) {
+    const b = enc.encode(ch).length;
+    if (n + b > 75) { out += cur + '\r\n '; cur = ''; n = 1; }      // 이어지는 줄은 빈칸 하나로 시작한다
+    cur += ch; n += b;
+  }
+  return out + cur;
+}
+function recheckIcs(){
+  const day = nextCheckDate(), d2 = new Date(day + 'T00:00:00'); d2.setDate(d2.getDate() + 1);
+  const ymd = x => x.replace(/-/g, '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Fitage//recheck//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT', `UID:fitage-recheck-${ymd(day)}@fitage`, `DTSTAMP:${stamp}`,
+    `DTSTART;VALUE=DATE:${ymd(day)}`, `DTEND;VALUE=DATE:${ymd(isoDate(d2))}`,
+    'SUMMARY:Fitage 체력나이 다시 재기',
+    `DESCRIPTION:12주 프로그램이 끝나는 날이에요. 첫 점검 때와 같은 방법으로 다시 재서 견줘 보세요.\\n${location.origin}`,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:체력나이 다시 재는 날이에요', 'TRIGGER;RELATED=START:PT9H', 'END:VALARM',   // 그날 아침 9시
+    'END:VEVENT', 'END:VCALENDAR'].map(icsFold).join('\r\n') + '\r\n';
+}
+function saveBlob(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function addRecheckToCalendar(){
+  saveBlob(new Blob([recheckIcs()], { type: 'text/calendar;charset=utf-8' }), 'fitage-recheck.ics');
+  showToast(`${fmtDate(nextCheckDate())} 일정을 내려받았어요 — 열어서 캘린더에 추가해 주세요`);
+}
+
+/* ---- 내 체력나이 카드 ----
+   결과를 이미지 한 장(1080×1350)으로 그린다. 이름은 넣지 않는다 — 나이와 항목만.
+   항목 줄은 프로필과 같은 순서·같은 별점이다(환산나이가 없는 항목은 또래 순위). */
+function shareCardRows(){
+  const r = state.result || {}, peers = r.또래비교 || {};
+  return axisOrder(r.항목별).map(k => {
+    const v = r.항목별?.[k], pr = peers[k];
+    if (Number.isFinite(v)) return k === '체성분' && pr ? { 이름: k, 값: `BMI ${pr.내기록}`, 별: null }
+      : { 이름: k, 값: `${v}세 수준`, 별: starCount(v) };
+    if (typeof pr?.백분위 === 'number') return { 이름: k, 값: `또래 ${posLabel(pr.백분위)}${pr.어림 ? '쯤' : ''}`, 별: starFromPct(pr.백분위) };
+    return null;
+  }).filter(Boolean);
+}
+/* 캔버스에는 줄바꿈이 없다 — 낱말 단위로 재서 꺾는다(낱말 중간에서는 꺾지 않는다) */
+function wrapCanvasText(g, text, maxWidth){
+  const lines = []; let cur = '';
+  text.split(' ').forEach(w => {
+    const next = cur ? cur + ' ' + w : w;
+    if (cur && g.measureText(next).width > maxWidth) { lines.push(cur); cur = w; } else cur = next;
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
+function drawShareCard(cv){
+  const W = 1080, H = 1350, L = 120, R = W - 120, g = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  const css = getComputedStyle(document.documentElement), c = (n, d) => css.getPropertyValue(n).trim() || d;
+  const sans = '-apple-system, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif', serif = '"Iowan Old Style", "Palatino Linotype", Georgia, serif';
+  const ink = c('--ink', '#20261F'), muted = c('--muted', '#666F62'), pine = c('--pine', '#2E5B4B'), star = c('--star', '#C1793C'), line = c('--line', '#DCDCC9');
+  g.fillStyle = c('--pine-deep', '#1F4136'); g.fillRect(0, 0, W, H);
+  g.fillStyle = c('--paper', '#FAFAF4');
+  const x0 = 60, y0 = 60, w = W - 120, h = H - 120, rad = 48;
+  g.beginPath(); g.moveTo(x0 + rad, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, rad); g.arcTo(x0 + w, y0 + h, x0, y0 + h, rad);
+  g.arcTo(x0, y0 + h, x0, y0, rad); g.arcTo(x0, y0, x0 + w, y0, rad); g.closePath(); g.fill();
+  g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+  // 머리 — 이름표와 날짜
+  g.fillStyle = pine; g.font = `700 44px ${sans}`; g.fillText('Fitage', L, 160);
+  g.fillStyle = muted; g.font = `500 30px ${sans}`; g.textAlign = 'right'; g.fillText(fmtDate(todayIso()), R, 160); g.textAlign = 'left';
+  // 큰 숫자
+  g.fillStyle = muted; g.font = `600 36px ${sans}`; g.fillText(isGrowth() ? '내 발달 수준' : '내 체력나이', L, 262);
+  const age = String(Math.round(displayAge()));
+  g.fillStyle = pine; g.font = `700 250px ${serif}`; g.fillText(age, L - 8, 490);
+  const aw = g.measureText(age).width;
+  g.font = `700 80px ${sans}`; g.fillText('세', L - 8 + aw + 16, 490);
+  const ci = state.result?.신뢰구간;
+  g.fillStyle = muted; g.font = `500 32px ${sans}`;
+  g.fillText(`만 ${state.age}세 기준${Number.isFinite(ci) ? ` · ±${ci}세` : ''}`, L, 556);
+  g.fillStyle = pine; g.font = `700 34px ${sans}`;                 // 화면의 인사말과 같은 문장 (peerAgeText)
+  g.fillText(peerAgeText(Math.round(displayAge()) - state.age).replace(/<[^>]+>/g, ''), L, 610);
+  // 항목 줄 — 많으면 간격과 글자를 조금 줄인다
+  const rows = shareCardRows().slice(0, 8), top = 712, bottom = 1105;
+  const step = Math.min(78, Math.floor((bottom - top) / Math.max(rows.length - 1, 1))), k = step < 66 ? 0.88 : 1;
+  rows.forEach((r, i) => {
+    const y = top + i * step;
+    g.strokeStyle = line; g.lineWidth = 2; g.beginPath(); g.moveTo(L, y - step * 0.64); g.lineTo(R, y - step * 0.64); g.stroke();
+    g.fillStyle = ink; g.font = `700 ${Math.round(36 * k)}px ${sans}`; g.fillText(r.이름, L, y);
+    g.fillStyle = muted; g.font = `500 ${Math.round(30 * k)}px ${sans}`; g.fillText(r.값, 360, y);
+    if (!r.별) return;
+    g.textAlign = 'right'; g.font = `400 ${Math.round(38 * k)}px ${sans}`;
+    const 빈별 = '☆'.repeat(5 - r.별);
+    g.fillStyle = star; g.fillText('★'.repeat(r.별), R - g.measureText(빈별).width, y);
+    g.fillStyle = line; g.fillText(빈별, R, y);
+    g.textAlign = 'left';
+  });
+  // 발 — 근거와 주소
+  g.fillStyle = muted; g.font = `500 25px ${sans}`;
+  const 근거 = wrapCanvasText(g, '국민체력100 공개 측정 데이터(약 296만 건)의 또래 분포와 견준 참고용 추정이에요. 의학적 진단이 아니에요.', R - L);
+  근거.forEach((t, i) => g.fillText(t, L, 1196 - (근거.length - 1 - i) * 36));
+  g.fillStyle = pine; g.font = `600 27px ${sans}`; g.fillText(location.host || 'Fitage', L, 1246);
+}
+function openShareCard(){
+  if (!state.result) { showToast('먼저 체력나이를 재 주세요'); return; }
+  if (!state.result.또래비교) { showToast('서버에 연결되지 않아 지금은 예시 값이에요 — 연결된 뒤에 카드를 만들 수 있어요'); return; }
+  openSheet('내 체력나이 카드', `
+    <canvas class="share-canvas" id="shareCanvas" aria-label="체력나이 ${Math.round(displayAge())}세 결과 카드"></canvas>
+    <div class="share-actions">
+      <button type="button" class="reco-btn" onclick="saveShareCard()">이미지 저장</button>
+      <button type="button" class="reco-btn go" onclick="shareShareCard()">공유하기</button>
+    </div>
+    <div class="axis-measure-note">이름은 들어가지 않아요. 나이와 항목별 결과만 담깁니다.</div>`);
+  drawShareCard($('shareCanvas'));
+}
+function shareCardBlob(){ return new Promise(res => $('shareCanvas').toBlob(res, 'image/png')); }
+async function saveShareCard(){
+  const blob = await shareCardBlob();
+  if (blob) { saveBlob(blob, 'fitage-card.png'); showToast('이미지를 저장했어요'); }
+}
+async function shareShareCard(){
+  const blob = await shareCardBlob();
+  if (!blob) return;
+  const file = new File([blob], 'fitage-card.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: '내 체력나이', text: `내 체력나이는 ${Math.round(displayAge())}세 — Fitage` });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }      // 공유 창을 그냥 닫은 것
+  saveBlob(blob, 'fitage-card.png');                              // 공유를 못 하는 브라우저면 저장으로
+  showToast('이 브라우저는 바로 공유를 못 해서 이미지로 저장했어요');
 }
 
 /* ---- 프로필에서 안 잰 항목 재러 가기 ----

@@ -529,7 +529,7 @@ def test_옛_기준으로_저장된_기록은_불러올_때_한_번_고친다():
     """윗몸일으키기를 30초로 재던 때의 기록은 다시 재라고 하지 않고 1분 횟수로 환산해 새 기준으로 다시 계산한다 (예현 요청).
     같은 때 저장된 심폐지구력(늘 62세로 나오던 것)도 이 재계산에서 바로잡힌다."""
     html = _index()
-    assert "const CALC_VER = 2;" in html and "const SITUP_30S_TO_1MIN = 1.8;" in html   # 뒤 30초엔 느려진다 — 2배로 잡으면 실제보다 좋게 나온다
+    assert "const CALC_VER = 3;" in html and "const SITUP_30S_TO_1MIN = 1.8;" in html   # 뒤 30초엔 느려진다 — 2배로 잡으면 실제보다 좋게 나온다
     assert "const SITUP_1MIN_FROM = '2026-09-21';" in html
     assert "calcVer: state.calcVer, strengthFrom30s: state.strengthFrom30s," in html    # 스냅샷에 담는다
     적용 = html.split("function applyProfile(saved)")[1].split("\n}")[0]
@@ -539,6 +539,9 @@ def test_옛_기준으로_저장된_기록은_불러올_때_한_번_고친다():
     assert "if (state.calcVer >= CALC_VER || !state.result || migrateCalc.busy) return;" in 고침
     assert "state.ageGbn === '성인' && Number.isFinite(state.strength) && 마지막날 < SITUP_1MIN_FROM" in 고침   # 어르신 의자 일어서기는 공식도 30초 — 환산하지 않는다
     assert "state.first?.측정?.age_gbn === '성인'" in 고침 and "처음날 < SITUP_1MIN_FROM" in 고침   # 첫 점검도 같은 기준으로 (재점검 비교가 어긋나지 않게)
+    # 기준 3(어르신 환산 고침)으로 올 때는 다시 계산만 한다 — 이미 1분으로 환산한 횟수에 1.8 을 또 곱하면 안 된다
+    assert "const 옛30초 = state.calcVer < 2;" in 고침
+    assert "const 지금환산 = 옛30초 && " in 고침 and "const 처음환산 = 옛30초 && " in 고침
     assert "await API.fitnessAge(보낼지금)" in 고침 and "await API.fitnessAge(보낼처음)" in 고침
     assert 고침.index("await API.fitnessAge(보낼지금)") < 고침.index("state.strength = 보낼지금.strength;")   # 서버가 답한 뒤에만 바꾼다 (실패하면 그대로 — 다음에 다시)
     assert "if (state.strength !== 옛값.지금) return;" in 고침                              # 그 사이에 다시 쟀으면 새 값이 우선
@@ -572,7 +575,7 @@ def test_나이로_바꾸지_않는_항목은_또래_순위로_보여_준다():
     assert "const 순위만 = !잰것 && typeof pr?.백분위 === 'number';" in body
     assert "값 = `또래 ${posLabel(pr.백분위)}${pr.어림 ? '쯤' : ''}`;" in body and "starStr(starFromPct(pr.백분위))" in body   # 공식 기준으로 어림한 값엔 '쯤'
     assert "const nRef = Math.max(0, ...ranked.map(([, v]) => v.표본수 || 0));" in html   # 어림한 항목(표본수 0)은 '몇 명 중' 에 세지 않는다
-    assert "axis-row${잰것 || 순위만 ? '' : ' todo'}" in body            # 잰 항목이다 — '측정하러 가기' 를 두지 않는다
+    assert "axis-row${잰것 || 순위만 || (k === '체성분' && pr) ? '' : ' todo'}" in body            # 잰 항목이다 — '측정하러 가기' 를 두지 않는다
     assert "function starFromPct(pct){ return Math.max(1, Math.min(5, Math.floor(pct / 20) + 1)); }" in html
     저장 = html.split("async function saveAxisMeasure(k)")[1].split("\n}")[0]
     assert "`${k} 또래 ${posLabel(순위)}${또래.어림 ? '쯤' : ''} · 기록했어요`" in 저장
@@ -621,6 +624,18 @@ def test_체력나이_카드를_이미지로_만든다():
     assert "navigator.canShare && navigator.canShare({ files: [file] })" in 공유 and "await navigator.share({ files: [file]," in 공유
     assert "e.name === 'AbortError'" in 공유                   # 공유 창을 그냥 닫은 것은 실패가 아니다
     assert "saveBlob(blob, 'fitage-card.png');" in 공유        # 공유를 못 하는 브라우저면 저장으로
+
+
+def test_체성분을_나이로_못_읽어도_BMI_줄은_그대로_보인다():
+    """남성 어르신은 BMI 를 나이로 환산하지 않는다(곡선이 거꾸로 움직인다). 항목별에 체성분이 없어도
+    프로필과 카드의 체성분 줄은 또래비교(BMI · 또래 중앙값)로 그린다 — '아직 측정하지 않았어요' 로 떨어지면 안 된다."""
+    html = _index()
+    그림 = html.split("function renderProfile()")[1].split("\n}")[0]
+    assert 그림.index("if (k === '체성분' && pr) {") < 그림.index("} else if (순위만) {") < 그림.index("} else if (!잰것) {")
+    assert 그림.count("값 = `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`;") == 1
+    assert "class=\"axis-row${잰것 || 순위만 || (k === '체성분' && pr) ? '' : ' todo'}\"" in 그림
+    카드 = html.split("function shareCardRows()")[1].split("\n}")[0]
+    assert 카드.index("if (k === '체성분' && pr) return { 이름: k, 값: `BMI ${pr.내기록}`, 별: null };") < 카드.index("if (Number.isFinite(v)) return")
 
 
 def test_운동체력_축도_프로필에서_잰다():

@@ -795,6 +795,53 @@ def test_성장기_근지구력_기준표는_공식_값이다():
 
 
 @needs_data
+def test_80세_이상_구간은_100세가_아니라_80대_초반으로_읽는다():
+    """'80+' 를 80~120(대표 100세)으로 보면 85세의 또래가 75~79세로 잡히고, 80대의 평균 기록이 100세로 읽힌다.
+    이웃 구간처럼 5세 폭(80~84, 대표 82세)으로 보고, 그 중앙값보다 못한 기록은 마지막 두 구간의 기울기로 이어 간다."""
+    from backend import fitness_age as fa
+    assert fa.band_mid("80+") == 82.0 and fa.band_mid("75~79") == 77.0 and fa.band_mid("15") == 15.0
+    여85 = {"age_gbn": "어르신", "sex": "F", "age": 85}
+    # 80세 이상 여성의 중앙값(의자 일어서기 14회 · 굽히기 9.2cm) 그대로면 80대 초반으로 읽힌다 — 예전에는 100세였다
+    중앙 = client.post("/fitness-age", json={**여85, "flexibility": 9.2, "strength": 14}).json()
+    assert 중앙["항목별"] == {"유연성": 82.0, "근지구력": 82.0} and 중앙["체력나이"] == 82.0
+    assert 중앙["집중개선영역"] == []
+    # 또래는 자기 구간(80+)이다 — 예전에는 75~79 였다
+    assert 중앙["또래비교"]["근지구력"]["비교구간"] == "80+" and 중앙["또래비교"]["근지구력"]["백분위"] == 50.0
+    # 중앙값보다 못하면 82세에 묶이지 않고 더 나이 들게, 못할수록 더 — 그래도 100세를 넘지 않는다
+    못함 = client.post("/fitness-age", json={**여85, "strength": 11}).json()["항목별"]["근지구력"]
+    더못함 = client.post("/fitness-age", json={**여85, "strength": 8}).json()["항목별"]["근지구력"]
+    assert 82.0 < 못함 < 더못함 <= 100.0
+    assert client.post("/fitness-age", json={**여85, "strength": 0}).json()["항목별"]["근지구력"] == 100.0
+    # 초 단위(작을수록 좋다) 항목도 같은 방향으로 이어 간다
+    assert fa.convert_age(fa.load(), "어르신", "F", "3m표적돌아오기", 9.0) > 82.0
+    # 70대의 환산도 달라진다: 75~79 와 80+ 사이가 77~100 이 아니라 77~82 다 (의자 15회 = 두 중앙값 17 · 14 사이)
+    여72 = client.post("/fitness-age", json={"age_gbn": "어르신", "sex": "F", "age": 72, "strength": 15}).json()
+    assert 77.0 < 여72["항목별"]["근지구력"] < 82.0
+    # 성인 · 성장기는 끝이 열린 구간이 없다 — 그대로다 (가장 나이 든 구간의 대표 나이에 묶인다)
+    assert client.post("/fitness-age", json={**ADULT, "age": 60, "strength": 1}).json()["항목별"]["근지구력"] == 62.0
+
+
+@needs_data
+def test_거꾸로_움직이는_BMI_곡선은_나이로_읽지_않는다():
+    """BMI 환산은 '나이 들수록 적정치(22)에서 멀어진다' 는 전제 위에 있다. 남성 어르신의 BMI 중앙값은 24.5 → 23.7 로
+    오히려 가까워져서, 그대로 환산하면 건강한 BMI 22 가 100세 · '집중 개선 영역: 체성분' 으로 나온다. 그런 곡선은 환산하지 않는다."""
+    남72 = {"age_gbn": "어르신", "sex": "M", "age": 72, "flexibility": 6, "strength": 22, "height_cm": 167}
+    건강 = client.post("/fitness-age", json={**남72, "weight_kg": 62}).json()       # BMI 22.2
+    비만 = client.post("/fitness-age", json={**남72, "weight_kg": 84}).json()       # BMI 30.1
+    for r in (건강, 비만):
+        assert "체성분" not in r["항목별"] and "체성분" not in r["집중개선영역"]
+        assert r["또래비교"]["체성분"]["항목"] == "BMI"                             # 값과 또래 중앙값은 그대로 나간다
+    assert 건강["체력나이"] == 비만["체력나이"]                                     # 예전에는 비만 쪽이 6살 넘게 젊게 나왔다
+    # 여성 어르신은 곡선이 전제대로 움직인다 — 그대로 환산한다
+    여 = client.post("/fitness-age", json={"age_gbn": "어르신", "sex": "F", "age": 72, "flexibility": 14, "strength": 19,
+                                           "height_cm": 155, "weight_kg": 53}).json()
+    assert "체성분" in 여["항목별"]
+    # 도달 시점 추정도 같은 항목으로 '지금' 을 낸다
+    eta = client.post("/fitness-age/eta", json={**남72, "weight_kg": 62, "target": 65}).json()
+    assert eta["지금"] == 건강["체력나이"]
+
+
+@needs_data
 def test_선택_항목으로_운동체력_축이_늘어난다():
     """성인 순발력(제자리 멀리뛰기 cm) · 민첩성(10M 4회 왕복달리기 초), 어르신 평형성(3M 표적 돌아오기 초) · 협응력(8자보행 초).
     국민체력100 공식 분류이고 분포가 있다. 잰 사람만 넣고, 넣어도 다른 항목의 값은 그대로다."""

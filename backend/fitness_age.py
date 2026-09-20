@@ -157,12 +157,21 @@ HIGHER_IS_BETTER = {
 }
 
 
+# 끝이 열린 구간("80+")도 이웃 구간처럼 5세 폭(80~84)으로 본다. 예전에는 80~120 으로 보아 대표 나이가 100세였다 —
+# 그러면 85세의 또래가 75~79세로 잡히고(100 보다 77 이 가깝다), 80대의 평균 기록이 100세로 읽힌다.
+OPEN_BAND_SPAN = 4
+# 끝이 열린 구간을 이어 갈 때의 상한(세)
+OLDEST_AGE = 100.0
+
+
 def band_mid(b: str) -> float:
     """연령구간 문자열 → 중앙값.
 
-    "19~24" → 21.5, "80+" → 100, "15"(성장기 1세 단위) → 15
+    "19~24" → 21.5, "80+" → 82 (80~84 로 본다), "15"(성장기 1세 단위) → 15
     """
-    b = str(b).replace("+", "~120")
+    b = str(b)
+    if b.endswith("+"):
+        b = f"{b[:-1]}~{float(b[:-1]) + OPEN_BAND_SPAN}"
     lo, sep, hi = b.partition("~")
     lo = float(lo)
     if not sep:
@@ -185,6 +194,14 @@ def convert_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float
     ages, meds = sub["age_mid"].to_numpy(), sub["p50"].to_numpy()
     # 값이 클수록 좋으면 나이가 들수록 p50이 감소 → 보간을 위해 뒤집는다
     higher_better = HIGHER_IS_BETTER.get(item, True)
+    # 끝이 열린 구간("80+")의 중앙값보다 못한 기록은 끝값에 묶지 않고 마지막 두 구간의 기울기로 이어 간다.
+    # 묶어 두면 80대의 평균 기록과 아주 나쁜 기록이 같은 나이로 읽힌다. 곡선이 끝에서도 나이 방향으로 움직일 때만.
+    if str(sub["연령구간"].iloc[-1]).endswith("+"):
+        worse = value < meds[-1] if higher_better else value > meds[-1]
+        ages_on = meds[-1] < meds[-2] if higher_better else meds[-1] > meds[-2]
+        if worse and ages_on:
+            slope = (ages[-1] - ages[-2]) / (meds[-1] - meds[-2])
+            return float(min(OLDEST_AGE, ages[-1] + (value - meds[-1]) * slope))
     x, y = (meds[::-1], ages[::-1]) if higher_better else (meds, ages)
     order = np.argsort(x)
     return float(np.interp(value, x[order], y[order]))
@@ -210,6 +227,11 @@ def u_shaped_age(d, age_gbn, sex, item, value, ideal=None) -> float | None:
         ideal = float(sub["p50"].median()) if (age_gbn == GROWTH or item != "BMI") else BMI_IDEAL
     dev = (sub["p50"] - ideal).abs().to_numpy()
     ages = sub["age_mid"].to_numpy()
+    # 이 환산은 "나이 들수록 적정치에서 멀어진다" 는 전제 위에 있다. 곡선이 거꾸로 움직이면 — 어르신 남성의 BMI 중앙값은
+    # 24.5 → 23.7 로 적정치(22)에 가까워진다 — 건강한 값이 가장 늙게(BMI 22 → 100세) 읽힌다. 그런 곡선은 환산하지 않는다.
+    # 값은 또래비교(BMI · 또래 중앙값)로는 그대로 나간다.
+    if age_gbn != GROWTH and dev[-1] <= dev[0]:
+        return None
     order = np.argsort(dev)
     return float(np.interp(abs(value - ideal), dev[order], ages[order]))
 

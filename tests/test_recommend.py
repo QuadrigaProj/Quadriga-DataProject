@@ -211,17 +211,21 @@ def test_버튼이_모두_같은_크기_같은_모양이다():
     assert "btn-primary" not in actions and "btn-ghost" not in actions
 
 
-def test_시작_버튼은_맨_아래에_가로로_길게():
-    """'이 루틴으로 시작' 은 맨 아래 가로로 길게, 나머지는 그 위에 네모(2×2)로 모은다 (예현 요청).
-    예전(I2)에는 시작 버튼도 다른 버튼과 같은 칸이었다."""
+def test_AI_추천의_시작_버튼은_맨_아래에_가로로_길게():
+    """AI 추천 카드만: '이 루틴으로 시작' 은 맨 아래 가로로 길게, 나머지는 그 위에 네모(2×2)로 모은다 (예현 요청).
+    무료 추천은 예전(I2)대로 네 버튼이 같은 크기로 2×2 다 — "바꿔 달라고 한 건 AI 추천만" (예현, 2026-09-20)."""
     html = client.get("/").text
     card = html.split("function paintRecommend()")[1]
     actions = card.split('<div class="reco-actions">')[1].split("</div>")[0]
+    # 버튼의 자리는 두 경우 모두 맨 끝이다(무료는 이전 · 더 쉬운 · 더 어려운 · 시작). 길게 늘이는 것은 AI 가 지은 카드에서만.
     assert actions.rstrip().endswith('<button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>')
+    assert """<div class="rec-card${recoBy === 'ai' ? ' by-ai' : ''}">""" in card
     assert actions.index("더 어렵게 다시 받기") < actions.index("이 루틴으로 시작")          # AI 의 세 버튼도 시작보다 위
-    assert ".reco-actions > .reco-btn.go:last-child{ grid-column:1 / -1;" in html            # 맨 끝에 올 때만 — 'AI 추천 받기' 카드는 그대로
-    # 나머지가 홀수 개면(무료 3개 · '다음 루틴' 이 붙은 5개) 혼자 남는 마지막 버튼도 가로로 채운다
-    assert ".reco-actions:has(> .reco-btn.go:last-child) > .reco-btn:nth-last-child(2):nth-child(odd){ grid-column:1 / -1; }" in html
+    assert ".rec-card.by-ai .reco-actions > .reco-btn.go:last-child{ grid-column:1 / -1;" in html
+    # 나머지가 홀수 개면('다음 루틴' 이 붙은 5개) 혼자 남는 마지막 버튼도 가로로 채운다 — 이것도 AI 추천에서만
+    assert ".rec-card.by-ai .reco-actions > .reco-btn:nth-last-child(2):nth-child(odd){ grid-column:1 / -1; }" in html
+    # 맨 끝에 왔다는 것만으로는 걸리지 않는다 — 그랬더니 무료 추천까지 바뀌었다
+    assert html.count(".reco-btn.go:last-child") == 1 and "  .reco-actions > .reco-btn.go:last-child" not in html
     assert "word-break:keep-all;" in html.split(".reco-btn{")[1].split("}")[0]               # '받 / 기' 처럼 꺾이지 않게
 
 

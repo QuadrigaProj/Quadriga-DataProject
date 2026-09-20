@@ -451,6 +451,16 @@
   .rec-cap{ font-size:11.5px; color:var(--muted); margin-top:4px; }
   .rec-block{ margin-top:22px; }
   .rec-head{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+  /* 묶음 접기 · 펼치기 — 제목이 곧 버튼이다 */
+  button.rec-fold{ display:flex; align-items:center; gap:8px; width:100%; padding:6px 0; border:none; background:none;
+    font-family:inherit; text-align:left; cursor:pointer; }
+  .rec-fold .rec-count{ font-weight:500; font-variant-numeric:tabular-nums; }
+  .rec-fold .rec-chev{ margin-left:auto; width:9px; height:9px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted);
+    transform:rotate(-135deg); margin-right:4px; }
+  .rec-fold[aria-expanded="false"] .rec-chev{ transform:rotate(45deg); }
+  .rec-fold[aria-expanded="false"]{ margin-bottom:0; }
+  .rec-rest-btn{ display:block; width:100%; margin-top:10px; padding:11px 0; border-radius:12px; border:1px solid var(--line);
+    background:var(--paper); color:var(--pine-deep); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; }
   .rec-age-row{
     display:flex; align-items:center; justify-content:space-around;
     padding:18px 12px; border-radius:16px; background:var(--pine-tint);
@@ -2203,26 +2213,33 @@
       </div>
 
       <div class="rec-block">
-        <div class="rec-head">운동한 날</div>
-        <div id="recList"></div>
+        <button type="button" class="rec-head rec-fold" data-fold="list" aria-expanded="true" aria-controls="recListBody"
+                onclick="toggleRecBlock('list')"><span>운동한 날</span><span class="rec-count" id="recCount-list"></span><span class="rec-chev" aria-hidden="true"></span></button>
+        <div class="rec-body" id="recListBody"><div id="recList"></div></div>
         <button type="button" class="rec-log-btn" onclick="logTargetDate = null; goTo('s11')">당일 기록 작성</button>
       </div>
 
       <div class="rec-block" id="recManualBlock" style="display:none;">
-        <div class="rec-head">직접 적은 운동</div>
-        <div id="recManual"></div>
-        <div class="rec-actions">
-          <button type="button" class="rec-del" id="recManualDeleteBtn" disabled
-                  onclick="deleteSelectedManual()">삭제할 기록을 고르세요</button>
+        <button type="button" class="rec-head rec-fold" data-fold="manual" aria-expanded="true" aria-controls="recManualBody"
+                onclick="toggleRecBlock('manual')"><span>직접 적은 운동</span><span class="rec-count" id="recCount-manual"></span><span class="rec-chev" aria-hidden="true"></span></button>
+        <div class="rec-body" id="recManualBody">
+          <div id="recManual"></div>
+          <div class="rec-actions">
+            <button type="button" class="rec-del" id="recManualDeleteBtn" disabled
+                    onclick="deleteSelectedManual()">삭제할 기록을 고르세요</button>
+          </div>
         </div>
         <div class="rec-note" id="recManualDeleteNote"></div>
       </div>
 
       <div class="rec-block" id="recMeasureBlock" style="display:none;">
-        <div class="rec-head">점검 기록</div>
-        <div id="recMeasures"></div>
-        <div class="rec-note">점검 기록은 여기서 지우지 않아요.
-          그날 운동 기록을 지우면 함께 사라집니다.</div>
+        <button type="button" class="rec-head rec-fold" data-fold="measure" aria-expanded="true" aria-controls="recMeasureBody"
+                onclick="toggleRecBlock('measure')"><span>점검 기록</span><span class="rec-count" id="recCount-measure"></span><span class="rec-chev" aria-hidden="true"></span></button>
+        <div class="rec-body" id="recMeasureBody">
+          <div id="recMeasures"></div>
+          <div class="rec-note">점검 기록은 여기서 지우지 않아요.
+            그날 운동 기록을 지우면 함께 사라집니다.</div>
+        </div>
       </div>
     </div>
 
@@ -3672,7 +3689,7 @@ async function renderRecords(){
   }
 
   $('recList').innerHTML = log.length
-    ? log.slice(0, 30).map(e => `<div class="rec-item">
+    ? log.map(e => `<div class="rec-item">
         <div class="rec-date">${fmtDate(e.date)}</div>
         <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
         <div class="rec-check">✓</div>
@@ -3680,6 +3697,7 @@ async function renderRecords(){
       </div>`).join('')
     : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
+  foldRecList('list', $('recList'), log.length);
 
   renderMeasureRecords();
   renderManualRecords();
@@ -3781,6 +3799,52 @@ function renderMeasureRecords(){
           <div class="rec-name">체력나이 ${Math.round(r.체력나이 * 10) / 10}세</div>
           ${moreToggle(r.출처 === '측정' ? measureDetailHtml(r) : dayAgeHtml(r.date))}
         </div>`).join('');
+  foldRecList('measure', $('recMeasures'), rows.length);
+}
+
+/* ---- 기록 묶음 접기 · 펼치기 ----
+   날짜별 기록이 쌓일수록 화면이 끝없이 길어진다 (예현 요청).
+     ① 묶음 제목을 누르면 그 묶음을 통째로 접는다 — 제목 옆에 개수는 남는다.
+     ② 펼쳐 둔 묶음도 처음에는 최근 REC_PREVIEW 개만 보인다. 나머지는 '이전 기록 N개 더 보기' 로 연다.
+   접어 둔 상태는 이 기기에만 기억한다 — 기록이 아니라 보기 설정이라 프로필(서버)에 넣지 않는다.
+   목록은 지금처럼 통째로 그린 뒤 여기서 나눠 담는다: 줄을 그리는 코드는 건드리지 않는다. */
+const REC_PREVIEW = 5;
+const REC_FOLD_KEY = 'quadriga.recFold';
+let recFold = (() => { try { return JSON.parse(localStorage.getItem(REC_FOLD_KEY) || '{}') || {}; } catch (e) { return {}; } })();
+function saveRecFold(){ try { localStorage.setItem(REC_FOLD_KEY, JSON.stringify(recFold)); } catch (e) { /* 저장이 막혀도 이번에는 그대로 쓴다 */ } }
+
+function foldRecList(key, box, count){
+  const head = document.querySelector(`.rec-fold[data-fold="${key}"]`);
+  const closed = !!recFold[key + '.closed'];
+  $('recCount-' + key).textContent = count ? `${count}개` : '';
+  head.setAttribute('aria-expanded', String(!closed));
+  $(head.getAttribute('aria-controls')).hidden = closed;
+  const items = [...box.children].filter(el => el.classList.contains('rec-item'));
+  if (items.length <= REC_PREVIEW) return;
+  const open = !!recFold[key + '.all'];
+  const rest = document.createElement('div');
+  rest.className = 'rec-rest'; rest.hidden = !open;
+  items.slice(REC_PREVIEW).forEach(el => rest.appendChild(el));
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'rec-rest-btn';
+  btn.setAttribute('aria-expanded', String(open));
+  btn.textContent = open ? '최근 기록만 보기' : `이전 기록 ${rest.children.length}개 더 보기`;
+  btn.onclick = () => toggleRecRest(key, rest, btn);
+  box.append(rest, btn);
+}
+function toggleRecRest(key, rest, btn){
+  const open = rest.hidden;
+  rest.hidden = !open;
+  recFold[key + '.all'] = open; saveRecFold();
+  btn.setAttribute('aria-expanded', String(open));
+  btn.textContent = open ? '최근 기록만 보기' : `이전 기록 ${rest.children.length}개 더 보기`;
+}
+function toggleRecBlock(key){
+  const head = document.querySelector(`.rec-fold[data-fold="${key}"]`);
+  const closed = head.getAttribute('aria-expanded') === 'true';        // 지금 열려 있으면 닫는다
+  recFold[key + '.closed'] = closed; saveRecFold();
+  head.setAttribute('aria-expanded', String(!closed));
+  $(head.getAttribute('aria-controls')).hidden = closed;
 }
 
 /* ---------------------------------------------------------------------------
@@ -7859,7 +7923,7 @@ function renderManualRecords(){
   manualPicked = new Set([...manualPicked].filter(i => i < all.length));
   if (!rows.length) { manualPicked.clear(); box.style.display = 'none'; return; }
   box.style.display = 'block';
-  $('recManual').innerHTML = rows.slice(0, 20).map(({ w, i }) => `
+  $('recManual').innerHTML = rows.map(({ w, i }) => `
         <div class="rec-item rec-pick">
           <label class="rec-pick-main">
             <input type="checkbox" ${manualPicked.has(i) ? 'checked' : ''}
@@ -7869,6 +7933,7 @@ function renderManualRecords(){
           </label>
           ${moreToggle(manualDetailHtml(w))}
         </div>`).join('');
+  foldRecList('manual', $('recManual'), rows.length);
   paintManualDeleteBtn();
 }
 

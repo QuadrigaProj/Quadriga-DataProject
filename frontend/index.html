@@ -456,12 +456,11 @@
     font-family:inherit; text-align:left; cursor:pointer; }
   .rec-fold .rec-count{ font-weight:500; font-variant-numeric:tabular-nums; }
   .rec-fold .rec-chev{ margin-left:auto; width:9px; height:9px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted);
-    transform:rotate(-135deg); transition:transform .15s ease; margin-right:4px; }
+    transform:rotate(-135deg); margin-right:4px; }
   .rec-fold[aria-expanded="false"] .rec-chev{ transform:rotate(45deg); }
   .rec-fold[aria-expanded="false"]{ margin-bottom:0; }
   .rec-rest-btn{ display:block; width:100%; margin-top:10px; padding:11px 0; border-radius:12px; border:1px solid var(--line);
     background:var(--paper); color:var(--pine-deep); font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; }
-  @media (prefers-reduced-motion: reduce){ .rec-fold .rec-chev{ transition:none; } }
   .rec-age-row{
     display:flex; align-items:center; justify-content:space-around;
     padding:18px 12px; border-radius:16px; background:var(--pine-tint);

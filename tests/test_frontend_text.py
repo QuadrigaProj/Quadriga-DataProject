@@ -807,6 +807,28 @@ def test_다시_재면_추정치를_버린다():
     assert "state.activityAge = null" in 본문
 
 
+def test_성별을_바꾸면_그_성별의_기준으로_다시_낸다():
+    """체력나이는 같은 성별 · 같은 나이대의 분포에 견줘 나오는 값이다 — 기록이 같아도 기준이 바뀌면 숫자가 달라진다 (예현 요청, 2026-09-20).
+    전에는 프로필에서 성별을 바꿔도 ① 유연성 · 근지구력을 둘 다 잰 사람만 다시 냈고 ② 옛 기준에 얹어 둔 추정치가 남아 숫자가 그대로였다."""
+    html = _index()
+    다시 = html.split("async function recalcForPerson()")[1].split("function applyProfile(saved)")[0]
+    assert "const 지금 = await API.fitnessAge(measurement());" in 다시
+    assert "보낼처음 = { ...첫측정, sex: state.sex, age: state.age };" in 다시                      # 첫 점검도 새 기준으로 — '처음 → 지금' 이 같은 잣대여야 한다
+    assert "if (첫측정 && 첫측정.age_gbn === state.ageGbn) {" in 다시                                # 나이대가 바뀌면 재는 항목이 달라 옛 기록을 견줄 수 없다
+    assert "state.activityAge = null;" in 다시 and "state.dayAges = {};" in 다시                    # 옛 기준에 얹어 둔 추정치는 버린다
+    assert "await refreshActivityAge(); await refreshLogAges({ 전부: true });" in 다시              # 그리고 새 기준으로 다시 뽑는다
+    assert "Object.assign(끝줄, { 체력나이: 지금.체력나이," in 다시                                   # 변화추이의 마지막 점도 같은 숫자로
+    # 프로필의 '내 정보' — 하나만 잰 사람도 다시 낸다
+    저장 = html.split("async function saveEdits()")[1].split("function editError(msg)")[0]
+    assert "const recalc = (age !== state.age || sex !== state.sex);" in 저장
+    assert "if (recalc && state.result) {" in 저장 and "await recalcForPerson();" in 저장
+    assert "state.flexibility !== null && state.strength !== null" not in 저장
+    # 첫 점검 화면 — 결과를 본 뒤에 성별을 바꾸면 그 자리에서. 저장본을 되살릴 때(같은 값)는 다시 내지 않는다
+    고름 = html.split("function selectSex(sex)")[1].split("\n}")[0]
+    assert "const 바뀜 = state.sex !== sex;" in 고름
+    assert "if (바뀜 && state.result && state.user) recalcForPerson().catch(() => {});" in 고름
+
+
 def test_반영값도_저장하고_되돌린다():
     html = _index()
     assert "activityAge: state.activityAge," in html            # snapshot

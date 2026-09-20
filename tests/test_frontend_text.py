@@ -868,6 +868,33 @@ def test_토글은_줄_안에서_상세를_찾는다():
     assert "nextElementSibling" not in 본문
 
 
+def test_기록_묶음은_접고_펼칠_수_있다():
+    """날짜별 기록이 쌓일수록 기록 화면이 끝없이 길어진다 (예현 요청). 묶음 제목을 누르면 통째로 접히고,
+    펼쳐 둔 묶음도 처음에는 최근 5개만 보인다. 접어 둔 상태는 이 기기에만 기억한다(기록이 아니라 보기 설정)."""
+    html = _index()
+    for key, 제목, 몸통 in (("list", "운동한 날", "recListBody"), ("manual", "직접 적은 운동", "recManualBody"), ("measure", "점검 기록", "recMeasureBody")):
+        assert (f'<button type="button" class="rec-head rec-fold" data-fold="{key}" aria-expanded="true" aria-controls="{몸통}"\n'
+                f'                onclick="toggleRecBlock(\'{key}\')"><span>{제목}</span><span class="rec-count" id="recCount-{key}"></span>') in html, key
+        assert f'id="{몸통}"' in html
+    assert "const REC_PREVIEW = 5;" in html and "const REC_FOLD_KEY = 'quadriga.recFold';" in html
+    # 세 목록 모두 그린 뒤에 나눠 담는다 — 줄을 그리는 코드는 그대로다
+    assert "foldRecList('list', $('recList'), log.length);" in html
+    assert "foldRecList('manual', $('recManual'), rows.length);" in html
+    assert "foldRecList('measure', $('recMeasures'), rows.length);" in html
+    assert "log.slice(0, 30).map(e =>" not in html and "rows.slice(0, 20).map(" not in html      # 접어 두니 개수를 자르지 않는다 (제목의 개수와 맞아야 한다)
+    접기 = html.split("function foldRecList(key, box, count)")[1].split("\n}")[0]
+    assert "if (items.length <= REC_PREVIEW) return;" in 접기
+    assert "items.slice(REC_PREVIEW).forEach(el => rest.appendChild(el));" in 접기
+    assert "`이전 기록 ${rest.children.length}개 더 보기`" in 접기 and "'최근 기록만 보기'" in 접기
+    assert "$(head.getAttribute('aria-controls')).hidden = closed;" in 접기                          # 다시 그려도 접어 둔 묶음은 접힌 채로
+    묶음 = html.split("function toggleRecBlock(key)")[1].split("\n}")[0]
+    assert "recFold[key + '.closed'] = closed; saveRecFold();" in 묶음
+    assert "localStorage.setItem(REC_FOLD_KEY, JSON.stringify(recFold));" in html
+    assert "recFold" not in html.split("function snapshot()")[1].split("\n}")[0]                # 프로필(서버)에는 넣지 않는다
+    # '당일 기록 작성' 은 기록이 아니라 할 일이다 — 묶음을 접어도 남는다
+    assert '<div class="rec-body" id="recListBody"><div id="recList"></div></div>\n        <button type="button" class="rec-log-btn"' in html
+
+
 def test_세_목록_모두_자세히_보기가_있다():
     html = _index()
     루틴 = html.split("$('recList').innerHTML")[1].split("renderMeasureRecords()")[0]

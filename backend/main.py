@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlencode
@@ -101,20 +102,51 @@ app = FastAPI(
 # 오래 걸릴 일이 없는 서비스라, 넘긴 요청은 답을 못 낸 것으로 본다.
 REQUEST_TIMEOUT_SEC = float(os.getenv("REQUEST_TIMEOUT_SEC", "25"))
 
+# AI 를 부르는 경로만 제한을 따로 길게 둔다.
+#
+# AI 는 루틴 하나를 짓는 데 30~60초가 걸리고, 그 안에 못 끝내면 스스로 포기해 무료 추천으로 넘어간다
+# (ai_recommend 의 제한 시간). 그런데 위의 25초가 그보다 짧아서, 화면에는 "너무 오래 걸려 멈췄어요" 가 나가고
+# 서버의 스레드는 끝까지 지은 다음 이용권을 깎았다 — 값은 치렀는데 루틴은 못 받는다(2026-09-20 재현).
+# 그래서 이 경로들의 제한은 AI 가 스스로 포기하는 시간보다 길게 둔다: 늦을 때는 AI 쪽이 먼저 끝나야 한다.
+# 무료 추천(GET)은 그대로 25초다 — 이 제한이 생긴 까닭(추천의 무한 루프)이 그쪽이다.
+AI_ROUTES = {("POST", "/recommend/routines"), ("POST", "/recommend/periods"), ("POST", "/recommend/seasons"),
+             ("POST", "/health/photo"), ("POST", "/schedule/photo")}
+AI_REQUEST_TIMEOUT_SEC = float(os.getenv("AI_REQUEST_TIMEOUT_SEC", "0")) or air.longest_wait_sec() + 15
+
+
+def request_limit_sec(method: str, path: str) -> float:
+    """이 요청을 몇 초에서 끊는가. 0 이하면 끊지 않는다."""
+    if REQUEST_TIMEOUT_SEC <= 0:
+        return 0.0
+    if (method.upper(), path) in AI_ROUTES:
+        return max(REQUEST_TIMEOUT_SEC, AI_REQUEST_TIMEOUT_SEC)
+    return REQUEST_TIMEOUT_SEC
+
+
+def 아직_받을_수_있다(시작: float, method: str, path: str) -> bool:
+    """값을 받기 직전에 묻는다 — 이 요청이 아직 끊기지 않았는가(끊겼으면 화면에는 이미 실패가 나갔다).
+
+    끊는 쪽(시간_제한)은 답만 먼저 보낼 뿐 일하던 스레드를 멈추지 못한다. 그 스레드가 뒤늦게 값을 받지 않게 한다.
+    1초의 여유를 둔다: 아슬아슬할 때는 받지 않는 쪽으로 틀린다.
+    """
+    제한 = request_limit_sec(method, path)
+    return 제한 <= 0 or time.monotonic() - 시작 < 제한 - 1.0
+
 
 @app.middleware("http")
 async def 시간_제한(request: Request, call_next):
     """오래 끄는 요청을 끊는다. 0 이하로 두면 끄지 않는다(디버깅용)."""
-    if REQUEST_TIMEOUT_SEC <= 0:
+    제한 = request_limit_sec(request.method, request.url.path)
+    if 제한 <= 0:
         return await call_next(request)
     try:
-        with anyio.fail_after(REQUEST_TIMEOUT_SEC):
+        with anyio.fail_after(제한):
             return await call_next(request)
     except TimeoutError:
         # 무엇이 오래 걸렸는지 로그에 남긴다. 경로만 적는다 — 쿼리에는
         # 개인 정보가 실릴 수 있다.
         print(f"[timeout] {request.method} {request.url.path} "
-              f"> {REQUEST_TIMEOUT_SEC}s", flush=True)
+              f"> {제한}s", flush=True)
         return JSONResponse(
             {"detail": "처리가 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해주세요."},
             status_code=503)
@@ -1438,18 +1470,22 @@ def post_recommend_routines(body: RecommendIn,
                  "최근기록": body.최근기록[:30],
                  "건강상태": _short_list(body.건강상태),
                  "시작": ssn.start_info(body.시작일, body.위도, body.경도)},
-        adjust=body.조정, previous=_previous_routine(body.이전루틴) if body.조정 else None)
+        adjust=body.조정, previous=_previous_routine(body.이전루틴) if body.조정 else None,
+        method="POST")
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                sports: list[str], target_gap: float | None, limit: int,
                week: int, ai: bool, real_age: float | None,
                token: str | None, busy: dict | None = None,
+               method: str = "GET",
                life_kind: list[str] | str | None = None,
                profile: dict | None = None,
                adjust: str | None = None, previous: dict | None = None,
                purpose: str | None = None, areas: list[str] | None = None) -> dict:
     """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
+
+    method 는 부른 쪽의 HTTP 메서드 — 요청 제한이 경로마다 달라서, 값을 받기 전에 아직 안 끊겼는지 볼 때 쓴다.
 
     purpose 는 사용자가 고른 운동 단계 — AI 가 권장 용량(backend/dose.py)을 거기에 맞춘다.
 
@@ -1458,6 +1494,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
     profile 은 AI 가 '이 사람' 을 읽는 재료(항목별 체력나이·최근 기록).
     무료 추천은 보지 않는다 — 점수 규칙은 그대로다.
     """
+    시작 = time.monotonic()
     if real_age is not None:
         try:
             age_gbn = rt.age_group(real_age)
@@ -1526,7 +1563,8 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 사용자["조정"] = {"방향": adjust, "이전 루틴": previous or {}}
             지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
             # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
-            if 지음 and 지음.get("루틴"):
+            # 짓는 동안 요청이 끊겼으면(화면에는 이미 실패가 나갔다) 지은 것을 버리고 값도 받지 않는다.
+            if 지음 and 지음.get("루틴") and 아직_받을_수_있다(시작, method, "/recommend/routines"):
                 if (profile or {}).get("시작"):
                     지음["루틴"]["시작"] = profile["시작"]
                 out["추천"] = [지음["루틴"]]
@@ -1610,6 +1648,7 @@ def post_schedule_photo(body: SchedulePhotoIn,
     읽은 것을 곧바로 저장하지 않는다. 화면이 사용자에게 보여 주고 고치게
     한다 — 사진을 잘못 읽었는데 그대로 저장되면 손댈 곳이 없다.
     """
+    시작 = time.monotonic()
     if not air.available():
         raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
     누구 = _require_user(quadriga_session)
@@ -1627,6 +1666,9 @@ def post_schedule_photo(body: SchedulePhotoIn,
     읽은것 = air.read_schedule_photo(데이터, 형식)
     if 읽은것 is None:
         raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
+    if not 아직_받을_수_있다(시작, "POST", "/schedule/photo"):
+        # 읽는 동안 요청이 끊겼다 — 화면에는 이미 실패가 나갔으니 값을 받지 않는다.
+        raise HTTPException(503, "처리가 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해주세요.")
     if not 읽은것:
         # 부르긴 했지만 시간표가 아니었다. 값은 받되 왜 비었는지는 알려준다.
         잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")

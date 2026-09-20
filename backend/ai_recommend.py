@@ -26,8 +26,19 @@ MODEL = "claude-opus-5"
 TIMEOUT_SEC = 20.0
 COMPOSE_TIMEOUT_SEC = 60.0     # 루틴 하나를 짓는 데 — 재료 표가 길고 본운동이 여러 줄이라 40초로는 빠듯했다
 PERIOD_TIMEOUT_SEC = 60.0      # 구간(계절·시간대) 계획 — 네 덩이, 계절 안에 시간대까지면 열여섯 줄. 20초로는 늘 늦었다
+SDK_RETRIES = 1                # 제한 시간에 걸리거나 저쪽이 바쁘다고 하면 SDK 가 한 번 더 부른다
 LAST_FAIL: dict = {}           # 마지막 실패 {어디, 이유, 때} — 화면이 "못 받았어요" 만 띄우면 손쓸 방법이 없다
 MAX_TOKENS = 8000
+
+
+def longest_wait_sec() -> float:
+    """AI 호출 하나가 가장 오래 끌 수 있는 시간(초) — 가장 긴 제한 시간 × (처음 + 재시도).
+
+    서버의 요청 제한(main.AI_REQUEST_TIMEOUT_SEC)은 이보다 길어야 한다. 짧으면 화면에는 "너무 오래 걸려 멈췄어요" 가
+    나가는데 여기서는 끝까지 지어서 값을 받는다 — 늦을 때는 AI 쪽이 먼저 포기해야 값을 안 받고 무료 추천으로 넘어간다.
+    """
+    가장_긴 = max(TIMEOUT_SEC * 2, COMPOSE_TIMEOUT_SEC, PERIOD_TIMEOUT_SEC * 1.5)
+    return 가장_긴 * (SDK_RETRIES + 1)
 
 def available() -> bool:
     """지금 AI 를 부를 수 있는지. 키와 SDK 가 모두 있어야 한다."""
@@ -230,7 +241,7 @@ def periods(루틴: dict, 참고: dict, 연령대: str,
         import anthropic
 
         # 계절 네 덩이(안에 시간대까지면 열여섯 줄)를 쓰는 데 20초는 늘 모자랐다 — 늦으면 통째로 버려져 "못 받았어요" 가 됐다
-        client = anthropic.Anthropic(timeout=PERIOD_TIMEOUT_SEC * (1.5 if 시간대포함 else 1.0), max_retries=1)
+        client = anthropic.Anthropic(timeout=PERIOD_TIMEOUT_SEC * (1.5 if 시간대포함 else 1.0), max_retries=SDK_RETRIES)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -364,7 +375,7 @@ def read_health_photo(데이터: str, 미디어형: str) -> dict | None:
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=1)
+        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=SDK_RETRIES)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -410,7 +421,7 @@ def read_schedule_photo(데이터: str, 미디어형: str) -> dict | None:
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=1)
+        client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=SDK_RETRIES)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -668,7 +679,7 @@ def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=COMPOSE_TIMEOUT_SEC, max_retries=1)
+        client = anthropic.Anthropic(timeout=COMPOSE_TIMEOUT_SEC, max_retries=SDK_RETRIES)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,

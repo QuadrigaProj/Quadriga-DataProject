@@ -313,8 +313,8 @@ def test_AI가_실제로_지었을_때만_값을_받는다():
     import inspect
     from backend import main as m
     src = inspect.getsource(m._recommend)   # GET·POST 가 함께 쓰는 본체
-    # 지어졌을 때만 깎는다
-    조건 = 'if 지음 and 지음.get("루틴"):'
+    # 지어졌고, 짓는 동안 요청이 끊기지 않았을 때만 깎는다 (끊겼으면 화면에는 이미 실패가 나갔다)
+    조건 = 'if 지음 and 지음.get("루틴") and 아직_받을_수_있다(시작, method, "/recommend/routines"):'
     assert 조건 in src
     깎는줄 = [l for l in src.splitlines() if "billing.spend" in l]
     assert len(깎는줄) == 1, 깎는줄

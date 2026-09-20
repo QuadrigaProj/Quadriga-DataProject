@@ -59,6 +59,66 @@ GRIP_ITEM = "상대악력"
 CARDIO_ITEM = {"성인": "왕복오래달리기", "어르신": "2분제자리걷기", "성장기": "왕복오래달리기"}
 CARDIO_NO_AGE = {"성장기"}          # 심폐를 환산나이로 바꾸지 않는 연령군 (또래비교에는 들어간다)
 
+# 성장기 근지구력 — 공식 항목(윗몸말아올리기 item_f009 · 반복점프 item_f010)이 아직 분포 파일에 없다.
+# 대신 국민체력100 인증기준의 등급 기준 값을 쓴다 (문화체육관광부고시 제2025-27호 「체력인증의 등급별 기준과
+# 절차에 관한 규정」 별표2·별표5, https://nfa.kspo.or.kr 인증기준 표와 같다). 같은 고시 제6조에 따라
+# 1·2·3등급은 또래 상위 30·50·70% — 곧 성별·나이별 백분위 70·50·30 의 값 세 개다.
+#   만 11~12세(유소년)  윗몸말아올리기(회) — 3초에 한 번 울리는 신호에 맞춰, 박자를 놓칠 때까지
+#   만 13~18세(청소년)  반복점프(회) — 30cm 장애물을 두 발로 30초 동안 좌우로 넘은 횟수
+#                       (공식은 윗몸말아올리기와 택1. 집에서 혼자 재기 쉬운 쪽을 골랐다)
+# 값은 (1등급, 2등급, 3등급) = (P70, P50, P30). 원자료로 분포를 만들면 이 표는 분포로 바꾼다.
+GROWTH_ENDURANCE = {
+    "윗몸말아올리기": {
+        "M": {11: (36, 26, 19), 12: (35, 27, 19)},
+        "F": {11: (36, 26, 18), 12: (35, 27, 19)},
+    },
+    "반복점프": {
+        "M": {13: (44, 39, 33), 14: (48, 42, 36), 15: (50, 44, 38),
+              16: (50, 45, 39), 17: (50, 44, 38), 18: (52, 46, 40)},
+        "F": {13: (31, 27, 22), 14: (34, 28, 23), 15: (35, 29, 24),
+              16: (34, 28, 22), 17: (33, 27, 21), 18: (36, 29, 23)},
+    },
+}
+GROWTH_ENDURANCE_SOURCE = "국민체력100 인증기준 (문체부고시 제2025-27호)"
+
+
+def growth_endurance_item(age: float) -> str:
+    """성장기 근지구력으로 재는 항목 — 만 12세까지 윗몸말아올리기, 13세부터 반복점프."""
+    return "윗몸말아올리기" if age < 13 else "반복점프"
+
+
+def growth_endurance_stats(sex: str, age: float, value: float) -> dict | None:
+    """성장기 근지구력 기록을 공식 등급 기준에 견준다 → 등급과 또래 백분위(어림).
+
+    기준이 세 점(P30·P50·P70)뿐이라 그 사이는 직선으로 잇고, 양 끝은 이웃 구간의 기울기로 늘려
+    5~95 안에서 자른다. 분포에서 바로 읽는 다른 항목과 달리 어림값이라 '어림' 을 함께 준다.
+    """
+    item = growth_endurance_item(age)
+    by_age = GROWTH_ENDURANCE[item].get(sex)
+    if not by_age:
+        return None
+    cuts = by_age.get(min(max(int(age), min(by_age)), max(by_age)))
+    if not cuts:
+        return None
+    c1, c2, c3 = (float(c) for c in cuts)
+    if value >= c2:
+        pct = 50 + 20 * (value - c2) / max(c1 - c2, 1.0)
+    else:
+        pct = 50 - 20 * (c2 - value) / max(c2 - c3, 1.0)
+    등급 = 1 if value >= c1 else 2 if value >= c2 else 3 if value >= c3 else None
+    return {
+        "항목": item,
+        "내기록": round(float(value), 1),
+        "또래중앙값": c2,                       # 2등급 기준 = 또래 상위 50%
+        "백분위": round(float(np.clip(pct, 5, 95)), 1),
+        "등급": 등급,
+        "어림": True,
+        "근거": GROWTH_ENDURANCE_SOURCE,
+        "표본수": 0,                            # 표본에서 읽은 값이 아니다 — 종합 등수의 '몇 명 중' 에는 세지 않는다
+        "비교구간": str(int(age)),
+    }
+
+
 # 성장기는 나이가 많을수록 기록이 좋아진다. 성인·어르신과 방향이 반대라
 # "체력나이가 높다 = 나쁘다" 가 성립하지 않는다. 화면에서는 발달 수준으로 읽는다.
 GROWTH = "성장기"
@@ -236,7 +296,7 @@ def peer_stats(d: pd.DataFrame, age_gbn: str, sex: str, age: float,
 
 def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
                 flexibility=None, strength=None, bmi=None,
-                grip=None, endurance=None) -> dict:
+                grip=None, endurance=None, muscle_endurance=None) -> dict:
     """측정한 항목별로 또래 비교를 붙인다.
 
     각 인자가 실제로 온 것(_given)일 때만 그 항목의 또래비교를 만든다 —
@@ -261,6 +321,10 @@ def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
         r = peer_stats(d, age_gbn, sex, age, cardio, endurance)
         if r:
             out["심폐지구력"] = r
+    if _given(muscle_endurance) and age_gbn == GROWTH:      # 성인·어르신의 근지구력은 strength 가 맡는다
+        r = growth_endurance_stats(sex, age, muscle_endurance)
+        if r:
+            out["근지구력"] = r
     if _given(bmi):
         # BMI 는 U자형이라 "상위 몇 %" 가 성립하지 않는다.
         # 백분위 없이 또래 중앙값과의 차이만 준다.

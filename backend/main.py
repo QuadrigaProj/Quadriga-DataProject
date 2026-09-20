@@ -242,6 +242,10 @@ class MeasureIn(ServiceAgeIn):
         None, ge=0,
         description="심폐지구력: 성인·성장기=왕복오래달리기(회, 11~12세는 15m · 13세부터 20m), "
                     "어르신=2분제자리걷기(회). 성장기는 나이로 환산하지 않고 또래 백분위만 준다")
+    muscle_endurance: float | None = Field(
+        None, ge=0,
+        description="성장기 근지구력: 만 11~12세=윗몸말아올리기(회), 만 13~18세=반복점프(30초, 회). "
+                    "공식 등급 기준으로 또래 순위를 어림해 또래비교에만 준다. 성인·어르신은 strength 를 쓴다")
 
 
 class EtaIn(MeasureIn):
@@ -324,7 +328,8 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
     if body.age is not None:
         peers = fa.peer_report(_dist, body.age_gbn, body.sex, body.age,
                                flexibility=body.flexibility, strength=body.strength,
-                               bmi=bmi, grip=grip, endurance=body.endurance)
+                               bmi=bmi, grip=grip, endurance=body.endurance,
+                               muscle_endurance=body.muscle_endurance)
 
     약점 = fa.weakest_link(result)
 

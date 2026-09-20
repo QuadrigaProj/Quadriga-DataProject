@@ -1105,6 +1105,17 @@
   .style-code{ font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif; font-size:40px; font-weight:700; letter-spacing:.08em; line-height:1; color:var(--pine-deep); }
   .style-code-sub{ font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.45; }
   .style-kind{ font-size:13px; font-weight:700; color:var(--pine-deep); margin:-4px 0 8px; }
+  /* 얼마나 그런지 단계로 답하는 문항 — 동그라미 다섯 개. 양 끝이 크고 가운데가 작다 */
+  .style-scale{ margin-top:26px; }
+  .style-scale-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .style-dot{ flex:none; border-radius:50%; border:2.5px solid var(--pine); background:var(--paper); cursor:pointer; padding:0; }
+  .style-dot.s0, .style-dot.s4{ width:58px; height:58px; } .style-dot.s1, .style-dot.s3{ width:48px; height:48px; } .style-dot.s2{ width:38px; height:38px; }
+  .style-dot.s0, .style-dot.s1{ border-color:var(--clay); } .style-dot.s2{ border-color:var(--muted); }
+  .style-dot.selected.s0, .style-dot.selected.s1{ background:var(--clay); } .style-dot.selected.s2{ background:var(--muted); }
+  .style-dot.selected.s3, .style-dot.selected.s4{ background:var(--pine); }
+  .style-scale-ends{ display:flex; justify-content:space-between; margin-top:12px; font-size:13.5px; font-weight:700; }
+  .style-scale-ends span:first-child{ color:var(--clay); } .style-scale-ends span:last-child{ color:var(--pine-deep); }
+  .style-scale-now{ text-align:center; min-height:1.5em; margin-top:14px; font-size:14px; color:var(--muted); }
   .style-axes{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
   .style-axis-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); }
   .style-axis-head b{ font-size:14px; color:var(--ink); }
@@ -7376,6 +7387,16 @@ function renderStyleQuestion(){
   $('styleQNo').textContent = `${styleIdx + 1} / ${qs.length}`;
   $('styleQ').textContent = q.질문;
   const picked = styleAnswers[styleIdx];
+  // 얼마나 그런지 단계로 답하는 문항은 동그라미 다섯 개로 — 양 끝에 말을 적고, 고른 단계의 말은 아래에 보여 준다
+  if (q.모양 === '척도') {
+    $('styleChoices').innerHTML = `<div class="style-scale" role="radiogroup" aria-label="${q.질문}">
+      <div class="style-scale-row">${q.선택지.map((c, i) => `
+        <button type="button" class="style-dot s${i}${picked === i ? ' selected' : ''}" role="radio" aria-checked="${picked === i}"
+                aria-label="${c}" title="${c}" onclick="styleAnswer(${i})"></button>`).join('')}</div>
+      <div class="style-scale-ends"><span>${q.선택지[0]}</span><span>${q.선택지[q.선택지.length - 1]}</span></div>
+      <div class="style-scale-now">${picked != null ? q.선택지[picked] : '얼마나 그런지 골라 주세요'}</div></div>`;
+    return;
+  }
   $('styleChoices').innerHTML = q.선택지.map((c, i) => `
     <button type="button" class="purpose-card${picked === i ? ' selected' : ''}" onclick="styleAnswer(${i})">
       <div><div class="purpose-title">${c}</div></div>

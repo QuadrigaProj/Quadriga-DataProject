@@ -37,19 +37,42 @@ PURPOSE_KEY = {
 
 _data: dict | None = None
 
+# 얼마나 그런지를 묻는 문항의 다섯 단계 — 모든 척도 문항이 같은 말을 쓴다
+SCALE_STEPS = ["전혀 아니에요", "아닌 편이에요", "반반이에요", "그런 편이에요", "정말 그래요"]
+
+
+def _expand_scale(q: dict) -> dict:
+    """"척도": {축: [단계별 점수 5개]} 로 적은 문항을 선택지 다섯 개로 편다 — 채점은 선택지 문항과 똑같이 한다."""
+    spec = q.get("척도")
+    if not spec:
+        return q
+    for axis, vals in spec.items():
+        if len(vals) != len(SCALE_STEPS):
+            raise ValueError(f"{q['id']} 의 {axis} 점수는 {len(SCALE_STEPS)}개여야 해요")
+    choices = [{"글": label, "점수": {a: v[i] for a, v in spec.items() if v[i]}}
+               for i, label in enumerate(SCALE_STEPS)]
+    return {**q, "선택지": choices, "모양": "척도"}
+
 
 def load() -> dict:
-    """테스트 데이터를 한 번만 읽어 캐시한다."""
+    """테스트 데이터를 한 번만 읽어 캐시한다. 척도 문항은 이때 선택지로 펴 둔다."""
     global _data
     if _data is None:
-        _data = json.loads(find_data("style_test.json").read_text(encoding="utf-8"))
+        raw = json.loads(find_data("style_test.json").read_text(encoding="utf-8"))
+        raw["문항"] = [_expand_scale(q) for q in raw["문항"]]
+        _data = raw
     return _data
 
 
 def questions() -> list[dict]:
-    """화면이 그대로 그릴 문항 — 점수는 빼고 글만 준다."""
-    return [{"id": q["id"], "질문": q["질문"], "선택지": [c["글"] for c in q["선택지"]]}
-            for q in load()["문항"]]
+    """화면이 그대로 그릴 문항 — 점수는 빼고 글만 준다. 척도 문항은 "모양": "척도" 가 붙는다(동그라미 다섯 개로 그린다)."""
+    out = []
+    for q in load()["문항"]:
+        item = {"id": q["id"], "질문": q["질문"], "선택지": [c["글"] for c in q["선택지"]]}
+        if q.get("모양"):
+            item["모양"] = q["모양"]
+        out.append(item)
+    return out
 
 
 def result_types() -> list[dict]:

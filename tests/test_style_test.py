@@ -17,15 +17,16 @@ from backend import style_test as st           # noqa: E402
 c = TestClient(app)
 
 # 유형별로 그 유형다운 사람의 답 20개(설계 시 확인). 채점 데이터가 바뀌면 여기도 같이 고친다.
+# 척도 문항(q4 · q7 · q9 · q13 · q14 · q15)은 0 = 전혀 아니에요 … 4 = 정말 그래요, q2(시간)는 0 = 10분 … 4 = 1시간 넘게.
 KNOWN = {
-    "runner":  [0, 2, 0, 2, 2, 3, 0, 0, 1, 0, 3, 0, 0, 2, 2, 1, 0, 3, 2, 0],
-    "builder": [1, 2, 0, 0, 2, 2, 0, 3, 1, 1, 2, 0, 1, 2, 2, 0, 1, 0, 2, 1],
-    "team":    [0, 1, 2, 2, 1, 0, 1, 2, 0, 2, 0, 1, 0, 2, 0, 1, 2, 2, 1, 3],
-    "racket":  [1, 1, 1, 0, 1, 0, 0, 2, 0, 1, 0, 1, 1, 2, 1, 0, 2, 0, 0, 3],
-    "rhythm":  [0, 1, 1, 0, 1, 1, 1, 2, 0, 1, 1, 2, 1, 0, 1, 2, 2, 0, 3, 3],
-    "balance": [2, 1, 0, 0, 1, 1, 2, 1, 2, 1, 1, 3, 1, 1, 2, 2, 3, 1, 3, 2],
-    "walker":  [2, 1, 1, 2, 0, 3, 2, 1, 2, 0, 3, 3, 1, 1, 2, 1, 3, 1, 3, 2],
-    "quick":   [1, 0, 0, 0, 0, 0, 1, 0, 2, 3, 0, 0, 2, 0, 2, 3, 1, 0, 0, 3],
+    "runner":  [0, 4, 0, 4, 2, 3, 4, 0, 0, 0, 3, 0, 4, 0, 0, 1, 0, 3, 2, 0],
+    "builder": [1, 4, 0, 0, 2, 2, 4, 3, 0, 1, 2, 0, 1, 0, 0, 0, 1, 0, 2, 1],
+    "team":    [0, 2, 2, 4, 1, 0, 2, 2, 4, 2, 0, 1, 4, 0, 4, 1, 2, 2, 1, 3],
+    "racket":  [1, 2, 1, 0, 1, 0, 4, 2, 4, 1, 0, 1, 1, 0, 1, 0, 2, 0, 0, 3],
+    "rhythm":  [0, 2, 1, 0, 1, 1, 2, 2, 4, 1, 1, 2, 1, 4, 1, 2, 2, 0, 3, 3],
+    "balance": [2, 2, 0, 0, 1, 1, 0, 1, 2, 1, 1, 3, 1, 3, 0, 2, 3, 1, 3, 2],
+    "walker":  [2, 2, 1, 4, 0, 3, 0, 1, 2, 0, 3, 3, 2, 3, 0, 1, 3, 1, 3, 2],
+    "quick":   [1, 0, 0, 0, 0, 0, 2, 0, 2, 3, 0, 0, 0, 4, 0, 3, 1, 0, 0, 3],
 }
 
 
@@ -46,11 +47,39 @@ def test_문항이_나온다():
     assert len({q["id"] for q in qs}) == 20
     for q in qs:
         assert q["질문"]
-        assert 2 <= len(q["선택지"]) <= 4
+        assert 2 <= len(q["선택지"]) <= 5
         assert all(isinstance(x, str) and x for x in q["선택지"])
         assert "점수" not in q                      # 채점 기준은 서버만 안다
     assert body["유형"]
     assert all("가중치" not in t for t in body["유형"])
+
+
+def test_단계로_답하는_문항은_척도로_나온다():
+    """얼마나 그런지 단계로 답할 수 있는 문항은 고르기가 아니라 다섯 단계 척도다 (예현 요청).
+    데이터에는 "척도": {축: [점수 5개]} 로 적고, 서버가 읽을 때 선택지 다섯 개로 편다 — 채점은 다른 문항과 똑같다."""
+    raw = st.load()["문항"]
+    척도 = [q for q in raw if q.get("모양") == "척도"]
+    assert len(척도) >= 6
+    for q in 척도:
+        assert [x["글"] for x in q["선택지"]] == st.SCALE_STEPS == ["전혀 아니에요", "아닌 편이에요", "반반이에요", "그런 편이에요", "정말 그래요"]
+        assert q["질문"].endswith("요.")                       # 물음이 아니라 '나는 이래요' 라는 말이어야 단계로 답할 수 있다
+        for axis, vals in q["척도"].items():
+            assert len(vals) == 5
+            assert vals == sorted(vals) or vals == sorted(vals, reverse=True), (q["id"], axis)   # 단계가 오를수록 한쪽으로만 움직인다
+    # 화면에는 모양만 간다 — 점수는 가지 않는다
+    api = {q["id"]: q for q in c.get("/style-test").json()["문항"]}
+    for q in 척도:
+        assert api[q["id"]]["모양"] == "척도" and "척도" not in api[q["id"]] and "점수" not in api[q["id"]]
+    assert "모양" not in api["q6"]                              # 장면을 고르는 문항은 그대로 고르기다
+    # 같은 문항에서 단계가 오르면 그 축 점수도 오른다
+    낮음, 높음 = list(KNOWN["balance"]), list(KNOWN["balance"])
+    i = [q["id"] for q in raw].index("q7")
+    낮음[i], 높음[i] = 0, 4
+    assert st.axis_scores(높음)["강도"] > st.axis_scores(낮음)["강도"]
+    html = c.get("/").text
+    그림 = html.split("function renderStyleQuestion()")[1].split("\n}")[0]
+    assert "if (q.모양 === '척도') {" in 그림 and 'role="radiogroup"' in 그림 and 'class="style-dot s${i}' in 그림
+    assert "onclick=\"styleAnswer(${i})\"" in 그림
 
 
 def test_유형은_6개에서_8개():
@@ -205,7 +234,8 @@ def test_유형마다_대표_그림이_있다():
     """결과 화면과 공유 카드의 얼굴. 유형을 더하고 그림을 빠뜨리면 그 유형만 그림 없이 나온다."""
     art = c.get("/js/style-art.js").text
     for t in st.load()["유형"]:
-        assert f"    {t['id']}: `" in art and f"    {t['id']}:" in art.split("const TONE = {")[1].split("};")[0], t["id"]
+        assert f"    {t['id']}: () =>" in art and f"    {t['id']}:" in art.split("const TONE = {")[1].split("};")[0], t["id"]
+    assert "function chibi(id, o)" in art                     # 여덟 명이 같은 얼굴 틀을 쓴다 — 한 식구로 보이게
     assert "function svg(id, size = 160, label = '')" in art and "function image(id, size = 400)" in art
     assert "'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s)" in art       # canvas 에 그릴 수 있게
 

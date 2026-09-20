@@ -1363,6 +1363,8 @@ class RecommendIn(BaseModel):
     style_purpose: str | None = None
     purpose: str | None = Field(None, description="사용자가 고른 운동 단계(목적) — 권장 용량을 여기에 맞춘다")
     sports: list[str] = Field(default_factory=list, max_length=100)
+    areas: list[str] = Field(default_factory=list, max_length=10,
+                             description="다이어트에서 고른 관리 부위(팔 · 뱃살 …). 그 부위를 쓰는 동작이 든 루틴을 앞에 세운다")
     target_gap: float | None = None
     limit: int = Field(12, ge=1, le=80)
     week: int = Field(1, ge=1, le=13)
@@ -1395,6 +1397,7 @@ def get_recommend_routines(
     style_purpose: str | None = Query(None, description="운동 스타일 테스트가 고른 목적"),
     purpose: str | None = Query(None, description="사용자가 고른 운동 단계(목적) — 권장 용량을 여기에 맞춘다"),
     sports: str | None = Query(None, description="쉼표 구분한 종목 id"),
+    areas: str | None = Query(None, description="쉼표 구분. 다이어트에서 고른 관리 부위 (팔 · 뱃살 · 옆구리 · 등 · 엉덩이 · 허벅지 · 종아리)"),
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
     limit: int = Query(12, ge=1, le=80, description="난이도를 오갈 수 있게 넉넉히 준다. 80이면 전부다 (목적 8 × 10)"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
@@ -1412,6 +1415,7 @@ def get_recommend_routines(
         weak=[w.strip() for w in (weak or "").split(",") if w.strip()],
         style_purpose=style_purpose, purpose=purpose,
         sports=[s.strip() for s in (sports or "").split(",") if s.strip()],
+        areas=[a.strip() for a in (areas or "").split(",") if a.strip()],
         target_gap=target_gap, limit=limit, week=week, ai=ai,
         real_age=real_age, token=quadriga_session)
 
@@ -1426,7 +1430,7 @@ def post_recommend_routines(body: RecommendIn,
     """
     return _recommend(
         age_gbn=body.age_gbn, weak=body.weak, style_purpose=body.style_purpose,
-        purpose=body.purpose, sports=body.sports, target_gap=body.target_gap, limit=body.limit,
+        purpose=body.purpose, sports=body.sports, areas=body.areas, target_gap=body.target_gap, limit=body.limit,
         week=body.week, ai=body.ai, real_age=body.real_age,
         token=quadriga_session, busy=body.바쁜시간,
         life_kind=_life_kinds(body.상태),
@@ -1444,7 +1448,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                life_kind: list[str] | str | None = None,
                profile: dict | None = None,
                adjust: str | None = None, previous: dict | None = None,
-               purpose: str | None = None) -> dict:
+               purpose: str | None = None, areas: list[str] | None = None) -> dict:
     """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
 
     purpose 는 사용자가 고른 운동 단계 — AI 가 권장 용량(backend/dose.py)을 거기에 맞춘다.
@@ -1463,7 +1467,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
     picked = list(sports)
     try:
         out = rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
-                          sports=picked, target_gap=target_gap, limit=limit, week=week)
+                          sports=picked, target_gap=target_gap, limit=limit, week=week, areas=areas)
     except (KeyError, FileNotFoundError) as e:
         raise HTTPException(404, str(e))
 
@@ -1509,6 +1513,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 "조심할 부위": out.get("조심할부위") or [],
                 "운동 스타일 테스트가 고른 목적": style_purpose,
                 "고른 운동 단계": purpose,
+                "관리하고 싶은 부위": 참고.get("관리부위") or [],
                 "목표 체력나이까지 남은 세": target_gap,
                 "프로그램 주차": week,
                 "강도": out.get("강도"),

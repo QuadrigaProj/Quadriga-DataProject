@@ -162,6 +162,15 @@
     border:1.5px solid var(--line); background:var(--paper); cursor:pointer; text-align:left;
   }
   .purpose-card.selected{ border-color:var(--pine); background:var(--pine-tint); }
+  /* 다이어트를 고르면 그 아래에 펼쳐지는 '관리하고 싶은 부위' */
+  .diet-areas{ border:1.5px solid var(--pine); border-radius:16px; padding:14px 16px 16px; background:var(--paper); }
+  .diet-areas-head{ font-size:14.5px; font-weight:700; }
+  .diet-areas-head span{ font-size:12.5px; font-weight:500; color:var(--muted); margin-left:6px; }
+  .diet-area-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .diet-area{ min-height:42px; padding:0 16px; border-radius:21px; border:1.5px solid var(--line); background:var(--paper);
+    font-family:inherit; font-size:14px; font-weight:600; color:var(--ink); cursor:pointer; }
+  .diet-area[aria-pressed="true"]{ background:var(--pine); border-color:var(--pine); color:#fff; }
+  .diet-areas-note{ font-size:12.5px; color:var(--muted); line-height:1.55; margin:12px 0 0; }
   .purpose-icon{
     width:42px; height:42px; border-radius:12px; background:var(--bg); display:flex; align-items:center;
     justify-content:center; font-size:20px; flex-shrink:0;
@@ -1842,6 +1851,11 @@
           <div><div class="purpose-title">다이어트</div><div class="purpose-desc">체지방 감량과 활동량 증진</div></div>
           <div class="check-mark"></div>
         </button>
+        <div class="diet-areas" id="dietAreaBox" hidden>
+          <div class="diet-areas-head" id="dietAreaHead">관리하고 싶은 부위가 있나요?<span>여러 개 고를 수 있어요 · 안 골라도 돼요</span></div>
+          <div class="diet-area-chips" id="dietAreaChips" role="group" aria-labelledby="dietAreaHead"></div>
+          <p class="diet-areas-note">살은 부위별로 따로 빠지지 않아요. 전신 운동으로 빼면서, 고른 부위의 근육을 쓰는 동작이 든 루틴을 먼저 추천해 드려요.</p>
+        </div>
         <button class="purpose-card" data-p="basic" onclick="selectPurpose('basic')">
           <div class="purpose-icon">🌿</div>
           <div><div class="purpose-title">기초 체력 증진</div><div class="purpose-desc">전반적인 체력의 균형 향상</div></div>
@@ -2519,6 +2533,7 @@ const state = {
   age: null, sex: 'M', ageGbn: '성인',
   flexibility: null, strength: null, height: null, weight: null,
   purpose: null,
+  dietAreas: [],       // 다이어트를 골랐을 때 관리하고 싶은 부위 (여러 개) — 루틴 추천이 그 부위를 쓰는 동작을 앞세운다
   targetAge: null,     // 사용자가 정한 목표 체력나이 (로고 초록 구간)
   method: 'home',      // 측정 방식: home | inbody (self 모드는 없앴다 — 저장된 'self' 는 applyProfile 에서 home 으로)
   result: null,        // /fitness-age 또는 /hometest 결과
@@ -3168,7 +3183,7 @@ function snapshot(){
     gripKg: state.gripKg, endurance: state.endurance, muscleEndurance: state.muscleEndurance,
     calcVer: state.calcVer, strengthFrom30s: state.strengthFrom30s,
     longJump: state.longJump, shuttle10m: state.shuttle10m, target3m: state.target3m, figure8: state.figure8,
-    purpose: state.purpose, method: state.method,
+    purpose: state.purpose, dietAreas: state.dietAreas, method: state.method,
     targetAge: state.targetAge,
     first: state.first, result: state.result,
     programStart: state.programStart, routineLog: state.routineLog,
@@ -3288,6 +3303,7 @@ function applyProfile(saved){
   state.endurance = saved?.endurance ?? null;
   state.muscleEndurance = saved?.muscleEndurance ?? null;
   ['longJump', 'shuttle10m', 'target3m', 'figure8'].forEach(k => { state[k] = saved?.[k] ?? null; });
+  state.dietAreas = Array.isArray(saved?.dietAreas) ? saved.dietAreas.filter(a => DIET_AREAS.includes(a)) : [];
   state.calcVer = saved ? (Number(saved.calcVer) || 1) : CALC_VER;      // 표시가 없는 저장본은 옛 기준(1)이다
   state.strengthFrom30s = !!saved?.strengthFrom30s;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
@@ -3425,6 +3441,7 @@ async function doDelete(){
   state.result = null;
   state.first = null;
   state.purpose = null;
+  state.dietAreas = [];
   state.history = [];
   state.measureLog = [];
   state.workoutLog = [];
@@ -3455,6 +3472,7 @@ async function logout(){
   state.result = null;
   state.first = null;
   state.purpose = null;
+  state.dietAreas = [];
   state.programStart = null;
   state.routineLog = [];
   state.history = [];
@@ -3499,6 +3517,7 @@ async function resetSettings(){
   state.result = null;
   state.first = null;
   state.purpose = null;
+  state.dietAreas = [];
   state.programStart = null;
   state.routineLog = [];
   state.history = [];
@@ -5751,6 +5770,28 @@ function renderPurpose(){
     c.classList.toggle('selected', c.dataset.p === state.purpose);
   });
   $('nextBtn2').disabled = !state.purpose;
+  renderDietAreas();
+}
+
+/* 다이어트를 고르면 관리하고 싶은 부위도 고른다 — 여러 개, 안 골라도 된다 (예현 요청).
+   부위 이름은 서버(backend/recommend.py 의 FOCUS_AREAS)와 같아야 한다: 서버는 모르는 이름을 버린다.
+   고른 부위는 루틴 추천(무료 · AI)으로 간다. 다른 목적으로 바꿔도 지우지 않는다 — 다시 다이어트로 오면 그대로 있다. */
+const DIET_AREAS = ['팔', '뱃살', '옆구리', '등', '엉덩이', '허벅지', '종아리'];
+function dietAreas(){ return state.purpose === 'diet' ? (state.dietAreas || []) : []; }     // 추천에 보낼 값 — 다이어트일 때만
+function renderDietAreas(){
+  const box = $('dietAreaBox');
+  if (!box) return;
+  box.hidden = state.purpose !== 'diet';
+  $('dietAreaChips').innerHTML = DIET_AREAS.map(a =>
+    `<button type="button" class="diet-area" aria-pressed="${(state.dietAreas || []).includes(a)}" onclick="toggleDietArea('${a}')">${a}</button>`).join('');
+}
+function toggleDietArea(a){
+  const have = new Set(state.dietAreas || []);
+  have.has(a) ? have.delete(a) : have.add(a);
+  state.dietAreas = DIET_AREAS.filter(x => have.has(x));      // 늘 같은 순서로
+  state.aiRoutine = null;        // 부위를 바꿨으면 AI 가 지은 루틴의 전제가 달라진 것이다 (목적을 바꿀 때와 같다)
+  saveProfile();
+  renderDietAreas();
 }
 
 /* ---- 화면 3 : 홈 ---- */
@@ -8494,6 +8535,7 @@ async function fetchRecommend(ai){
           weak: 약점,
           style_purpose: state.styleTest?.result?.추천목적 || null,
           purpose: PURPOSE_TO_KO[state.purpose] || null,                 // 고른 운동 단계 — 권장 용량이 여기에 맞춰진다
+          areas: dietAreas(),                                            // 다이어트에서 고른 관리 부위
           sports: state.sports || [],
           target_gap: 목표격차,
           week: programWeek(),
@@ -8515,6 +8557,7 @@ async function fetchRecommend(ai){
           weak: 약점.join(','),
           style_purpose: state.styleTest?.result?.추천목적 || null,
           purpose: PURPOSE_TO_KO[state.purpose] || null,
+          areas: dietAreas().join(','),
           sports: (state.sports || []).join(','),
           target_gap: 목표격차,
           week: programWeek(),

@@ -1064,6 +1064,10 @@
   .btn-guest:hover{ background:var(--pine-tint); }
   .guest-alt{ display:inline-block; margin-top:12px; font-size:12.5px;
               color:var(--pine-deep); text-decoration:underline; }
+  /* 가입 없이 쓰기 — 닉네임 한 칸 */
+  .nick-box{ margin-top:26px; }
+  .nick-title{ font-size:16px; font-weight:700; margin-bottom:12px; }
+  .nick-note{ font-size:12.5px; color:var(--muted); line-height:1.55; margin:12px 0 0; }
 
   /* ---- 게스트 안내 배너 (프로필 화면) ---- */
   .guest-banner{
@@ -1620,11 +1624,23 @@
         <button class="btn btn-primary" style="margin-top:14px;" id="authBtn"
                 onclick="submitAuth()">이메일로 시작하기</button>
         <div class="guest-box">
-          <button type="button" class="btn btn-guest" onclick="enterAsGuest()">
+          <button type="button" class="btn btn-guest" onclick="localOnly()">
             가입 없이 이 기기에서만 써볼게요</button>
-          <a href="#" class="guest-alt" onclick="localOnly();return false;">
-            닉네임을 정해서 시작할래요 →</a>
         </div>
+      </div>
+
+      <!-- 가입 없이 쓰기 — 닉네임만 정하면 바로 시작한다 -->
+      <div class="nick-box" id="nickBox" hidden>
+        <div class="nick-title">닉네임만 정하면 바로 시작해요</div>
+        <div class="field-row" style="margin-top:0;">
+          <input class="field-input" id="nickInput" type="text" placeholder="닉네임" maxlength="20"
+                 autocomplete="nickname" enterkeyhint="go"
+                 onkeydown="if(event.key==='Enter')loginLocal()" />
+        </div>
+        <div class="login-err" id="nickErr"></div>
+        <button class="btn btn-primary" style="margin-top:14px;" onclick="loginLocal()">이 기기에서 시작하기</button>
+        <p class="nick-note">기록은 이 브라우저에만 저장돼요. 나중에 계정을 만들면 지금 기록을 그대로 옮길 수 있어요.</p>
+        <a href="#" class="guest-alt" onclick="localOnly(false);return false;">← 로그인 · 회원가입으로 돌아가기</a>
       </div>
 
       <div class="profile-list" id="profileList" style="display:none;"></div>
@@ -2023,7 +2039,7 @@
       </div>
 
       <div class="guest-banner" id="guestBanner" style="display:none;">
-        <b>지금은 게스트로 쓰고 있어요</b>
+        <b>지금은 이 기기에서만 쓰고 있어요</b>
         기록이 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 기기에서 열면
         지금까지의 기록은 보이지 않아요. 계정을 만들면 <b style="display:inline">지금 기록 그대로</b>
         옮겨서 어디서든 이어볼 수 있습니다.
@@ -2767,10 +2783,8 @@ function $(id) { return document.getElementById(id); }
 const PROVIDER_LABEL = {
   google: '구글로 로그인', naver: '네이버로 로그인', kakao: '카카오로 로그인',
   password: '이메일로 로그인',
-  device: '이 기기에만 저장', guest: '게스트 · 이 기기에만 저장',
+  device: '이 기기에만 저장',
 };
-const GUEST_NAME = '게스트';
-const LOCAL_MODES = new Set(['device', 'guest']);
 const SEX_LABEL = { M: '남성', F: '여성' };
 
 /* 로고를 누르면 돌아갈 곳. 점검 결과가 있으면 홈, 없으면 첫 점검. */
@@ -3128,7 +3142,7 @@ async function enterAsAccount(name, provider){
     try {
       await API.pushMeasurement(carryOver);
       latest = carryOver;
-      setStatus('게스트로 쌓은 기록을 계정으로 옮겼어요');
+      setStatus('이 기기에 쌓은 기록을 계정으로 옮겼어요');
       setTimeout(() => setStatus(''), 4000);
     } catch (e) { /* 실패하면 그냥 새 계정으로 시작한다 */ }
   }
@@ -3136,16 +3150,16 @@ async function enterAsAccount(name, provider){
   applyProfile(latest);
 }
 
-function localOnly(){
-  $('socialBox').style.display = 'none';
-  document.querySelector('.divider').style.display = 'none';
-  $('tabLogin').parentElement.style.display = 'none';
-  $('authEmail').placeholder = '닉네임';
-  $('authEmail').type = 'text';
-  $('authPw').parentElement.style.display = 'none';
-  $('authBtn').textContent = '이 기기에서 시작하기';
-  $('authBtn').setAttribute('onclick', 'loginLocal()');
-  $('loginErr').style.display = 'none';
+/* 가입 없이 쓰기 — '이 기기에서만 써볼게요' 를 누르면 로그인 칸들을 접고 닉네임 한 칸만 남긴다.
+   닉네임만 넣으면 바로 시작한다. localOnly(false) 는 원래 로그인 화면으로 되돌린다.
+   (예전에는 이 버튼이 닉네임 없이 '게스트' 로 들어갔고, 닉네임은 아래 링크를 따로 눌러야 정할 수 있었다) */
+function localOnly(on = true){
+  ['socialBox', 'socialHint'].forEach(id => { $(id).style.display = on ? 'none' : ''; });
+  document.querySelector('#s0 .divider').style.display = on ? 'none' : '';
+  document.querySelector('#s0 .login-form').style.display = on ? 'none' : '';
+  $('nickBox').hidden = !on;
+  $('nickErr').style.display = 'none';
+  if (on) $('nickInput').focus();
 }
 
 const STORE_KEY = 'quadriga.profiles';
@@ -3350,9 +3364,9 @@ function renderProfileList(){
       ? `${p.ageGbn === '성장기' ? '발달 수준' : '체력나이'} ${Math.round(p.result.체력나이)}세 · ${p.updated}`
       : '첫 점검 전';
     return `<div class="profile-item">
-      <div class="profile-avatar">${n.trim()[0] || '?'}</div>
+      <div class="profile-avatar">${esc(n.trim()[0] || '?')}</div>
       <div style="flex:1;min-width:0;" onclick="loginLocal(${JSON.stringify(n).replace(/"/g,'&quot;')})">
-        <div class="profile-name">${n}</div>
+        <div class="profile-name">${esc(n)}</div>
         <div class="profile-meta">${meta}</div>
       </div>
       <button class="profile-del" onclick="removeProfile(${JSON.stringify(n).replace(/"/g,'&quot;')})">삭제</button>
@@ -3365,17 +3379,6 @@ function removeProfile(name){
   delete all[name];
   writeProfiles(all);
   renderProfileList();
-}
-
-/* 게스트 — 닉네임도 안 묻고 바로 들어간다.
-   같은 브라우저에서 다시 들어오면 이전 게스트 기록을 그대로 이어받는다. */
-function enterAsGuest(){
-  $('loginErr').style.display = 'none';
-  state.user = GUEST_NAME;
-  state.account = false;
-  state.provider = 'guest';
-  applyProfile(readProfiles()[GUEST_NAME]);
-  saveProfile();
 }
 
 /* 게스트/기기 프로필 → 계정으로. 지금 기록을 들고 로그인 화면으로 돌아간다. */
@@ -3396,8 +3399,14 @@ function authNotice(msg){
 }
 
 function loginLocal(name){
-  const id = (name !== undefined ? name : $('authEmail').value).trim();
-  if (!id) return authError('닉네임을 입력해주세요.');
+  const id = (name !== undefined ? name : $('nickInput').value).trim();
+  if (!id) {                                     // 닉네임 칸의 안내는 그 칸 아래에 띄운다 (로그인 칸들은 접혀 있다)
+    $('nickErr').textContent = '닉네임을 입력해주세요.';
+    $('nickErr').style.display = 'block';
+    $('nickInput').focus();
+    return;
+  }
+  $('nickErr').style.display = 'none';
   $('loginErr').style.display = 'none';
   state.user = id;
   state.account = false;
@@ -3441,6 +3450,8 @@ async function doDelete(){
   state.styleTest = null;
   $('authEmail').value = '';
   $('authPw').value = '';
+  $('nickInput').value = '';
+  localOnly(false);
   renderProfileList();
   goTo('s0');
 }
@@ -3475,6 +3486,8 @@ async function logout(){
   state.styleTest = null;
   $('authEmail').value = '';
   $('authPw').value = '';
+  $('nickInput').value = '';
+  localOnly(false);
   renderProfileList();
   goTo('s0');
 }
@@ -3519,6 +3532,8 @@ async function resetSettings(){
   $('flexInput').value = '';
   $('authEmail').value = '';
   $('authPw').value = '';
+  $('nickInput').value = '';
+  localOnly(false);
   renderProfileList();
   alert('초기화되었습니다.');
   goTo('s0');

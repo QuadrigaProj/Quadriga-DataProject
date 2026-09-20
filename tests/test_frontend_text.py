@@ -44,7 +44,7 @@ def test_로그인_메인_버튼():
     assert "이메일로 시작하기</button>" in html
     assert "textContent = '이메일로 시작하기'" in html          # setAuthMode 가 되돌리지 않는다
     assert "'회원가입' : '로그인'" not in html
-    assert "'이 기기에서 시작하기'" in html                     # localOnly 닉네임 모드는 그대로
+    assert "이 기기에서 시작하기</button>" in html               # 닉네임 칸의 버튼 (예전에는 localOnly 가 이메일 버튼의 글을 바꿨다)
 
 
 def test_개인정보_안내():
@@ -56,20 +56,37 @@ def test_개인정보_안내():
 
 
 def test_비회원_시작_버튼():
+    """가입 없이 쓰기 — 버튼을 누르면 닉네임 한 칸만 남고, 닉네임만 넣으면 바로 시작한다 (예현 요청 2026-09-20).
+    예전에는 이 버튼이 닉네임 없이 '게스트' 로 들어갔고 닉네임은 '닉네임을 정해서 시작할래요' 링크를 따로 눌러야 했다."""
     html = _index()
     assert "가입 없이 이 기기에서만 써볼게요</button>" in html
-    assert 'onclick="enterAsGuest()"' in html
+    assert '<button type="button" class="btn btn-guest" onclick="localOnly()">' in html
+    assert "닉네임을 정해서 시작할래요" not in html and "enterAsGuest" not in html and "GUEST_NAME" not in html
+    assert 'id="nickBox" hidden' in html and 'id="nickInput" type="text" placeholder="닉네임" maxlength="20"' in html
+    assert '''onkeydown="if(event.key==='Enter')loginLocal()"''' in html           # 엔터로도 시작
+    assert 'onclick="localOnly(false);return false;">← 로그인 · 회원가입으로 돌아가기</a>' in html
+    접기 = html.split("function localOnly(on = true)")[1].split("\n}")[0]
+    assert "document.querySelector('#s0 .login-form').style.display = on ? 'none' : '';" in 접기
+    assert "$('nickBox').hidden = !on;" in 접기 and "if (on) $('nickInput').focus();" in 접기
+    시작 = html.split("function loginLocal(name)")[1].split("\n}")[0]
+    assert "(name !== undefined ? name : $('nickInput').value).trim();" in 시작
+    assert "$('nickErr').textContent = '닉네임을 입력해주세요.';" in 시작             # 안내는 닉네임 칸 아래에 (로그인 칸은 접혀 있다)
+    assert "state.provider = 'device';" in 시작
+    assert html.count("$('nickInput').value = '';\n  localOnly(false);") == 3       # 로그아웃 · 계정 삭제 · 초기화 뒤에는 원래 로그인 화면으로
+    # 닉네임은 사용자가 넣은 글이다 — 저장된 프로필 목록에 그대로 innerHTML 로 넣지 않는다
+    assert '<div class="profile-name">${esc(n)}</div>' in html
+    assert "지금은 이 기기에서만 쓰고 있어요" in html and "지금은 게스트로 쓰고 있어요" not in html
     assert "게스트로 바로 시작하기" not in html
     assert "guest-note" not in html                            # 마크업·CSS 모두 삭제
     assert "나중에 계정을 만들면 지금까지의 기록을 그대로 옮겨드립니다" not in html
 
 
 def test_유지되는_요소():
-    """A6 가 손대지 말라고 한 것들 — 소셜 버튼·탭·입력칸·닉네임 링크·정책 링크."""
+    """A6 가 손대지 말라고 한 것들 — 소셜 버튼·탭·입력칸·정책 링크. (닉네임 링크는 예현 요청으로 없앴다 — test_비회원_시작_버튼)"""
     html = _index()
     for s in ("구글로 계속하기", "네이버로 계속하기", "카카오로 계속하기",
               'id="tabLogin"', 'id="tabSignup"', 'placeholder="이메일"', 'placeholder="비밀번호 (8자 이상)"',
-              "닉네임을 정해서 시작할래요", "개인정보처리방침", "이용약관", "또는 이메일로"):
+              "개인정보처리방침", "이용약관", "또는 이메일로"):
         assert s in html, s
 
 

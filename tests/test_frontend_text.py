@@ -833,6 +833,17 @@ def test_계정_패널에_이용권_줄이_있다():
     assert "선결제 안 함" not in 본문
 
 
+def test_계정_패널에_체력나이도_적는다():
+    """오른쪽 위 프로필 버튼을 누르면 뜨는 패널 — 나이만이 아니라 체력나이도 같이 (예현, 2026-09-20).
+    게이지 · 프로필 화면과 같은 숫자(displayAge)여야 한다. 점검 전이면 줄을 만들지 않고, 성장기는 '발달 수준' 이라고 부른다."""
+    html = _index()
+    패널 = html.split("function renderAccount()")[1].split("\n}")[0]
+    줄 = "if (displayAge() != null) rows.push([isGrowth() ? '발달 수준' : '체력나이', `${Math.round(displayAge())}세`]);"
+    assert 줄 in 패널
+    assert 패널.index("rows.push(['나이',") < 패널.index(줄) < 패널.index("rows.push(['성별',")      # 나이 바로 아래
+    assert "return state.activityAge?.체력나이 ?? state.result?.체력나이;" in html.split("function displayAge()")[1].split("\n}")[0]
+
+
 def test_패널을_열_때마다_이용권을_다시_그린다():
     html = _index()
     본문 = html.split("function renderAccount()")[1].split("\n}")[0]

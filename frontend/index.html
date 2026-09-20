@@ -2918,6 +2918,9 @@ function renderAccount(){
   // 사용자가 직접 입력한 값만 보여준다. 아직 안 넣었으면 그 줄은 빼고 안내를 띄운다.
   const rows = [];
   if (state.age)     rows.push(['나이', `만 ${state.age}세`]);
+  // 나이 바로 아래에 체력나이도 (예현 요청). 게이지 · 프로필 화면과 같은 숫자다 — displayAge() 는 운동 기록까지 반영한 값.
+  // 아직 점검 전이면 줄을 만들지 않는다. 성장기는 이 숫자를 '발달 수준' 이라고 부른다.
+  if (displayAge() != null) rows.push([isGrowth() ? '발달 수준' : '체력나이', `${Math.round(displayAge())}세`]);
   if (state.sex)     rows.push(['성별', SEX_LABEL[state.sex] || state.sex]);
   if (state.purpose) rows.push(['운동 단계', PURPOSE_LABEL[state.purpose] || state.purpose]);
 

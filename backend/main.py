@@ -1474,10 +1474,11 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                sports: list[str], target_gap: float | None, limit: int,
                week: int, ai: bool, real_age: float | None,
                token: str | None, busy: dict | None = None,
+               method: str = "GET",
                life_kind: list[str] | str | None = None,
                profile: dict | None = None,
                adjust: str | None = None, previous: dict | None = None,
-               purpose: str | None = None, method: str = "GET") -> dict:
+               purpose: str | None = None) -> dict:
     """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
 
     method 는 부른 쪽의 HTTP 메서드 — 요청 제한이 경로마다 달라서, 값을 받기 전에 아직 안 끊겼는지 볼 때 쓴다.

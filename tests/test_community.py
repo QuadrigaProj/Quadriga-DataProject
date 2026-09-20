@@ -19,12 +19,8 @@ from backend.main import app               # noqa: E402
 @pytest.fixture(autouse=True)
 def _db(monkeypatch):
     if auth.is_postgres():
-        with auth.db() as con:
-            auth.init_db(); community.init_db()
-            for t in ("chat_messages", "chat_members", "chat_rooms",
-                      "community_reactions", "community_comments", "community_posts",
-                      "measurements", "sessions", "oauth_states", "users"):
-                con.execute(f"DELETE FROM {t}")
+        from pg_reset import reset_postgres
+        reset_postgres()                        # 표 이름을 하나하나 적으면 새 표(chat_replies …)를 빠뜨린다 — 전부 비운다
     else:
         monkeypatch.setattr(auth, "DB_PATH", Path(tempfile.mkdtemp()) / "t.db")
         auth.init_db(); community.init_db()

@@ -376,10 +376,8 @@ def _clean_db():
     from backend import auth
     old = auth.DB_PATH
     if auth.is_postgres():
-        with auth.db() as con:                    # 남은 데이터를 비우고 시작
-            auth.init_db()
-            for t in ("measurements", "sessions", "oauth_states", "users"):
-                con.execute(f"DELETE FROM {t}")
+        from pg_reset import reset_postgres
+        reset_postgres()                          # 남은 데이터를 비우고 시작
     else:
         auth.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
         auth.init_db()

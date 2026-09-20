@@ -34,11 +34,8 @@ _REAL_CLIENT = httpx.AsyncClient
 @pytest.fixture(autouse=True)
 def _db(monkeypatch):
     if auth.is_postgres():
-        with auth.db() as con:
-            auth.init_db(); community.init_db(); billing.init_db()
-            for t in ("credit_ledger", "pay_orders", "measurements", "sessions",
-                      "oauth_states", "users"):
-                con.execute(f"DELETE FROM {t}")
+        from pg_reset import reset_postgres
+        reset_postgres()                        # 전부 비우고 번호도 1 부터 — SQLite 의 '테스트마다 새 파일' 과 같은 출발선
     else:
         monkeypatch.setattr(auth, "DB_PATH", Path(tempfile.mkdtemp()) / "t.db")
         auth.init_db(); community.init_db(); billing.init_db()

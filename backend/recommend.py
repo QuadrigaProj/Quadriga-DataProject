@@ -48,8 +48,41 @@ def routine_steps(age_gbn: str, routine: dict) -> list[dict]:
                 "단계": phase, "코드": code, "동작": info.get("동작"),
                 "체력요인": info.get("체력요인", []), "도구": info.get("도구"),
                 "유형": info.get("유형"), "부담부위": info.get("부담부위", []),
+                "부위": (info.get("kspo") or {}).get("trng_part_nm") or "",      # 국민체력100 이 붙인 운동 부위 (관리 부위 고르기에 쓴다)
             })
     return out
+
+
+# 다이어트에서 고르는 '관리하고 싶은 부위' → 그 부위를 쓰는 동작을 알아보는 법.
+# 먼저 국민체력100 이 동작마다 붙여 둔 운동 부위(kspo.trng_part_nm: 복부 · 둔부 · 허벅지앞쪽 · 위팔뒤쪽 …)를 보고,
+# 그 값이 비었거나 '//' 처럼 깨진 동작은 이름의 낱말로 알아본다.
+# 살은 부위별로 따로 빠지지 않는다. 여기서 하는 일은 그 부위 근육을 쓰는 동작이 든 루틴을 앞에 세우는 것뿐이고,
+# 화면도 그렇게 말한다.
+FOCUS_AREAS = {
+    "팔": {"부위": ("위팔", "아래팔"), "낱말": ("팔굽혀", "팔꿈치", "아령", "덤벨 들어", "덤벨 옆으로", "물병 옆으로", "물통으로")},
+    "뱃살": {"부위": ("복부", "윗복근", "아랫복근"), "낱말": ("윗몸", "배가로근", "V자", "크런치", "대고 버티기", "무릎 당기기")},
+    "옆구리": {"부위": (), "낱말": ("옆구리", "비틀", "옆으로 굽히기", "옆으로 기울이기", "측면", "옆으로 누워 버티기",
+                                "옆으로 팔 대고 버티기", "몸통 돌리기", "몸통 회전")},
+    "등": {"부위": ("등",), "낱말": ("당겨 내리기", "뒤로 당기기", "바벨 끌어당기기", "당겨 올리기", "슈퍼맨", "등 모으기", "상체 들어올리기")},
+    "엉덩이": {"부위": ("둔부",), "낱말": ("엉덩이 들어올리기", "뒤로 차기", "뒤로 다리", "다리 뒤로", "한 발 뒤로", "앉았다 일어서기")},
+    "허벅지": {"부위": ("허벅지",), "낱말": ("앉았다 일어서기", "굽혔다 펴기", "계단", "스텝박스", "박스 오르내리기")},
+    "종아리": {"부위": ("종아리",), "낱말": ("뒤꿈치", "줄넘기")},
+}
+
+
+def _area_hit(area: str, step: dict) -> bool:
+    spec = FOCUS_AREAS[area]
+    tokens = [t.strip() for t in str(step.get("부위") or "").split("/") if t.strip()]
+    if any(t.startswith(prefix) for t in tokens for prefix in spec["부위"]):
+        return True
+    name = str(step.get("동작") or "")
+    return any(k in name for k in spec["낱말"])
+
+
+def focus_hits(steps: list[dict], areas) -> list[str]:
+    """고른 부위 가운데 이 루틴의 본운동이 실제로 쓰는 부위 — 고른 순서대로."""
+    main = [s for s in steps if s.get("단계") == "본운동"]
+    return [a for a in (areas or []) if a in FOCUS_AREAS and any(_area_hit(a, s) for s in main)]
 
 
 def routine_factors(age_gbn: str, routine: dict) -> Counter:
@@ -89,7 +122,7 @@ def step_amount(step: dict, 강도: dict) -> str:
 
 
 def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
-          target_gap=None, limit: int = 5, sport_names=None) -> list[dict]:
+          target_gap=None, limit: int = 5, sport_names=None, areas=None) -> list[dict]:
     """목적 × 루틴 후보에 점수를 매겨 높은 순으로 돌려준다.
 
     sport_factors 는 {요인: 몇 개 종목이 요구하는지} 다. 목록으로 줘도 받는다
@@ -145,14 +178,17 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
             # 자리에서 이 루틴 자체의 체력요인을 보고 한 번 더 매겨서, 종목이 필요로
             # 하는 요인을 실제로 다루는 루틴이 그 목적 안에서도 앞에 오게 한다.
             덮은종목요인 = sorted({s for s in sport_factors if any(_factor_hit(s, f) for f in factors)})
+            덮은부위 = focus_hits(steps, areas)          # 다이어트에서 고른 관리 부위 — 그 부위를 쓰는 본운동이 있나
             루틴점수 = (점수 + 1.0 * len(덮은약점)
-                    + 0.8 * sum(무게[f] for f in 덮은종목요인) + 0.1 * len(factors))
+                    + 0.8 * sum(무게[f] for f in 덮은종목요인) + 1.2 * len(덮은부위) + 0.1 * len(factors))
             루틴이유 = list(이유)
             if 덮은약점:
                 루틴이유.append(f"오늘 동작에 {' · '.join(덮은약점)} 운동이 들어 있어요")
             if 덮은종목요인:
                 누가 = f"{종목이름}에" if 종목이름 else "고른 종목에"
                 루틴이유.append(f"{누가} 필요한 {' · '.join(덮은종목요인)} 동작이 오늘 루틴에 있어요")
+            if 덮은부위:
+                루틴이유.append(f"관리하고 싶은 {' · '.join(덮은부위)}을(를) 쓰는 동작이 들어 있어요")
             if not 루틴이유:
                 루틴이유.append("먼저 기본을 고르게 채우는 구성이에요")
             out.append({
@@ -176,7 +212,7 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
     out.sort(key=lambda x: (-x["점수"], x["목적"], x["루틴번호"] or 0))
     # 고를 근거가 있을 때만 두 자리를 내준다. 근거가 없으면 점수가 고만고만해서
     # 앞자리를 몰아 줄 이유가 없다 — 그때는 예전처럼 목적을 골고루 보여 준다.
-    TOP_AS_IS = 2 if (weak or 무게 or style_purpose) else 0
+    TOP_AS_IS = 2 if (weak or 무게 or style_purpose or areas) else 0
     골고루 = out[:min(TOP_AS_IS, limit)]
     앞자리 = {id(x) for x in 골고루}
     남은 = [x for x in out if id(x) not in 앞자리]
@@ -211,16 +247,17 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
 
 
 def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
-             target_gap=None, limit: int = 5, week: int = 1) -> dict:
+             target_gap=None, limit: int = 5, week: int = 1, areas=None) -> dict:
     """화면이 그대로 그릴 수 있는 형태. sports 는 종목 id 목록."""
     ids = [s for s in (sports or []) if s]
     무게 = sp.factor_weights(ids) if ids else {}
     factors = list(무게)
     이름 = [s.get("이름") for s in sp.resolve(ids)] if ids else []
     care = sp.care_parts(ids) if ids else []
+    areas = list(dict.fromkeys(a for a in (areas or []) if a in FOCUS_AREAS))      # 모르는 이름은 버리고, 같은 부위를 두 번 세지 않는다
     후보 = score(age_gbn, weak=weak, style_purpose=style_purpose,
                 sport_factors=무게, target_gap=target_gap, limit=limit,
-                sport_names=이름)
+                sport_names=이름, areas=areas)
     # 오늘 얼마나 하는지를 동작마다 붙인다 (H2). 주차는 프로그램 경과에서 온다.
     강도 = rt.intensity_for(age_gbn, max(1, min(13, int(week or 1))))
     분 = rt.load()["config"]["age_minutes"].get(age_gbn)
@@ -234,7 +271,7 @@ def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
         "강도": 강도,
         "참고": {"약점": list(weak or []), "종목요인": factors,
                 "종목요인무게": 무게, "고른종목": 이름,
-                "스타일목적": style_purpose, "목표격차": target_gap},
+                "스타일목적": style_purpose, "목표격차": target_gap, "관리부위": areas},
         "조심할부위": care,
         "샘플": rt.is_sample(),
     }

@@ -2978,6 +2978,36 @@ def test_AI_가_짓는_동안_예상_소요시간을_보여_준다():
     assert "a[Math.floor(a.length / 2)]" in 예상 and "AI_WAIT_DEFAULT" in 예상   # 가운데값 — 한 번 오래 걸린 것에 끌려가지 않는다
 
 
+def test_다이어트를_고르면_관리_부위도_고른다():
+    """다이어트를 고르면 그 카드 아래에 '관리하고 싶은 부위' 가 펼쳐진다 — 여러 개, 안 골라도 된다 (예현 요청).
+    고른 부위는 루틴 추천(무료 GET · AI POST)으로 가고, 다이어트가 아닐 때는 보내지 않는다."""
+    html = _index()
+    assert "const DIET_AREAS = ['팔', '뱃살', '옆구리', '등', '엉덩이', '허벅지', '종아리'];" in html
+    from backend import recommend as rc
+    assert list(rc.FOCUS_AREAS) == ['팔', '뱃살', '옆구리', '등', '엉덩이', '허벅지', '종아리']      # 화면과 서버의 이름이 같아야 한다 — 서버는 모르는 이름을 버린다
+    카드 = html.split('data-p="diet"')[1].split('data-p="basic"')[0]
+    assert 'id="dietAreaBox" hidden' in 카드 and 'id="dietAreaChips" role="group"' in 카드           # 다이어트 카드 바로 아래
+    assert "살은 부위별로 따로 빠지지 않아요." in 카드                                              # 부위별로 빠진다고 말하지 않는다
+    그림 = html.split("function renderDietAreas()")[1].split("\n}")[0]
+    assert "box.hidden = state.purpose !== 'diet';" in 그림 and 'aria-pressed="${(state.dietAreas || []).includes(a)}"' in 그림
+    고름 = html.split("function toggleDietArea(a)")[1].split("\n}")[0]
+    assert "state.dietAreas = DIET_AREAS.filter(x => have.has(x));" in 고름 and "saveProfile();" in 고름
+    assert "state.aiRoutine = null;" in 고름                                                        # 부위를 바꿨으면 지어 둔 AI 루틴의 전제가 달라진다
+    assert "function dietAreas(){ return state.purpose === 'diet' ? (state.dietAreas || []) : []; }" in html
+    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    assert "areas: dietAreas()," in 받기 and "areas: dietAreas().join(',')," in 받기
+    assert "purpose: state.purpose, dietAreas: state.dietAreas, method: state.method," in html      # 스냅샷
+    assert "state.dietAreas = Array.isArray(saved?.dietAreas) ? saved.dietAreas.filter(a => DIET_AREAS.includes(a)) : [];" in html
+    assert html.count("  state.dietAreas = [];") == 3                                          # 로그아웃 · 계정 삭제 · 초기화 (줄바꿈을 끼워 찾지 않는다 — 윈도우 체크아웃은 CRLF 다)
+    assert "renderDietAreas();" in html.split("function renderPurpose()")[1].split("\n}")[0]
+    # AI 에게도 간다 — 부위별로 빠진다는 말은 못 하게 막는다
+    from pathlib import Path
+    prompt = (Path(__file__).resolve().parents[1] / "backend" / "ai_recommend.py").read_text(encoding="utf-8")
+    assert "'관리하고 싶은 부위' 가 있으면" in prompt and "살은 부위별로 따로 빠지지 않습니다" in prompt
+    main = (Path(__file__).resolve().parents[1] / "backend" / "main.py").read_text(encoding="utf-8")
+    assert '"관리하고 싶은 부위": 참고.get("관리부위") or [],' in main
+
+
 def test_자세히_도전하기는_AI_추천에서만_보인다():
     """무료 추천에서는 눌러도 유료 안내만 뜬다 — 아예 없는 편이 낫다."""
     html = _index()

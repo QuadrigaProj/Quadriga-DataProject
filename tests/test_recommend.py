@@ -76,6 +76,42 @@ def test_종목_반영은_목적_전체가_아니라_그_요인을_다루는_루
     assert any(matches) and not all(matches)
 
 
+def test_관리_부위를_고르면_그_부위를_쓰는_루틴이_앞에_온다():
+    """다이어트에서 고르는 관리 부위(팔 · 뱃살 …, 여러 개). 그 부위를 쓰는 본운동이 든 루틴에 점수를 더하고 까닭을 적는다.
+    부위는 먼저 국민체력100 이 동작마다 붙인 운동 부위(kspo.trng_part_nm)로, 그 값이 깨진 동작은 이름의 낱말로 알아본다."""
+    안고름 = rc.for_user("성인", limit=80)["추천"]
+    고름 = rc.for_user("성인", areas=["뱃살", "팔"], limit=80)
+    assert 고름["참고"]["관리부위"] == ["뱃살", "팔"]
+    점수 = {(x["목적"], x["루틴번호"]): x["점수"] for x in 안고름}
+    올랐다 = 0
+    for x in 고름["추천"]:
+        hits = rc.focus_hits(x["steps"], ["뱃살", "팔"])
+        assert round(x["점수"] - 점수[(x["목적"], x["루틴번호"])], 2) == round(1.2 * len(hits), 2)      # 부위 하나에 1.2점, 다른 점수는 그대로
+        까닭 = [y for y in x["이유"] if y.startswith("관리하고 싶은")]
+        assert bool(까닭) == bool(hits)
+        if hits:
+            올랐다 += 1
+            assert 까닭 == [f"관리하고 싶은 {' · '.join(hits)}을(를) 쓰는 동작이 들어 있어요"]
+    assert 0 < 올랐다 <= len(고름["추천"])
+    # 본운동만 본다 — 준비 · 정리운동의 스트레칭으로는 걸리지 않는다
+    assert rc.focus_hits([{"단계": "준비운동", "동작": "윗몸 일으키기", "부위": "복부"}], ["뱃살"]) == []
+    assert rc.focus_hits([{"단계": "본운동", "동작": "윗몸 일으키기", "부위": "//"}], ["뱃살"]) == ["뱃살"]            # 부위가 깨졌으면 이름으로
+    assert rc.focus_hits([{"단계": "본운동", "동작": "이름 없는 동작", "부위": "위팔뒤쪽/어깨"}], ["팔", "등"]) == ["팔"]   # 공식 부위 — '어깨뒤쪽' 의 '등' 같은 글자 겹침에 속지 않는다
+    # 모르는 이름은 버린다 (화면이 아무 글이나 보내도 점수에 끼어들지 못한다)
+    assert rc.for_user("성인", areas=["코", "팔", "팔", "허벅지"])["참고"]["관리부위"] == ["팔", "허벅지"]      # 같은 부위를 두 번 세지도 않는다
+
+
+def test_관리_부위는_GET_과_POST_둘_다_받는다():
+    g = client.get("/recommend/routines", params={"age_gbn": "성인", "areas": "뱃살,종아리", "ai": 0}).json()
+    assert g["참고"]["관리부위"] == ["뱃살", "종아리"]
+    assert any(y.startswith("관리하고 싶은") for y in g["추천"][0]["이유"])
+    p = client.post("/recommend/routines", json={"age_gbn": "성인", "areas": ["뱃살", "종아리"], "ai": False}).json()
+    assert p["참고"]["관리부위"] == ["뱃살", "종아리"]
+    assert [x["루틴명"] for x in p["추천"]] == [x["루틴명"] for x in g["추천"]]      # 같은 본체를 쓴다
+    # 안 보내면 예전과 똑같다
+    assert client.get("/recommend/routines", params={"age_gbn": "성인", "ai": 0}).json()["참고"]["관리부위"] == []
+
+
 def test_목표_격차가_크면_숨찬_운동에_무게를_준다():
     작음 = {x["목적"]: x["점수"] for x in rc.for_user("성인", target_gap=1, limit=5)["추천"]}
     큼 = {x["목적"]: x["점수"] for x in rc.for_user("성인", target_gap=9, limit=5)["추천"]}

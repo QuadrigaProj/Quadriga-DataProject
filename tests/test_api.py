@@ -736,14 +736,53 @@ def test_악력은_몸무게로_나눠_상대악력으로_본다():
 
 
 @needs_data
-def test_성장기는_심폐지구력을_내지_않는다():
-    """공개 분포에 성장기 심폐 항목이 없다. 없는 값을 지어내지 않는다."""
-    b = client.post("/fitness-age", json={
-        "age_gbn": "성장기", "sex": "F", "age": 15, "flexibility": 10,
-        "strength": 150, "height_cm": 160, "weight_kg": 50,
-        "grip_kg": 25, "endurance": 40}).json()
-    assert "심폐지구력" not in b["항목별"]
-    assert "근력" in b["항목별"]          # 상대악력은 성장기에도 분포가 있다
+def test_성장기_심폐지구력은_나이로_바꾸지_않고_또래_순위로_준다():
+    """성장기도 왕복오래달리기 분포가 있다(item_f020 — '반복점프'로 잘못 붙어 있었다). 다만 11~12세는 15m, 13세부터
+    20m 로 재서 나이별 중앙값이 끊기고 그 뒤로는 평평하다 — 나이로 거꾸로 읽을 수 없어 또래 백분위만 준다."""
+    보냄 = {"age_gbn": "성장기", "sex": "F", "age": 15, "flexibility": 10,
+           "strength": 150, "height_cm": 160, "weight_kg": 50, "grip_kg": 25}
+    안잼 = client.post("/fitness-age", json=보냄).json()
+    b = client.post("/fitness-age", json={**보냄, "endurance": 40}).json()
+    assert "심폐지구력" not in b["항목별"]                    # 체력나이(발달 수준)에는 넣지 않는다
+    assert b["체력나이"] == 안잼["체력나이"]
+    assert "근력" in b["항목별"]                              # 상대악력은 성장기에도 분포가 있다
+    또래 = b["또래비교"]["심폐지구력"]
+    assert 또래["항목"] == "왕복오래달리기" and 또래["비교구간"] == "15"
+    assert 또래["백분위"] > 80                                # 15세 여 중앙값이 23회 안팎 — 40회면 위쪽 (백분위 87)
+    낮음 = client.post("/fitness-age", json={**보냄, "endurance": 10}).json()["또래비교"]["심폐지구력"]
+    assert 낮음["백분위"] < 또래["백분위"]
+
+
+@needs_data
+def test_왕복오래달리기는_횟수로_견준다():
+    """분포의 '왕복오래달리기'가 실은 10m 왕복달리기(초)였다 — 9~17초짜리 분포에 횟수를 견줘 몇 회를 적든 62세가 나왔다.
+    많이 달릴수록 젊게, 적게 달릴수록 늙게 나와야 하고, 또래 중앙값은 '회'다운 숫자여야 한다."""
+    def 심폐(회):
+        return client.post("/fitness-age", json={**ADULT, "age": 30, "endurance": 회}).json()   # 나이를 줘야 또래비교가 온다
+    많이, 적게 = 심폐(60), 심폐(15)
+    assert 많이["항목별"]["심폐지구력"] < 적게["항목별"]["심폐지구력"]
+    assert 많이["항목별"]["심폐지구력"] < 40 < 적게["항목별"]["심폐지구력"]
+    assert 15 <= 많이["또래비교"]["심폐지구력"]["또래중앙값"] <= 60    # 초(9~17)가 아니라 회
+    assert 많이["또래비교"]["심폐지구력"]["백분위"] > 적게["또래비교"]["심폐지구력"]["백분위"]
+
+
+@needs_data
+def test_분포의_달리기_두_항목이_뒤바뀌지_않았다():
+    """item_f020 = 왕복오래달리기(회, 나이 들수록 준다) · item_f021 = 10m 왕복달리기(초, 나이 들수록 는다).
+    공식 1등급 기준(남 19~24세 62회 · 9.9초)이 각각 상위 25% 에 온다. 분포를 다시 만들 때 이름이 또 바뀌면 여기서 걸린다."""
+    from backend import fitness_age as fa
+    d = fa.load()
+    def 남성인(항목):
+        return d[(d["항목"] == 항목) & (d["연령군"] == "성인") & (d["성별"] == "M")].sort_values("age_mid")
+    회, 초 = 남성인("왕복오래달리기"), 남성인("10m왕복달리기")
+    assert set(회["항목코드"]) == {"item_f020"} and set(초["항목코드"]) == {"item_f021"}
+    assert 회["p50"].iloc[0] > 회["p50"].iloc[-1] > 10                # 47회 → 19회
+    assert 8 < 초["p50"].iloc[0] < 초["p50"].iloc[-1] < 20            # 10.5초 → 13.2초
+    assert abs(회["p75"].iloc[0] - 62) <= 2 and abs(초["p25"].iloc[0] - 9.9) <= 0.2
+    성장기 = d[(d["항목"] == "왕복오래달리기") & (d["연령군"] == "성장기")]
+    assert sorted(성장기["연령구간"].astype(str).unique()) == [str(a) for a in range(11, 19)]
+    assert "반복점프" not in set(d["항목"])                           # 진짜 반복점프(item_f010)는 아직 분포에 없다
+    assert fa.HIGHER_IS_BETTER["10m왕복달리기"] is False and fa.CARDIO_ITEM["성장기"] == "왕복오래달리기"
 
 
 @needs_data

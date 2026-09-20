@@ -231,7 +231,7 @@ class MeasureIn(ServiceAgeIn):
     flexibility: float | None = Field(None, description="앉아윗몸앞으로굽히기 (cm). 음수 가능")
     strength: float | None = Field(
         None,
-        description="연령군별 항목: 성인=교차윗몸일으키기(회), "
+        description="연령군별 항목: 성인=교차윗몸일으키기(1분, 회), "
                     "어르신=의자앉았다일어서기(회), 성장기=제자리멀리뛰기(cm)")
     height_cm: float | None = Field(None, gt=0)
     weight_kg: float | None = Field(None, gt=0)
@@ -240,8 +240,8 @@ class MeasureIn(ServiceAgeIn):
                                   description="악력 (kg). 몸무게와 함께 주면 상대악력으로 근력을 낸다")
     endurance: float | None = Field(
         None, ge=0,
-        description="심폐지구력: 성인=왕복오래달리기(회), 어르신=2분제자리걷기(회). "
-                    "성장기는 공개 분포가 없어 계산하지 않는다")
+        description="심폐지구력: 성인·성장기=왕복오래달리기(회, 11~12세는 15m · 13세부터 20m), "
+                    "어르신=2분제자리걷기(회). 성장기는 나이로 환산하지 않고 또래 백분위만 준다")
 
 
 class EtaIn(MeasureIn):
@@ -665,7 +665,7 @@ class HomeTestIn(ServiceAgeIn):
     weight_kg: float = Field(..., gt=0)
     waist_cm: float | None = Field(None, gt=0)
     jump_30s: float | None = Field(None, ge=0, description="30초 제자리 점프 (회)")
-    curlup_30s: float | None = Field(None, ge=0, description="30초 컬업 (회)")
+    curlup_30s: float | None = Field(None, ge=0, description="교차윗몸일으키기 1분 횟수 (필드 이름만 옛것이다)")
     knee_pushup_30s: float | None = Field(None, ge=0, description="30초 무릎 푸시업 (회)")
     high_knee_2min: float | None = Field(None, ge=0, description="2분 하이니 (회)")
 

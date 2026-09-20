@@ -67,6 +67,12 @@ def test_hometest_추정체력나이_2항목만_반영():
     assert any("푸시업" in x for x in 등급항목)
     assert any("하이니" in x for x in 등급항목)
     assert "가장부족한요인" in b
+    # 30초 점프는 기록만 — 전엔 분포의 '반복점프'와 견줬는데 그 필드는 왕복오래달리기(회)였다
+    점프 = next(x for x in b["홈체력등급"] if "점프" in x["항목"])
+    assert 점프["값"] == 50 and 점프["등급"] is None
+    assert "순발력" not in b["항목별환산나이"]
+    assert set(b["항목별환산나이"]) == {"근지구력", "체성분"}
+    assert "점프" not in (b["가장부족한요인"] or "")            # 등급 없는 항목은 '가장 부족'으로 꼽지 않는다
 
 
 @needs_data

@@ -2504,6 +2504,8 @@ const state = {
   measureLog: [],      // F4 변화추이: [{date, 체력나이, 신뢰구간, 항목별, method}] — 날짜당 한 줄 (같은 날 다시 재면 이전 것을 덮는다)
   dayAges: {},         // 규칙2·3: 운동 기록이 있는 날의 체력나이 { 'yyyy-mm-dd': {값, 기준나이, 당김, 일수, 잰체성분, 소급} }
   aiReco: null,        // 값을 치르고 받은 AI 추천 {추천, 조심할부위, 자리, 되돌아갈자리, 받은시각}
+  aiRecoPast: [],      // 그 전에 받았던 AI 추천들 (오래된 것 → 최근). '이전 루틴' 이 되돌아갈 곳 — 값을 치른 루틴이라 다시 받아도 버리지 않는다
+  aiRecoNext: [],      // '이전 루틴' 으로 물러나 있을 때 앞쪽에 남은 것들 — '다음 루틴' 으로 돌아간다
   freeReco: null,      // 무료 추천도 같은 모양으로 남긴다 — 창을 옮겨도 보던 것이 그대로 있게
   pinnedRooms: [],     // '내 채팅' 에서 위에 붙여 둔 방 id — 사람마다 다른 취향이라 스냅샷에 담는다
   schedule: null,      // 짬시간: {상태, 바쁜시간:{월:[{시작,끝}], ...}} — 적은 사람만 쓴다
@@ -3132,6 +3134,8 @@ function snapshot(){
     history: state.history, measureLog: state.measureLog, workoutLog: state.workoutLog,
     dayAges: state.dayAges,
     aiReco: state.aiReco,
+    aiRecoPast: state.aiRecoPast,
+    aiRecoNext: state.aiRecoNext,
     freeReco: state.freeReco,
     pinnedRooms: state.pinnedRooms,
     activityAge: state.activityAge,
@@ -3182,6 +3186,8 @@ function applyProfile(saved){
   state.workoutLog = Array.isArray(saved?.workoutLog) ? saved.workoutLog : [];
   state.dayAges = (saved?.dayAges && typeof saved.dayAges === 'object') ? saved.dayAges : {};
   state.aiReco = 되살린추천(saved?.aiReco);
+  state.aiRecoPast = 되살린이전추천(saved?.aiRecoPast);
+  state.aiRecoNext = state.aiReco ? 되살린이전추천(saved?.aiRecoNext) : [];
   state.freeReco = 되살린추천(saved?.freeReco);
   state.pinnedRooms = Array.isArray(saved?.pinnedRooms) ? saved.pinnedRooms.map(Number) : [];
   dedupeMeasureLog();          // 예전 저장본에는 같은 날짜가 여러 줄 있을 수 있다 (규칙 4)
@@ -3330,6 +3336,8 @@ async function doDelete(){
   state.workoutLog = [];
   state.dayAges = {};
   state.aiReco = null;
+  state.aiRecoPast = [];
+  state.aiRecoNext = [];
   state.freeReco = null;
   state.pinnedRooms = [];
   state.credit = 0;
@@ -3360,6 +3368,8 @@ async function logout(){
   state.workoutLog = [];
   state.dayAges = {};
   state.aiReco = null;
+  state.aiRecoPast = [];
+  state.aiRecoNext = [];
   state.freeReco = null;
   state.pinnedRooms = [];
   state.credit = 0;
@@ -3402,6 +3412,8 @@ async function resetSettings(){
   state.workoutLog = [];
   state.dayAges = {};
   state.aiReco = null;
+  state.aiRecoPast = [];
+  state.aiRecoNext = [];
   state.freeReco = null;
   state.pinnedRooms = [];
   state.credit = 0;
@@ -7865,6 +7877,22 @@ function 되살린추천(x){
   return (x && Array.isArray(x.추천) && x.추천.length) ? x : null;
 }
 
+/* 이전 AI 추천은 둘까지만 남긴다. 스냅샷은 저장할 때마다 통째로 올라가서 많이 쌓아 두면 무겁다. */
+const AI_PAST_MAX = 2;
+function 되살린이전추천(list){
+  return (Array.isArray(list) ? list : []).filter(되살린추천).slice(-AI_PAST_MAX);
+}
+
+/* 새 AI 루틴을 받았을 때, 그때까지 보던 AI 추천을 '이전 루틴' 자리에 쌓는다 (추천저장 이 덮어쓰기 전에 부른다).
+   '더 쉽게 · 더 어렵게 다시 받기' 는 값을 치르고 새 루틴을 받는 일인데, 받기 전 루틴도 값을 치른 것이다 —
+   새 루틴이 마음에 안 들면 돈을 또 내지 않고 되돌아갈 수 있어야 한다.
+   물러나 있다가(이전 루틴을 보다가) 다시 받았으면 앞쪽에 남아 있던 것들도 버리지 않고 같이 쌓는다.
+   방금까지 보던 것이 맨 위에 오게 — '이전 루틴' 을 누르면 다시 받기 직전의 루틴이 나온다. */
+function 이전AI추천쌓기(){
+  state.aiRecoPast = 되살린이전추천([...(state.aiRecoPast || []), ...(state.aiRecoNext || []), state.aiReco]);
+  state.aiRecoNext = [];
+}
+
 /* 지금 보고 있는 추천을 그 자리 그대로 남긴다.
    '더 쉬운 루틴' 으로 옮긴 자리까지 기억해서, 창을 옮겼다 와도 그대로다. */
 function 추천저장(){
@@ -8088,6 +8116,7 @@ async function fetchRecommend(ai){
     paintRecoMode();
     recoAt = 0;
     recoBack = [];
+    if (recoBy === 'ai') 이전AI추천쌓기();      // 지금까지 보던 AI 루틴은 '이전 루틴' 으로 — 추천저장 이 덮어쓰기 전에
     // 받은 것을 남긴다. 다음에 들어올 때 다시 부르지 않는다 —
     // AI 는 그때마다 값이 빠지고, 무료도 보던 것이 바뀌어 버린다.
     추천저장();
@@ -8130,7 +8159,7 @@ function paintRecommend(){
   box.innerHTML = `
     <div class="rec-card">
       ${지은것 && x.시작 ? `<div class="rec-start">${startLine(x.시작)}</div>` : ''}
-      <div class="rec-rank">${지은것 ? 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요' + (x.조정 ? ` · 이전 루틴보다 ${x.조정}` : '')
+      <div class="rec-rank">${지은것 ? (state.aiRecoNext?.length ? '이전에 받은 루틴이에요 · ' : '') + 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요' + (x.조정 ? ` · 이전 루틴보다 ${x.조정}` : '')
         : `${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서`}</div>
       <div class="rec-purpose">${x.표시목적 || x.목적}</div>
       <div class="rec-title">${x.루틴명}<span class="rec-level ${lv}">${x.난이도 || ''}</span></div>
@@ -8156,8 +8185,9 @@ function paintRecommend(){
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
       <div class="rec-by">${recoBy === 'ai' ? `AI 가 지었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
-        ${지은것 ? '' : `<button type="button" class="reco-btn" onclick="backRecommend()" ${recoBack.length ? '' : 'disabled'}>이전 루틴</button>
-        <button type="button" class="reco-btn" onclick="easierRecommend()">더 쉬운 루틴</button>
+        <button type="button" class="reco-btn" onclick="backRecommend()" ${hasBackReco() ? '' : 'disabled'}>이전 루틴</button>
+        ${지은것 ? (state.aiRecoNext?.length ? `<button type="button" class="reco-btn" onclick="forwardAiReco()">다음 루틴</button>` : '')
+        : `<button type="button" class="reco-btn" onclick="easierRecommend()">더 쉬운 루틴</button>
         <button type="button" class="reco-btn" onclick="harderRecommend()">더 어려운 루틴</button>`}
         <button type="button" class="reco-btn go" onclick="useRecommend()">이 루틴으로 시작</button>
         ${recoBy === 'ai' ? `<button type="button" class="reco-btn"
@@ -8438,11 +8468,38 @@ async function 전체추천얹기(){
 function easierRecommend(){ return stepRecommend(-1); }
 function harderRecommend(){ return stepRecommend(1); }
 
+/* '이전 루틴' 이 갈 곳이 있나 — 목록 안에서 옮겨 온 자리, 또는 (AI) 값을 치르고 받았던 이전 루틴 */
+function hasBackReco(){
+  return recoBack.length > 0 || (recoBy === 'ai' && (state.aiRecoPast || []).length > 0);
+}
+
 function backRecommend(){
-  if (!recoBack.length) return;
+  if (!recoBack.length) { if (recoBy === 'ai') backAiReco(); return; }
   recoAt = recoBack.pop();
   추천저장();
   paintRecommend();
+}
+
+/* AI 가 지은 루틴은 목록이 아니라 하나라서 목록 안에서 되돌아갈 자리가 없다. 대신 그 전에 받았던 루틴으로 돌아간다.
+   이미 값을 치른 것이라 값이 들지 않는다. 짬시간·계절 계획도 그 루틴의 것으로 같이 돌아온다. */
+function backAiReco(){
+  const past = state.aiRecoPast || [];
+  if (!past.length || !state.aiReco) return;
+  state.aiRecoNext = [...(state.aiRecoNext || []), state.aiReco];
+  state.aiReco = past[past.length - 1];
+  state.aiRecoPast = past.slice(0, -1);
+  추천되살리기(state.aiReco, 'ai');
+  saveProfile();
+}
+
+function forwardAiReco(){
+  const next = state.aiRecoNext || [];
+  if (!next.length || !state.aiReco) return;
+  state.aiRecoPast = [...(state.aiRecoPast || []), state.aiReco];
+  state.aiReco = next[next.length - 1];
+  state.aiRecoNext = next.slice(0, -1);
+  추천되살리기(state.aiReco, 'ai');
+  saveProfile();
 }
 
 /* 고른 추천의 목적을 그대로 적용한다. 홈의 오늘 루틴이 그 목적으로 바뀐다. */

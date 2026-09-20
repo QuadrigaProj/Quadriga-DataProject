@@ -1024,6 +1024,10 @@ def _login_failed(provider: str, 단계: str, error=None, desc: str | None = Non
     q = {"login": "failed", "why": 단계, "p": provider}
     if 이름:
         q["e"] = 이름
+    if desc:
+        # 네이버는 무엇이 틀려도 오류 이름이 invalid_request 하나다 — 갈라 주는 것은 설명뿐이다
+        # ("wrong client secret" · "no valid data in session" …). 제공자가 쓴 짧은 영어 문장이고 비밀 값은 들어 있지 않다.
+        q["d"] = str(desc)[:80]
     return RedirectResponse("/?" + urlencode(q))
 
 

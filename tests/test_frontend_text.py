@@ -525,6 +525,31 @@ def test_심폐_항목은_연령군마다_다르다():
     assert "공개 데이터에 심폐지구력 항목이 없어" not in html
 
 
+def test_옛_기준으로_저장된_기록은_불러올_때_한_번_고친다():
+    """윗몸일으키기를 30초로 재던 때의 기록은 다시 재라고 하지 않고 1분 횟수로 환산해 새 기준으로 다시 계산한다 (예현 요청).
+    같은 때 저장된 심폐지구력(늘 62세로 나오던 것)도 이 재계산에서 바로잡힌다."""
+    html = _index()
+    assert "const CALC_VER = 2;" in html and "const SITUP_30S_TO_1MIN = 1.8;" in html   # 뒤 30초엔 느려진다 — 2배로 잡으면 실제보다 좋게 나온다
+    assert "const SITUP_1MIN_FROM = '2026-09-21';" in html
+    assert "calcVer: state.calcVer, strengthFrom30s: state.strengthFrom30s," in html    # 스냅샷에 담는다
+    적용 = html.split("function applyProfile(saved)")[1].split("\n}")[0]
+    assert "state.calcVer = saved ? (Number(saved.calcVer) || 1) : CALC_VER;" in 적용    # 표시 없는 저장본 = 옛 기준, 새 프로필 = 지금 기준
+    assert "if (state.calcVer < CALC_VER) migrateCalc();" in 적용
+    고침 = html.split("async function migrateCalc()")[1].split("\n}")[0]
+    assert "if (state.calcVer >= CALC_VER || !state.result || migrateCalc.busy) return;" in 고침
+    assert "state.ageGbn === '성인' && Number.isFinite(state.strength) && 마지막날 < SITUP_1MIN_FROM" in 고침   # 어르신 의자 일어서기는 공식도 30초 — 환산하지 않는다
+    assert "state.first?.측정?.age_gbn === '성인'" in 고침 and "처음날 < SITUP_1MIN_FROM" in 고침   # 첫 점검도 같은 기준으로 (재점검 비교가 어긋나지 않게)
+    assert "await API.fitnessAge(보낼지금)" in 고침 and "await API.fitnessAge(보낼처음)" in 고침
+    assert 고침.index("await API.fitnessAge(보낼지금)") < 고침.index("state.strength = 보낼지금.strength;")   # 서버가 답한 뒤에만 바꾼다 (실패하면 그대로 — 다음에 다시)
+    assert "if (state.strength !== 옛값.지금) return;" in 고침                              # 그 사이에 다시 쟀으면 새 값이 우선
+    assert "Object.assign(끝줄, { 체력나이: 지금.체력나이" in 고침                            # 점검 기록의 마지막 줄만 새 값으로
+    assert 고침.index("state.calcVer = CALC_VER;") < 고침.index("saveProfile();")
+    계산 = html.split("async function calcAge()")[1].split("\n}")[0]
+    assert "state.calcVer = CALC_VER; state.strengthFrom30s = false;" in 계산              # 새로 재면 환산 표시는 꺼진다
+    assert "if (m.필드 === 'strength') state.strengthFrom30s = false;" in html
+    assert "1분 횟수로 환산(${SITUP_30S_TO_1MIN}배)해 계산했어요" in html                    # 환산한 값이면 프로필에 그렇다고 적는다
+
+
 def test_윗몸일으키기는_공식대로_1분을_잰다():
     """기록을 국민체력100 분포와 견주므로 재는 시간도 공식 규격이어야 한다. 교차윗몸일으키기는 1분(남 19~24세 중앙값 46회) —
     30초 횟수를 그대로 견주면 근지구력이 누구나 60대로 나온다. 어르신 의자에 앉았다 일어서기는 30초 그대로."""

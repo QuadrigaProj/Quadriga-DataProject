@@ -6934,7 +6934,7 @@ async function openStyleCard(){
   const cv = openCardSheet('내 운동 스타일 카드', `운동 스타일 ${코드} ${t.이름} 결과 카드`, '이름은 들어가지 않아요. 유형과 성향만 담깁니다.',
     { 파일: 'fitage-style.png', 제목: '내 운동 스타일', 글: `내 운동 스타일은 ${코드 ? 코드 + ' · ' : ''}${t.이름} — Fitage` });
   let img = null;
-  try { img = await STYLE_ART.image(t.id, 560); } catch (e) { /* 그림 없이 */ }
+  try { img = await STYLE_ART.image(t.id, 560, state.sex); } catch (e) { /* 그림 없이 */ }
   if ($('shareCanvas') === cv) drawStyleCard(cv, r, img);
 }
 function drawStyleCard(cv, r, img){
@@ -7763,7 +7763,7 @@ function renderStyleResult(r){
    코드가 생기기 전에 저장된 결과에는 코드가 없다. 답은 남아 있으니 조용히 한 번 다시 채점해 채운다. */
 function renderStyleCode(r){
   const t = r.유형 || {}, code = r.코드;
-  $('styleArt').innerHTML = STYLE_ART.svg(t.id, 112, `${t.이름 || ''} 그림`);
+  $('styleArt').innerHTML = STYLE_ART.html(t.id, state.sex, 112, `${t.이름 || ''} 그림`);      // 같은 유형이어도 성별에 따라 그림이 다르다
   $('styleArt').style.display = STYLE_ART.has(t.id) ? '' : 'none';
   $('styleCode').textContent = code?.글자 || '';
   $('styleCodeSub').textContent = code ? code.축.map(a => a.이름).join(' · ') : '';

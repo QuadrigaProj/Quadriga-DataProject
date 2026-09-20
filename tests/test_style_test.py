@@ -236,8 +236,28 @@ def test_유형마다_대표_그림이_있다():
     for t in st.load()["유형"]:
         assert f"    {t['id']}: () =>" in art and f"    {t['id']}:" in art.split("const TONE = {")[1].split("};")[0], t["id"]
     assert "function chibi(id, o)" in art                     # 여덟 명이 같은 얼굴 틀을 쓴다 — 한 식구로 보이게
-    assert "function svg(id, size = 160, label = '')" in art and "function image(id, size = 400)" in art
+    assert "function svg(id, size = 160, label = '')" in art and "function image(id, size = 400, sex)" in art
     assert "'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s)" in art       # canvas 에 그릴 수 있게
+
+
+def test_그림은_사용자의_성별에_따라_다르다():
+    """같은 유형이어도 성별이 다르면 그림이 다르다 (예현 요청, 2026-09-20). SD 캐릭터, 유형 여덟 × 여 · 남 = 열여섯 장.
+    파일을 못 받으면 예전 SVG 그림으로 돌아간다 — 그림 때문에 화면이 비면 안 된다."""
+    from pathlib import Path
+    폴더 = Path(__file__).resolve().parents[1] / "frontend" / "img" / "style"
+    for t in st.load()["유형"]:
+        for 성 in ("f", "m"):
+            파일 = 폴더 / f"{t['id']}-{성}.webp"
+            assert 파일.exists(), 파일.name
+            머리 = 파일.read_bytes()[:12]
+            assert 머리[:4] == b"RIFF" and 머리[8:12] == b"WEBP", 파일.name
+            assert 파일.stat().st_size < 60_000, (파일.name, 파일.stat().st_size)      # 열여섯 장이 다 해서 0.5MB 아래 — 첫 화면에서는 받지 않는다
+            assert c.get(f"/img/style/{t['id']}-{성}.webp").status_code == 200
+    art = c.get("/js/style-art.js").text
+    assert "const photo = (id, sex) => (has(id) ? `/img/style/${id}-${sex === 'M' ? 'm' : 'f'}.webp` : '');" in art
+    assert "onerror=\"this.outerHTML = STYLE_ART.svg('${id}', ${size}, this.alt)\"" in art       # 못 받으면 그 자리를 SVG 로
+    assert "img.onerror = () => svgImage(id, size).then(resolve, reject);" in art                 # 공유 카드도 마찬가지
+    assert "return { svg, html, image, photo, has, tone:" in art
 
 
 def test_결과_화면에_그림_코드_카드가_있다():
@@ -246,14 +266,14 @@ def test_결과_화면에_그림_코드_카드가_있다():
     assert 'id="styleArt"' in html and 'id="styleCode"' in html and 'id="styleAxes"' in html
     assert 'onclick="openStyleCard()">결과 카드 만들기</button>' in html
     그림 = html.split("function renderStyleCode(r)")[1].split("\n}")[0]
-    assert "STYLE_ART.svg(t.id, 112," in 그림 and "$('styleCode').textContent = code?.글자 || '';" in 그림
+    assert "STYLE_ART.html(t.id, state.sex, 112," in 그림 and "$('styleCode').textContent = code?.글자 || '';" in 그림
     assert "if (!code) { refillStyleCode(); return; }" in 그림                       # 코드가 생기기 전의 저장본은 답으로 다시 채점해 채운다
     assert 'id="styleKind"' in html and "$('styleKind').textContent = t.갈래 || '';" in html   # 은유 이름 아래에 풀이
     채움 = html.split("async function refillStyleCode()")[1].split("\n}")[0]
     assert "await API.styleTestResult(saved.answers)" in 채움 and "saveProfile();" in 채움
     assert "테스트가 새로 바뀌었어요. 다시 해 보면 네 글자 유형이 나와요." in 채움      # 9문항 때의 답은 다시 채점할 수 없다
     카드 = html.split("async function openStyleCard()")[1].split("\n}")[0]
-    assert "파일: 'fitage-style.png'" in 카드 and "await STYLE_ART.image(t.id, 560)" in 카드
+    assert "파일: 'fitage-style.png'" in 카드 and "await STYLE_ART.image(t.id, 560, state.sex)" in 카드
     assert "이름은 들어가지 않아요. 유형과 성향만 담깁니다." in 카드
     그리기 = html.split("function drawStyleCard(cv, r, img)")[1].split("\n}")[0]
     assert "const W = 1080, H = 1350" in 그리기 and "state.user" not in 그리기        # 체력나이 카드와 같은 크기, 이름은 넣지 않는다

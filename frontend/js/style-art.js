@@ -146,8 +146,19 @@ const STYLE_ART = (() => {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="${size}" height="${size}" role="img" aria-label="${label}"><defs><clipPath id="${clip}"><rect width="200" height="200" rx="46"/></clipPath></defs><g clip-path="url(#${clip})"><rect width="200" height="200" fill="${TONE[id][0]}"/>${BODY[id]()}</g></svg>`;
   }
 
-  /* canvas 에 그릴 수 있게 그림을 이미지로 — 공유 카드가 쓴다. */
-  function image(id, size = 400){
+  /* 유형 × 성별 그림 파일 — 같은 유형이어도 사용자의 성별에 따라 다른 그림이 나온다 (예현 요청).
+     SD 캐릭터(애니메이션과 일러스트의 중간 그림체), img/style/<유형>-<m|f>.webp. 성별을 모르면 여성 그림을 쓴다.
+     파일이 없거나 못 받으면 위의 SVG 그림으로 돌아간다 — 그림 때문에 화면이 비는 일은 없다. */
+  const photo = (id, sex) => (has(id) ? `/img/style/${id}-${sex === 'M' ? 'm' : 'f'}.webp` : '');
+
+  /* 결과 화면에 넣을 그림 — <img>. 못 받으면 그 자리를 SVG 로 바꾼다. */
+  function html(id, sex, size = 160, label = ''){
+    if (!has(id)) return '';
+    const alt = String(label).replace(/"/g, '&quot;');
+    return `<img src="${photo(id, sex)}" width="${size}" height="${size}" alt="${alt}" decoding="async" style="display:block;border-radius:23%;object-fit:cover" onerror="this.outerHTML = STYLE_ART.svg('${id}', ${size}, this.alt)">`;
+  }
+
+  function svgImage(id, size){
     return new Promise((resolve, reject) => {
       const s = svg(id, size);
       if (!s) { reject(new Error('no art')); return; }
@@ -158,5 +169,23 @@ const STYLE_ART = (() => {
     });
   }
 
-  return { svg, image, has, tone: id => (has(id) ? TONE[id] : null) };
+  /* canvas 에 그릴 수 있게 그림을 이미지로 — 공유 카드가 쓴다. 성별 그림을 SVG 와 같은 둥근 네모로 오려서 준다. */
+  function image(id, size = 400, sex){
+    return new Promise((resolve, reject) => {
+      if (!has(id)) { reject(new Error('no art')); return; }
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas'); c.width = c.height = size;
+        const g = c.getContext('2d'), r = size * 0.23;
+        g.beginPath(); g.moveTo(r, 0); g.arcTo(size, 0, size, size, r); g.arcTo(size, size, 0, size, r);
+        g.arcTo(0, size, 0, 0, r); g.arcTo(0, 0, size, 0, r); g.closePath(); g.clip();
+        g.drawImage(img, 0, 0, size, size);
+        resolve(c);
+      };
+      img.onerror = () => svgImage(id, size).then(resolve, reject);
+      img.src = photo(id, sex);
+    });
+  }
+
+  return { svg, html, image, photo, has, tone: id => (has(id) ? TONE[id] : null) };
 })();

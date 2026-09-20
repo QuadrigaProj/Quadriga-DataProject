@@ -9610,6 +9610,21 @@ function paintRecoMode(){
               : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 저렴하게 이용 가능해요`);
 }
 
+/* 소셜 로그인이 어디서 막혔는지 말해 준다 — 서버가 단계(why)와 제공자가 준 오류 이름(e)을 돌려준다.
+   "실패했어요" 한 줄로는 구글 · 네이버만 안 될 때 까닭을 알 길이 없었다. 끝의 괄호는 관리자가 보고 고치라는 표시다. */
+function socialFailText(q){
+  const 이름 = { google: '구글', naver: '네이버', kakao: '카카오' }[q.get('p')] || '소셜';
+  const why = q.get('why'), e = q.get('e');
+  const 말 = {
+    denied: `${이름} 로그인 동의가 끝나지 않았어요. 취소하셨거나, 아직 이 계정이 허용되지 않았을 수 있어요.`,
+    state: '로그인 시간이 지났어요. 버튼을 다시 눌러 주세요.',
+    token: `${이름} 쪽에서 로그인을 확인해 주지 않았어요. 잠시 뒤 다시 시도해주세요.`,
+    profile: `${이름} 에서 회원 정보를 받아오지 못했어요. 잠시 뒤 다시 시도해주세요.`,
+    network: `${이름} 서버와 연결하지 못했어요. 잠시 뒤 다시 시도해주세요.`,
+  }[why] || '소셜 로그인에 실패했어요. 다시 시도해주세요.';
+  return why ? `${말} (${why}${e ? ': ' + e : ''})` : 말;
+}
+
 /* ---- 시작 ---- */
 (async function init(){
   MOVE_ART.install();
@@ -9618,7 +9633,7 @@ function paintRecoMode(){
   setAuthMode('login');
 
   if (new URLSearchParams(location.search).get('login') === 'failed') {
-    authError('소셜 로그인에 실패했어요. 다시 시도해주세요.');
+    authError(socialFailText(new URLSearchParams(location.search)));
   }
 
   // 설정된 소셜 제공자만 살린다

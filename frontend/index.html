@@ -801,11 +801,11 @@
   /* 버튼을 같은 크기·같은 모양으로 (I2). 두 칸 격자에 놓고 칸을 똑같이 나눈다.
      이름을 .reco-actions 로 둔 것은 기록 화면의 .rec-actions 와 겹치지 않게 하려는 것이다. */
   .reco-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:18px; }
-  /* 추천 카드: '이 루틴으로 시작' 은 맨 아래에 가로로 길게, 나머지는 그 위에 네모로 모은다 (예현 요청).
-     시작 버튼이 맨 끝에 올 때만 걸린다 — 'AI 추천 받기' 처럼 맨 앞에 오는 카드는 그대로다.
-     나머지가 홀수 개면(무료 추천 3개 · '다음 루틴' 이 붙은 5개) 혼자 남는 마지막 버튼도 가로로 채운다. */
-  .reco-actions > .reco-btn.go:last-child{ grid-column:1 / -1; min-height:56px; font-size:15.5px; }
-  .reco-actions:has(> .reco-btn.go:last-child) > .reco-btn:nth-last-child(2):nth-child(odd){ grid-column:1 / -1; }
+  /* AI 추천 카드: '이 루틴으로 시작' 은 맨 아래에 가로로 길게, 나머지는 그 위에 네모로 모은다 (예현 요청).
+     AI 가 지은 카드(.by-ai)에만 건다 — 무료 추천은 예전대로 네 버튼이 같은 크기로 2×2 다 (예현: "바꿔 달라고 한 건 AI 추천만").
+     나머지가 홀수 개면('다음 루틴' 이 붙은 5개) 혼자 남는 마지막 버튼도 가로로 채운다. */
+  .rec-card.by-ai .reco-actions > .reco-btn.go:last-child{ grid-column:1 / -1; min-height:56px; font-size:15.5px; }
+  .rec-card.by-ai .reco-actions > .reco-btn:nth-last-child(2):nth-child(odd){ grid-column:1 / -1; }
   .reco-btn{
     width:100%; min-height:52px; padding:0 10px; margin:0;
     display:flex; align-items:center; justify-content:center;
@@ -8912,7 +8912,7 @@ function paintRecommend(){
   // AI 가 지은 루틴은 후보 목록이 아니라 하나다. '더 쉬운·더 어려운' 이 갈 곳이 없다.
   const 지은것 = x.구성 === 'ai';
   box.innerHTML = `
-    <div class="rec-card">
+    <div class="rec-card${recoBy === 'ai' ? ' by-ai' : ''}">
       ${지은것 && x.시작 ? `<div class="rec-start">${startLine(x.시작)}</div>` : ''}
       <div class="rec-rank">${지은것 ? (state.aiRecoNext?.length ? '이전에 받은 루틴이에요 · ' : '') + 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요' + (x.조정 ? ` · 이전 루틴보다 ${x.조정}` : '')
         : `${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서`}</div>

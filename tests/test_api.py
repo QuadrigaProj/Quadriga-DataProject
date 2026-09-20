@@ -543,13 +543,14 @@ def test_소셜_로그인이_실패하면_어디서_왜인지_알려_준다(monk
 
     # ① 동의 화면에서 막혔다 — 취소했거나, 허용되지 않은 계정(구글 '테스트' 상태 · 네이버 '개발 중')
     q = 실패("/auth/google/callback?error=access_denied&error_description=not+a+test+user&state=" + auth.new_state("google"))
-    assert q == {"login": "failed", "why": "denied", "p": "google", "e": "access_denied"}
+    assert q == {"login": "failed", "why": "denied", "p": "google", "e": "access_denied", "d": "not a test user"}
     # ② state 가 안 맞는다 (남이 만든 요청 · 10분이 지나 만료)
     assert 실패("/auth/google/callback?code=abc&state=없는값")["why"] == "state"
     # ③ 토큰을 못 받았다 — Client Secret 이 틀리면 invalid_client
     _가짜_제공자(monkeypatch, {"error": "invalid_client", "error_description": "Unauthorized"}, 상태=401)
     q = 실패("/auth/google/callback?code=code-SECRET-456&state=" + auth.new_state("google"))
-    assert q["why"] == "token" and q["e"] == "invalid_client"
+    assert q["why"] == "token" and q["e"] == "invalid_client" and q["d"] == "Unauthorized"
+    # 네이버는 무엇이 틀려도 이름이 invalid_request 다 — 설명이 있어야 '비밀 값이 틀림' 과 '코드가 틀림' 이 갈린다
     # ④ 프로필에 회원 번호가 없다
     _가짜_제공자(monkeypatch, {"access_token": "tok-SECRET-123"}, {"email": "x@ex.com"})
     assert 실패("/auth/google/callback?code=code-SECRET-456&state=" + auth.new_state("google"))["why"] == "profile"
@@ -567,7 +568,7 @@ def test_화면은_소셜_로그인이_막힌_단계를_말해_준다():
     말 = html.split("function socialFailText(q)")[1].split("/* ---- 시작 ---- */")[0]
     for 단계 in ("denied:", "state:", "token:", "profile:", "network:"):
         assert 단계 in 말, 단계
-    assert "return why ? `${말} (${why}${e ? ': ' + e : ''})` : 말;" in 말                # 끝의 괄호는 관리자가 보고 고치라는 표시
+    assert "return why ? `${말} (${why}${e ? ': ' + e : ''}${d ? ' — ' + d : ''})` : 말;" in 말      # 끝의 괄호는 관리자가 보고 고치라는 표시
     assert "authError(socialFailText(new URLSearchParams(location.search)));" in html
 
 

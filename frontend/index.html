@@ -9745,7 +9745,7 @@ function paintRecoMode(){
    "실패했어요" 한 줄로는 구글 · 네이버만 안 될 때 까닭을 알 길이 없었다. 끝의 괄호는 관리자가 보고 고치라는 표시다. */
 function socialFailText(q){
   const 이름 = { google: '구글', naver: '네이버', kakao: '카카오' }[q.get('p')] || '소셜';
-  const why = q.get('why'), e = q.get('e');
+  const why = q.get('why'), e = q.get('e'), d = q.get('d');
   const 말 = {
     denied: `${이름} 로그인 동의가 끝나지 않았어요. 취소하셨거나, 아직 이 계정이 허용되지 않았을 수 있어요.`,
     state: '로그인 시간이 지났어요. 버튼을 다시 눌러 주세요.',
@@ -9753,7 +9753,7 @@ function socialFailText(q){
     profile: `${이름} 에서 회원 정보를 받아오지 못했어요. 잠시 뒤 다시 시도해주세요.`,
     network: `${이름} 서버와 연결하지 못했어요. 잠시 뒤 다시 시도해주세요.`,
   }[why] || '소셜 로그인에 실패했어요. 다시 시도해주세요.';
-  return why ? `${말} (${why}${e ? ': ' + e : ''})` : 말;
+  return why ? `${말} (${why}${e ? ': ' + e : ''}${d ? ' — ' + d : ''})` : 말;      // d = 제공자가 적어 준 설명. 네이버는 이름이 늘 invalid_request 라 이게 있어야 갈린다
 }
 
 /* ---- 시작 ---- */

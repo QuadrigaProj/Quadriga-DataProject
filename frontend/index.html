@@ -3392,7 +3392,6 @@ function applyProfile(saved){
   state.freeReco = 되살린추천(saved?.freeReco);
   state.pinnedRooms = Array.isArray(saved?.pinnedRooms) ? saved.pinnedRooms.map(Number) : [];
   dedupeMeasureLog();          // 예전 저장본에는 같은 날짜가 여러 줄 있을 수 있다 (규칙 4)
-  state.uiMode = ['easy', 'normal'].includes(saved?.uiMode) ? saved.uiMode : null;
   state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
   // 잔액은 스냅샷에 담지 않는다. 서버 원장에서 읽는다.
   state.credit = 0;
@@ -3422,6 +3421,7 @@ function applyProfile(saved){
   state.commute = (saved?.commute && saved.commute.from && saved.commute.to)
     ? { from: String(saved.commute.from), to: String(saved.commute.to) } : null;
   state.styleTest = (saved?.styleTest && typeof saved.styleTest === 'object' && saved.styleTest.result) ? saved.styleTest : null;
+  state.uiMode = ['easy', 'normal'].includes(saved?.uiMode) ? saved.uiMode : null;
   selectMethod(saved?.method === 'inbody' ? 'inbody' : 'home');   // 저장된 'self'(또는 없음)는 home 으로 이관
   // 기본값을 채워 넣지 않는다 — 저장된 값이 있을 때만 되돌리고, 없으면 빈 칸으로 둔다.
   $('ageInput').value    = saved?.age ?? '';

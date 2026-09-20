@@ -3062,6 +3062,26 @@ def test_다이어트를_고르면_관리_부위도_고른다():
     assert '"관리하고 싶은 부위": 참고.get("관리부위") or [],' in main
 
 
+def test_프로필의_내_정보에서도_관리_부위를_고른다():
+    """이미 쓰고 있는 사람은 운동 방식을 프로필의 '내 정보' 에서 바꾼다. 처음 목적을 고르는 화면에만 있었더니
+    "반영이 안 된 것 같아" 가 됐다 (예현, 2026-09-20). 이 폼은 '저장' 을 눌러야 반영되므로 초안(editAreas)에 들고 있다가 옮긴다."""
+    html = _index()
+    폼 = html.split('id="editPurpose"')[1].split('id="editTarget"')[0]
+    assert 'onchange="markDirty(); renderEditDietAreas()"' in 폼                                   # 다이어트로 바꾸는 순간 펼쳐진다
+    assert 'id="editDietAreaBox" hidden' in 폼 and 'id="editDietAreaChips" role="group"' in 폼
+    assert "살은 부위별로 따로 빠지지 않아요." in 폼                                                # 같은 안내 — 부위별로 빠진다고 말하지 않는다
+    그림 = html.split("function renderEditDietAreas()")[1].split("\n}")[0]
+    assert "box.hidden = $('editPurpose').value !== 'diet';" in 그림 and 'aria-pressed="${editAreas.includes(a)}"' in 그림
+    고름 = html.split("function toggleEditDietArea(a)")[1].split("\n}")[0]
+    assert "editAreas = DIET_AREAS.filter(x => have.has(x));" in 고름 and "markDirty();" in 고름
+    assert "state.dietAreas" not in 고름 and "saveProfile" not in 고름                              # 저장을 누르기 전에는 반영하지 않는다
+    채움 = html.split("function renderEdit()")[1].split("\n}")[0]
+    assert "editAreas = [...(state.dietAreas || [])];" in 채움 and "renderEditDietAreas();" in 채움
+    저장 = html.split("async function saveEdits()")[1].split("\n}")[0]
+    assert "if (purpose === 'diet' && editAreas.join() !== (state.dietAreas || []).join()) {" in 저장
+    assert "state.dietAreas = [...editAreas];" in 저장 and "state.aiRoutine = null;" in 저장        # 부위가 바뀌면 지어 둔 AI 루틴의 전제가 달라진다
+
+
 def test_자세히_도전하기는_AI_추천에서만_보인다():
     """무료 추천에서는 눌러도 유료 안내만 뜬다 — 아예 없는 편이 낫다."""
     html = _index()

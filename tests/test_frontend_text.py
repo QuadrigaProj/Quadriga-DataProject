@@ -2914,6 +2914,24 @@ def test_유료_확인은_한_자리에서_한다():
     assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2 (AI 추천 · 시간표 사진)
 
 
+def test_AI_가_짓는_동안_예상_소요시간을_보여_준다():
+    """값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). 예상 소요시간 · 흐른 시간 · 막대를 같이 보여 준다.
+    예상은 이 기기에서 최근에 실제로 걸린 시간의 가운데값이고, AI 가 실제로 지어 준 때만 기록한다(폴백은 금방 끝나 예상을 망친다)."""
+    html = _index()
+    물음 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
+    assert "const 끝 = showAiWait(`AI 가 ${방향} 다시 짓는 중이에요…`);" in 물음 and "const 끝 = showAiWait('AI 가 짓는 중이에요…');" in 물음
+    assert 물음.count("끝(recoBy === 'ai');") == 2                       # 실제로 AI 가 지었을 때만 걸린 시간을 기록한다
+    assert 물음.index("showAiWait(") < 물음.index("await fetchRecommend(true);")
+    기다림 = html.split("function showAiWait(text)")[1].split("\n}")[0]
+    assert "예상 소요시간 약 ${est}초" in 기다림 and "`${sec}초 지났어요`" in 기다림
+    assert "조금 더 걸리고 있어요 (길어도 ${AI_WAIT_MAX}초쯤)" in 기다림    # 예상을 넘겨도 멈춘 게 아니라고 알린다
+    assert "if (!지었나) return;" in 기다림 and ".slice(-5)" in 기다림
+    assert "if (!now || !fill) { clearInterval(aiWaitTimer); return; }" in 기다림   # 결과가 그려지면 스스로 멈춘다
+    assert "const AI_WAIT_DEFAULT = 35;" in html and "const AI_WAIT_MAX = 60;" in html
+    예상 = html.split("function aiWaitEstimate()")[1].split("\n}")[0]
+    assert "a[Math.floor(a.length / 2)]" in 예상 and "AI_WAIT_DEFAULT" in 예상   # 가운데값 — 한 번 오래 걸린 것에 끌려가지 않는다
+
+
 def test_자세히_도전하기는_AI_추천에서만_보인다():
     """무료 추천에서는 눌러도 유료 안내만 뜬다 — 아예 없는 편이 낫다."""
     html = _index()

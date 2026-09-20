@@ -809,6 +809,12 @@
   .reco-btn:disabled{ color:var(--muted); border-color:var(--line); cursor:default; opacity:0.55; }
   .reco-btn.go{ background:var(--pine); border-color:var(--pine); color:#fff; }
   .reco-btn.go:not(:disabled):hover{ background:var(--pine-deep); }
+  /* AI 가 짓는 동안 — 예상 소요시간 · 흐른 시간 */
+  .ai-wait-title{ font-size:15px; font-weight:700; color:var(--ink); }
+  .ai-wait-est{ margin-top:6px; font-size:13.5px; color:var(--pine-deep); font-weight:700; font-variant-numeric:tabular-nums; }
+  .ai-wait-bar{ height:8px; border-radius:4px; background:var(--line); overflow:hidden; margin:14px auto 8px; max-width:260px; }
+  .ai-wait-bar i{ display:block; height:100%; width:0; background:var(--pine); border-radius:4px; transition:width .5s linear; }
+  .ai-wait-now{ font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
   /* ===================== SCREEN 11 : 당일 기록 작성 (G3·G4) ===================== */
   .wlog-group{ margin-top:22px; }
@@ -8628,16 +8634,59 @@ async function askAiRecommend(방향){
   if (!값을치를까(물음)) return;
   if (방향) {                                                      // 시작일은 그대로 — 같은 루틴을 방향만 바꿔 다시 짓는다
     recoAdjust = 방향;
-    $('recoBody').innerHTML = `<div class="rec-empty">AI 가 ${방향} 다시 짓는 중이에요…</div>`;
+    const 끝 = showAiWait(`AI 가 ${방향} 다시 짓는 중이에요…`);
     await fetchRecommend(true);
+    끝(recoBy === 'ai');
     return;
   }
   // 값을 치르기로 했으면 언제부터 할지 묻는다. 받은 날이 곧 시작일이라
   // 봄에 받았다고 봄부터가 아니다 — 그날의 계절·날씨에 맞춰 짓는다.
   askStartDate(async () => {
-    $('recoBody').innerHTML = '<div class="rec-empty">AI 가 짓는 중이에요…</div>';
+    const 끝 = showAiWait('AI 가 짓는 중이에요…');
     await fetchRecommend(true);
+    끝(recoBy === 'ai');
   });
+}
+
+/* ---- AI 가 짓는 동안 ----
+   값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). 예상 소요시간과 흐른 시간을 같이 보여 준다.
+   예상은 어림값을 박아 두지 않고 이 기기에서 최근에 실제로 걸린 시간(다섯 번까지)의 가운데값을 쓴다.
+   아직 기록이 없으면 AI_WAIT_DEFAULT — 서버가 루틴 하나를 짓는 데 주는 시간이 60초이고 보통 그 절반 남짓 걸린다.
+   AI 가 실제로 지어 준 때만 기록한다: 실패 · 폴백은 금방 끝나서 다음 예상을 터무니없이 줄인다. */
+const AI_WAIT_KEY = 'quadriga.aiWait';
+const AI_WAIT_DEFAULT = 35;      // 초
+const AI_WAIT_MAX = 60;          // 서버의 제한 (backend/ai_recommend.py COMPOSE_TIMEOUT_SEC)
+let aiWaitTimer = null;
+
+function aiWaitLog(){
+  try { return (JSON.parse(localStorage.getItem(AI_WAIT_KEY) || '[]') || []).filter(n => Number.isFinite(n) && n > 0); }
+  catch (e) { return []; }
+}
+function aiWaitEstimate(){
+  const a = aiWaitLog().sort((x, y) => x - y);
+  return a.length ? a[Math.floor(a.length / 2)] : AI_WAIT_DEFAULT;
+}
+function showAiWait(text){
+  const est = aiWaitEstimate(), t0 = Date.now();
+  $('recoBody').innerHTML = `<div class="rec-empty ai-wait" role="status">
+      <div class="ai-wait-title">${text}</div>
+      <div class="ai-wait-est">예상 소요시간 약 ${est}초</div>
+      <div class="ai-wait-bar" aria-hidden="true"><i id="aiWaitFill"></i></div>
+      <div class="ai-wait-now" id="aiWaitNow">0초 지났어요</div>
+    </div>`;
+  clearInterval(aiWaitTimer);
+  aiWaitTimer = setInterval(() => {
+    const now = $('aiWaitNow'), fill = $('aiWaitFill');
+    if (!now || !fill) { clearInterval(aiWaitTimer); return; }       // 결과가 그려지면 이 자리가 사라진다
+    const sec = Math.floor((Date.now() - t0) / 1000);
+    fill.style.width = Math.min(100, sec / est * 100) + '%';
+    now.textContent = sec <= est ? `${sec}초 지났어요` : `${sec}초 지났어요 · 조금 더 걸리고 있어요 (길어도 ${AI_WAIT_MAX}초쯤)`;
+  }, 500);
+  return 지었나 => {
+    clearInterval(aiWaitTimer);
+    if (!지었나) return;
+    try { localStorage.setItem(AI_WAIT_KEY, JSON.stringify([...aiWaitLog(), Math.round((Date.now() - t0) / 1000)].slice(-5))); } catch (e) {}
+  };
 }
 
 /* ---- 시작일 ----

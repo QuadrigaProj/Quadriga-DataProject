@@ -34,3 +34,43 @@ jobs:
 
       - name: 테스트
         run: pytest -q
+
+  # 배포는 Postgres 인데 위의 테스트는 SQLite 로만 돈다. 같은 테스트를 진짜 Postgres 로 한 번 더 돌린다 —
+  # README 의 "테스트도 양쪽에서 모두 통과하는지 확인합니다" 를 사람이 아니라 CI 가 지키게.
+  # (DB 연결을 다시 쓰는 코드는 Postgres 에서만 돌아서, 이 작업이 없으면 배포하고 나서야 틀린 걸 안다.)
+  pytest-postgres:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:                       # CI 안에서만 잠깐 뜨는 임시 DB 다. 비밀이 아니다.
+          POSTGRES_USER: quadriga
+          POSTGRES_PASSWORD: quadriga
+          POSTGRES_DB: quadriga_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quadriga -d quadriga_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://quadriga:quadriga@localhost:5432/quadriga_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 파이썬 준비 (runtime.txt 와 같은 3.11)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 테스트 (Postgres)
+        run: pytest -q

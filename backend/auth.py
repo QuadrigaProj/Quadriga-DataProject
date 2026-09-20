@@ -31,6 +31,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -190,17 +191,101 @@ class Cur:
         return self._raw.lastrowid
 
 
+# ---------------------------------------------------------------------------
+# Postgres 연결을 다시 쓴다
+# ---------------------------------------------------------------------------
+# 연결을 새로 여는 값이 비싸다 — TLS 악수와 SCRAM 인증이 CPU 를 쓰는데 배포 서버(Render 무료)는 0.1 CPU 다.
+# 2026-09-20 배포 서버 실측(가운데값): DB 를 안 거치는 요청 145ms · db() 한 번 +18ms · 두 번 +104ms
+# (두 번째부터 CPU 제한에 걸린다). 로그인한 요청은 db() 를 2~4번 부른다.
+# 그래서 쓰고 난 연결을 닫지 않고 몇 개 들고 있다가 다시 쓴다.
+#
+# 풀(pool)이 아니라 '놀고 있는 연결 보관함' 이다. 보관함이 비면 기다리지 않고 새로 연다 —
+# 막히거나 교착에 빠질 일이 없고, 가장 나쁜 경우가 예전(매번 새로 열기)과 같다.
+# db() 안에서 db() 를 또 불러도(연결 둘) 그대로 된다. SQLite(로컬 · 테스트)는 예전 그대로다.
+POOL_MAX_IDLE = 4            # 들고 있을 연결 수. 무료 Postgres 의 연결 한도에 한참 못 미친다
+POOL_IDLE_CHECK_SEC = 30     # 이보다 오래 논 연결은 쓰기 전에 살아 있는지 물어본다 (SELECT 1)
+POOL_MAX_AGE_SEC = 600       # 이보다 오래된 연결은 버린다 — DB 쪽에서 끊었을 수 있다
+_idle: list = []             # [(연결, 만든 때, 마지막으로 쓴 때)] — 뒤에서 꺼낸다(방금 쓴 것부터)
+_idle_lock = threading.Lock()
+
+
+def _pg_connect():
+    import psycopg
+    from psycopg.rows import dict_row
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
+def _close_quietly(con) -> None:
+    try:
+        con.close()
+    except Exception:                           # 이미 끊긴 연결을 닫다가 나는 오류는 볼 일이 없다
+        pass
+
+
+def _pg_checkout():
+    """쓸 연결 하나와 그 연결을 만든 때. 보관함에 멀쩡한 것이 있으면 그것을, 없으면 새로 연다."""
+    while True:
+        with _idle_lock:
+            item = _idle.pop() if _idle else None
+        now = time.monotonic()
+        if item is None:
+            return _pg_connect(), now
+        con, born, last = item
+        if con.closed or now - born > POOL_MAX_AGE_SEC:
+            _close_quietly(con)
+            continue
+        if now - last > POOL_IDLE_CHECK_SEC:
+            try:                                # 오래 놀았다 — 저쪽에서 끊었을 수 있다. 물어보고 쓴다
+                con.execute("SELECT 1")
+                con.rollback()
+            except Exception:
+                _close_quietly(con)
+                continue
+        return con, born
+
+
+def _pg_checkin(con, born: float, ok: bool) -> None:
+    """다 쓴 연결을 보관함에 돌려놓는다. 조금이라도 수상하면 닫는다 — 다음 사람에게 고장 난 연결을 주지 않는다."""
+    try:
+        if not ok:
+            con.rollback()                      # 하다 만 트랜잭션을 다음 사람에게 넘기지 않는다
+        멀쩡 = not con.closed and getattr(con.info.transaction_status, "name", "") == "IDLE"
+    except Exception:
+        멀쩡 = False
+    if 멀쩡:
+        with _idle_lock:
+            if len(_idle) < POOL_MAX_IDLE:
+                _idle.append((con, born, time.monotonic()))
+                return
+    _close_quietly(con)
+
+
+def close_idle() -> None:
+    """들고 있던 연결을 모두 닫는다. 서버가 내려갈 때 · 테스트에서 쓴다."""
+    with _idle_lock:
+        items, _idle[:] = list(_idle), []
+    for con, _, _ in items:
+        _close_quietly(con)
+
+
 @contextmanager
 def db():
     if is_postgres():
-        import psycopg
-        from psycopg.rows import dict_row
-        con = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        con, born = _pg_checkout()
+        cur = None
+        ok = False
         try:
-            yield Cur(con.cursor(), True)
+            cur = con.cursor()
+            yield Cur(cur, True)
             con.commit()
+            ok = True
         finally:
-            con.close()
+            if cur is not None:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+            _pg_checkin(con, born, ok)
         return
 
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

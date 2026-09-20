@@ -86,6 +86,7 @@ async def lifespan(_: FastAPI):
     except Exception as e:                       # DB 가 아직 안 붙어도 서버는 뜬다
         print(f"[warn] DB 초기화 실패: {type(e).__name__}")
     yield
+    auth.close_idle()                            # 들고 있던 DB 연결을 닫고 내려간다
 
 
 app = FastAPI(

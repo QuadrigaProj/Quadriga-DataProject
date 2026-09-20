@@ -499,6 +499,9 @@
                background:var(--bg); border:1px solid var(--line); }
   .rec-detail-row{ display:flex; gap:10px; font-size:12.5px; line-height:1.6; }
   .rec-detail-row + .rec-detail-row{ margin-top:4px; }
+  /* 하루에 루틴을 여러 번 한 날 — 시간대(아침 · 낮 …)마다 머리 줄을 두고 그 아래에 한 동작을 적는다 */
+  .rec-detail-row.part span{ font-weight:700; }
+  .rec-detail-row + .rec-detail-row.part{ margin-top:10px; padding-top:8px; border-top:1px solid var(--line); }
   .rec-detail-row b{ color:var(--muted); font-weight:700; flex-shrink:0; width:48px; }
   /* 종목명은 48px 을 넘는다 — 그 줄만 넓게 (J4) */
   .rec-detail-row.wide b{ width:auto; min-width:76px; max-width:45%; }
@@ -2755,6 +2758,35 @@ function dedupeMeasureLog(){
   return 바뀜;
 }
 
+/* 직접 적은 운동도 날짜당 한 줄이다 (예현: "날짜 중복된 게 있으면 안 됨 — 합치거나 업데이트").
+
+   저장할 때는 그날 것을 덮어써서 겹칠 일이 없다. 그래도 예전 저장본이나 다른 기기에서 온 기록에는
+   같은 날짜가 두 줄 남아 있을 수 있다. 그러면 목록에 같은 날이 두 번 뜨고, 기록 폼은 앞의 것만 채워서
+   다시 저장하는 순간 뒤의 것이 말없이 사라진다. 그래서 버리지 않고 합친다 —
+   같은 종목은 나중에 적은 값이 이기고, 다른 종목은 둘 다 남는다. 몸 상태(요약)도 나중 값이 이긴다.
+   합친 날의 체력나이는 지운다: 한쪽 기록만 보고 뽑은 값이라 다시 뽑아야 한다(backfillLogAges 가 채운다).
+   바뀐 게 있으면 true. */
+function dedupeWorkoutLog(){
+  const list = Array.isArray(state.workoutLog) ? state.workoutLog : [];
+  const byDate = new Map();
+  const 합친날 = new Set();
+  list.forEach(w => {
+    if (!w || !w.date) return;
+    const 앞 = byDate.get(w.date);
+    if (!앞) { byDate.set(w.date, { ...w, items: [...(w.items || [])], 요약: { ...(w.요약 || {}) } }); return; }
+    합친날.add(w.date);
+    (w.items || []).forEach(x => {
+      const i = 앞.items.findIndex(y => (y.id ?? y.이름) === (x.id ?? x.이름));
+      if (i >= 0) 앞.items[i] = x; else 앞.items.push(x);
+    });
+    Object.assign(앞.요약, w.요약 || {});
+  });
+  const 바뀜 = byDate.size !== list.length;
+  if (바뀜) state.workoutLog = [...byDate.values()];
+  if (합친날.size && state.dayAges && typeof state.dayAges === 'object') 합친날.forEach(d => { delete state.dayAges[d]; });
+  return 바뀜;
+}
+
 /* 새 측정 결과가 state.result 에 들어온 직후 한 번 호출한다.
    최초 점검은 first 로 남기고, 이력에 보태고, 저장하고, 게이지까지 바로 반영한다. */
 function commitResult(){
@@ -3373,6 +3405,7 @@ function applyProfile(saved){
   state.freeReco = 되살린추천(saved?.freeReco);
   state.pinnedRooms = Array.isArray(saved?.pinnedRooms) ? saved.pinnedRooms.map(Number) : [];
   dedupeMeasureLog();          // 예전 저장본에는 같은 날짜가 여러 줄 있을 수 있다 (규칙 4)
+  dedupeWorkoutLog();          // 직접 적은 운동도 마찬가지다 — 버리지 않고 합친다
   state.activityAge = (saved?.activityAge && saved.activityAge.체력나이 != null) ? saved.activityAge : null;
   // 잔액은 스냅샷에 담지 않는다. 서버 원장에서 읽는다.
   state.credit = 0;
@@ -3690,8 +3723,40 @@ const fmtDate = (s) => {
   return m && d ? `${Number(m)}월 ${Number(d)}일` : s;
 };
 
+/* 운동한 날은 날짜당 한 줄이다 (예현: "날짜 중복된 게 있으면 안 됨 — 합치거나 업데이트").
+
+   기록 자체는 시간대마다 따로 남긴다 — AI 루틴은 아침 것을 끝냈다고 낮 것까지 끝난 게 아니라서
+   그날 · 그 시간대의 줄이 있어야 한다(logRoutineDone · daypartDone). 그 줄들을 여기서 날짜로 묶어 한 줄로 보여 준다:
+   이름은 '아침 깨우기 외 2개' 로 줄이고, 자세히 보기에 시간대별로 나눠 적는다. 하루 안에서는 아침 → 밤 순서다. */
+function routineDays(log){
+  const 순서 = Object.fromEntries(DAYPARTS.map((d, i) => [d.이름, i + 1]));
+  const byDate = new Map();
+  (log || []).forEach(e => {
+    if (!e || !e.date) return;
+    if (!byDate.has(e.date)) byDate.set(e.date, []);
+    byDate.get(e.date).push(e);
+  });
+  return [...byDate.entries()]
+    .map(([date, 줄들]) => ({ date, 줄들: 줄들.sort((a, b) => (순서[a.시간대] || 0) - (순서[b.시간대] || 0)) }))
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+const routineEntryName = (e) => e.name || `루틴 ${e.no ?? ''}번`;
+function routineDayName(줄들){
+  const names = [...new Set(줄들.map(routineEntryName))];
+  return names.length === 1 ? names[0] : `${names[0]} 외 ${names.length - 1}개`;
+}
+/* 하루에 한 줄뿐이면 예전과 같은 모양, 여러 줄이면 시간대(이름)를 머리에 두고 차례로 적는다. */
+function routineDayDetailHtml(줄들){
+  if (줄들.length === 1) return routineDetailHtml(줄들[0]);
+  return 줄들.map(e => {
+    const 속 = routineDetailHtml(e);
+    return `<div class="rec-detail-row part"><b>${esc(e.시간대 || '루틴')}</b><span>${esc(routineEntryName(e))}</span></div>${속}`;
+  }).join('');
+}
+
 async function renderRecords(){
   const log = [...(state.routineLog || [])].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const days = routineDays(log);
 
   $('recDay').textContent = state.programStart ? `D+${programDay()}` : '—';
   $('recDone').textContent = log.length ? `${log.length}회` : '0회';
@@ -3718,16 +3783,16 @@ async function renderRecords(){
     $('recAgeBlock').style.display = 'none';
   }
 
-  $('recList').innerHTML = log.length
-    ? log.map(e => `<div class="rec-item">
-        <div class="rec-date">${fmtDate(e.date)}</div>
-        <div class="rec-name">${e.name || `루틴 ${e.no ?? ''}번`}</div>
+  $('recList').innerHTML = days.length
+    ? days.map(d => `<div class="rec-item">
+        <div class="rec-date">${fmtDate(d.date)}</div>
+        <div class="rec-name">${esc(routineDayName(d.줄들))}</div>
         <div class="rec-check">✓</div>
-        ${moreToggle(routineDetailHtml(e))}
+        ${moreToggle(routineDayDetailHtml(d.줄들))}
       </div>`).join('')
     : `<div class="rec-empty">아직 완료한 루틴이 없어요.<br/>
          홈에서 오늘의 루틴을 끝내면 여기에 하나씩 쌓입니다.</div>`;
-  foldRecList('list', $('recList'), log.length);
+  foldRecList('list', $('recList'), days.length);
 
   renderMeasureRecords();
   renderManualRecords();
@@ -7976,6 +8041,7 @@ function renderManualRecords(){
   const box = $('recManualBlock');
   const note = $('recManualDeleteNote');
   if (note) note.textContent = '';
+  if (dedupeWorkoutLog()) saveProfile();      // 날짜당 한 줄 — 겹친 날이 있으면 합치고 그대로 저장한다
   const all = state.workoutLog || [];
   const rows = all.map((w, i) => ({ w, i }))
     .filter(({ w }) => (w.items || []).length || Object.keys(w.요약 || {}).length)

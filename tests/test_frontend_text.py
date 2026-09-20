@@ -901,7 +901,7 @@ def test_기록_묶음은_접고_펼칠_수_있다():
         assert f'id="{몸통}"' in html
     assert "const REC_PREVIEW = 5;" in html and "const REC_FOLD_KEY = 'quadriga.recFold';" in html
     # 세 목록 모두 그린 뒤에 나눠 담는다 — 줄을 그리는 코드는 그대로다
-    assert "foldRecList('list', $('recList'), log.length);" in html
+    assert "foldRecList('list', $('recList'), days.length);" in html      # 운동한 날은 날짜로 묶은 줄 수다
     assert "foldRecList('manual', $('recManual'), rows.length);" in html
     assert "foldRecList('measure', $('recMeasures'), rows.length);" in html
     assert "log.slice(0, 30).map(e =>" not in html and "rows.slice(0, 20).map(" not in html      # 접어 두니 개수를 자르지 않는다 (제목의 개수와 맞아야 한다)
@@ -918,10 +918,39 @@ def test_기록_묶음은_접고_펼칠_수_있다():
     assert '<div class="rec-body" id="recListBody"><div id="recList"></div></div>\n        <button type="button" class="rec-log-btn"' in html
 
 
+def test_기록_목록은_날짜당_한_줄이다():
+    """운동한 날 · 직접 적은 운동 · 점검 기록 — 어느 목록에도 같은 날짜가 두 번 나오면 안 된다 (예현, 2026-09-20).
+    AI 루틴은 시간대마다 따로 기록돼서(아침 · 낮 · 저녁) 운동한 날에 같은 날이 여러 줄 떴다. 기록은 그대로 두고 그릴 때 날짜로 묶는다."""
+    html = _index()
+    묶기 = html.split("function routineDays(log)")[1].split("\n}")[0]
+    assert "byDate.get(e.date).push(e);" in 묶기
+    assert "(순서[a.시간대] || 0) - (순서[b.시간대] || 0)" in 묶기                      # 하루 안에서는 아침 → 밤
+    그리기 = html.split("async function renderRecords()")[1].split("\n}")[0]
+    assert "const days = routineDays(log);" in 그리기
+    assert 'days.map(d => `<div class="rec-item">' in 그리기 and 'log.map(e => `<div class="rec-item">' not in 그리기
+    assert "foldRecList('list', $('recList'), days.length);" in 그리기                  # 제목 옆 개수도 날 수다
+    assert "$('recDone').textContent = log.length ? `${log.length}회` : '0회';" in 그리기   # '완료한 루틴' 은 그대로 횟수다
+    # 기록 자체는 시간대마다 남는다 — 아침 것을 끝냈다고 낮 것까지 끝난 게 아니다
+    assert "state.routineLog.find(e => e.date === today && (e.시간대 || null) === 시간대)" in html
+    자세히 = html.split("function routineDayDetailHtml(줄들)")[1].split("\n}")[0]
+    assert "if (줄들.length === 1) return routineDetailHtml(줄들[0]);" in 자세히          # 하루 한 번이면 예전 모양 그대로
+    assert 'class="rec-detail-row part"' in 자세히                                      # 여러 번이면 시간대마다 머리 줄
+    # 직접 적은 운동 — 불러올 때와 그릴 때 겹친 날을 합친다(버리지 않는다)
+    합치기 = html.split("function dedupeWorkoutLog()")[1].split("\n}")[0]
+    assert "if (i >= 0) 앞.items[i] = x; else 앞.items.push(x);" in 합치기              # 같은 종목은 나중 값, 다른 종목은 둘 다
+    assert "Object.assign(앞.요약, w.요약 || {});" in 합치기
+    assert "delete state.dayAges[d];" in 합치기                                         # 합친 날의 체력나이는 다시 뽑는다
+    assert "dedupeWorkoutLog();" in html.split("function applyProfile(")[1].split("\n}")[0]
+    assert "if (dedupeWorkoutLog()) saveProfile();" in html.split("function renderManualRecords()")[1].split("\n}")[0]
+    # 점검 기록은 원래 날짜당 한 줄이다 (규칙 4) — 같은 날 다시 재면 나중 값으로 바뀐다
+    assert "byDate.set(m.date, {" in html.split("function measureRows()")[1].split("\n}")[0]
+    assert "dedupeMeasureLog();" in html.split("function appendMeasureLog()")[1].split("\n}")[0]
+
+
 def test_세_목록_모두_자세히_보기가_있다():
     html = _index()
     루틴 = html.split("$('recList').innerHTML")[1].split("renderMeasureRecords()")[0]
-    assert "moreToggle(routineDetailHtml(e))" in 루틴
+    assert "moreToggle(routineDayDetailHtml(d.줄들))" in 루틴              # 날짜로 묶은 한 줄 — 하루 한 번이면 routineDetailHtml 그대로
     직접 = html.split("$('recManual').innerHTML")[1].split("\n}")[0]
     assert "moreToggle(manualDetailHtml(w))" in 직접
     점검 = html.split("$('recMeasures').innerHTML")[1].split(".join('')")[0]

@@ -1089,6 +1089,7 @@
   .axis-none{ font-size:13px; color:var(--muted); }
   /* 안 잰 항목의 줄: 안내 문구는 줄어들 수 있고(두 줄로 꺾인다) 버튼은 제 크기를 지킨다 */
   .axis-row.todo .axis-val{ flex:1; min-width:0; text-align:right; line-height:1.35; word-break:keep-all; }
+  .axis-foot{ font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px; }
   .axis-go{ flex-shrink:0; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer;
     color:var(--pine-deep); background:var(--pine-tint); border:1px solid var(--pine-tint);
     border-radius:999px; padding:6px 11px; }
@@ -2530,6 +2531,8 @@ const state = {
   gripKg: null,        // G6 선택 입력: 악력(kg) — 몸무게로 나눠 상대악력으로 본다
   endurance: null,     // G6 선택 입력: 심폐지구력(성인·성장기 왕복오래달리기 / 어르신 2분제자리걷기)
   muscleEndurance: null,   // 성장기 근지구력(만 11~12세 윗몸말아올리기 · 13~18세 반복점프, 회) — 프로필의 '측정하러 가기' 로 적는다
+  calcVer: 2,              // 이 기록이 어느 계산 기준으로 저장됐나 (CALC_VER) — 옛 기준이면 불러올 때 한 번 고친다
+  strengthFrom30s: false,  // 윗몸일으키기 횟수가 예전 30초 기록을 1분으로 환산한 값인가 (다시 재면 꺼진다)
 };
 
 const PURPOSE_LABEL = {
@@ -3139,6 +3142,7 @@ function snapshot(){
     flexibility: state.flexibility, strength: state.strength,
     height: state.height, weight: state.weight,
     gripKg: state.gripKg, endurance: state.endurance, muscleEndurance: state.muscleEndurance,
+    calcVer: state.calcVer, strengthFrom30s: state.strengthFrom30s,
     purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
     first: state.first, result: state.result,
@@ -3185,6 +3189,50 @@ async function saveProfile(){
   renderProfileList();
 }
 
+/* ---- 계산 기준이 바뀌면 저장된 기록을 불러올 때 한 번 고친다 ----
+   기준 1 (표시 없음)  윗몸일으키기를 30초로 쟀고, 분포의 '왕복오래달리기'가 실은 10m 왕복달리기(초)였다
+   기준 2             윗몸일으키기 1분 · 달리기 필드 바로잡음 (2026-09-20)
+   옛 기준으로 남은 기록은 다시 재라고 하지 않고 고쳐 준다:
+     ① 성인의 윗몸일으키기 횟수(30초)를 1분 횟수로 환산한다 — 뒤 30초엔 속도가 떨어지므로 2배가 아니라 1.8배.
+        (2배로 잡으면 실제보다 좋게 나온다. 어르신의 의자에 앉았다 일어서기는 공식도 30초라 그대로다)
+     ② 지금 측정값과 첫 점검을 새 기준으로 서버에서 다시 계산한다 — 늘 62세로 나오던 심폐지구력도 이때 바로잡힌다.
+     ③ 점검 기록의 마지막 줄(지금 측정값으로 낸 것)을 새 값으로 바꾼다. 그 앞 줄들은 원값이 남아 있지 않아 그대로 둔다.
+   서버를 못 부르면 아무것도 바꾸지 않는다 — 다음에 불러올 때 다시 한다. */
+const CALC_VER = 2;
+const SITUP_30S_TO_1MIN = 1.8;
+const SITUP_1MIN_FROM = '2026-09-21';      // 이 날부터 잰 윗몸일으키기는 1분 횟수다 (기준이 바뀐 9/20 의 기록은 30초로 본다)
+
+async function migrateCalc(){
+  if (state.calcVer >= CALC_VER || !state.result || migrateCalc.busy) return;
+  migrateCalc.busy = true;
+  const 환산 = v => Math.round(v * SITUP_30S_TO_1MIN);
+  const 기록 = (state.measureLog || []).filter(m => m?.date);
+  const 마지막날 = 기록.length ? 기록[기록.length - 1].date : (state.programStart || '');
+  const 처음날 = 기록.length ? 기록[0].date : (state.programStart || '');
+  const 지금환산 = state.ageGbn === '성인' && Number.isFinite(state.strength) && 마지막날 < SITUP_1MIN_FROM;
+  const 처음환산 = state.first?.측정?.age_gbn === '성인' && Number.isFinite(state.first.측정.strength) && 처음날 < SITUP_1MIN_FROM;
+  const 옛값 = { 지금: state.strength, 처음: state.first?.측정?.strength };
+  try {
+    const 보낼지금 = { ...measurement(), ...(지금환산 ? { strength: 환산(state.strength) } : {}) };
+    const 보낼처음 = state.first?.측정 ? { ...state.first.측정, ...(처음환산 ? { strength: 환산(state.first.측정.strength) } : {}) } : null;
+    const 지금 = await API.fitnessAge(보낼지금);
+    const 처음 = 보낼처음 ? await API.fitnessAge(보낼처음) : null;
+    if (!Number.isFinite(지금?.체력나이)) throw new Error('no result');
+    if (state.strength !== 옛값.지금) return;             // 그 사이에 다시 쟀다 — 새로 잰 값이 우선이다
+    if (지금환산) { state.strength = 보낼지금.strength; $('strengthInput').value = state.strength; state.strengthFrom30s = true; }
+    state.result = 지금;
+    if (처음 && Number.isFinite(처음.체력나이)) state.first = { 측정: 보낼처음, 결과: 처음 };
+    const 끝줄 = (state.measureLog || [])[state.measureLog.length - 1];
+    if (끝줄) Object.assign(끝줄, { 체력나이: 지금.체력나이, 신뢰구간: 지금.신뢰구간 ?? null, 항목별: { ...(지금.항목별 || {}) } });
+    state.activityAge = null;                             // 옛 결과에 얹어 둔 추정치는 버린다
+    state.calcVer = CALC_VER;
+    saveProfile();
+    paintGauges(); renderResult(); refreshEta();
+    if ($('s5')?.classList.contains('active')) renderProfile();
+  } catch (e) { /* 다음에 불러올 때 다시 */ }
+  finally { migrateCalc.busy = false; }
+}
+
 /* 저장된 값을 화면에 되돌린다. 없으면 첫 점검부터. */
 function applyProfile(saved){
   if (saved) Object.assign(state, saved);
@@ -3211,6 +3259,8 @@ function applyProfile(saved){
   state.gripKg = saved?.gripKg ?? null;
   state.endurance = saved?.endurance ?? null;
   state.muscleEndurance = saved?.muscleEndurance ?? null;
+  state.calcVer = saved ? (Number(saved.calcVer) || 1) : CALC_VER;      // 표시가 없는 저장본은 옛 기준(1)이다
+  state.strengthFrom30s = !!saved?.strengthFrom30s;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
   if (!state.measureLog.length && state.first?.결과?.체력나이 != null) {
     const f = state.first.결과;
@@ -3249,6 +3299,7 @@ function applyProfile(saved){
   if (state.result) {
     renderResult();
     goTo('s3');
+    if (state.calcVer < CALC_VER) migrateCalc();      // 옛 기준으로 낸 결과면 새 기준으로 한 번 고친다 (기다리지 않는다)
   } else {
     $('resultBlock').style.display = 'none';
     $('homeGradeBlock').style.display = 'none';
@@ -5424,6 +5475,7 @@ async function calcAge(){
       if (!ageGroup(state.age)) { onAgeChange(); btn.disabled=false; btn.textContent=label; return; }
       // 1) 체력나이·또래비교 — 유연성·근력·키·몸무게로 /fitness-age (계산 로직은 백엔드 그대로)
       state.result = await API.fitnessAge(measurement());
+      state.calcVer = CALC_VER; state.strengthFrom30s = false;      // 방금 1분으로 잰 값이다
       setStatus('');
       // F3 훅 1/2 — state.result 가 새로 들어온 직후 정확히 1회 (first 보존·measureLog·저장·게이지)
       commitResult();
@@ -6314,7 +6366,8 @@ function renderProfile(){
       <div class="axis-val">${값}</div>
       ${오른쪽}
     </div>`;
-  }).join('');
+  }).join('') + (state.strengthFrom30s && state.ageGbn === '성인'
+    ? `<div class="axis-foot">근지구력은 예전에 30초로 잰 윗몸일으키기 횟수를 1분 횟수로 환산(${SITUP_30S_TO_1MIN}배)해 계산했어요.</div>` : '');
 
   // 집중 개선 영역 (A3) — 서버가 극단적으로 부족하다고 표시한 항목이 있으면 그것,
   // 없으면 약점(개선 효과가 가장 큰 항목). 항목명은 계산 결과에서 동적으로 온다.
@@ -6434,6 +6487,7 @@ async function saveAxisMeasure(k){
   const 예전 = state[m.필드];
   const 되돌리기 = () => { state[m.필드] = 예전; if ($(m.입력)) $(m.입력).value = 예전 ?? ''; };
   state[m.필드] = v;
+  if (m.필드 === 'strength') state.strengthFrom30s = false;      // 방금 새로 쟀다 — 더는 환산한 값이 아니다
   if ($(m.입력)) $(m.입력).value = v;          // 1번 화면 입력칸도 맞춰 둔다 — 다음에 다시 계산할 때 syncInputs 가 이 값을 지우지 않게
   btn.disabled = true; btn.textContent = '계산 중…';
   try {

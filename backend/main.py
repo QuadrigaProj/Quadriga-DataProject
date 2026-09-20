@@ -242,6 +242,10 @@ class MeasureIn(ServiceAgeIn):
         None, ge=0,
         description="심폐지구력: 성인·성장기=왕복오래달리기(회, 11~12세는 15m · 13세부터 20m), "
                     "어르신=2분제자리걷기(회). 성장기는 나이로 환산하지 않고 또래 백분위만 준다")
+    long_jump: float | None = Field(None, gt=0, description="성인 순발력: 제자리 멀리뛰기 (cm)")
+    shuttle_10m: float | None = Field(None, gt=0, description="성인 민첩성: 10M 4회 왕복달리기 (초)")
+    target_3m: float | None = Field(None, gt=0, description="어르신 평형성: 의자에 앉아 3M 표적 돌아오기 (초)")
+    figure8: float | None = Field(None, gt=0, description="어르신 협응력: 8자보행 (초)")
     muscle_endurance: float | None = Field(
         None, ge=0,
         description="성장기 근지구력: 만 11~12세=윗몸말아올리기(회), 만 13~18세=반복점프(30초, 회). "
@@ -261,6 +265,11 @@ class MeasureOut(BaseModel):
     또래비교: dict = {}
     집중개선영역: list[str] = []
     해석: str = ""
+
+
+def _extras(body: "MeasureIn") -> dict:
+    """선택 항목(운동체력) — 이 연령군에서 쓰는지는 fitness_age.extra_items 가 가린다."""
+    return {k: getattr(body, k) for k in fa.EXTRA_ITEMS}
 
 
 def _measure_inputs(body: "MeasureIn") -> tuple:
@@ -289,7 +298,7 @@ def post_fitness_age_eta(body: EtaIn) -> dict:
         raise HTTPException(400, "측정값을 최소 하나는 보내주세요.")
     return pj.project(_dist, age_gbn=body.age_gbn, sex=body.sex, age=body.age, target=body.target,
                       flexibility=body.flexibility, strength=body.strength, grip=grip,
-                      endurance=body.endurance, bmi=bmi)
+                      endurance=body.endurance, bmi=bmi, extras=_extras(body))
 
 
 @app.post("/fitness-age", response_model=MeasureOut)
@@ -319,7 +328,7 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
     result = fa.fitness_age(
         _dist, body.age_gbn, body.sex,
         flexibility=body.flexibility, strength=body.strength, bmi=bmi,
-        grip=grip, endurance=body.endurance, age=body.age,
+        grip=grip, endurance=body.endurance, age=body.age, extras=_extras(body),
     )
     if result["체력나이"] is None:
         raise HTTPException(422, "해당 연령군·성별의 분포가 부족해 산출할 수 없습니다.")
@@ -329,7 +338,7 @@ def post_fitness_age(body: MeasureIn) -> MeasureOut:
         peers = fa.peer_report(_dist, body.age_gbn, body.sex, body.age,
                                flexibility=body.flexibility, strength=body.strength,
                                bmi=bmi, grip=grip, endurance=body.endurance,
-                               muscle_endurance=body.muscle_endurance)
+                               muscle_endurance=body.muscle_endurance, extras=_extras(body))
 
     약점 = fa.weakest_link(result)
 

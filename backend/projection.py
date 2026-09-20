@@ -77,6 +77,10 @@ def _parts(d, age_gbn: str, sex: str, raw: dict, weeks: float, hi: bool) -> dict
         a = fa.convert_age(d, age_gbn, sex, cardio, improved(cardio, v, weeks, hi))
         if a is not None:
             parts["심폐지구력"] = a
+    for label, item, v in fa.extra_items(age_gbn, raw.get("extras")):      # 선택 항목 — 향상 폭 표에 없는 것은 그대로 둔다
+        a = fa.convert_age(d, age_gbn, sex, item, improved(item, v, weeks, hi))
+        if a is not None:
+            parts[label] = a
     v = raw.get("bmi")
     if fa._given(v):
         a = fa.u_shaped_age(d, age_gbn, sex, "BMI", improved("BMI", v, weeks, hi))
@@ -86,7 +90,7 @@ def _parts(d, age_gbn: str, sex: str, raw: dict, weeks: float, hi: bool) -> dict
 
 
 def project(d, *, age_gbn: str, sex: str, age, target: float, flexibility=None, strength=None,
-            grip=None, endurance=None, bmi=None) -> dict:
+            grip=None, endurance=None, bmi=None, extras=None) -> dict:
     """지금 측정값 → 목표 체력나이에 닿는 주 (빠르면·늦으면). 못 닿으면 None.
 
     성장기는 나이가 들수록 기록이 좋아져 "체력나이가 낮다 = 좋다" 가 아니다. 추정하지 않는다.
@@ -94,7 +98,7 @@ def project(d, *, age_gbn: str, sex: str, age, target: float, flexibility=None, 
     if age_gbn == fa.GROWTH:
         return {"가능": False, "안내": "성장기는 발달 수준으로 읽어서 도달 시점을 추정하지 않아요."}
     raw = {"flexibility": flexibility, "strength": strength, "grip": grip,
-           "endurance": endurance, "bmi": bmi}
+           "endurance": endurance, "bmi": bmi, "extras": extras}
     지금 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, 0, False), age_gbn, age)["체력나이"]
     if 지금 is None:
         return {"가능": False, "안내": "측정값이 부족해 추정할 수 없어요."}

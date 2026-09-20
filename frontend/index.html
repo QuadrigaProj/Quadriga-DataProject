@@ -2531,6 +2531,8 @@ const state = {
   gripKg: null,        // G6 선택 입력: 악력(kg) — 몸무게로 나눠 상대악력으로 본다
   endurance: null,     // G6 선택 입력: 심폐지구력(성인·성장기 왕복오래달리기 / 어르신 2분제자리걷기)
   muscleEndurance: null,   // 성장기 근지구력(만 11~12세 윗몸말아올리기 · 13~18세 반복점프, 회) — 프로필의 '측정하러 가기' 로 적는다
+  // 선택 항목(운동체력) — 프로필의 '측정하러 가기' 로 적는다. 성인: 제자리 멀리뛰기(cm) · 10m 4회 왕복달리기(초) / 어르신: 3m 표적 돌아오기(초) · 8자보행(초)
+  longJump: null, shuttle10m: null, target3m: null, figure8: null,
   calcVer: 2,              // 이 기록이 어느 계산 기준으로 저장됐나 (CALC_VER) — 옛 기준이면 불러올 때 한 번 고친다
   strengthFrom30s: false,  // 윗몸일으키기 횟수가 예전 30초 기록을 1분으로 환산한 값인가 (다시 재면 꺼진다)
 };
@@ -3143,6 +3145,7 @@ function snapshot(){
     height: state.height, weight: state.weight,
     gripKg: state.gripKg, endurance: state.endurance, muscleEndurance: state.muscleEndurance,
     calcVer: state.calcVer, strengthFrom30s: state.strengthFrom30s,
+    longJump: state.longJump, shuttle10m: state.shuttle10m, target3m: state.target3m, figure8: state.figure8,
     purpose: state.purpose, method: state.method,
     targetAge: state.targetAge,
     first: state.first, result: state.result,
@@ -3259,6 +3262,7 @@ function applyProfile(saved){
   state.gripKg = saved?.gripKg ?? null;
   state.endurance = saved?.endurance ?? null;
   state.muscleEndurance = saved?.muscleEndurance ?? null;
+  ['longJump', 'shuttle10m', 'target3m', 'figure8'].forEach(k => { state[k] = saved?.[k] ?? null; });
   state.calcVer = saved ? (Number(saved.calcVer) || 1) : CALC_VER;      // 표시가 없는 저장본은 옛 기준(1)이다
   state.strengthFrom30s = !!saved?.strengthFrom30s;
   // 측정 이력이 없는 예전 저장본은 첫 점검 한 줄을 기간 시작일로 채워 넣는다 (변화추이 시작점)
@@ -5347,6 +5351,8 @@ function measurement(){
     height_cm: state.height, weight_kg: state.weight,
     grip_kg: state.gripKg, endurance: state.endurance,   // 잰 사람만 (G6)
     muscle_endurance: state.ageGbn === '성장기' ? state.muscleEndurance : null,   // 성장기만 — 성인·어르신의 근지구력은 strength 다
+    long_jump: state.longJump, shuttle_10m: state.shuttle10m,                     // 선택 항목 — 서버가 연령군에 맞는 것만 쓴다
+    target_3m: state.target3m, figure8: state.figure8,
   };
 }
 
@@ -6313,8 +6319,11 @@ async function toggleHeavy(){
    잰 적 없어도 자리는 남긴다. 그 밖에 잰 항목(성장기 순발력 등)은 체성분 앞에 끼운다. */
 const AXIS_ORDER = ['유연성', '근력', '근지구력', '심폐지구력', '체성분'];
 
+/* 연령군마다 더 잴 수 있는 운동체력 축 — 국민체력100 공식 분류. 안 쟀어도 자리를 둬 '측정하러 가기' 가 보이게 한다 */
+const AXIS_EXTRA = { '성인': ['순발력', '민첩성'], '어르신': ['평형성', '협응력'], '성장기': ['순발력'] };
+
 function axisOrder(항목별){
-  const 잰것 = Object.keys(항목별 || {});
+  const 잰것 = [...new Set([...(AXIS_EXTRA[state.ageGbn] || []), ...Object.keys(항목별 || {})])];
   const 나머지 = 잰것.filter(k => !AXIS_ORDER.includes(k));
   const 앞 = AXIS_ORDER.slice(0, -1);      // 체성분을 뺀 나머지
   return [...앞, ...나머지, '체성분'];
@@ -6404,6 +6413,14 @@ function axisMeasure(k){
         설명: '30cm쯤 되는 낮은 장애물(상자·쿠션)을 옆에 두고, 몸은 정면을 본 채 두 발을 모아 좌우로 30초 동안 넘은 횟수예요. 두 발이 같이 뜨고 같이 닿아야 하고, 장애물을 건드린 것은 세지 않아요.' };
   if ((k === '근지구력' && 힘 && g !== '성장기') || (k === '순발력' && g === '성장기' && 힘))
     return { 필드: 'strength', 입력: 'strengthInput', 이름: 힘.name, 단위: 힘.unit, 예: 힘.init, 최소: 0, 설명: 힘.desc, 초: 힘.timer ? (힘.seconds || 30) : 0 };
+  if (g === '성인' && k === '순발력') return { 필드: 'longJump', 입력: null, 이름: '제자리 멀리뛰기', 단위: 'cm', 예: 190, 최소: 0, 양수: true,
+    설명: '두 발을 모으고 서서 제자리에서 앞으로 힘껏 뛰어요. 출발선에서 뒤꿈치가 닿은 자리까지를 줄자로 재요. 두 번 뛰어 더 먼 쪽을 적어요.' };
+  if (g === '성인' && k === '민첩성') return { 필드: 'shuttle10m', 입력: null, 이름: '10m 4회 왕복달리기', 단위: '초', 예: 11.5, 최소: 0, 양수: true,
+    설명: '10m 떨어진 두 선 사이를 두 번 왕복(10m × 4 = 40m)하는 데 걸린 시간이에요. 선을 발로 밟고 돌아서요. 스톱워치로 0.1초까지 재요 — 운동장·복도·주차장처럼 10m 가 나오는 곳이면 돼요.' };
+  if (g === '어르신' && k === '평형성') return { 필드: 'target3m', 입력: null, 이름: '의자에 앉아 3m 표적 돌아오기', 단위: '초', 예: 6.0, 최소: 0, 양수: true,
+    설명: '의자에 앉아 있다가 "시작"에 일어나 3m 앞에 둔 표적(고깔·물병)을 돌아와 다시 앉기까지 걸린 시간이에요. 뛰지 말고 빠르게 걸어요. 넘어지지 않게 옆에서 봐 줄 사람이 있으면 좋아요.' };
+  if (g === '어르신' && k === '협응력') return { 필드: 'figure8', 입력: null, 이름: '8자보행', 단위: '초', 예: 25.0, 최소: 0, 양수: true,
+    설명: '의자에서 일어나 뒤쪽 좌우에 둔 두 고깔을 번갈아 8자로 돌아와 앉기를 두 번 되풀이한 시간이에요. 고깔 자리는 국민체력100 의 8자보행 안내를 따라 주세요. 체력인증센터에서 잰 기록이 있으면 그 값을 넣어도 돼요.' };
   if (k === '심폐지구력' && 심폐) return { 필드: 'endurance', 입력: 'enduranceInput', 이름: 심폐.이름, 단위: '회', 예: g === '어르신' ? 100 : 60, 최소: 0, 순위만: g === '성장기',
     설명: 심폐.이름 === '왕복오래달리기'
       ? 심폐.설명 + '예요. 신호음 안에 선에 닿지 못한 것이 두 번이면 끝 — 그때까지 달린 횟수를 적어주세요 (구간 한 번 = 1회).'

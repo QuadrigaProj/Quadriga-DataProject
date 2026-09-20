@@ -578,6 +578,24 @@ def test_나이로_바꾸지_않는_항목은_또래_순위로_보여_준다():
     assert "`${k} 또래 ${posLabel(순위)}${또래.어림 ? '쯤' : ''} · 기록했어요`" in 저장
 
 
+def test_운동체력_축도_프로필에서_잰다():
+    """성인 순발력 · 민첩성, 어르신 평형성 · 협응력 — 안 쟀어도 자리를 둬서 '측정하러 가기' 로 적을 수 있다."""
+    html = _index()
+    assert "const AXIS_EXTRA = { '성인': ['순발력', '민첩성'], '어르신': ['평형성', '협응력'], '성장기': ['순발력'] };" in html
+    순서 = html.split("function axisOrder(항목별)")[1].split("\n}")[0]
+    assert "...(AXIS_EXTRA[state.ageGbn] || [])" in 순서
+    body = html.split("function axisMeasure(k)")[1].split("\n}")[0]
+    for 조건, 필드, 이름, 단위 in (("g === '성인' && k === '순발력'", "longJump", "제자리 멀리뛰기", "cm"),
+                                ("g === '성인' && k === '민첩성'", "shuttle10m", "10m 4회 왕복달리기", "초"),
+                                ("g === '어르신' && k === '평형성'", "target3m", "의자에 앉아 3m 표적 돌아오기", "초"),
+                                ("g === '어르신' && k === '협응력'", "figure8", "8자보행", "초")):
+        assert f"if ({조건}) return {{ 필드: '{필드}', 입력: null, 이름: '{이름}', 단위: '{단위}'," in body, 이름
+    보냄 = html.split("function measurement()")[1].split("\n}")[0]
+    assert "long_jump: state.longJump, shuttle_10m: state.shuttle10m," in 보냄 and "target_3m: state.target3m, figure8: state.figure8," in 보냄
+    assert "longJump: state.longJump, shuttle10m: state.shuttle10m, target3m: state.target3m, figure8: state.figure8," in html   # 스냅샷
+    assert "['longJump', 'shuttle10m', 'target3m', 'figure8'].forEach(k => { state[k] = saved?.[k] ?? null; });" in html
+
+
 def test_성장기_근지구력은_프로필에서_잰다():
     """성장기의 strength 는 순발력(제자리 멀리뛰기)이라 근지구력을 따로 받는다: 만 12세까지 윗몸말아올리기(3초 박자),
     13세부터 반복점프(30초). 서버가 공식 등급 기준으로 또래 순위를 어림해 또래비교로만 돌려준다."""

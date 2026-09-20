@@ -221,3 +221,64 @@ def test_서버가_내려갈_때_들고_있던_연결을_닫는다():
     src = (Path(__file__).resolve().parents[1] / "backend" / "main.py").read_text(encoding="utf-8")
     lifespan = src.split("async def lifespan(")[1].split("app = FastAPI(")[0]
     assert lifespan.index("yield") < lifespan.index("auth.close_idle()")
+
+
+# ---------- 진짜 Postgres 에서만 (CI 의 pytest-postgres 작업) ----------
+# 위의 가짜 연결은 규칙만 본다. psycopg 가 실제로 그렇게 구는지 — 끊긴 연결을 어떻게 알리는지,
+# 오류 난 트랜잭션이 되돌린 뒤 정말 다시 쓸 수 있는지 — 는 진짜 DB 로만 알 수 있다.
+
+진짜만 = pytest.mark.skipif(not auth.is_postgres(), reason="DATABASE_URL 이 Postgres 일 때만 돈다")
+
+
+def _pid() -> int:
+    with auth.db() as con:
+        return con.execute("SELECT pg_backend_pid() AS pid").fetchone()["pid"]
+
+
+@진짜만
+def test_진짜_DB에서도_같은_연결을_다시_쓴다():
+    auth.close_idle()
+    assert _pid() == _pid() == _pid()
+    assert len(auth._idle) == 1
+
+
+@진짜만
+def test_진짜_DB에서_SQL이_틀려도_되돌린_뒤_다시_쓴다():
+    import psycopg
+    auth.close_idle()
+    처음 = _pid()
+    with pytest.raises(psycopg.Error):
+        with auth.db() as con:
+            con.execute("SELECT * FROM 없는_표")            # 트랜잭션이 오류 상태(INERROR)가 된다
+    assert _pid() == 처음                                   # 되돌렸으니 그 연결 그대로 멀쩡하다
+
+
+def _끊는다(pid: int) -> None:
+    """DB 쪽에서 그 연결을 끊는다 — DB 가 다시 뜨거나 놀던 연결을 정리할 때 생기는 일."""
+    import psycopg
+    with psycopg.connect(auth.DATABASE_URL, autocommit=True) as 관리:
+        관리.execute("SELECT pg_terminate_backend(%s)", (pid,))
+
+
+@진짜만
+def test_진짜_DB에서_오래_놀다_끊긴_연결은_부른_쪽이_모르게_바꾼다():
+    auth.close_idle()
+    처음 = _pid()
+    _끊는다(처음)
+    con, born, last = auth._idle[0]
+    auth._idle[0] = (con, born, last - auth.POOL_IDLE_CHECK_SEC - 1)     # 30초 넘게 논 것으로
+    새것 = _pid()                                                        # 오류 없이 된다
+    assert 새것 != 처음
+
+
+@진짜만
+def test_진짜_DB에서_방금_끊긴_연결은_한_번_실패하고_버려진다():
+    """30초 안에 끊긴 연결은 물어보지 않고 쓰므로 그 요청 하나는 실패한다. 그래도 고장 난 연결이 보관함에 남지는 않는다."""
+    import psycopg
+    auth.close_idle()
+    처음 = _pid()
+    _끊는다(처음)
+    with pytest.raises(psycopg.Error):
+        _pid()
+    assert auth._idle == []
+    assert _pid() != 처음                                                # 다음 요청은 새 연결로 된다

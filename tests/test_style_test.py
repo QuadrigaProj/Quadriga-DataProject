@@ -114,6 +114,86 @@ def test_잘못된_답은_400(bad):
     assert r.json()["detail"]
 
 
+def test_네_글자_성향_코드():
+    """유형 이름과 함께 MBTI 처럼 읽는 네 글자가 나온다 (예현 요청). 어느 축을 어느 기준으로 자르는지는
+    style_test.json 의 "코드" 에 있고 서버는 자르기만 한다."""
+    spec = st.load()["코드"]
+    assert [x["id"] for x in spec] == ["강도", "함께", "장소", "시간"]
+    for x in spec:
+        assert len(x["글자"]) == len(x["이름"]) == len(x["말"]) == 2 and 0 < x["기준"] < 1
+    글자 = [g for x in spec for g in x["글자"]]
+    assert len(set(글자)) == 8                       # 글자가 겹치면 코드를 읽을 수 없다
+    축이름 = {a for q in st.load()["문항"] for ch in q["선택지"] for a in ch.get("점수", {})}
+    assert {x["축"] for x in spec} | {x["반대축"] for x in spec if x.get("반대축")} <= 축이름   # 없는 축을 가리키면 늘 0 이다
+
+    r = st.score(KNOWN["runner"])                    # 숨차고 땀 · 45분 이상 · 혼자 · 무조건 바깥 · 거의 매일 · 달리는 여정 · 불타올라요
+    assert r["코드"]["글자"] == "HSOL"
+    assert [a["이름"] for a in r["코드"]["축"]] == ["고강도", "혼자", "야외", "길게"]
+    assert st.score(KNOWN["balance"])["코드"]["글자"] == "MSIL"
+    assert st.score(KNOWN["team"])["코드"]["글자"][1] == "T" and st.score(KNOWN["quick"])["코드"]["글자"][3] == "Q"
+    for a in r["코드"]["축"]:
+        assert {"id", "글자", "이름", "말", "양쪽", "비율"} <= set(a) and 0 <= a["비율"] <= 100
+        assert a["글자"] == (a["양쪽"][0]["글자"] if a["비율"] >= 50 else a["양쪽"][1]["글자"])   # 글자와 막대가 어긋나지 않는다
+
+    body = c.post("/style-test/result", json={"answers": KNOWN["runner"]}).json()
+    assert body["코드"] == r["코드"]
+
+
+def test_비율은_기준이_50퍼센트가_되게_편다():
+    """기준이 0.5 가 아닌 축(함께 0.4)에서도 글자가 바뀌는 자리가 막대의 한가운데다."""
+    def 함께(v):
+        return next(a for a in st.type_code({"함께": v})["축"] if a["id"] == "함께")
+    assert (함께(0.4)["글자"], 함께(0.4)["비율"]) == ("T", 50)
+    assert (함께(0.2)["글자"], 함께(0.2)["비율"]) == ("S", 25)
+    assert 함께(1.0)["비율"] == 100 and 함께(0.0)["비율"] == 0
+    # 길게 ↔ 짧게는 두 축의 차이로 본다 — 한쪽만 조금 골랐다고 100% 가 되지 않는다
+    시간 = next(a for a in st.type_code({"시간": 0.4, "짧게": 0.0})["축"] if a["id"] == "시간")
+    assert (시간["글자"], 시간["비율"]) == ("L", 70)
+    시간 = next(a for a in st.type_code({"시간": 0.2, "짧게": 1.0})["축"] if a["id"] == "시간")
+    assert (시간["글자"], 시간["비율"]) == ("Q", 10)
+
+
+def test_코드_열여섯_가지가_모두_나온다():
+    """기준을 잘못 잡으면 어떤 글자는 아무도 받지 못한다. 가능한 모든 답(34,992가지)을 돌려 열여섯 코드가 다 나오는지,
+    어느 글자도 한쪽으로 80% 넘게 쏠리지 않는지 본다."""
+    qs = st.load()["문항"]
+    seen: dict[str, int] = {}
+    for ans in itertools.product(*[range(len(q["선택지"])) for q in qs]):
+        k = st.type_code(st.axis_scores(list(ans)))["글자"]
+        seen[k] = seen.get(k, 0) + 1
+    assert len(seen) == 16
+    n = sum(seen.values())
+    for i in range(4):
+        앞 = sum(v for k, v in seen.items() if k[i] == st.load()["코드"][i]["글자"][0]) / n
+        assert 0.2 < 앞 < 0.8, (i, 앞)
+
+
+def test_유형마다_대표_그림이_있다():
+    """결과 화면과 공유 카드의 얼굴. 유형을 더하고 그림을 빠뜨리면 그 유형만 그림 없이 나온다."""
+    art = c.get("/js/style-art.js").text
+    for t in st.load()["유형"]:
+        assert f"    {t['id']}: `" in art and f"    {t['id']}:" in art.split("const TONE = {")[1].split("};")[0], t["id"]
+    assert "function svg(id, size = 160, label = '')" in art and "function image(id, size = 400)" in art
+    assert "'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s)" in art       # canvas 에 그릴 수 있게
+
+
+def test_결과_화면에_그림_코드_카드가_있다():
+    html = c.get("/").text
+    assert '<script src="js/style-art.js"></script>' in html
+    assert 'id="styleArt"' in html and 'id="styleCode"' in html and 'id="styleAxes"' in html
+    assert 'onclick="openStyleCard()">결과 카드 만들기</button>' in html
+    그림 = html.split("function renderStyleCode(r)")[1].split("\n}")[0]
+    assert "STYLE_ART.svg(t.id, 112," in 그림 and "$('styleCode').textContent = code?.글자 || '';" in 그림
+    assert "if (!code) { refillStyleCode(); return; }" in 그림                       # 코드가 생기기 전의 저장본은 답으로 다시 채점해 채운다
+    채움 = html.split("async function refillStyleCode()")[1].split("\n}")[0]
+    assert "await API.styleTestResult(saved.answers)" in 채움 and "saveProfile();" in 채움
+    카드 = html.split("async function openStyleCard()")[1].split("\n}")[0]
+    assert "파일: 'fitage-style.png'" in 카드 and "await STYLE_ART.image(t.id, 560)" in 카드
+    assert "이름은 들어가지 않아요. 유형과 성향만 담깁니다." in 카드
+    그리기 = html.split("function drawStyleCard(cv, r, img)")[1].split("\n}")[0]
+    assert "const W = 1080, H = 1350" in 그리기 and "state.user" not in 그리기        # 체력나이 카드와 같은 크기, 이름은 넣지 않는다
+
+
 def test_화면에_테스트_진입_링크와_s10_이_있다():
     html = c.get("/").text
     assert html.count("뭘 골라야 할지 모르겠어요 → 운동 스타일 테스트") == 2   # s2 · s8

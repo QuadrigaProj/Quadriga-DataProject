@@ -619,11 +619,13 @@ def test_체력나이_카드를_이미지로_만든다():
     assert "의학적 진단이 아니에요." in 그림
     열기 = html.split("function openShareCard()")[1].split("\n}")[0]
     assert "if (!state.result) {" in 열기 and "if (!state.result.또래비교) {" in 열기
-    assert 'onclick="saveShareCard()">이미지 저장</button>' in 열기 and 'onclick="shareShareCard()">공유하기</button>' in 열기
+    assert "파일: 'fitage-card.png'" in 열기 and "drawShareCard(cv);" in 열기
+    시트 = html.split("function openCardSheet(title, label, note, meta)")[1].split("\n}")[0]   # 운동 스타일 카드와 같이 쓰는 시트
+    assert 'onclick="saveShareCard()">이미지 저장</button>' in 시트 and 'onclick="shareShareCard()">공유하기</button>' in 시트
     공유 = html.split("async function shareShareCard()")[1].split("\n}")[0]
     assert "navigator.canShare && navigator.canShare({ files: [file] })" in 공유 and "await navigator.share({ files: [file]," in 공유
     assert "e.name === 'AbortError'" in 공유                   # 공유 창을 그냥 닫은 것은 실패가 아니다
-    assert "saveBlob(blob, 'fitage-card.png');" in 공유        # 공유를 못 하는 브라우저면 저장으로
+    assert "saveBlob(blob, shareCardMeta.파일);" in 공유       # 공유를 못 하는 브라우저면 저장으로
 
 
 def test_체성분을_나이로_못_읽어도_BMI_줄은_그대로_보인다():

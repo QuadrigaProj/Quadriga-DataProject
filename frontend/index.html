@@ -1098,6 +1098,19 @@
   .tool-name b{ font-variant-numeric:tabular-nums; }
   .tool-sub{ font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4; }
   .share-canvas{ display:block; width:100%; height:auto; border-radius:16px; border:1px solid var(--line); }
+  /* 운동 스타일 결과 — 대표 그림 · 네 글자 코드 · 성향 막대 */
+  .style-hero{ display:flex; align-items:center; gap:16px; margin-bottom:14px; }
+  .style-art{ flex:none; width:112px; height:112px; }
+  .style-art svg{ display:block; width:100%; height:100%; }
+  .style-code{ font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif; font-size:40px; font-weight:700; letter-spacing:.08em; line-height:1; color:var(--pine-deep); }
+  .style-code-sub{ font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.45; }
+  .style-axes{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
+  .style-axis-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); }
+  .style-axis-head b{ font-size:14px; color:var(--ink); }
+  .style-axis-head .on{ color:var(--pine-deep); font-weight:700; }
+  .style-axis-bar{ position:relative; height:8px; border-radius:4px; background:var(--line); margin-top:6px; }
+  .style-axis-bar i{ position:absolute; top:0; bottom:0; border-radius:4px; background:var(--pine); }
+  .style-axis-say{ font-size:12.5px; color:var(--muted); margin-top:5px; }
   .share-actions{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
   .axis-go{ flex-shrink:0; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer;
     color:var(--pine-deep); background:var(--pine-tint); border:1px solid var(--pine-tint);
@@ -2248,8 +2261,16 @@
       </div>
 
       <div id="styleResult" style="display:none;">
+        <div class="style-hero" id="styleHero">
+          <div class="style-art" id="styleArt"></div>
+          <div><div class="style-code" id="styleCode"></div><div class="style-code-sub" id="styleCodeSub"></div></div>
+        </div>
         <h1 class="title" id="styleName">—</h1>
         <p class="sub" id="styleDesc"></p>
+        <div class="program-card" id="styleAxesCard" hidden>
+          <div class="prescribe-label">내 성향 네 글자</div>
+          <div class="style-axes" id="styleAxes"></div>
+        </div>
         <div class="program-card">
           <div class="prescribe-label">추천 목적</div>
           <div class="prescribe-text" id="stylePurpose">—</div>
@@ -2260,6 +2281,7 @@
           <div class="sport-grid" id="styleSports" style="margin-top:12px;"></div>
           <button type="button" class="btn btn-line" id="styleSportBtn" onclick="styleAddSports()">이 종목 담기</button>
         </div>
+        <button type="button" class="btn btn-line" style="margin-top:14px;" onclick="openStyleCard()">결과 카드 만들기</button>
         <div class="review-link" style="margin:18px 0 0;"><button type="button" onclick="restartStyleTest()">다시 해볼래요</button></div>
       </div>
     </div>
@@ -2501,6 +2523,7 @@
 <script src="js/api.js"></script>
 <script src="js/gauge.js"></script>
 <script src="js/move-art.js"></script>
+<script src="js/style-art.js"></script>
 <script src="js/move-notes.js"></script>
 <script src="js/move-3d.js"></script>
 <script>
@@ -6545,32 +6568,98 @@ function drawShareCard(cv){
 function openShareCard(){
   if (!state.result) { showToast('먼저 체력나이를 재 주세요'); return; }
   if (!state.result.또래비교) { showToast('서버에 연결되지 않아 지금은 예시 값이에요 — 연결된 뒤에 카드를 만들 수 있어요'); return; }
-  openSheet('내 체력나이 카드', `
-    <canvas class="share-canvas" id="shareCanvas" aria-label="체력나이 ${Math.round(displayAge())}세 결과 카드"></canvas>
+  const cv = openCardSheet('내 체력나이 카드', `체력나이 ${Math.round(displayAge())}세 결과 카드`, '이름은 들어가지 않아요. 나이와 항목별 결과만 담깁니다.',
+    { 파일: 'fitage-card.png', 제목: '내 체력나이', 글: `내 체력나이는 ${Math.round(displayAge())}세 — Fitage` });
+  drawShareCard(cv);
+}
+/* 카드 시트 — 체력나이 카드와 운동 스타일 카드가 같이 쓴다. meta = { 파일, 제목, 글 } 은 저장 · 공유할 때 쓴다 */
+let shareCardMeta = null;
+function openCardSheet(title, label, note, meta){
+  shareCardMeta = meta;
+  openSheet(title, `
+    <canvas class="share-canvas" id="shareCanvas" aria-label="${label}"></canvas>
     <div class="share-actions">
       <button type="button" class="reco-btn" onclick="saveShareCard()">이미지 저장</button>
       <button type="button" class="reco-btn go" onclick="shareShareCard()">공유하기</button>
     </div>
-    <div class="axis-measure-note">이름은 들어가지 않아요. 나이와 항목별 결과만 담깁니다.</div>`);
-  drawShareCard($('shareCanvas'));
+    <div class="axis-measure-note">${note}</div>`);
+  return $('shareCanvas');
 }
 function shareCardBlob(){ return new Promise(res => $('shareCanvas').toBlob(res, 'image/png')); }
 async function saveShareCard(){
   const blob = await shareCardBlob();
-  if (blob) { saveBlob(blob, 'fitage-card.png'); showToast('이미지를 저장했어요'); }
+  if (blob) { saveBlob(blob, shareCardMeta.파일); showToast('이미지를 저장했어요'); }
 }
 async function shareShareCard(){
   const blob = await shareCardBlob();
   if (!blob) return;
-  const file = new File([blob], 'fitage-card.png', { type: 'image/png' });
+  const file = new File([blob], shareCardMeta.파일, { type: 'image/png' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: '내 체력나이', text: `내 체력나이는 ${Math.round(displayAge())}세 — Fitage` });
+      await navigator.share({ files: [file], title: shareCardMeta.제목, text: shareCardMeta.글 });
       return;
     }
   } catch (e) { if (e && e.name === 'AbortError') return; }      // 공유 창을 그냥 닫은 것
-  saveBlob(blob, 'fitage-card.png');                              // 공유를 못 하는 브라우저면 저장으로
+  saveBlob(blob, shareCardMeta.파일);                             // 공유를 못 하는 브라우저면 저장으로
   showToast('이 브라우저는 바로 공유를 못 해서 이미지로 저장했어요');
+}
+
+/* ---- 내 운동 스타일 카드 ----
+   체력나이 카드와 같은 크기(1080×1350) · 같은 틀. 대표 그림, 네 글자 코드, 유형 이름과 설명, 성향 막대 넷, 추천 종목.
+   이름은 넣지 않는다. 그림은 STYLE_ART 의 SVG 를 이미지로 바꿔 그린다 — 못 바꾸면 그림 없이 그린다. */
+async function openStyleCard(){
+  const r = state.styleTest?.result;
+  if (!r?.유형) { showToast('먼저 운동 스타일 테스트를 해 주세요'); return; }
+  const t = r.유형, 코드 = r.코드?.글자 || '';
+  const cv = openCardSheet('내 운동 스타일 카드', `운동 스타일 ${코드} ${t.이름} 결과 카드`, '이름은 들어가지 않아요. 유형과 성향만 담깁니다.',
+    { 파일: 'fitage-style.png', 제목: '내 운동 스타일', 글: `내 운동 스타일은 ${코드 ? 코드 + ' · ' : ''}${t.이름} — Fitage` });
+  let img = null;
+  try { img = await STYLE_ART.image(t.id, 560); } catch (e) { /* 그림 없이 */ }
+  if ($('shareCanvas') === cv) drawStyleCard(cv, r, img);
+}
+function drawStyleCard(cv, r, img){
+  const W = 1080, H = 1350, L = 120, R = W - 120, g = cv.getContext('2d');
+  cv.width = W; cv.height = H;
+  const css = getComputedStyle(document.documentElement), c = (n, d) => css.getPropertyValue(n).trim() || d;
+  const sans = '-apple-system, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif', serif = '"Iowan Old Style", "Palatino Linotype", Georgia, serif';
+  const ink = c('--ink', '#20261F'), muted = c('--muted', '#666F62'), pine = c('--pine', '#2E5B4B'), line = c('--line', '#DCDCC9');
+  const t = r.유형 || {}, code = r.코드, tone = STYLE_ART.tone(t.id);
+  g.fillStyle = tone ? tone[1] : c('--pine-deep', '#1F4136'); g.fillRect(0, 0, W, H);      // 바깥 틀은 그 유형의 선색
+  g.fillStyle = c('--paper', '#FAFAF4');
+  const x0 = 60, y0 = 60, w = W - 120, h = H - 120, rad = 48;
+  g.beginPath(); g.moveTo(x0 + rad, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, rad); g.arcTo(x0 + w, y0 + h, x0, y0 + h, rad);
+  g.arcTo(x0, y0 + h, x0, y0, rad); g.arcTo(x0, y0, x0 + w, y0, rad); g.closePath(); g.fill();
+  g.textBaseline = 'alphabetic'; g.textAlign = 'left';
+  g.fillStyle = pine; g.font = `700 44px ${sans}`; g.fillText('Fitage', L, 160);
+  g.fillStyle = muted; g.font = `500 30px ${sans}`; g.textAlign = 'right'; g.fillText('운동 스타일 테스트', R, 160); g.textAlign = 'left';
+  // 그림과 코드
+  if (img) g.drawImage(img, L, 210, 280, 280);
+  const tx = img ? L + 320 : L;
+  g.fillStyle = muted; g.font = `600 34px ${sans}`; g.fillText('내 운동 스타일', tx, 290);
+  g.fillStyle = tone ? tone[1] : pine; g.font = `700 ${code ? 124 : 72}px ${serif}`;
+  g.fillText(code ? code.글자 : (t.이름 || ''), tx - 4, 410);
+  if (code) { g.fillStyle = muted; g.font = `500 28px ${sans}`; g.fillText(code.축.map(a => a.이름).join(' · '), tx, 468); }
+  // 이름과 설명
+  g.fillStyle = ink; g.font = `700 60px ${sans}`; g.fillText(t.이름 || '', L, 590);
+  g.fillStyle = muted; g.font = `500 30px ${sans}`;
+  const 설명 = wrapCanvasText(g, t.설명 || '', R - L).slice(0, 3);
+  설명.forEach((s, i) => g.fillText(s, L, 648 + i * 44));
+  // 성향 막대 넷
+  let y = 648 + 설명.length * 44 + 46;
+  (code?.축 || []).forEach(a => {
+    const 앞 = a.글자 === a.양쪽[0].글자, 몫 = 앞 ? a.비율 : 100 - a.비율, bw = R - L;
+    g.font = `${앞 ? 700 : 500} 28px ${sans}`; g.fillStyle = 앞 ? ink : muted; g.textAlign = 'left';
+    g.fillText(`${a.양쪽[0].글자}  ${a.양쪽[0].이름}${앞 ? `  ${몫}%` : ''}`, L, y);
+    g.font = `${앞 ? 500 : 700} 28px ${sans}`; g.fillStyle = 앞 ? muted : ink; g.textAlign = 'right';
+    g.fillText(`${앞 ? '' : `${몫}%  `}${a.양쪽[1].이름}  ${a.양쪽[1].글자}`, R, y); g.textAlign = 'left';
+    g.fillStyle = line; g.fillRect(L, y + 16, bw, 12);
+    g.fillStyle = tone ? tone[1] : pine; g.fillRect(앞 ? L : R - bw * 몫 / 100, y + 16, bw * 몫 / 100, 12);
+    y += 88;
+  });
+  // 추천 종목과 발
+  const 종목 = (r.종목 || []).map(s => s.이름).filter(Boolean);
+  if (종목.length) { g.fillStyle = muted; g.font = `500 28px ${sans}`; g.fillText(`잘 맞는 운동 · ${종목.join(' · ')}`, L, Math.min(y + 14, 1178)); }
+  g.fillStyle = pine; g.font = `600 27px ${sans}`; g.fillText(location.host || 'Fitage', L, 1246);
 }
 
 /* ---- 프로필에서 안 잰 항목 재러 가기 ----
@@ -7331,9 +7420,41 @@ function renderStyleResult(r){
   $('styleDots').innerHTML = (r.답변 || []).map(() => '<div class="d on"></div>').join('');
   $('styleName').textContent = t.이름 || '';
   $('styleDesc').textContent = t.설명 || '';
+  renderStyleCode(r);
   $('stylePurpose').textContent = t.추천목적 || '';
   $('styleMinutes').textContent = t.하루투자분 ? `하루 ${t.하루투자분}분이면 충분해요.` : '';
   renderStyleSports(r);
+}
+
+/* 대표 그림 + MBTI 처럼 읽는 네 글자 성향 코드 + 축마다 어느 쪽으로 얼마나 기울었는지.
+   글자와 비율은 서버(style_test.type_code)가 준다 — 기준은 data/sample/style_test.json 의 "코드" 에 있다.
+   코드가 생기기 전에 저장된 결과에는 코드가 없다. 답은 남아 있으니 조용히 한 번 다시 채점해 채운다. */
+function renderStyleCode(r){
+  const t = r.유형 || {}, code = r.코드;
+  $('styleArt').innerHTML = STYLE_ART.svg(t.id, 112, `${t.이름 || ''} 그림`);
+  $('styleArt').style.display = STYLE_ART.has(t.id) ? '' : 'none';
+  $('styleCode').textContent = code?.글자 || '';
+  $('styleCodeSub').textContent = code ? code.축.map(a => a.이름).join(' · ') : '';
+  $('styleAxesCard').hidden = !code;
+  if (!code) { refillStyleCode(); return; }
+  $('styleAxes').innerHTML = code.축.map(a => {
+    const 앞 = a.글자 === a.양쪽[0].글자, 몫 = 앞 ? a.비율 : 100 - a.비율;       // 고른 쪽의 몫
+    return `<div><div class="style-axis-head">
+        <span class="${앞 ? 'on' : ''}"><b>${a.양쪽[0].글자}</b> ${a.양쪽[0].이름}${앞 ? ` ${몫}%` : ''}</span>
+        <span class="${앞 ? '' : 'on'}">${앞 ? '' : `${몫}% `}${a.양쪽[1].이름} <b>${a.양쪽[1].글자}</b></span></div>
+      <div class="style-axis-bar" role="img" aria-label="${a.이름} ${몫}퍼센트"><i style="${앞 ? 'left:0' : 'right:0'}; width:${몫}%"></i></div>
+      <div class="style-axis-say">${a.말}</div></div>`;
+  }).join('');
+}
+async function refillStyleCode(){
+  const saved = state.styleTest;
+  if (!saved || saved.result?.코드 || !Array.isArray(saved.answers) || refillStyleCode.busy) return;
+  refillStyleCode.busy = true;
+  try {
+    const r = await API.styleTestResult(saved.answers);
+    if (r?.코드 && state.styleTest === saved) { saved.result = r; saveProfile(); if (styleView === 'result') renderStyleCode(r); }
+  } catch (e) { /* 코드 없이도 결과는 그대로 보인다 */ }
+  finally { refillStyleCode.busy = false; }
 }
 
 /* 추천 종목 3개를 기존 종목 카드(.sport-card)로 그린다. 이미 담긴 종목은 .on. */

@@ -6,6 +6,9 @@ data/sample/style_test.json 이 문항(선택지별 축 점수)과 결과 유형
 
 채점: 선택지 점수를 축별로 합산 → 문항별 최대값의 합으로 0~1 정규화
       → 유형별 가중합(가중치 × 정규화 점수)이 가장 큰 유형. 동점이면 파일에 먼저 적힌 유형.
+
+성향 코드: 유형 이름과 함께 MBTI 처럼 네 글자(예: HSOL = 고강도 · 혼자 · 야외 · 길게)를 준다.
+      어느 축을 어느 기준으로 자르는지는 style_test.json 의 "코드" 에 있다 (type_code).
 """
 from __future__ import annotations
 
@@ -91,8 +94,33 @@ def axis_scores(answers: list[int]) -> dict[str, float]:
     return {a: round(raw[a] / mx[a], 3) if mx[a] else 0.0 for a in mx}
 
 
+def type_code(norm: dict[str, float]) -> dict:
+    """축별 0~1 점수 → 네 글자 성향 코드.
+
+    축마다 값이 기준 이상이면 앞 글자, 아니면 뒤 글자다. 반대축이 있으면(길게 ↔ 짧게) 두 축의 차이를 0~1 로 옮겨 견준다.
+    "비율" 은 앞 글자 쪽 백분율이고, 기준이 꼭 50% 가 되게 편 값이다 — 글자와 막대가 어긋나 보이지 않게
+    (기준이 0.4 인 축에서 0.4 는 50%, 1.0 은 100%).
+    """
+    axes, letters = [], ""
+    for c in load().get("코드", []):
+        v = float(norm.get(c["축"], 0.0))
+        if c.get("반대축"):
+            v = (v - float(norm.get(c["반대축"], 0.0)) + 1) / 2
+        th = float(c.get("기준", 0.5))
+        pct = 50 * v / th if v < th else 50 + 50 * (v - th) / (1 - th)
+        first = v >= th - 1e-9
+        pick = 0 if first else 1
+        letters += c["글자"][pick]
+        axes.append({
+            "id": c["id"], "글자": c["글자"][pick], "이름": c["이름"][pick], "말": c["말"][pick],
+            "양쪽": [{"글자": g, "이름": n} for g, n in zip(c["글자"], c["이름"])],
+            "비율": int(round(pct)),                  # 앞 글자 쪽 (뒤 글자 쪽은 100 − 비율)
+        })
+    return {"글자": letters, "축": axes}
+
+
 def score(answers) -> dict:
-    """답 목록 → {"유형": {...가중치 제외, 목적키 추가}, "점수": 축별 0~1, "답변": [...]}.
+    """답 목록 → {"유형": {...가중치 제외, 목적키 추가}, "점수": 축별 0~1, "코드": 네 글자 성향 코드, "답변": [...]}.
 
     같은 답이면 항상 같은 결과(결정적). 잘못된 답은 ValueError.
     """
@@ -105,4 +133,4 @@ def score(answers) -> dict:
             best, best_val = t, val
     out = {k: v for k, v in best.items() if k != "가중치"}
     out["목적키"] = PURPOSE_KEY.get(out.get("추천목적"))
-    return {"유형": out, "점수": norm, "답변": ans}
+    return {"유형": out, "점수": norm, "코드": type_code(norm), "답변": ans}

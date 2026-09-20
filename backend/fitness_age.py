@@ -52,10 +52,12 @@ DEFAULT_POWER = ("근지구력", "교차윗몸일으키기")
 
 # 선택 입력 — 잰 사람만 넣는다 (G6). 넣지 않으면 지금까지와 똑같이 동작한다.
 #   근력      상대악력 = 악력(kg) / 몸무게(kg) * 100. 세 연령군 모두 분포가 있다.
-#   심폐지구력 성인은 왕복오래달리기, 어르신은 2분제자리걷기.
-#             성장기는 공개 분포에 심폐 항목이 없어 산출하지 않는다.
+#   심폐지구력 성인·성장기는 왕복오래달리기(회), 어르신은 2분제자리걷기.
+#             성장기는 **또래 백분위만** 낸다 — 11~12세는 15m, 13세부터 20m 로 재서 나이별 중앙값이
+#             12세 52회 → 13세 36회로 끊기고 그 뒤로는 평평하다(여 22회 안팎). 나이로 거꾸로 읽을 수 없는 곡선이다.
 GRIP_ITEM = "상대악력"
-CARDIO_ITEM = {"성인": "왕복오래달리기", "어르신": "2분제자리걷기"}
+CARDIO_ITEM = {"성인": "왕복오래달리기", "어르신": "2분제자리걷기", "성장기": "왕복오래달리기"}
+CARDIO_NO_AGE = {"성장기"}          # 심폐를 환산나이로 바꾸지 않는 연령군 (또래비교에는 들어간다)
 
 # 성장기는 나이가 많을수록 기록이 좋아진다. 성인·어르신과 방향이 반대라
 # "체력나이가 높다 = 나쁘다" 가 성립하지 않는다. 화면에서는 발달 수준으로 읽는다.
@@ -68,8 +70,8 @@ HIGHER_IS_BETTER = {
     "교차윗몸일으키기": True, "앉아윗몸앞으로굽히기": True,
     "의자앉았다일어서기": True, "6분걷기": True, "2분제자리걷기": True,
     "왕복오래달리기": True, "제자리멀리뛰기": True, "상대악력": True,
-    "반복점프": True,
     "3m표적돌아오기": False, "8자보행": False,   # 초 단위 = 작을수록 좋음
+    "10m왕복달리기": False,                     # 민첩성(초). 지금은 쓰지 않지만 분포에는 있다
     "체지방률": False,                          # 체지방률은 높을수록 불리 → 나이 들수록 상승
 }
 
@@ -181,7 +183,7 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
             parts["근력"] = a
 
     cardio = CARDIO_ITEM.get(age_gbn)
-    if _given(endurance) and cardio:
+    if _given(endurance) and cardio and age_gbn not in CARDIO_NO_AGE:
         a = convert_age(d, age_gbn, sex, cardio, endurance)
         if a is not None:
             parts["심폐지구력"] = a

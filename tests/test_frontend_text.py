@@ -135,9 +135,9 @@ def test_키_몸무게_입력은_1_이상만_받는다():
 # ---------- C3/C4 타이머 ----------
 
 def test_타이머는_측정_카드마다_하나씩이다():
-    """윗몸일으키기·점프·무릎 푸시업은 30초, 높은 무릎 뛰기는 2분 — 마크업의 data-seconds 가 곧 정의다."""
+    """윗몸일으키기는 1분(공식 교차윗몸일으키기 규격), 점프·무릎 푸시업은 30초, 높은 무릎 뛰기는 2분 — 마크업의 data-seconds 가 곧 정의다."""
     html = _index()
-    assert 'data-timer="situp" data-seconds="30"' in html
+    assert 'data-timer="situp" data-seconds="60"' in html and '<div class="timer-time">01:00</div>' in html
     assert 'data-timer="jump" data-seconds="30"' in html
     assert 'data-timer="kneePushup" data-seconds="30"' in html
     assert 'data-timer="highKnee" data-seconds="120"' in html
@@ -516,9 +516,40 @@ def test_심폐_항목은_연령군마다_다르다():
     html = _index()
     assert "'성인':   { 이름: '왕복오래달리기'" in html
     assert "'어르신': { 이름: '2분제자리걷기'" in html
-    # 성장기는 CARDIO_LABEL 에 없다 → syncMoreMeasure 가 칸을 숨긴다
+    assert "'성장기': { 이름: '왕복오래달리기'" in html                 # 성장기도 분포가 있다 (item_f020)
     body = html.split("function syncMoreMeasure()")[1].split("\n}")[0]
-    assert "row.hidden = !c;" in body
+    assert "const c = cardioLabel();" in body and "row.hidden = !c;" in body
+    라벨 = html.split("function cardioLabel()")[1].split("\n}")[0]
+    assert "state.age <= 12" in 라벨 and "replace('20m', '15m')" in 라벨   # 유소년(11~12세)은 15m 로 잰다
+    assert "운동장·산책로에 20m 구간을 정하고, 신호음에 맞춰 오간 횟수" in html   # 센터에서만 재는 것처럼 적지 않는다
+    assert "공개 데이터에 심폐지구력 항목이 없어" not in html
+
+
+def test_윗몸일으키기는_공식대로_1분을_잰다():
+    """기록을 국민체력100 분포와 견주므로 재는 시간도 공식 규격이어야 한다. 교차윗몸일으키기는 1분(남 19~24세 중앙값 46회) —
+    30초 횟수를 그대로 견주면 근지구력이 누구나 60대로 나온다. 어르신 의자에 앉았다 일어서기는 30초 그대로."""
+    html = _index()
+    항목 = html.split("const STRENGTH_ITEM = {")[1].split("\n};")[0]
+    성인 = 항목.split("'성인':")[1].split("},")[0]
+    어르신 = 항목.split("'어르신':")[1].split("},")[0]
+    assert "1분 동안 몇 번 반복했는지 세어주세요" in 성인 and "seconds: 60" in 성인
+    assert "30초 동안 몇 번 반복했는지 세어주세요" in 어르신 and "seconds: 30" in 어르신
+    assert '<div class="measure-desc" id="strengthDesc">1분 동안 몇 번 반복했는지 세어주세요</div>' in html
+    바꿈 = html.split("function onAgeChange()")[1].split("\n}")[0]
+    assert "const 초 = String(item.seconds || 30);" in 바꿈
+    assert "$('timerBox').dataset.seconds = 초; resetTimer('situp');" in 바꿈   # 연령군이 바뀌면 타이머도 그 시간으로
+
+
+def test_나이로_바꾸지_않는_항목은_또래_순위로_보여_준다():
+    """성장기 심폐지구력은 항목별(환산나이)에 없고 또래비교에만 온다 — 프로필은 '또래 상위 N%' 와 별로 보여 준다."""
+    html = _index()
+    body = html.split("const 순서 = axisOrder(r.항목별);")[1].split("}).join('');")[0]
+    assert "const 순위만 = !잰것 && typeof pr?.백분위 === 'number';" in body
+    assert "값 = `또래 ${posLabel(pr.백분위)}`;" in body and "starStr(starFromPct(pr.백분위))" in body
+    assert "axis-row${잰것 || 순위만 ? '' : ' todo'}" in body            # 잰 항목이다 — '측정하러 가기' 를 두지 않는다
+    assert "function starFromPct(pct){ return Math.max(1, Math.min(5, Math.floor(pct / 20) + 1)); }" in html
+    저장 = html.split("async function saveAxisMeasure(k)")[1].split("\n}")[0]
+    assert "`${k} 또래 ${posLabel(순위)} · 기록했어요`" in 저장
 
 
 def test_선택값을_서버로_보낸다():
@@ -560,8 +591,9 @@ def test_항목마다_무엇을_재는지_1번_화면과_같다():
         assert f"k === '{축}'" in body and f"필드: '{필드}', 입력: '{입력}'" in body, 축
     assert "필드: 'strength', 입력: 'strengthInput', 이름: 힘.name, 단위: 힘.unit" in body   # 연령군별 항목은 STRENGTH_ITEM 그대로
     assert "k === '근지구력' && 힘 && g !== '성장기'" in body and "k === '순발력' && g === '성장기'" in body   # 성장기의 strength 는 순발력
-    assert "k === '심폐지구력' && 심폐" in body and "const g = state.ageGbn, 힘 = STRENGTH_ITEM[g], 심폐 = CARDIO_LABEL[g];" in body   # 성장기는 심폐 분포가 없다
-    assert "초: 힘.timer ? 30 : 0" in body                                          # 30초 항목엔 타이머
+    assert "k === '심폐지구력' && 심폐" in body and "const g = state.ageGbn, 힘 = STRENGTH_ITEM[g], 심폐 = cardioLabel();" in body   # 나이에 맞는 구간(15m·20m)으로
+    assert "초: 힘.timer ? (힘.seconds || 30) : 0" in body                          # 타이머는 그 항목의 공식 시간만큼 (윗몸일으키기 1분)
+    assert "신호음 안에 선에 닿지 못한 것이 두 번이면 끝" in body                     # 밖에서 혼자 잴 수 있게 규칙을 적는다
     assert body.rstrip().endswith("return null;")
     for 필드 in ("flexibility: state.flexibility", "strength: state.strength", "grip_kg: state.gripKg", "endurance: state.endurance"):
         assert 필드 in html.split("function measurement()")[1].split("\n}")[0]       # 서버로 가는 이름

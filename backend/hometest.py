@@ -1,10 +1,11 @@
 """홈 체력측정(약 4분) → 추정 체력나이 + 항목별 홈 체력등급 + 가장 부족한 요인.
 
-홈 측정 4항목 중 2개는 국민체력100 공개 데이터에 **같은 측정**이 있어 그대로 환산나이를 낸다:
-  30초 제자리 점프  ≒ item '반복점프'
-  30초 컬업        ≒ item '교차윗몸일으키기'  (윗몸말아올리기와 사실상 동일 동작)
-나머지 2개(무릎 푸시업·2분 하이니)는 공개 데이터에 대응 항목이 없어
-**체력나이로 억지 환산하지 않고** 나이·성별 기준표로 등급(A~E)만 매긴다.
+홈 측정 4항목 중 국민체력100 공개 데이터에 **같은 측정**이 있는 것은 하나다:
+  윗몸일으키기(1분) = item '교차윗몸일으키기'  → 환산나이를 낸다 (curlup_30s 는 옛 이름 — 값은 1분 횟수다)
+무릎 푸시업·2분 하이니는 공개 데이터에 대응 항목이 없어 **체력나이로 억지 환산하지 않고**
+나이·성별 기준표로 등급(A~E)만 매긴다.
+30초 제자리 점프는 기록만 돌려준다. 전에는 분포의 '반복점프'(item_f020)와 견줬는데, 그 필드는 반복점프가 아니라
+왕복오래달리기(회)였다 — 점프 횟수를 달리기 횟수와 견준 셈이라 뺐다. 진짜 반복점프 자료가 생기면 되살린다.
 """
 from __future__ import annotations
 
@@ -50,10 +51,6 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
     등급: list[dict] = []
 
     if age_gbn:
-        if fa._given(jump_30s):
-            a = fa.convert_age(dist, age_gbn, sex, "반복점프", jump_30s)
-            if a is not None:
-                parts["순발력"] = a
         if fa._given(curlup_30s):
             a = fa.convert_age(dist, age_gbn, sex, "교차윗몸일으키기", curlup_30s)
             if a is not None:
@@ -64,6 +61,8 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
 
     # 공개 데이터 없는 항목 — 등급만. 실제로 잰 항목만(_given) 등급을 매긴다 —
     # 안 잰 항목이 0·None 언저리 값으로 계산돼 등급이 나오면 안 된다.
+    if fa._given(jump_30s):                     # 견줄 공개 자료가 없다 — 등급 없이 기록만
+        등급.append({"항목": "30초 제자리 점프", "값": jump_30s, "등급": None})
     if fa._given(knee_pushup_30s):
         등급.append({"항목": "상체 근력(무릎 푸시업)", "값": knee_pushup_30s,
                     "등급": _grade(KNEE_PUSHUP, sex, age, knee_pushup_30s)})
@@ -80,8 +79,9 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
         worst = max(agg["항목별"].items(), key=lambda kv: kv[1] - age)
         if worst[1] - age >= 3:
             부족 = worst[0]
-    if 부족 is None and 등급:
-        부족 = min(등급, key=lambda e: GRADES.index(e["등급"]))["항목"]
+    매긴것 = [e for e in 등급 if e["등급"]]
+    if 부족 is None and 매긴것:
+        부족 = min(매긴것, key=lambda e: GRADES.index(e["등급"]))["항목"]
 
     return {
         "추정체력나이": agg["체력나이"],
@@ -92,7 +92,7 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
         "가장부족한요인": 부족,
         "BMI": bmi,
         "안내": ("무릎 푸시업·2분 하이니는 공개 데이터에 대응 항목이 없어 등급으로만 보여줘요. "
-               "체력나이에는 반영하지 않습니다."
+               "30초 점프는 기록만 남깁니다. 셋 다 체력나이에는 반영하지 않습니다."
                if age_gbn else
                "이 연령대는 공개 체력 분포가 없어 체력나이 대신 홈 등급만 제공해요."),
     }

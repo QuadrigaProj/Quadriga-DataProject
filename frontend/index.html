@@ -171,6 +171,8 @@
     font-family:inherit; font-size:14px; font-weight:600; color:var(--ink); cursor:pointer; }
   .diet-area[aria-pressed="true"]{ background:var(--pine); border-color:var(--pine); color:#fff; }
   .diet-areas-note{ font-size:12.5px; color:var(--muted); line-height:1.55; margin:12px 0 0; }
+  .diet-areas.in-edit{ margin:4px 0 10px; }            /* 프로필의 '내 정보' 안 — 운동 방식 줄 바로 아래 */
+  .diet-areas.in-edit .diet-areas-head span{ display:block; margin:2px 0 0; }
   .purpose-icon{
     width:42px; height:42px; border-radius:12px; background:var(--bg); display:flex; align-items:center;
     justify-content:center; font-size:20px; flex-shrink:0;
@@ -2122,7 +2124,12 @@
             <button type="button" data-sex="F" onclick="pickSex('F')">여성</button>
           </div></div>
         <label class="edit-row"><span>원하는 운동 방식</span>
-          <select id="editPurpose" onchange="markDirty()"></select></label>
+          <select id="editPurpose" onchange="markDirty(); renderEditDietAreas()"></select></label>
+        <div class="diet-areas in-edit" id="editDietAreaBox" hidden>
+          <div class="diet-areas-head" id="editDietAreaHead">관리하고 싶은 부위가 있나요?<span>여러 개 고를 수 있어요 · 안 골라도 돼요</span></div>
+          <div class="diet-area-chips" id="editDietAreaChips" role="group" aria-labelledby="editDietAreaHead"></div>
+          <p class="diet-areas-note">살은 부위별로 따로 빠지지 않아요. 전신 운동으로 빼면서, 고른 부위의 근육을 쓰는 동작이 든 루틴을 먼저 추천해 드려요.</p>
+        </div>
         <label class="edit-row"><span>목표 체력나이</span>
           <input id="editTarget" type="number" min="5" max="100" inputmode="numeric"
                  oninput="markDirty()" /></label>
@@ -3054,9 +3061,31 @@ function renderEdit(){
     Object.entries(PURPOSE_LABEL).map(([k, v]) =>
       `<option value="${k}"${k === state.purpose ? ' selected' : ''}>${v}</option>`).join('');
   $('editTarget').value = targetAge() ?? '';
+  editAreas = [...(state.dietAreas || [])];
+  renderEditDietAreas();
   editDirty = false;
   $('editSave').disabled = true;
   $('editHint').textContent = '';
+}
+
+/* '내 정보' 에서도 다이어트를 고르면 관리 부위를 고른다.
+   처음 목적을 고르는 화면(renderDietAreas)에만 있었더니, 이미 쓰고 있는 사람은 볼 길이 없었다 —
+   운동 방식을 바꾸는 곳이 여기라서다(예현: "반영이 안 된 것 같아").
+   이 폼은 '저장' 을 눌러야 반영되므로 고른 것을 초안(editAreas)에 들고 있다가 saveEdits 에서 옮긴다. */
+let editAreas = [];
+function renderEditDietAreas(){
+  const box = $('editDietAreaBox');
+  if (!box) return;
+  box.hidden = $('editPurpose').value !== 'diet';
+  $('editDietAreaChips').innerHTML = DIET_AREAS.map(a =>
+    `<button type="button" class="diet-area" aria-pressed="${editAreas.includes(a)}" onclick="toggleEditDietArea('${a}')">${a}</button>`).join('');
+}
+function toggleEditDietArea(a){
+  const have = new Set(editAreas);
+  have.has(a) ? have.delete(a) : have.add(a);
+  editAreas = DIET_AREAS.filter(x => have.has(x));            // 늘 같은 순서로
+  markDirty();
+  renderEditDietAreas();
 }
 
 async function saveEdits(){
@@ -3089,6 +3118,11 @@ async function saveEdits(){
     state.age = age;
     state.sex = sex;
     state.purpose = purpose;
+    // 다이어트일 때만 옮긴다 — 다른 방식으로 바꿀 때는 지우지 않아서, 다시 다이어트로 오면 그대로 있다
+    if (purpose === 'diet' && editAreas.join() !== (state.dietAreas || []).join()) {
+      state.dietAreas = [...editAreas];
+      state.aiRoutine = null;        // 부위를 바꿨으면 AI 가 지어 둔 루틴의 전제가 달라진 것이다 (toggleDietArea 와 같다)
+    }
     state.targetAge = Number.isFinite(target) ? target : null;
 
     // 나이·성별이 바뀌면 기준표가 달라진다. 값이 있으면 다시 계산한다.

@@ -22,6 +22,8 @@ from pathlib import Path
 from urllib.parse import urlencode
 from typing import Literal
 
+import asyncio
+
 import anyio
 import httpx
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response
@@ -76,6 +78,36 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import season as ssn  # type: ignore
     import outdoor  # type: ignore
 
+# 서버가 잠들지 않게 스스로를 두드린다.
+#
+# Render 무료 요금제는 15분 동안 들어오는 요청이 없으면 서버를 끄고, 다음 첫 접속은 30초가 넘게 걸린다.
+# 깃허브 예약 실행(.github/workflows/keep-warm.yml, 5분마다)에 맡겼더니 첫 실행까지 3시간 23분이 걸렸고
+# 그 뒤로도 5분 간격을 지켜 주지 않아 서버가 다시 잠들어 있었다(2026-09-21 실측: /health 32초).
+# 그래서 서버가 직접 10분마다 자기 바깥 주소의 /health 를 부른다 — 밖으로 나갔다가 들어오는 요청이라
+# Render 가 '접속' 으로 센다. 한 번 깨어난 뒤로는 잠들지 않고, 배포로 다시 떠도 그때부터 다시 돈다.
+# 깃허브 쪽은 그대로 둔다: 어쩌다 잠들었을 때 깨우는 것은 바깥에서만 할 수 있다.
+# 바깥 주소를 모르면(로컬 · 테스트) 아무 일도 하지 않는다. KEEP_AWAKE_EVERY_SEC=0 으로 끈다.
+KEEP_AWAKE_EVERY_SEC = float(os.getenv("KEEP_AWAKE_EVERY_SEC", "600"))
+
+
+def keep_awake_url() -> str | None:
+    """스스로를 두드릴 주소. PUBLIC_BASE_URL 이 없으면 Render 가 넣어 주는 RENDER_EXTERNAL_URL 을 쓴다."""
+    base = (os.getenv("PUBLIC_BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").strip().rstrip("/")
+    if not base.startswith("https://") or KEEP_AWAKE_EVERY_SEC <= 0:
+        return None
+    return base + "/health"
+
+
+async def _keep_awake(url: str) -> None:
+    async with httpx.AsyncClient(timeout=20) as http:
+        while True:
+            await asyncio.sleep(KEEP_AWAKE_EVERY_SEC)
+            try:
+                await http.get(url)
+            except Exception:                    # 한 번 못 불러도 다음에 다시 — 서버를 멈출 일은 아니다
+                pass
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """배포 직후 첫 요청에서 테이블이 없어 500 이 나지 않도록 미리 만든다."""
@@ -85,7 +117,11 @@ async def lifespan(_: FastAPI):
         billing.init_db()
     except Exception as e:                       # DB 가 아직 안 붙어도 서버는 뜬다
         print(f"[warn] DB 초기화 실패: {type(e).__name__}")
+    url = keep_awake_url()
+    깨우기 = asyncio.create_task(_keep_awake(url)) if url else None
     yield
+    if 깨우기:
+        깨우기.cancel()
     auth.close_idle()                            # 들고 있던 DB 연결을 닫고 내려간다
 
 

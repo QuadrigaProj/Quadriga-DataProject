@@ -41,3 +41,60 @@ def test_저장소_권한을_갖지_않고_실패해도_빨간불을_켜지_않�
     assert "actions/checkout" not in src
     assert "|| true" in src and "::warning::" in src                    # 두드리는 일이지 감시가 아니다 — 실패 메일을 쏟아내지 않는다
     assert "--max-time 100" in src                                      # 잠들어 있었다면 깨어나는 데 1분쯤 걸린다
+
+
+# ---------- 서버가 스스로를 두드린다 ----------
+# 깃허브 예약 실행은 5분 간격을 지켜 주지 않았다 — 첫 실행까지 3시간 23분, 그 뒤에도 서버가 다시 잠들어 있었다(2026-09-21).
+# 그래서 서버가 직접 10분마다 자기 바깥 주소를 부른다. 깃허브 쪽은 '잠들었을 때 깨우는' 몫으로 남긴다.
+
+def test_바깥_주소를_알_때만_스스로를_두드린다(monkeypatch):
+    from backend import main as m
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.delenv("RENDER_EXTERNAL_URL", raising=False)
+    assert m.keep_awake_url() is None                                   # 로컬 · 테스트에서는 아무 일도 하지 않는다
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://quadriga-fitness-age.onrender.com/")
+    assert m.keep_awake_url() == "https://quadriga-fitness-age.onrender.com/health"      # Render 가 넣어 주는 값
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://fitage.example.com")
+    assert m.keep_awake_url() == "https://fitage.example.com/health"    # 직접 정한 주소가 먼저다
+    monkeypatch.setenv("PUBLIC_BASE_URL", "http://localhost:8000")
+    assert m.keep_awake_url() is None                                   # https 가 아니면 배포가 아니다
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://fitage.example.com")
+    monkeypatch.setattr(m, "KEEP_AWAKE_EVERY_SEC", 0.0)
+    assert m.keep_awake_url() is None                                   # 0 으로 끈다
+    assert 0 < 600 <= SPIN_DOWN_MIN * 60 * 0.75                         # 기본 10분 — 15분보다 넉넉히 짧다
+    src = Path(m.__file__).read_text(encoding="utf-8")
+    assert 'KEEP_AWAKE_EVERY_SEC = float(os.getenv("KEEP_AWAKE_EVERY_SEC", "600"))' in src
+    시작 = src.split("async def lifespan(")[1].split("app = FastAPI(")[0]
+    assert "깨우기 = asyncio.create_task(_keep_awake(url)) if url else None" in 시작
+    assert 시작.index("yield") < 시작.index("깨우기.cancel()")            # 내려갈 때 멈춘다
+
+
+def test_한_번_못_불러도_계속_두드린다(monkeypatch):
+    import asyncio
+    from backend import main as m
+    부른것 = []
+
+    class 가짜:
+        def __init__(self, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url):
+            부른것.append(url)
+            if len(부른것) == 1:
+                raise RuntimeError("잠깐 끊김")
+
+    monkeypatch.setattr(m.httpx, "AsyncClient", 가짜)
+    monkeypatch.setattr(m, "KEEP_AWAKE_EVERY_SEC", 0.01)
+
+    async def 돌린다():
+        task = asyncio.create_task(m._keep_awake("https://x.example/health"))
+        await asyncio.sleep(0.2)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(돌린다())
+    assert len(부른것) >= 3 and set(부른것) == {"https://x.example/health"}      # 첫 번째가 터져도 멈추지 않았다
+

@@ -2452,6 +2452,16 @@ def test_또래비교_렌더링은_서버가_실제로_준_항목만_그린다()
         assert 금지 not in body
 
 
+def test_누구와_견줬는지_적는다():
+    """또래 비교 아래에 비교 구간을 적는다 — 서버가 준 값 그대로("만 19~24세", 좁은 창이 있으면 "만 20~22세")."""
+    html = _index()
+    assert "function peerBandLabel(b){ b = String(b); return b.endsWith('+') ? `만 ${b.slice(0, -1)}세 이상` : `만 ${b}세`; }" in html
+    비교 = html.split("function renderPeerComparison(r)")[1].split("\n}")[0]
+    assert "const 구간 = [...new Set(ranked.map(([, v]) => v.비교구간).filter(Boolean))];" in 비교
+    assert "${구간.map(peerBandLabel).join(' · ')} ${SEX_LABEL[state.sex] || ''}과 견줬어요" in 비교
+    assert "'국민체력100 데이터 기준 (동일 성별·연령)'" in 비교            # 구간을 못 받으면 예전 문구 그대로
+
+
 # ---------- 왜 안 되는지 화면에 드러낸다 ----------
 
 def test_카카오_실패는_서버가_준_이유를_보여준다():

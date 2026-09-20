@@ -6,9 +6,14 @@
   2) 연령군 × 성별 × 단계별 운동처방 빈도            → exercise_freq.csv
 를 만든다.
 
+  3) 또래 비교용 '좁은 창' 분포 — 나이마다 그 나이를 가운데 둔 창(21세 → 20~22세) → fitness_peer_windows.csv
+
 사용법:
     python backend/collect_measurements.py   # 먼저 수집
     python backend/build_distribution.py
+
+3) 을 앱에 반영하려면 만들어진 data/processed/fitness_peer_windows.csv 를 data/sample/ 에 복사해 커밋한다
+(배포 서버에는 data/sample/ 만 올라간다). 백분위 표라 원자료가 아니고, 3천 줄 남짓이다.
 """
 from __future__ import annotations
 
@@ -44,6 +49,16 @@ ITEMS = {
 
 MIN_N = 30          # 셀당 최소 표본
 WINSOR = 0.005      # 상하위 0.5% 절단
+
+# 또래 비교용 좁은 창 — 환산나이 곡선(5세 구간)과 따로 둔다.
+#   곡선은 구간이 좁으면 중앙값이 들쭉날쭉해져 환산나이가 튄다. 그래서 곡선은 공식 5세 구간 그대로 두고,
+#   "또래 가운데 몇 등인가" 만 좁은 창으로 견준다 — 21세를 19~24세가 아니라 20~22세와.
+# 창은 자기 나이 ±WINDOW_HALF 에서 시작해, 표본이 WINDOW_MIN_N 에 못 미치면 한 살씩 넓힌다(최대 ±WINDOW_MAX_HALF).
+# 연령군의 경계는 넘지 않는다 — 18세(성장기)와 19세(성인)는 재는 항목이 다르다.
+WINDOW_HALF = 1
+WINDOW_MAX_HALF = 5
+WINDOW_MIN_N = 300
+GROUP_AGES = {"성장기": (11, 18), "성인": (19, 64), "어르신": (65, 95)}
 
 PHASES = ("준비운동", "본운동", "정리운동")
 # 블록 구분자는 " / " (공백 포함). 운동명 안의 "/"(등/어깨 뒤쪽 스트레칭)를 자르면 안 된다.
@@ -101,6 +116,50 @@ def age_band(row) -> str | None:
     return None                                  # 유아기는 age_degree 가 개월 수라 제외
 
 
+def window_label(lo: int, hi: int) -> str:
+    return str(lo) if lo == hi else f"{lo}~{hi}"
+
+
+def peer_windows(df: pd.DataFrame, *, half: int = WINDOW_HALF, max_half: int = WINDOW_MAX_HALF,
+                 min_n: int = WINDOW_MIN_N) -> pd.DataFrame:
+    """나이마다 그 나이를 가운데 둔 창의 백분위 표.
+
+    df 에는 age(정수 나이) · age_gbn(성장기/성인/어르신) · test_sex · 항목 열이 있어야 한다(윈저화가 끝난 값).
+    항목마다 창을 따로 넓힌다 — 같은 나이라도 키는 다 재고 8자보행은 일부만 잰다.
+    max_half 까지 넓혀도 min_n 이 안 되면 그 나이 · 항목은 내지 않는다(서버가 5세 구간으로 되돌아간다).
+    """
+    recs = []
+    for g, (g_lo, g_hi) in GROUP_AGES.items():
+        for sex in ("M", "F"):
+            sub = df[(df["age_gbn"] == g) & (df["test_sex"] == sex) & (df["age"] >= g_lo)]
+            if sub.empty:
+                continue
+            ages = sub["age"].to_numpy()
+            for code, name in ITEMS.items():
+                if code not in sub:
+                    continue
+                vals = sub[code].to_numpy(dtype=float)
+                ok = ~np.isnan(vals)
+                for a in range(g_lo, g_hi + 1):
+                    for w in range(half, max_half + 1):
+                        lo, hi = max(g_lo, a - w), a + w
+                        # 어르신의 맨 위쪽은 위로 열어 둔다("93+") — 그 위로는 어차피 몇 명 없다
+                        열림 = g == "어르신" and hi >= g_hi
+                        if not 열림:
+                            hi = min(hi, g_hi)
+                        v = vals[ok & (ages >= lo) & ((ages <= hi) | 열림)]
+                        if len(v) >= min_n:
+                            recs.append({
+                                "연령군": g, "성별": sex, "나이": a, "구간": f"{lo}+" if 열림 else window_label(lo, hi),
+                                "항목코드": code, "항목": name, "n": int(len(v)),
+                                **{f"p{p}": round(float(np.percentile(v, p)), 2) for p in (5, 10, 25, 50, 75, 90, 95)},
+                                "평균": round(float(v.mean()), 2), "표준편차": round(float(v.std()), 2),
+                            })
+                            break
+    cols = ["연령군", "성별", "나이", "구간", "항목코드", "항목", "n", "p5", "p10", "p25", "p50", "p75", "p90", "p95", "평균", "표준편차"]
+    return pd.DataFrame(recs, columns=cols)
+
+
 def merge_gbn(g: str) -> str:
     """유소년(11~12)과 청소년(13~18)을 하나의 성장 곡선으로 합친다."""
     return "성장기" if g in ("청소년", "유소년") else g
@@ -152,6 +211,12 @@ def main() -> None:
     dist = pd.DataFrame(recs).sort_values(["연령군", "성별", "항목", "연령구간"])
     dist.to_csv(OUT / "fitness_distribution.csv", index=False, encoding="utf-8-sig")
     print(f"분포 {len(dist):,}행 → {OUT/'fitness_distribution.csv'}")
+
+    # --- 3) 또래 비교용 좁은 창 ---
+    win = peer_windows(df)
+    win.to_csv(OUT / "fitness_peer_windows.csv", index=False, encoding="utf-8-sig")
+    print(f"좁은 창 {len(win):,}행 → {OUT/'fitness_peer_windows.csv'}")
+    print("  앱에 반영하려면 이 파일을 data/sample/ 에 복사해 커밋하세요.")
 
     # --- 2) 처방 빈도 ---
     if "pres_note" not in df:

@@ -5837,6 +5837,9 @@ function posLabel(pct){
   return top <= 50 ? `상위 ${Math.max(1, top)}%` : `하위 ${Math.max(1, Math.round(pct))}%`;
 }
 
+/* 비교 구간을 읽는 말로 — "20~22" → 만 20~22세, "80+" → 만 80세 이상, "15" → 만 15세 */
+function peerBandLabel(b){ b = String(b); return b.endsWith('+') ? `만 ${b.slice(0, -1)}세 이상` : `만 ${b}세`; }
+
 function renderPeerComparison(r){
   const block = $('peerBlock');
   const rankEl = $('peerRank');
@@ -5857,6 +5860,11 @@ function renderPeerComparison(r){
   const myRank = Math.max(1, Math.round((100 - avgPct) / 100 * nRef));
   rankEl.innerHTML =
     `또래 ${fmtInt(nRef)}명 중<br/><span class="big">약 ${fmtInt(myRank)}등</span> (${posLabel(avgPct)})`;
+  // 누구와 견줬는지 — 서버가 준 비교 구간을 그대로 적는다. 좁은 창이 있으면 "만 20~22세", 없으면 5세 구간("만 19~24세")이다.
+  const 구간 = [...new Set(ranked.map(([, v]) => v.비교구간).filter(Boolean))];
+  $('peerFoot').textContent = 구간.length
+    ? `국민체력100 데이터 기준 · ${구간.map(peerBandLabel).join(' · ')} ${SEX_LABEL[state.sex] || ''}과 견줬어요`
+    : '국민체력100 데이터 기준 (동일 성별·연령)';
 
   // 가장 좋은 항목 ▲ · 가장 부족한 항목 ▼ — 항목이 둘 이상일 때만 (B3)
   const best  = ranked.reduce((a, b) => b[1].백분위 > a[1].백분위 ? b : a)[0];

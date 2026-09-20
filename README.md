@@ -350,6 +350,22 @@ ANTHROPIC_API_KEY=sk-ant-...
 > 성장기는 나이가 들수록 기록이 좋아져 방향이 반대입니다. 그래서 응답에
 > `해석` 문구와 `또래비교`(백분위)를 함께 주고, 화면도 "발달 수준" 으로 읽습니다.
 
+#### 또래 비교는 더 좁은 창으로 (선택)
+
+환산나이 곡선은 위 구간을 그대로 쓰지만, **"또래 가운데 몇 등인가"** 는 구간을 더 좁혀 견줄 수 있습니다 —
+21세를 19~24세가 아니라 **20~22세**와. `backend/build_distribution.py` 가 나이마다 그 나이를 가운데 둔 창
+(±1세, 표본이 300명에 못 미치면 한 살씩 넓힘, 연령군 경계는 넘지 않음)의 백분위 표
+`fitness_peer_windows.csv` 를 같이 만듭니다.
+
+```bash
+python backend/build_distribution.py                                   # data/processed/ 에 두 파일이 생깁니다
+cp data/processed/fitness_peer_windows.csv data/sample/                # 배포 서버에는 data/sample/ 만 올라갑니다
+```
+
+이 파일이 있으면 서버가 또래 비교에만 좁은 창을 쓰고(`또래비교.*.비교구간` 이 `"20~22"` 로 바뀝니다),
+없으면 지금처럼 5세 구간으로 견줍니다. 곡선까지 좁히지 않는 까닭: 한 살 단위 중앙값은 들쭉날쭉해서
+환산나이가 튑니다. 원자료(`data/raw/measurements.parquet`)가 있어야 만들 수 있습니다.
+
 ### 운동 기록과 체력나이
 
 운동을 기록하면 체력나이가 바로 다시 계산됩니다 (`POST /fitness-age/activity`).

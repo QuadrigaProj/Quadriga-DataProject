@@ -141,7 +141,8 @@ def test_타이머는_측정_카드마다_하나씩이다():
     assert 'data-timer="jump" data-seconds="30"' in html
     assert 'data-timer="kneePushup" data-seconds="30"' in html
     assert 'data-timer="highKnee" data-seconds="120"' in html
-    assert html.count('class="timer-btn"') == 4
+    assert html.count('class="timer-btn"') == 5           # 측정 카드 넷 + 프로필의 '측정하러 가기' 시트 하나 (같은 타이머 함수를 쓴다)
+    assert html.split("function openAxisMeasure(k)")[1].split("\n}")[0].count('class="timer-btn"') == 1
     assert '<div class="timer-time">02:00</div>' in html  # 2분 타이머 초기 표시
 
 
@@ -536,12 +537,52 @@ def test_차트_순서가_고정이다():
     assert "function axisOrder(항목별)" in html
 
 
-def test_안_잰_항목은_해당사항_모름이다():
+def test_안_잰_항목은_측정하러_갈_수_있다():
+    """안 잰 항목은 별 대신 '아직 측정하지 않았어요' + '측정하러 가기'. 이 연령대에 재는 항목이 없으면 버튼 대신 그렇다고 적는다."""
     html = _index()
-    assert "해당사항 모름" in html
+    assert "해당사항 모름" not in html and "아직 재지 않았어요" not in html          # 옛 문구
     body = html.split("const 순서 = axisOrder(r.항목별);")[1].split("}).join('');")[0]
     assert "const 잰것 = Number.isFinite(v);" in body
-    assert "axis-none" in body          # 별 대신 안내 문구
+    assert "'아직 측정하지 않았어요'" in body
+    assert """<button type="button" class="axis-go" onclick="openAxisMeasure('${k}')">""" in body and "'측정하러 가기'" in body
+    assert "const 잴것 = axisMeasure(k)" in body
+    assert '<div class="axis-none">이 연령대는 재는 항목이 없어요</div>' in body      # 성장기의 근지구력·심폐지구력
+    assert "값 = !잴것 ? ''" in body                                                # 잴 수 없는 항목에 '아직' 이라고 하지 않는다
+    assert "체력나이로 바꾸지 못했어요" in body and "'다시 적기'" in body              # 적어 두었는데 서버가 못 바꾼 경우
+
+
+def test_항목마다_무엇을_재는지_1번_화면과_같다():
+    """프로필에서 재는 항목·입력칸은 첫 점검(1번 화면)과 같아야 한다 — 같은 값을 두 가지로 받으면 체력나이가 흔들린다."""
+    html = _index()
+    body = html.split("function axisMeasure(k)")[1].split("\n}")[0]
+    for 축, 필드, 입력 in (("유연성", "flexibility", "flexInput"), ("근력", "gripKg", "gripInput"),
+                        ("심폐지구력", "endurance", "enduranceInput")):
+        assert f"k === '{축}'" in body and f"필드: '{필드}', 입력: '{입력}'" in body, 축
+    assert "필드: 'strength', 입력: 'strengthInput', 이름: 힘.name, 단위: 힘.unit" in body   # 연령군별 항목은 STRENGTH_ITEM 그대로
+    assert "k === '근지구력' && 힘 && g !== '성장기'" in body and "k === '순발력' && g === '성장기'" in body   # 성장기의 strength 는 순발력
+    assert "k === '심폐지구력' && 심폐" in body and "const g = state.ageGbn, 힘 = STRENGTH_ITEM[g], 심폐 = CARDIO_LABEL[g];" in body   # 성장기는 심폐 분포가 없다
+    assert "초: 힘.timer ? 30 : 0" in body                                          # 30초 항목엔 타이머
+    assert body.rstrip().endswith("return null;")
+    for 필드 in ("flexibility: state.flexibility", "strength: state.strength", "grip_kg: state.gripKg", "endurance: state.endurance"):
+        assert 필드 in html.split("function measurement()")[1].split("\n}")[0]       # 서버로 가는 이름
+
+
+def test_측정값을_적으면_체력나이를_다시_계산한다():
+    html = _index()
+    열기 = html.split("function openAxisMeasure(k)")[1].split("\n}")[0]
+    assert "openSheet(`${k} 측정하기`" in 열기 and 'id="axisMeasureInput"' in 열기 and 'id="axisMeasureSave"' in 열기
+    assert 'data-timer="axisMeasure" data-seconds="${m.초}"' in 열기 and "toggleTimer('axisMeasure')" in 열기   # 1번 화면과 같은 타이머
+    assert "inputmode" not in 열기                                                  # 유연성은 음수를 적는다 — 빼기 없는 자판을 부르지 않는다
+    저장 = html.split("async function saveAxisMeasure(k)")[1].split("\n}")[0]
+    assert "const v = num('axisMeasureInput');" in 저장 and "if (v === null)" in 저장  # 빈 칸·글자는 값이 아니다
+    assert "m.양수 ? v <= m.최소 : v < m.최소" in 저장
+    assert "k === '근력' && !(state.weight > 0)" in 저장                             # 상대악력은 몸무게가 있어야 한다
+    assert "state[m.필드] = v;" in 저장 and "if ($(m.입력)) $(m.입력).value = v;" in 저장   # 1번 화면 입력칸도 맞춘다 (syncInputs 가 지우지 않게)
+    assert "await API.fitnessAge(measurement())" in 저장                            # 다른 값은 그대로, 이 항목만 더해 다시 계산
+    assert 저장.index("되돌리기();") < 저장.index("resetTimer('axisMeasure');")       # 실패하면 값을 되돌리고 시트를 둔다
+    순서 = [저장.index(x) for x in ("closeSheet();", "commitResult();", "renderProfile();")]
+    assert 순서 == sorted(순서)                                                      # 점검 기록·저장·게이지 → 프로필 별점
+    assert "if ($('resultBlock')?.style.display === 'block') renderResult();" in 저장
 
 
 def test_잰_항목만_그리던_옛_코드가_없다():

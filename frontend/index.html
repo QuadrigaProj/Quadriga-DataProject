@@ -1087,6 +1087,15 @@
     padding:8px 14px; text-align:center; border-bottom:1px solid var(--line);
   }
   .axis-none{ font-size:13px; color:var(--muted); }
+  /* 안 잰 항목의 줄: 안내 문구는 줄어들 수 있고(두 줄로 꺾인다) 버튼은 제 크기를 지킨다 */
+  .axis-row.todo .axis-val{ flex:1; min-width:0; text-align:right; line-height:1.35; word-break:keep-all; }
+  .axis-go{ flex-shrink:0; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer;
+    color:var(--pine-deep); background:var(--pine-tint); border:1px solid var(--pine-tint);
+    border-radius:999px; padding:6px 11px; }
+  .axis-go:hover{ border-color:var(--pine); }
+  .axis-measure .timer-box{ margin-top:12px; }
+  .axis-measure-actions{ margin-top:14px; }          /* 버튼 하나를 가로로 꽉 — .reco-actions(두 칸 격자)는 추천 카드 것이라 따로 둔다 */
+  .axis-measure-note{ font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.5; }
   .axis-val{
     font-size:13px; color:var(--muted); margin-left:auto; margin-right:10px;
     font-variant-numeric:tabular-nums;
@@ -6251,8 +6260,9 @@ function renderProfile(){
     : `체력나이 · 만 ${state.age}세 기준`;
 
   const peers = r.또래비교 || {};
-  // 잰 항목만 그리면 무엇을 안 쟀는지 모른다. 자리는 늘 같은 순서로 두고,
-  // 잰 적 없는 항목은 별 대신 '해당사항 모름' 으로 표시한다 (H5).
+  // 잰 항목만 그리면 무엇을 안 쟀는지 모른다. 자리는 늘 같은 순서로 두고 (H5),
+  // 잰 적 없는 항목은 별 대신 '측정하러 가기' 를 둔다 — 누르면 그 항목만 기록하고 체력나이를 다시 계산한다.
+  // 이 연령대에 재는 항목이 없으면(성장기의 근지구력·심폐지구력) 버튼 대신 그렇다고 적는다.
   const 순서 = axisOrder(r.항목별);
   $('axisRows').innerHTML = 순서.map((k, i, arr) => {
     const v = r.항목별?.[k];
@@ -6260,8 +6270,12 @@ function renderProfile(){
     const 잰것 = Number.isFinite(v);
     let 값, 오른쪽;
     if (!잰것) {
-      값 = '아직 재지 않았어요';
-      오른쪽 = '<div class="axis-none">해당사항 모름</div>';
+      const 잴것 = axisMeasure(k), 적어둔값 = 잴것 ? state[잴것.필드] : null;
+      // 값은 적어 두었는데 서버가 체력나이로 못 바꾼 경우(또래 자료 부족 · 악력인데 몸무게가 없음)엔 그렇다고 적는다
+      값 = !잴것 ? '' : Number.isFinite(적어둔값) ? `${적어둔값}${잴것.단위} 로 적어 두었지만 체력나이로 바꾸지 못했어요` : '아직 측정하지 않았어요';
+      오른쪽 = 잴것
+        ? `<button type="button" class="axis-go" onclick="openAxisMeasure('${k}')">${Number.isFinite(적어둔값) ? '다시 적기' : '측정하러 가기'}</button>`
+        : '<div class="axis-none">이 연령대는 재는 항목이 없어요</div>';
     } else if (k === '체성분' && pr) {
       // 체성분(BMI)은 U자형이라 별점 방향이 성립하지 않는다. 또래 중앙값과의 차이로 보여준다.
       값 = `BMI ${pr.내기록} · 또래 중앙값 ${pr.또래중앙값}`;
@@ -6270,7 +6284,7 @@ function renderProfile(){
       값 = `${v}세 수준`;
       오른쪽 = `<div class="stars">${starStr(starCount(v))}</div>`;
     }
-    return `<div class="axis-row"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
+    return `<div class="axis-row${잰것 ? '' : ' todo'}"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
       <div class="axis-name">${MOVE_ART.factor(k, 'axis-icon')}${k}</div>
       <div class="axis-val">${값}</div>
       ${오른쪽}
@@ -6288,6 +6302,84 @@ function renderProfile(){
     $('weakText').textContent = '측정 항목이 하나뿐이라 비교가 어려워요.';
     $('weakArrow').textContent = '';
   }
+}
+
+/* ---- 프로필에서 안 잰 항목 재러 가기 ----
+   첫 점검에서 건너뛴 항목(악력 · 심폐지구력 등)을 나중에 그 항목만 기록한다. 다른 측정값은 그대로 두고
+   /fitness-age 를 다시 불러 체력나이 · 별점 · 약점을 새로 받는다. 항목과 입력은 1번 화면과 같다:
+     유연성      앉아 앞으로 숙였을 때 손끝 위치 (flexibility)
+     근력        악력 kg → 서버가 몸무게로 나눠 상대악력으로 (gripKg)
+     근지구력    성인 윗몸일으키기 · 어르신 의자에 앉았다 일어서기 (strength) — 성장기는 이 값이 순발력이다
+     심폐지구력  성인 왕복오래달리기 · 어르신 2분제자리걷기 (endurance) — 성장기는 공개 분포가 없다
+   재는 항목이 없으면 null. */
+function axisMeasure(k){
+  const g = state.ageGbn, 힘 = STRENGTH_ITEM[g], 심폐 = CARDIO_LABEL[g];
+  if (k === '유연성') return { 필드: 'flexibility', 입력: 'flexInput', 이름: '앉아 앞으로 숙였을 때 손끝 위치', 단위: 'cm', 예: 12, 최소: null,
+    설명: '발끝보다 <strong>5cm 더 나감 → +5cm</strong> · 발끝에 <strong>정확히 닿음 → 0cm</strong> · 발끝까지 <strong>5cm 부족함 → -5cm</strong>' };
+  if (k === '근력') return { 필드: 'gripKg', 입력: 'gripInput', 이름: '악력', 단위: 'kg', 예: 42, 최소: 0, 양수: true,
+    설명: '악력계로 더 센 손을 잽니다. 몸무게로 나눠 상대악력으로 봐요. 악력계가 없으면 체력인증센터에서 잴 수 있어요.' };
+  if ((k === '근지구력' && 힘 && g !== '성장기') || (k === '순발력' && g === '성장기' && 힘))
+    return { 필드: 'strength', 입력: 'strengthInput', 이름: 힘.name, 단위: 힘.unit, 예: 힘.init, 최소: 0, 설명: 힘.desc, 초: 힘.timer ? 30 : 0 };
+  if (k === '심폐지구력' && 심폐) return { 필드: 'endurance', 입력: 'enduranceInput', 이름: 심폐.이름, 단위: '회', 예: g === '어르신' ? 100 : 60, 최소: 0,
+    설명: 심폐.설명 + '. 체력인증센터에서 잰 기록이 있으면 그 값을 넣어주세요.' };
+  return null;
+}
+
+function openAxisMeasure(k){
+  const m = axisMeasure(k);
+  if (!m) return;
+  openSheet(`${k} 측정하기`, `
+    <div class="axis-measure">
+      <div class="measure-name">${m.이름}</div>
+      <div class="measure-desc">${m.설명}</div>
+      ${m.초 ? `<div class="timer-box" data-timer="axisMeasure" data-seconds="${m.초}">
+        <div class="timer-time">${fmtTimer(m.초)}</div>
+        <button type="button" class="timer-btn" onclick="toggleTimer('axisMeasure')">시작</button></div>` : ''}
+      <div class="field-row">
+        <input class="field-input" id="axisMeasureInput" type="number" step="any"
+               placeholder="예: ${m.예}" aria-label="${m.이름} (${m.단위})"
+               onkeydown="if (event.key === 'Enter') saveAxisMeasure('${k}')" />
+        <div class="field-unit">${m.단위}</div>
+      </div>
+      <div class="axis-measure-actions">
+        <button type="button" class="reco-btn go" id="axisMeasureSave" onclick="saveAxisMeasure('${k}')">기록하고 체력나이 다시 계산</button>
+      </div>
+      <div class="axis-measure-note">다른 측정값은 그대로 두고 이 항목만 더해요. 체력나이와 별점에 바로 반영됩니다.</div>
+    </div>`);
+  $('axisMeasureInput').focus({ preventScroll: true });
+}
+
+async function saveAxisMeasure(k){
+  const m = axisMeasure(k);
+  const btn = $('axisMeasureSave');
+  if (!m || !btn || btn.disabled) return;
+  const v = num('axisMeasureInput');
+  if (v === null) { showToast('숫자로 적어주세요'); return; }
+  if (m.최소 !== null && (m.양수 ? v <= m.최소 : v < m.최소)) { showToast(m.양수 ? '0보다 큰 값으로 적어주세요' : '0 이상으로 적어주세요'); return; }
+  if (k === '근력' && !(state.weight > 0)) { showToast('몸무게가 있어야 악력을 또래와 견줄 수 있어요. 측정 화면에서 몸무게를 먼저 넣어주세요'); return; }
+  const 예전 = state[m.필드];
+  const 되돌리기 = () => { state[m.필드] = 예전; if ($(m.입력)) $(m.입력).value = 예전 ?? ''; };
+  state[m.필드] = v;
+  if ($(m.입력)) $(m.입력).value = v;          // 1번 화면 입력칸도 맞춰 둔다 — 다음에 다시 계산할 때 syncInputs 가 이 값을 지우지 않게
+  btn.disabled = true; btn.textContent = '계산 중…';
+  try {
+    const 새결과 = await API.fitnessAge(measurement());
+    if (!Number.isFinite(새결과?.체력나이)) throw new Error('no result');
+    state.result = 새결과;
+  } catch (e) {
+    되돌리기();
+    btn.disabled = false; btn.textContent = '기록하고 체력나이 다시 계산';
+    showToast('계산하지 못했어요. 잠시 뒤 다시 시도해주세요');
+    return;
+  }
+  resetTimer('axisMeasure');
+  closeSheet();
+  commitResult();                                // 점검 기록(오늘 줄) · 저장 · 게이지 · 도달 시점까지
+  if ($('resultBlock')?.style.display === 'block') renderResult();   // 측정 화면에 결과가 떠 있으면 그 숫자도 새 값으로
+  renderProfile();
+  const 나이 = state.result.항목별?.[k];
+  showToast(Number.isFinite(나이) ? `${k} ${나이}세 수준 · 체력나이를 다시 계산했어요`
+                                  : '기록했어요. 이 항목은 또래 자료가 부족해 체력나이에는 더하지 못했어요');
 }
 
 /* ---- 화면 6 : 재점검 ---- */

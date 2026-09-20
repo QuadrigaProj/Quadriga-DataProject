@@ -1104,6 +1104,7 @@
   .style-art svg{ display:block; width:100%; height:100%; }
   .style-code{ font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif; font-size:40px; font-weight:700; letter-spacing:.08em; line-height:1; color:var(--pine-deep); }
   .style-code-sub{ font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.45; }
+  .style-kind{ font-size:13px; font-weight:700; color:var(--pine-deep); margin:-4px 0 8px; }
   .style-axes{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
   .style-axis-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); }
   .style-axis-head b{ font-size:14px; color:var(--ink); }
@@ -2266,6 +2267,7 @@
           <div><div class="style-code" id="styleCode"></div><div class="style-code-sub" id="styleCodeSub"></div></div>
         </div>
         <h1 class="title" id="styleName">—</h1>
+        <div class="style-kind" id="styleKind"></div>
         <p class="sub" id="styleDesc"></p>
         <div class="program-card" id="styleAxesCard" hidden>
           <div class="prescribe-label">내 성향 네 글자</div>
@@ -6641,6 +6643,7 @@ function drawStyleCard(cv, r, img){
   if (code) { g.fillStyle = muted; g.font = `500 28px ${sans}`; g.fillText(code.축.map(a => a.이름).join(' · '), tx, 468); }
   // 이름과 설명
   g.fillStyle = ink; g.font = `700 60px ${sans}`; g.fillText(t.이름 || '', L, 590);
+  if (t.갈래) { const nw = g.measureText(t.이름 || '').width; g.fillStyle = muted; g.font = `600 28px ${sans}`; g.fillText(t.갈래, L + nw + 20, 590); }
   g.fillStyle = muted; g.font = `500 30px ${sans}`;
   const 설명 = wrapCanvasText(g, t.설명 || '', R - L).slice(0, 3);
   설명.forEach((s, i) => g.fillText(s, L, 648 + i * 44));
@@ -7419,6 +7422,7 @@ function renderStyleResult(r){
   back.textContent = '돌아가기';
   $('styleDots').innerHTML = (r.답변 || []).map(() => '<div class="d on"></div>').join('');
   $('styleName').textContent = t.이름 || '';
+  $('styleKind').textContent = t.갈래 || '';           // 이름은 은유(바람의 야생마)라 무슨 유형인지 풀이를 작게 붙인다
   $('styleDesc').textContent = t.설명 || '';
   renderStyleCode(r);
   $('stylePurpose').textContent = t.추천목적 || '';
@@ -7452,8 +7456,11 @@ async function refillStyleCode(){
   refillStyleCode.busy = true;
   try {
     const r = await API.styleTestResult(saved.answers);
-    if (r?.코드 && state.styleTest === saved) { saved.result = r; saveProfile(); if (styleView === 'result') renderStyleCode(r); }
-  } catch (e) { /* 코드 없이도 결과는 그대로 보인다 */ }
+    if (r?.코드 && state.styleTest === saved) { saved.result = r; saveProfile(); if (styleView === 'result') renderStyleResult(r); }
+  } catch (e) {
+    // 문항이 바뀌기 전(9문항)의 답은 다시 채점할 수 없다 — 결과는 그대로 두고, 다시 해 보라고만 알린다
+    if (styleView === 'result') $('styleCodeSub').textContent = '테스트가 새로 바뀌었어요. 다시 해 보면 네 글자 유형이 나와요.';
+  }
   finally { refillStyleCode.busy = false; }
 }
 

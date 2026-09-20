@@ -4,8 +4,12 @@
 data/sample/style_test.json 이 문항(선택지별 축 점수)과 결과 유형(축 가중치)을 갖고 있고,
 이 모듈은 그 데이터를 읽어 채점만 한다. 추천 로직을 코드에 두지 않는다.
 
-채점: 선택지 점수를 축별로 합산 → 문항별 최대값의 합으로 0~1 정규화
-      → 유형별 가중합(가중치 × 정규화 점수)이 가장 큰 유형. 동점이면 파일에 먼저 적힌 유형.
+채점: 선택지 점수를 축별로 합산 → 문항별 최대값의 합으로 0~1 정규화("점수")
+      → 축마다 '아무렇게나 답했을 때'의 평균 · 표준편차로 맞춘 값(z)에 유형 가중치를 곱해 더하고, 가중치의 크기로 나눈다
+      → 가장 큰 유형. 동점이면 파일에 먼저 적힌 유형.
+      평균으로 맞추는 까닭: 문항이 20개로 늘면 어느 축이든 점수가 그 축의 평균 언저리에 몰린다. 그대로 가중합을 하면
+      평균이 높은 축을 쓰는 유형(팀 · 짬짬이)이 절반을 가져가고 산책형은 2% 만 나온다. 맞춘 뒤에는 "남들보다 어느 쪽으로
+      더 기울었나" 를 보게 되어 여덟 유형이 고르게 나온다.
 
 성향 코드: 유형 이름과 함께 MBTI 처럼 네 글자(예: HSOL = 고강도 · 혼자 · 야외 · 길게)를 준다.
       어느 축을 어느 기준으로 자르는지는 style_test.json 의 "코드" 에 있다 (type_code).
@@ -66,6 +70,21 @@ def axis_max() -> dict[str, float]:
     return mx
 
 
+def axis_stats() -> dict[str, tuple[float, float]]:
+    """축별 0~1 점수의 (평균, 표준편차) — 모든 선택지를 같은 확률로 골랐을 때. 문항끼리 독립이라 문항별 평균 · 분산을 더하면 된다."""
+    mx = axis_max()
+    mean = {a: 0.0 for a in mx}
+    var = {a: 0.0 for a in mx}
+    for q in load()["문항"]:
+        n = len(q["선택지"])
+        for a in mx:
+            vs = [float(c.get("점수", {}).get(a, 0.0)) for c in q["선택지"]]
+            m = sum(vs) / n
+            mean[a] += m
+            var[a] += sum(v * v for v in vs) / n - m * m
+    return {a: (mean[a] / mx[a], (var[a] ** 0.5) / mx[a]) for a in mx if mx[a]}
+
+
 def validate(answers) -> list[int]:
     """답 목록을 검사한다. 개수·범위·타입이 어긋나면 ValueError(→ API 400)."""
     qs = load()["문항"]
@@ -98,15 +117,20 @@ def type_code(norm: dict[str, float]) -> dict:
     """축별 0~1 점수 → 네 글자 성향 코드.
 
     축마다 값이 기준 이상이면 앞 글자, 아니면 뒤 글자다. 반대축이 있으면(길게 ↔ 짧게) 두 축의 차이를 0~1 로 옮겨 견준다.
+    기준은 style_test.json 에 적혀 있으면 그 값, 없으면 그 축의 평균(axis_stats)이다 — 문항을 고쳐도 글자가 한쪽으로 쏠리지 않는다.
     "비율" 은 앞 글자 쪽 백분율이고, 기준이 꼭 50% 가 되게 편 값이다 — 글자와 막대가 어긋나 보이지 않게
     (기준이 0.4 인 축에서 0.4 는 50%, 1.0 은 100%).
     """
     axes, letters = [], ""
+    stats = axis_stats()
     for c in load().get("코드", []):
         v = float(norm.get(c["축"], 0.0))
+        th = stats.get(c["축"], (0.5, 0.0))[0]           # 기준을 적지 않으면 그 축의 평균 — 글자가 반반으로 갈린다
         if c.get("반대축"):
             v = (v - float(norm.get(c["반대축"], 0.0)) + 1) / 2
-        th = float(c.get("기준", 0.5))
+            th = (th - stats.get(c["반대축"], (0.5, 0.0))[0] + 1) / 2
+        if c.get("기준") is not None:
+            th = float(c["기준"])
         pct = 50 * v / th if v < th else 50 + 50 * (v - th) / (1 - th)
         first = v >= th - 1e-9
         pick = 0 if first else 1
@@ -126,9 +150,12 @@ def score(answers) -> dict:
     """
     ans = validate(answers)
     norm = axis_scores(ans)
+    stats = axis_stats()
+    z = {a: (norm[a] - m) / sd if sd else 0.0 for a, (m, sd) in stats.items()}
     best, best_val = None, 0.0
     for t in load()["유형"]:
-        val = sum(float(w) * norm.get(a, 0.0) for a, w in t["가중치"].items())
+        size = sum(float(w) ** 2 for w in t["가중치"].values()) ** 0.5 or 1.0      # 가중치를 많이 적은 유형이 유리하지 않게
+        val = sum(float(w) * z.get(a, 0.0) for a, w in t["가중치"].items()) / size
         if best is None or val > best_val + 1e-9:
             best, best_val = t, val
     out = {k: v for k, v in best.items() if k != "가중치"}

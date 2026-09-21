@@ -59,6 +59,27 @@ def test_예보_응답을_다듬는다(monkeypatch):
     assert ssn.fetch_weather(dt.date.today())["기준"] == "서울"
 
 
+def test_시간대마다_평균_기온을_붙인다(monkeypatch):
+    """AI 가 시간대마다 따로 루틴을 지을 때 쓴다 (예현: "시간대 별로 피로도나 온도 같은 게 다르니까").
+    경계는 화면과 같다: 아침 4~10시 · 낮 11~16시 · 저녁 17~20시 · 밤 21~23시와 0~3시."""
+    시각 = [f"2026-09-21T{h:02d}:00" for h in range(24)]
+    기온 = [10 + h for h in range(24)]                                             # 0시 10도 … 23시 33도
+    기온[12] = None                                                                 # 빈 값은 건너뛴다
+
+    class _R:
+        def raise_for_status(self): pass
+        def json(self): return {"daily": {"temperature_2m_max": [33], "temperature_2m_min": [10]},
+                                "hourly": {"time": 시각, "temperature_2m": 기온}}
+    잡힌 = {}
+    def _get(url, params=None, timeout=None):
+        잡힌.update(params); return _R()
+    monkeypatch.setattr(ssn.httpx, "get", _get)
+    w = ssn.fetch_weather(dt.date.today())
+    assert 잡힌["hourly"] == "temperature_2m"
+    assert w["시간대기온"] == {"아침": 17.0, "낮": 23.8, "저녁": 28.5, "밤": 20.3}   # 낮은 12시를 빼고 11·13~16시
+    assert ssn.daypart_temps([], []) == {} and ssn.daypart_temps(["x"], [1]) == {}
+
+
 def test_예보가_실패해도_None(monkeypatch):
     def _boom(*a, **k): raise RuntimeError("연결 실패")
     monkeypatch.setattr(ssn.httpx, "get", _boom)

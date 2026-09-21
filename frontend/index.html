@@ -1138,6 +1138,11 @@
   /* 안 잰 항목의 줄: 안내 문구는 줄어들 수 있고(두 줄로 꺾인다) 버튼은 제 크기를 지킨다 */
   .axis-row.todo .axis-val{ flex:1; min-width:0; text-align:right; line-height:1.35; word-break:keep-all; }
   .axis-foot{ font-size:12px; color:var(--muted); line-height:1.5; margin-top:10px; }
+  /* 프로필 항목의 묶음 제목 — 건강 체력 · 운동 체력. 줄 사이에 끼면 앞 묶음과 띄운다 */
+  .axis-group{ display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 8px; padding:4px 0 6px; border-bottom:1px solid var(--line); }
+  .axis-row + .axis-group{ margin-top:18px; }
+  .axis-group-name{ font-size:13px; font-weight:800; color:var(--pine-deep); }
+  .axis-group-sub{ font-size:12px; color:var(--muted); word-break:keep-all; }
   /* 프로필 도구 줄 — 다음 점검일을 캘린더에, 체력나이 카드 */
   .profile-tools{ margin-top:16px; border:1px solid var(--line); border-radius:16px; background:var(--paper); padding:4px 14px; }
   .tool-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 0; }
@@ -6724,7 +6729,9 @@ async function toggleHeavy(){
 
 /* ---- 화면 5 : 프로필 ---- */
 /* 프로필 차트의 줄 순서 (H5) — 유연성 · 근력 · 근지구력 · 심폐지구력 · 체성분.
-   잰 적 없어도 자리는 남긴다. 그 밖에 잰 항목(성장기 순발력 등)은 체성분 앞에 끼운다. */
+   이 다섯이 건강 체력이다(건강하게 지내는 데 필요한 체력). 잰 적 없어도 자리는 남긴다.
+   그 밖의 항목(순발력 · 민첩성 · 평형성 · 협응력)은 운동 체력이라 그 뒤에 따로 묶는다 — 예전엔 체성분 앞에 끼워
+   건강 체력 사이에 섞여 보였다 (예현, 2026-09-21: "지금은 건강 관련 체력 요소만 뜨는데"). */
 const AXIS_ORDER = ['유연성', '근력', '근지구력', '심폐지구력', '체성분'];
 
 /* 연령군마다 더 잴 수 있는 운동체력 축 — 국민체력100 공식 분류. 안 쟀어도 자리를 둬 '측정하러 가기' 가 보이게 한다 */
@@ -6733,8 +6740,15 @@ const AXIS_EXTRA = { '성인': ['순발력', '민첩성'], '어르신': ['평형
 function axisOrder(항목별){
   const 잰것 = [...new Set([...(AXIS_EXTRA[state.ageGbn] || []), ...Object.keys(항목별 || {})])];
   const 나머지 = 잰것.filter(k => !AXIS_ORDER.includes(k));
-  const 앞 = AXIS_ORDER.slice(0, -1);      // 체성분을 뺀 나머지
-  return [...앞, ...나머지, '체성분'];
+  return [...AXIS_ORDER, ...나머지];      // 건강 체력 다섯 → 운동 체력 (프로필은 두 묶음으로 나눠 보인다)
+}
+
+/* 프로필 항목의 묶음 제목. 운동 체력은 성인 · 어르신에게는 첫 점검에 없는 선택 항목이고(프로필의 '측정하러 가기'),
+   재면 체력나이 평균에 함께 들어간다. 성장기의 순발력(제자리 멀리뛰기)은 첫 점검에서 재는 항목이라 '선택' 이 아니다 */
+function axisGroupHead(묶음){
+  const 설명 = 묶음 === '건강 체력' ? '건강하게 지내는 데 필요한 체력'
+    : isGrowth() ? '운동을 잘하는 데 필요한 체력' : '운동을 잘하는 데 필요한 체력 · 선택 항목이에요, 재면 체력나이에 함께 들어가요';
+  return `<div class="axis-group"><span class="axis-group-name">${묶음}</span><span class="axis-group-sub">${설명}</span></div>`;
 }
 
 function renderProfile(){
@@ -6754,7 +6768,8 @@ function renderProfile(){
   // 잰 적 없는 항목은 별 대신 '측정하러 가기' 를 둔다 — 누르면 그 항목만 기록하고 체력나이를 다시 계산한다.
   // 이 연령대에 재는 항목이 없으면(성장기의 근지구력·심폐지구력) 버튼 대신 그렇다고 적는다.
   const 순서 = axisOrder(r.항목별);
-  $('axisRows').innerHTML = 순서.map((k, i, arr) => {
+  const 첫운동 = 순서.find(k => !AXIS_ORDER.includes(k));      // 여기서부터 운동 체력 묶음
+  $('axisRows').innerHTML = axisGroupHead('건강 체력') + 순서.map((k, i, arr) => {
     const v = r.항목별?.[k];
     const pr = peers[k];
     const 잰것 = Number.isFinite(v);
@@ -6779,7 +6794,8 @@ function renderProfile(){
       값 = `${v}세 수준`;
       오른쪽 = `<div class="stars">${starStr(starCount(v))}</div>`;
     }
-    return `<div class="axis-row${잰것 || 순위만 || (k === '체성분' && pr) ? '' : ' todo'}"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
+    return (k === 첫운동 ? axisGroupHead('운동 체력') : '') +
+      `<div class="axis-row${잰것 || 순위만 || (k === '체성분' && pr) ? '' : ' todo'}"${i === arr.length - 1 ? ' style="border-bottom:none;"' : ''}>
       <div class="axis-name">${MOVE_ART.factor(k, 'axis-icon')}${k}</div>
       <div class="axis-val">${값}</div>
       ${오른쪽}

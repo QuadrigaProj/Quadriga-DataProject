@@ -8798,7 +8798,8 @@ async function renderRecommend(){
   // 다만 예전에 몇 개 안 되게 받아 둔 것이면 새로 받는다. 후보가 적으면
   // '더 쉬운·더 어려운 루틴' 이 갈 곳이 없어 눌리지 않는데, 무료 추천은
   // 값이 들지 않으니 그대로 두고 볼 이유가 없다.
-  if (state.freeReco?.추천?.length >= 5) {
+  // 운동 단계나 관리 부위가 바뀌었으면(또는 그 표시가 없는 옛 것이면) 버리고 새로 받는다 — 다이어트로 바꿨는데 예전 목적의 루틴이 남아 있으면 안 된다
+  if (state.freeReco?.추천?.length >= 5 && state.freeReco.열쇠 === freeRecoKey()) {
     $('recoSub').textContent = '먼저 받은 추천이에요. 다른 루틴은 아래 버튼으로 볼 수 있어요.';
     추천되살리기(state.freeReco, '점수');
     return;
@@ -8828,12 +8829,15 @@ function 이전AI추천쌓기(){
   state.aiRecoNext = [];
 }
 
+/* 무료 추천을 받은 조건 — 고른 운동 단계와 (다이어트면) 관리 부위. 받아 둔 추천과 이게 다르면 새로 받는다 */
+function freeRecoKey(){ return [PURPOSE_TO_KO[state.purpose] || '', dietAreas().join(',')].join('|'); }
+
 /* 지금 보고 있는 추천을 그 자리 그대로 남긴다.
    '더 쉬운 루틴' 으로 옮긴 자리까지 기억해서, 창을 옮겼다 와도 그대로다. */
 function 추천저장(){
   const 담을것 = { 추천: recoList, 조심할부위: recoCare, 짬시간계획: recoSpare,
                 계절계획: recoSeason,
-                자리: recoAt, 되돌아갈자리: [...recoBack], 받은시각: Date.now() };
+                자리: recoAt, 되돌아갈자리: [...recoBack], 받은시각: Date.now(), 열쇠: freeRecoKey() };
   if (recoBy === 'ai') state.aiReco = 담을것;
   else state.freeReco = 담을것;
   saveProfile();
@@ -9430,9 +9434,11 @@ async function 전체추천얹기(){
       age_gbn: programAgeGroup(state.age),
       weak: 약점.join(','),
       style_purpose: state.styleTest?.result?.추천목적 || null,
+      purpose: PURPOSE_TO_KO[state.purpose] || null,  // 고른 운동 단계 안에서만 — 다른 목적의 루틴을 얹지 않는다
+      areas: dietAreas().join(','),
       sports: (state.sports || []).join(','),
       week: programWeek(),
-      limit: 80,                                 // 목적 8 × 10 = 전부
+      limit: 80,                                 // 운동 단계를 골랐으면 그 목적의 10개, 안 골랐으면 목적 8 × 10 = 전부
       ai: 0,
     });
     const 있음 = new Set(recoList.map(x => `${x.목적}|${x.루틴번호}`));

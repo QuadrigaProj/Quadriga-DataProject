@@ -4,6 +4,9 @@
 안에서 고르고, 왜 골랐는지를 근거 문장으로 함께 돌려준다.
 근거를 댈 수 없는 추천은 하지 않는다는 것이 이 모듈의 규칙이다.
 
+사용자가 운동 단계(목적)를 골랐으면 **그 목적의 루틴 안에서만** 고른다 — 다이어트를 골랐는데 벌크업 루틴을
+내밀지 않는다. 고르지 않았을 때만 여덟 목적 전부에서 고르고, 목적이 골고루 섞이게 세운다.
+
 점수는 네 가지를 본다.
   1. 약점      체력나이 항목별에서 뒤처지는 요인을 그 목적이 다루는가
   2. 스타일    운동 스타일 테스트가 고른 목적과 같은가
@@ -122,8 +125,11 @@ def step_amount(step: dict, 강도: dict) -> str:
 
 
 def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
-          target_gap=None, limit: int = 5, sport_names=None, areas=None) -> list[dict]:
+          target_gap=None, limit: int = 5, sport_names=None, areas=None, purpose=None) -> list[dict]:
     """목적 × 루틴 후보에 점수를 매겨 높은 순으로 돌려준다.
+
+    purpose 는 사용자가 고른 운동 단계다. 주면 그 목적의 루틴(연령대마다 10개) 안에서만 점수 순으로 고른다.
+    안 줬거나 모르는 이름이면 예전처럼 여덟 목적 전부에서 고른다.
 
     sport_factors 는 {요인: 몇 개 종목이 요구하는지} 다. 목록으로 줘도 받는다
     (그때는 전부 1로 본다). 여러 종목이 같은 요인을 요구하면 그만큼 무겁게
@@ -138,13 +144,15 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
     무게 = {f: max(1, int(w or 1)) for f, w in 무게.items() if f}
     sport_factors = list(무게)
     종목이름 = " · ".join(sport_names or [])
+    고른목적 = purpose if purpose in rt.PURPOSES and d["routines"].get(age_gbn, {}).get(purpose) else None
+    목적들 = [고른목적] if 고른목적 else list(rt.PURPOSES)
 
     out = []
-    for purpose in rt.PURPOSES:
+    for purpose in 목적들:
         묶음 = d["routines"].get(age_gbn, {}).get(purpose) or []
         우선 = purpose_factors.get(purpose, [])
         점수 = 0.0
-        이유 = []
+        이유 = [f"고른 운동 단계 '{고른목적}' 에 맞춘 루틴이에요"] if 고른목적 else []
 
         맞은약점 = [w for w in weak if any(_factor_hit(w, f) for f in 우선)]
         if 맞은약점:
@@ -210,6 +218,10 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
     # 두 개는 목적과 상관없이 그대로** 내고, 나머지만 목적이 겹치지 않게 채운다.
     # 고른 종목이 뚜렷하면 그 목적이 두 자리를 가져갈 수 있다.
     out.sort(key=lambda x: (-x["점수"], x["목적"], x["루틴번호"] or 0))
+    if 고른목적:                          # 한 목적 안에서는 점수 순 그대로 — 목적을 골고루 섞을 일이 없다
+        for i, x in enumerate(out[:limit], 1):
+            x["순위"] = i
+        return out[:limit]
     # 고를 근거가 있을 때만 두 자리를 내준다. 근거가 없으면 점수가 고만고만해서
     # 앞자리를 몰아 줄 이유가 없다 — 그때는 예전처럼 목적을 골고루 보여 준다.
     TOP_AS_IS = 2 if (weak or 무게 or style_purpose or areas) else 0
@@ -247,8 +259,9 @@ def score(age_gbn: str, *, weak=None, style_purpose=None, sport_factors=None,
 
 
 def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
-             target_gap=None, limit: int = 5, week: int = 1, areas=None) -> dict:
-    """화면이 그대로 그릴 수 있는 형태. sports 는 종목 id 목록."""
+             target_gap=None, limit: int = 5, week: int = 1, areas=None, purpose=None) -> dict:
+    """화면이 그대로 그릴 수 있는 형태. sports 는 종목 id 목록, purpose 는 사용자가 고른 운동 단계(목적)."""
+    purpose = purpose if purpose in rt.PURPOSES else None
     ids = [s for s in (sports or []) if s]
     무게 = sp.factor_weights(ids) if ids else {}
     factors = list(무게)
@@ -257,7 +270,7 @@ def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
     areas = list(dict.fromkeys(a for a in (areas or []) if a in FOCUS_AREAS))      # 모르는 이름은 버리고, 같은 부위를 두 번 세지 않는다
     후보 = score(age_gbn, weak=weak, style_purpose=style_purpose,
                 sport_factors=무게, target_gap=target_gap, limit=limit,
-                sport_names=이름, areas=areas)
+                sport_names=이름, areas=areas, purpose=purpose)
     # 오늘 얼마나 하는지를 동작마다 붙인다 (H2). 주차는 프로그램 경과에서 온다.
     강도 = rt.intensity_for(age_gbn, max(1, min(13, int(week or 1))))
     분 = rt.load()["config"]["age_minutes"].get(age_gbn)
@@ -271,7 +284,8 @@ def for_user(age_gbn: str, *, weak=None, style_purpose=None, sports=None,
         "강도": 강도,
         "참고": {"약점": list(weak or []), "종목요인": factors,
                 "종목요인무게": 무게, "고른종목": 이름,
-                "스타일목적": style_purpose, "목표격차": target_gap, "관리부위": areas},
+                "스타일목적": style_purpose, "목표격차": target_gap, "관리부위": areas,
+                "고른목적": purpose},
         "조심할부위": care,
         "샘플": rt.is_sample(),
     }

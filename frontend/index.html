@@ -6321,7 +6321,7 @@ const POSE_FOR_SPORT = {
    SPORT_ART 는 종목 id → 가지고 있는 그림('mf' · 'm' · 'f'). 아직 한쪽만 그린 종목은 있는 쪽을 보여 주고,
    아예 없는 종목은 예전처럼 3D(POSE_FOR_SPORT)로 간다 — 없는 그림을 부르면 404 가 나고 빈 칸이 깜빡인다.
    (tests/test_sport_art.py 가 이 표와 파일을 맞춰 본다.) */
-const SPORT_ART = { badminton: 'm', ballet: 'mf', baseball: 'mf', basketball: 'm', bowling: 'mf', boxing: 'mf', climbing: 'mf', crossfit: 'mf', cycling: 'mf', dance: 'mf', golf: 'm', gym: 'mf', hiking: 'mf', jiujitsu: 'mf', jumprope: 'm', kendo: 'mf', marathon: 'mf', pilates: 'mf', pole: 'mf', running: 'm', skating: 'mf', ski: 'mf', soccer: 'm', squash: 'm', surfing: 'mf', swimming: 'mf', tabletennis: 'm', tennis: 'm' };
+const SPORT_ART = { badminton: 'm', ballet: 'mf', baseball: 'mf', basketball: 'm', bowling: 'mf', boxing: 'mf', climbing: 'mf', crossfit: 'mf', cycling: 'mf', dance: 'mf', golf: 'm', gym: 'mf', hiking: 'mf', jiujitsu: 'mf', jumprope: 'mf', kendo: 'mf', marathon: 'mf', pilates: 'mf', pole: 'mf', running: 'm', skating: 'mf', ski: 'mf', soccer: 'm', squash: 'm', surfing: 'mf', swimming: 'mf', tabletennis: 'm', taekwondo: 'mf', tennis: 'm', volleyball: 'mf', walking: 'mf', yoga: 'mf' };
 function sportArtUrl(step){
   if (!step || step.출처 !== '종목' || youtubeVideoId(step.youtube_id)) return null;   // 영상이 있으면 영상
   const 있는 = SPORT_ART[step.id];

@@ -6195,7 +6195,7 @@ async function loadHome(){
     // AI 가 지은 루틴엔 루틴번호·주기·예상시간이 없다. 예전 줄을 그대로 쓰면
     // 여기서 터져서 홈이 "먼저 첫 점검을 마쳐주세요" 인 채로 남았다.
     $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
-    $('heroMeta').textContent = `AI 가 지은 루틴 · ${dailySteps().length}가지 동작${sportSteps().length ? ' · 고른 종목은 아래 칸' : ''}`;
+    $('heroMeta').textContent = `AI 가 지은 루틴 · ${dailySteps().length ? `${dailySteps().length}가지 동작` : '이 시간대는 쉬어요'}${sportSteps().length ? ' · 고른 종목은 아래 칸' : ''}`;   // 시간대별로 지은 루틴이면 지금 시간대의 동작 수
   } else if (m) {
     $('heroTitle').textContent = `오늘의 루틴 · ${m.루틴명}`;
     const 기본 = `${m.재프레이밍} · 루틴 ${m.루틴번호}/${m.주기일수} · ${m.예상시간분[0]}~${m.예상시간분[1]}분`;
@@ -6240,7 +6240,11 @@ function etaText(r, 목표){
 /* 고른 종목 칸 — 사용자가 고른 종목(수영·요가 같은 것, 출처 '종목')은 당일 루틴에서 빼 따로 둔다.
    그날 일정에 따라 다른 시간에 하거나 못 할 수도 있어서다. 스쿼트·런지 같은 동작은 루틴 안에 그대로 있다 */
 const isSportStep = s => s.출처 === '종목';
-const dailySteps = () => state.routine.filter(s => !isSportStep(s));
+/* AI 가 시간대(아침 · 낮 · 저녁 · 밤)마다 따로 지은 루틴이면 줄마다 시간대가 있다 (예현: "시간대 별로 피로도나 온도 같은 게 다르니까
+   시간대별로 짜 줬음 좋겠어"). 예전 루틴(시간대 없음)은 예전처럼 시간대마다 같은 한 벌을 한다 */
+const routineByDaypart = () => (state.routine || []).some(s => s.시간대);
+const daypartSteps = 이름 => (state.routine || []).filter(s => !isSportStep(s) && (!routineByDaypart() || s.시간대 === 이름));
+const dailySteps = () => daypartSteps(effectiveDaypart());
 const sportSteps = () => state.routine.filter(isSportStep);
 function renderPickedCard(){
   const card = $('pickedCard');
@@ -6352,6 +6356,7 @@ function applyAiRoutine(){
     설명: [s.수행량, s.왜].filter(Boolean).join(' · '),
     출처: s.출처 || null, id: s.id || null,      // 밖에서 하는 동작인지 알려면 있어야 한다
     아이콘: s.아이콘 || '',                       // 고른 종목 칸에 쓴다
+    시간대: s.시간대 || null,                     // 시간대마다 따로 지은 루틴이면 아침 · 낮 · 저녁 · 밤 (예전 루틴은 없다)
   }));
   checkTodayWeather();
 }
@@ -6476,6 +6481,7 @@ function renderSportApplied(){
 function activeRoutine(){
   let 전부 = state.routine;
   if (!state.routineMeta && heavyOn) { let main = 0; 전부 = state.routine.filter(s => s.단계 !== '본운동' || ++main <= 2); }   // 서버 응답이면 그대로
+  if (routineByDaypart() && playScope !== 'sport') 전부 = 전부.filter(s => s.시간대 === effectiveDaypart());   // 시간대별로 지은 AI 루틴은 지금(미리 하는) 시간대의 줄만
   if (playScope === 'sport') return 전부.filter(isSportStep);
   if (playScope === 'daily') { const 나머지 = 전부.filter(s => !isSportStep(s)); return 나머지.length ? 나머지 : 전부; }   // 종목뿐인 루틴은 없지만 빈 플레이어는 막는다
   return 전부;
@@ -6567,7 +6573,7 @@ function renderStep(){
   stopExerciseVideo();
   const list = activeRoutine();
   if (!list.length) {
-    $('playerName').textContent = state.routineError || '나이와 목적을 먼저 선택해주세요.';
+    $('playerName').textContent = state.routineError || (routineByDaypart() ? `${daypartLabel(effectiveDaypart())}에 할 운동은 없어요. 홈에서 다음 시간대를 미리 할 수 있어요.` : '나이와 목적을 먼저 선택해주세요.');
     $('playerSet').textContent = '';
     $('playerTag').textContent = '';
     $('stepsDots').innerHTML = '';
@@ -8410,10 +8416,12 @@ function renderDaypartRow(){
   if (!AI루틴) return;
   const 지금 = daypartOf();
   const 끝남 = daypartDone(지금);
-  $('daypartDone').hidden = !끝남;
+  const 쉼 = routineByDaypart() && !daypartSteps(지금).length;   // 이 시간대엔 할 것 없이 지었다 (바쁜 시간 등)
+  $('daypartDone').hidden = !(끝남 || 쉼);
+  $('daypartDone').textContent = 쉼 && !끝남 ? '이 시간대는 쉬어요.' : '이 시간대에 할 루틴이 끝났어요!';
   const nextBtn = $('daypartNextBtn');
-  const 다음 = daypartNext(지금);
-  nextBtn.hidden = !끝남;
+  const 다음 = nextDaypartToDo(지금);
+  nextBtn.hidden = !((끝남 || 쉼) && 다음);
   nextBtn.textContent = `다음 시간대(${다음}) 루틴 미리하기`;
   const 한줄 = daypartGuide(지금);
   const meta = $('heroMeta');
@@ -8421,8 +8429,16 @@ function renderDaypartRow(){
   else if (meta) meta.textContent = `${daypartLabel(지금)} · ${meta.textContent}`;
 }
 
+/* 미리 할 다음 시간대 — 시간대별로 지은 루틴이면 오늘 안에서 할 게 있는 다음 시간대(없으면 null), 예전 루틴이면 바로 다음 */
+function nextDaypartToDo(이름){
+  if (!routineByDaypart()) return daypartNext(이름);
+  const i = DAYPARTS.findIndex(d => d.이름 === 이름);
+  return DAYPARTS.slice(i + 1).map(d => d.이름).find(n => daypartSteps(n).length) || null;
+}
+
 function previewNextDaypart(){
-  const 다음 = daypartNext(daypartOf());
+  const 다음 = nextDaypartToDo(daypartOf());
+  if (!다음) return;
   state.previewDaypart = { date: isoDate(new Date()), 시간대: 다음 };
   saveProfile();
   startRoutine('daily');                                   // 미리 하는 것도 당일 루틴만 — 고른 종목은 아래 칸
@@ -8442,17 +8458,20 @@ function renderPlayerDaypart(){
 
 /* 오늘의 스케줄 미리보기 — 시간대별로 몇 시부터 몇 시까지 무엇을 할지.
    시간대 줄에는 루틴 이름이 아니라 그 시간대에 할 운동을 하는 순서대로 적는다 (예현, 2026-09-21: "루틴 명이 아니라
-   그 시간대에 해야 할 운동을 순서대로 나열해서") — 당일 루틴(dailySteps, 고른 종목은 뺀다)이고 플레이어가 도는 순서 그대로다.
+   그 시간대에 해야 할 운동을 순서대로 나열해서") — 그 시간대의 당일 루틴(daypartSteps, 고른 종목은 뺀다)이고 플레이어가 도는 순서 그대로다.
+   AI 가 시간대마다 따로 지었으면 시간대마다 다르다. 같아도 줄여 쓰지 않고 정확한 이름을 다 적는다 (예현: "시간대별로 같은 경우가
+   생기더라도 정확한 운동 명칭으로, 순서에 따라"). 고른 종목은 시간 되는 때에 하니 맨 아래 따로.
    루틴을 아직 못 받았으면 예전처럼 이름만. 짬시간을 쓰는 사람이면 바쁜 시간과 비는 칸도 같은 줄로 함께. */
 function openTodayPreview(){
   const 오늘 = isoDate(new Date()), 요일 = todayDow(), 지금 = daypartOf();
   const 이름 = state.routineMeta?.루틴명 || state.aiRoutine?.루틴명 || '오늘의 루틴';
-  const 할것 = dailySteps();
-  const 목록 = 할것.length ? `<ol class="today-steps">${할것.map(s =>
+  const 목록 = 할것 => 할것.length ? `<ol class="today-steps">${할것.map(s =>
     `<li>${esc(s.운동명)}${s.수행량 ? ` <span class="today-dose">${esc(s.수행량)}</span>` : ''}</li>`).join('')}</ol>` : '';
-  const 줄 = DAYPARTS.map(d => ({ 시작: d.시작, 끝: d.끝, 종류: 'daypart', 이름: d.이름,
-    글: `<b>${d.이름}</b>${할것.length ? '' : ` · ${esc(이름)}`}${daypartGuide(d.이름) ? ` — ${esc(daypartGuide(d.이름))}` : ''}`,
-    아래: 목록, 끝남: daypartDone(d.이름), 지금: d.이름 === 지금 }));
+  const 나눔 = routineByDaypart(), 루틴있음 = (state.routine || []).length > 0;
+  const 줄 = DAYPARTS.map(d => { const 할것 = daypartSteps(d.이름);
+    return { 시작: d.시작, 끝: d.끝, 종류: 'daypart', 이름: d.이름,
+      글: `<b>${d.이름}</b>${할것.length ? '' : 나눔 ? ' · 쉬어요' : ` · ${esc(이름)}`}${daypartGuide(d.이름) ? ` — ${esc(daypartGuide(d.이름))}` : ''}`,
+      아래: 목록(할것), 끝남: daypartDone(d.이름), 지금: d.이름 === 지금 }; });
   const 바쁜 = state.schedule?.바쁜시간?.[요일] || [];
   바쁜.forEach(b => 줄.push({ 시작: b.시작, 끝: b.끝, 종류: 'busy', 글: '바쁜 시간' }));
   (sparePlan?.[요일] || []).forEach(c => {
@@ -8461,11 +8480,14 @@ function openTodayPreview(){
     줄.push({ 시작: c.시작, 끝: c.끝, 종류: 'spare', 글: `<b>짬시간</b> · ${esc(할것)}${골라둔?.한줄 ? ` — ${esc(골라둔.한줄)}` : ''}` });
   });
   줄.sort((a, b) => (a.시작 === b.시작 ? 0 : a.시작 < b.시작 ? -1 : 1));
+  const 종목 = 루틴있음 ? sportSteps() : [];
+  if (종목.length) 줄.push({ 시작: '', 끝: '', 종류: 'sport', 글: '<b>고른 종목</b> · 시간 되는 때에',
+    아래: `<ol class="today-steps">${종목.map(s => `<li>${esc(s.운동명)}${s.수행량 ? ` <span class="today-dose">${esc(s.수행량)}</span>` : ''}${s.시간대 ? ` <span class="today-dose">· ${esc(s.시간대)}에 좋아요</span>` : ''}</li>`).join('')}</ol>` });
   const 안내 = 바쁜.length ? '' : `<div class="edit-note">일정을 적어 두면 바쁜 시간과 비는 시간도 여기에 함께 보여요.</div>`;
   openSheet('오늘의 스케줄 미리보기', `
     <div class="today-list">${줄.map(x => `
       <div class="today-line ${x.종류}${x.끝남 ? ' done' : ''}${x.지금 ? ' now' : ''}">
-        <div class="today-when">${esc(x.시작)}–${esc(x.끝)}</div>
+        <div class="today-when">${x.시작 ? `${esc(x.시작)}–${esc(x.끝)}` : ''}</div>
         <div class="today-what"><span class="today-head">${x.글}${x.끝남 ? ' · 끝났어요' : ''}</span>${x.아래 || ''}</div>
       </div>`).join('')}</div>
     ${안내}
@@ -9227,7 +9249,7 @@ function 이전AI루틴(){
   const x = (recoList[recoAt]?.구성 === 'ai' ? recoList[recoAt] : state.aiReco?.추천?.[0]) || null;
   if (!x) return null;
   return { 루틴명: x.루틴명, 강도: x.강도 || null,
-           steps: (x.steps || []).map(s => ({ 동작: s.동작, 단계: s.단계, 수행량: s.수행량 })) };
+           steps: (x.steps || []).map(s => ({ 동작: s.동작, 단계: s.단계, 수행량: s.수행량, ...(s.시간대 ? { 시간대: s.시간대 } : {}) })) };
 }
 
 /* "시작 9/12 · 가을 · 맑음 18~26℃ · 습도 60% (서울 기준)" */

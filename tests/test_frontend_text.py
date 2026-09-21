@@ -3629,8 +3629,8 @@ def test_끝냈으면_다음_것을_바로_띄우지_않는다():
     assert "이 시간대에 할 루틴이 끝났어요!" in html
     본문 = html.split("function renderDaypartRow()")[1].split("\n}")[0]
     assert "const 끝남 = daypartDone(지금);" in 본문
-    assert "$('daypartDone').hidden = !끝남;" in 본문
-    assert "nextBtn.hidden = !끝남;" in 본문
+    assert "$('daypartDone').hidden = !(끝남 || 쉼);" in 본문                 # 시간대별로 지은 루틴에서 할 게 없는 시간대(쉼)도 같은 자리에
+    assert "nextBtn.hidden = !((끝남 || 쉼) && 다음);" in 본문
     assert "루틴 미리하기" in 본문
     미리 = html.split("function previewNextDaypart()")[1].split("\n}")[0]
     assert "state.previewDaypart = { date: isoDate(new Date()), 시간대: 다음 };" in 미리
@@ -3681,12 +3681,37 @@ def test_스케줄_미리보기는_시간대마다_할_운동을_순서대로():
     시간대 줄마다 당일 루틴(고른 종목을 뺀 것)의 운동을 플레이어가 도는 순서대로, 수행량이 있으면 옆에."""
     html = _index()
     본문 = html.split("function openTodayPreview()")[1].split("\n}")[0]
-    assert "const 할것 = dailySteps();" in 본문                                        # 홈의 당일 루틴 칸 · 플레이어와 같은 목록
+    assert "const 할것 = daypartSteps(d.이름);" in 본문                               # 그 시간대의 당일 루틴 — 홈의 당일 루틴 칸 · 플레이어와 같은 목록
     assert '<ol class="today-steps">' in 본문 and "esc(s.운동명)" in 본문 and "esc(s.수행량)" in 본문
-    assert "${할것.length ? '' : ` · ${esc(이름)}`}" in 본문                            # 루틴 이름은 운동을 모를 때만
+    assert "${할것.length ? '' : 나눔 ? ' · 쉬어요' : ` · ${esc(이름)}`}" in 본문                            # 루틴 이름은 운동을 모를 때만
     assert '<span class="today-head">' in 본문 and "${x.아래 || ''}" in 본문
     assert ".today-line.done .today-head{ text-decoration:line-through; }" in html     # 끝난 시간대는 제목에만 줄을 긋는다
     assert ".today-line.done .today-what{ text-decoration:line-through;" not in html
+
+
+def test_AI_루틴이_시간대별이면_지금_시간대의_줄만_돈다():
+    """AI 가 시간대마다 따로 지은 루틴(줄마다 시간대)은 홈 · 플레이어 · 스케줄 미리보기가 시간대마다 그 시간대의 줄만 쓴다.
+    예전 루틴(시간대 없음)은 예전처럼 시간대마다 같은 한 벌. 고른 종목 칸은 시간대와 상관없이 따로 (시간 되는 때에)."""
+    html = _index()
+    assert "시간대: s.시간대 || null," in html.split("function applyAiRoutine(){")[1].split("\n}")[0]
+    assert "const routineByDaypart = () => (state.routine || []).some(s => s.시간대);" in html
+    assert "const daypartSteps = 이름 => (state.routine || []).filter(s => !isSportStep(s) && (!routineByDaypart() || s.시간대 === 이름));" in html
+    assert "const dailySteps = () => daypartSteps(effectiveDaypart());" in html          # 홈의 '몇 가지 동작' 도 지금 시간대 것
+    활성 = html.split("function activeRoutine(){")[1].split("\n}")[0]
+    assert "if (routineByDaypart() && playScope !== 'sport') 전부 = 전부.filter(s => s.시간대 === effectiveDaypart());" in 활성
+    assert 활성.index("routineByDaypart()") < 활성.index("if (playScope === 'sport')")
+    줄 = html.split("function renderDaypartRow()")[1].split("\n}")[0]
+    assert "const 쉼 = routineByDaypart() && !daypartSteps(지금).length;" in 줄 and "'이 시간대는 쉬어요.'" in 줄
+    다음 = html.split("function nextDaypartToDo(이름){")[1].split("\n}")[0]
+    assert "DAYPARTS.slice(i + 1).map(d => d.이름).find(n => daypartSteps(n).length) || null" in 다음   # 할 게 있는 다음 시간대로
+    미리 = html.split("function previewNextDaypart()")[1].split("\n}")[0]
+    assert "const 다음 = nextDaypartToDo(daypartOf());" in 미리 and "if (!다음) return;" in 미리
+    그림 = html.split("function renderStep()")[1].split("\n}")[0]
+    assert "에 할 운동은 없어요. 홈에서 다음 시간대를 미리 할 수 있어요." in 그림
+    바탕 = html.split("function 이전AI루틴()")[1].split("\n}")[0]
+    assert "...(s.시간대 ? { 시간대: s.시간대 } : {})" in 바탕                              # 다시 지을 때도 시간대 나눔째로
+    본문 = html.split("function openTodayPreview()")[1].split("\n}")[0]
+    assert "<b>고른 종목</b> · 시간 되는 때에" in 본문 and "에 좋아요" in 본문
 
 
 def test_미리하기는_계정에_남고_홈_로딩에_잇는다():

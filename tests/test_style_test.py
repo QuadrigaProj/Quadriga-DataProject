@@ -289,3 +289,21 @@ def test_화면에_테스트_진입_링크와_s10_이_있다():
     assert "openStyleTest(" in html
     js = c.get("/js/api.js").text
     assert "/style-test" in js and "/style-test/result" in js
+
+
+def test_운동_고르기에서_결과_카드를_다시_볼_수_있다():
+    """예현(2026-09-21): "운동고르기에서 카드 화면 나가도 추후에 확인 가능했으면 좋겠어".
+    결과는 state.styleTest 에 남고 openStyleTest('s8') 도 결과부터 보여 주지만, 입구가 '… → 운동 스타일 테스트' 뿐이라
+    결과가 남아 있는 줄 몰랐다. 결과가 있으면 '내 운동 스타일' 카드(그림 · 유형 이름 · 코드)를 보이고, 누르면 결과 카드를 연다."""
+    html = c.get("/").text.replace("\r\n", "\n")
+    s8 = html.split('<section class="screen" id="s8">')[1].split("</section>")[0]
+    assert """<button type="button" class="style-mine" id="styleMine" hidden onclick="openStyleTest('s8')"></button>""" in s8
+    assert 'id="styleTestLink"' in s8                                          # 결과가 없을 때는 예전 입구 그대로
+    그림 = html.split("function renderStyleMine(){")[1].split("\n}")[0]
+    assert "card.hidden = !t?.이름;" in 그림 and "link.hidden = !!t?.이름;" in 그림
+    assert "STYLE_ART.html(t.id, state.sex, 56, '')" in 그림                  # 결과 화면과 같은 그림(성별대로)
+    assert "결과 카드 보기 ›" in 그림 and "state.styleTest?.result?.코드?.글자" in 그림
+    assert "renderStyleMine();" in html.split("async function renderSports(){")[1].split("\n}")[0]   # 운동 고르기를 열 때마다
+    열기 = html.split("function openStyleTest(from){")[1].split("\n}")[0]
+    assert "if (state.styleTest?.result) {" in 열기 and "styleView = 'result';" in 열기   # 누르면 테스트가 아니라 결과부터
+    assert ".style-mine[hidden]{ display:none; }" in html

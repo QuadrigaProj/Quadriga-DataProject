@@ -1564,7 +1564,8 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
 
     method 는 부른 쪽의 HTTP 메서드 — 요청 제한이 경로마다 달라서, 값을 받기 전에 아직 안 끊겼는지 볼 때 쓴다.
 
-    purpose 는 사용자가 고른 운동 단계 — AI 가 권장 용량(backend/dose.py)을 거기에 맞춘다.
+    purpose 는 사용자가 고른 운동 단계 — 무료 추천은 그 목적의 루틴 안에서만 고르고,
+    AI 는 권장 용량(backend/dose.py)을 거기에 맞춘다.
 
     adjust 는 '더 쉽게'·'더 어렵게' — previous(받아 둔 AI 루틴)를 바탕으로 그 방향으로만 다시 짓는다.
 
@@ -1581,7 +1582,8 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
     picked = list(sports)
     try:
         out = rc.for_user(age_gbn, weak=parts, style_purpose=style_purpose,
-                          sports=picked, target_gap=target_gap, limit=limit, week=week, areas=areas)
+                          sports=picked, target_gap=target_gap, limit=limit, week=week, areas=areas,
+                          purpose=purpose)
     except (KeyError, FileNotFoundError) as e:
         raise HTTPException(404, str(e))
 

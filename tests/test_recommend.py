@@ -112,6 +112,44 @@ def test_관리_부위는_GET_과_POST_둘_다_받는다():
     assert client.get("/recommend/routines", params={"age_gbn": "성인", "ai": 0}).json()["참고"]["관리부위"] == []
 
 
+def test_고른_운동_단계가_있으면_그_목적의_루틴만_고른다():
+    """예현(2026-09-21): "무료추천과 AI추천 모두 사용자가 운동단계설정한거에 맞게 추천해줘야해. 일단 무료추천이 이를 반영 안 하고 있어".
+    화면은 purpose 를 보내는데 무료 점수가 받지 않아 여덟 목적이 섞여 나왔다 — 다이어트를 골랐는데 벌크업 루틴이 나왔다."""
+    루틴 = rt.load()["routines"]
+    for 연령대 in rt.AGE_GROUPS:
+        for 목적 in rt.PURPOSES:
+            추천 = rc.for_user(연령대, weak=["유연성"], sports=["tennis"], limit=12, purpose=목적)["추천"]
+            assert 추천 and {x["목적"] for x in 추천} == {목적}, (연령대, 목적)
+            assert len(추천) == len(루틴[연령대][목적])                          # 그 목적의 루틴 10개가 모두 후보다
+            assert [x["순위"] for x in 추천] == list(range(1, len(추천) + 1))
+            assert 추천[0]["이유"][0] == f"고른 운동 단계 '{목적}' 에 맞춘 루틴이에요"   # 왜 이걸 골랐나요 — 첫 줄
+    점수 = [x["점수"] for x in rc.for_user("성인", weak=["유연성"], areas=["뱃살"], limit=12, purpose="다이어트")["추천"]]
+    assert 점수 == sorted(점수, reverse=True)                                     # 그 안에서는 점수 순
+    # 안 골랐거나 모르는 이름이면 예전처럼 여러 목적이 섞인다
+    for 목적 in (None, "", "아무거나"):
+        d = rc.for_user("성인", limit=12, purpose=목적)
+        assert len({x["목적"] for x in d["추천"]}) > 1 and d["참고"]["고른목적"] is None, 목적
+
+
+def test_운동_단계는_GET_과_POST_둘_다_받는다():
+    g = client.get("/recommend/routines", params={"age_gbn": "성인", "purpose": "유연성 강화", "limit": 12, "ai": 0}).json()
+    assert {x["목적"] for x in g["추천"]} == {"유연성 강화"} and g["참고"]["고른목적"] == "유연성 강화"
+    p = client.post("/recommend/routines", json={"age_gbn": "성인", "purpose": "유연성 강화", "limit": 12, "ai": False}).json()
+    assert [x["루틴명"] for x in p["추천"]] == [x["루틴명"] for x in g["추천"]]      # 같은 본체를 쓴다
+
+
+def test_화면은_운동_단계가_바뀌면_무료_추천을_새로_받는다():
+    """한 번 받은 무료 추천을 다시 쓰던 자리가 운동 단계를 보지 않아, 단계를 바꿔도 예전 목적의 루틴이 그대로 떠 있었다.
+    '더 쉬운 · 더 어려운 루틴' 이 전체를 받아 올 때도 운동 단계를 보내지 않아 다른 목적의 루틴이 얹혔다."""
+    html = client.get("/").text.replace("\r\n", "\n")
+    본문 = html.split("async function renderRecommend(){")[1].split("\n}")[0]
+    assert "state.freeReco?.추천?.length >= 5 && state.freeReco.열쇠 === freeRecoKey()" in 본문
+    assert "function freeRecoKey(){ return [PURPOSE_TO_KO[state.purpose] || '', dietAreas().join(',')].join('|'); }" in html
+    assert "받은시각: Date.now(), 열쇠: freeRecoKey() };" in html                    # 받은 조건을 같이 남긴다 (옛 것은 열쇠가 없어 새로 받는다)
+    전체 = html.split("async function 전체추천얹기(){")[1].split("\n}")[0]
+    assert "purpose: PURPOSE_TO_KO[state.purpose] || null," in 전체 and "areas: dietAreas().join(',')," in 전체
+
+
 def test_목표_격차가_크면_숨찬_운동에_무게를_준다():
     작음 = {x["목적"]: x["점수"] for x in rc.for_user("성인", target_gap=1, limit=5)["추천"]}
     큼 = {x["목적"]: x["점수"] for x in rc.for_user("성인", target_gap=9, limit=5)["추천"]}

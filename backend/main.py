@@ -1656,14 +1656,17 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
 
 
 def _previous_routine(루틴) -> dict:
-    """조정의 바탕이 되는 루틴을 AI 가 읽을 만큼만 남긴다 — 이름·강도·줄(동작·단계·수행량). 화면이 보낸 것을 그대로 믿지 않는다."""
+    """조정의 바탕이 되는 루틴을 AI 가 읽을 만큼만 남긴다 — 이름·강도·줄(시간대·동작·단계·수행량). 화면이 보낸 것을 그대로 믿지 않는다."""
     if not isinstance(루틴, dict):
         return {}
     글 = lambda v, n: str(v).strip()[:n] if isinstance(v, (str, int, float)) else ""
     줄들 = []
-    for s in (루틴.get("steps") or [])[:12]:
+    for s in (루틴.get("steps") or [])[:16]:
         if isinstance(s, dict) and 글(s.get("동작"), 40):
-            줄들.append({"동작": 글(s.get("동작"), 40), "단계": 글(s.get("단계"), 10), "수행량": 글(s.get("수행량"), 20)})
+            줄 = {"동작": 글(s.get("동작"), 40), "단계": 글(s.get("단계"), 10), "수행량": 글(s.get("수행량"), 20)}
+            if 글(s.get("시간대"), 4) in air.DAYPARTS:
+                줄["시간대"] = 글(s.get("시간대"), 4)          # 시간대별로 지은 루틴은 그 나눔째로 조정한다
+            줄들.append(줄)
     out = {"루틴명": 글(루틴.get("루틴명"), 40), "동작": 줄들}
     if isinstance(루틴.get("강도"), dict):
         out["강도"] = {k: v for k, v in 루틴["강도"].items() if isinstance(v, (int, float, str))}

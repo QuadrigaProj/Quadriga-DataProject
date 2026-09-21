@@ -49,8 +49,37 @@ def order_from(시작계절: str) -> tuple[str, ...]:
     return SEASONS[i:] + SEASONS[:i]
 
 
+# 시간대 — 화면(frontend 의 DAYPARTS)과 같은 경계. 밤(21~04시)은 자정을 넘기지만 그날 하루치 예보만 받으므로
+# 그날의 21~23시와 0~3시를 함께 센다 (새벽 기온은 전날 밤과 크게 다르지 않다).
+DAYPART_HOURS = (("아침", tuple(range(4, 11))), ("낮", tuple(range(11, 17))), ("저녁", tuple(range(17, 21))),
+                 ("밤", tuple(range(21, 24)) + tuple(range(0, 4))))
+
+
+def daypart_temps(times, temps) -> dict:
+    """시간별 기온 → 시간대마다 평균 기온(소수 한 자리). 값이 하나도 없는 시간대는 뺀다.
+
+    AI 가 시간대마다 따로 루틴을 지을 때 쓴다 — 아침 · 밤은 낮보다 한참 춥다 (예현: "시간대 별로 온도가 다르니까").
+    """
+    by_hour: dict[int, float] = {}
+    for t, v in zip(times or [], temps or []):
+        if v is None:
+            continue
+        try:
+            by_hour[int(str(t)[11:13])] = float(v)        # '2026-09-21T07:00' → 7시
+        except ValueError:
+            continue
+    out = {}
+    for 이름, hours in DAYPART_HOURS:
+        vals = [by_hour[h] for h in hours if h in by_hour]
+        if vals:
+            out[이름] = round(sum(vals) / len(vals), 1)
+    return out
+
+
 def fetch_weather(날짜: _dt.date, 위도: float | None = None, 경도: float | None = None) -> dict | None:
-    """그날의 예보. 오늘부터 16일 안일 때만. 못 받으면 None — 부르는 쪽은 계절만 쓴다."""
+    """그날의 예보. 오늘부터 16일 안일 때만. 못 받으면 None — 부르는 쪽은 계절만 쓴다.
+
+    시간별 기온을 같이 받아 '시간대기온'({아침, 낮, 저녁, 밤}) 을 붙인다. 시간별이 없으면 그 칸만 없다."""
     오늘 = _dt.date.today()
     if not (0 <= (날짜 - 오늘).days <= FORECAST_DAYS):
         return None
@@ -62,6 +91,7 @@ def fetch_weather(날짜: _dt.date, 위도: float | None = None, 경도: float |
                     "daily": "temperature_2m_max,temperature_2m_min,"
                              "precipitation_probability_max,relative_humidity_2m_mean,"
                              "weather_code",
+                    "hourly": "temperature_2m",
                     "timezone": "Asia/Seoul",
                     "start_date": 날짜.isoformat(), "end_date": 날짜.isoformat()},
             timeout=TIMEOUT_SEC)
@@ -75,6 +105,10 @@ def fetch_weather(날짜: _dt.date, 위도: float | None = None, 경도: float |
                "기준": "내 위치" if (위도 is not None and 경도 is not None) else "서울"}
         if out["최고"] is None and out["최저"] is None:
             return None
+        h = r.json().get("hourly") or {}
+        기온 = daypart_temps(h.get("time"), h.get("temperature_2m"))
+        if 기온:
+            out["시간대기온"] = 기온
         return out
     except Exception:
         return None

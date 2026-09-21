@@ -694,6 +694,25 @@ def test_운동체력_축도_프로필에서_잰다():
     assert "['longJump', 'shuttle10m', 'target3m', 'figure8'].forEach(k => { state[k] = saved?.[k] ?? null; });" in html
 
 
+def test_프로필은_건강_체력과_운동_체력을_나눠_보인다():
+    """예현(2026-09-21): "우리 프로필에서 지금은 건강 관련 체력 요소만 뜨는데 운동관련 체력도 넣을까?" —
+    운동 체력(순발력 · 민첩성 / 평형성 · 협응력)은 #199 로 들어가 있었지만 제목 없이 건강 체력 사이에
+    끼어 있었다(… 심폐지구력 · 순발력 · 민첩성 · 체성분). 건강 체력 다섯을 먼저, 운동 체력을 그 뒤에 따로 묶고 제목을 단다.
+    반응시간 · 스피드는 국민체력100 공개 자료에 측정이 없어 또래 기준을 댈 수 없으니 넣지 않는다."""
+    html = _index()
+    순서 = html.split("function axisOrder(항목별)")[1].split("\n}")[0]
+    assert "return [...AXIS_ORDER, ...나머지];" in 순서                             # 체성분까지 건강 체력이 먼저
+    그림 = html.split("function renderProfile()")[1].split("\n}")[0]
+    assert "$('axisRows').innerHTML = axisGroupHead('건강 체력') + 순서.map(" in 그림
+    assert "const 첫운동 = 순서.find(k => !AXIS_ORDER.includes(k));" in 그림
+    assert "(k === 첫운동 ? axisGroupHead('운동 체력') : '')" in 그림                # 운동 체력의 첫 줄 앞에 제목
+    제목 = html.split("function axisGroupHead(묶음)")[1].split("\n}")[0]
+    assert "선택 항목이에요, 재면 체력나이에 함께 들어가요" in 제목                    # 성인 · 어르신은 첫 점검에 없는 선택 항목
+    assert "isGrowth() ? '운동을 잘하는 데 필요한 체력'" in 제목                       # 성장기 순발력은 첫 점검 항목이라 '선택' 이 아니다
+    표 = html.split("const AXIS_EXTRA = ")[1].split(";")[0]
+    assert "반응시간" not in 표 and "스피드" not in 표
+
+
 def test_성장기_근지구력은_프로필에서_잰다():
     """성장기의 strength 는 순발력(제자리 멀리뛰기)이라 근지구력을 따로 받는다: 만 12세까지 윗몸말아올리기(3초 박자),
     13세부터 반복점프(30초). 서버가 공식 등급 기준으로 또래 순위를 어림해 또래비교로만 돌려준다."""

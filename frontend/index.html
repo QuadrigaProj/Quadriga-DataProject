@@ -3185,6 +3185,7 @@ async function saveEdits(){
     }
     state.age = age;
     state.sex = sex;
+    if (purpose !== state.purpose) state.aiRoutine = null;   // 운동 단계를 바꿨으면 예전 단계로 지은 AI 루틴에서 벗어난 것이다 (selectPurpose 와 같다)
     state.purpose = purpose;
     // 다이어트일 때만 옮긴다 — 다른 방식으로 바꿀 때는 지우지 않아서, 다시 다이어트로 오면 그대로 있다
     if (purpose === 'diet' && editAreas.join() !== (state.dietAreas || []).join()) {
@@ -9159,6 +9160,8 @@ function paintRecommend(){
         <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
       </div>
       ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
+      ${지은것 && x.목적 && PURPOSE_TO_KO[state.purpose] && x.목적 !== PURPOSE_TO_KO[state.purpose]
+        ? `<div class="rec-care">지금 운동 단계는 '${PURPOSE_TO_KO[state.purpose]}' 예요. 이 루틴은 '${esc(x.목적)}' 로 지었어요 — 새로 받으면 '${PURPOSE_TO_KO[state.purpose]}' 에 맞춰 지어요.</div>` : ''}
       ${(x.주의 || []).length ? `<div class="rec-care">${x.주의.map(esc).join('<br/>')}</div>` : ''}
       ${spareRecoHtml()}
       ${seasonHtml()}

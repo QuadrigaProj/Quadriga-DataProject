@@ -178,6 +178,45 @@ def test_없는_목적이면_기본_목적으로(monkeypatch):
     assert air.compose(사용자, "성인")["루틴"]["목적"] == "기초 체력 증진"
 
 
+def test_고른_운동_단계가_있으면_그게_루틴의_목적이다(monkeypatch):
+    """예현(2026-09-21): "무료추천과 AI추천 모두 사용자가 운동단계설정한거에 맞게 추천해줘야해".
+    예전엔 AI 가 고른 운동 단계로 권장 용량만 맞추고 목적은 스스로 골랐다. 지시문에 적고, 다른 목적을 적어 와도 서버가 맞춘다."""
+    _fake_sdk(monkeypatch, _지은응답())                                            # 응답의 목적은 '다이어트'
+    assert air.compose({**사용자, "고른 운동 단계": "유연성 강화"}, "성인")["루틴"]["목적"] == "유연성 강화"
+    assert air.compose({**사용자, "고른 운동 단계": "모르는 단계"}, "성인")["루틴"]["목적"] == "다이어트"   # 모르는 값이면 응답 그대로
+    assert air.compose(사용자, "성인")["루틴"]["목적"] == "다이어트"                                        # 안 골랐으면 응답 그대로
+    assert "**'고른 운동 단계' 가 있으면 그것이 이 루틴의 목적입니다.**" in air.COMPOSE_SYSTEM
+    assert "('고른 운동 단계가 다루는 요인' 줄)을 중심으로" in air.COMPOSE_SYSTEM
+
+
+def test_AI에게_고른_운동_단계가_다루는_요인을_준다(monkeypatch):
+    from backend import routines as rt
+    _fake_sdk(monkeypatch, _지은응답())
+    받은, 진짜 = {}, air.compose
+
+    def 엿보기(사용자, *a, **kw):
+        받은.update(사용자)
+        return 진짜(사용자, *a, **kw)
+
+    monkeypatch.setattr(air, "compose", 엿보기)
+    d = _paid(1000).get("/recommend/routines", params={"age_gbn": "성인", "purpose": "유연성 강화", "limit": 3}).json()
+    assert 받은["고른 운동 단계"] == "유연성 강화"
+    assert 받은["고른 운동 단계가 다루는 요인"] == rt.load()["config"]["purpose_factors"]["유연성 강화"]
+    assert d["출처"] == "ai" and d["추천"][0]["목적"] == "유연성 강화"              # 응답은 '다이어트' 였지만 고른 단계로
+
+
+def test_운동_단계를_바꾸면_예전_AI_루틴을_내려놓고_알린다():
+    """프로필에서 운동 단계를 바꿔도 예전 단계로 지은 AI 루틴을 그대로 돌렸다(목적 화면에서 고를 때는 내려놓았다).
+    받아 둔 AI 추천이 다른 단계로 지은 것이면 카드에 그렇다고 적는다 — 다시 받는 건 값이 들어 알아서 부르지 않는다."""
+    html = _html().replace("\r\n", "\n")
+    저장 = html.split("async function saveEdits(){")[1].split("\n}")[0]
+    줄 = "if (purpose !== state.purpose) state.aiRoutine = null;"
+    assert 줄 in 저장 and 저장.index(줄) < 저장.index("state.purpose = purpose;")   # 바꾸기 전 값과 견준다
+    카드 = html.split("function paintRecommend(){")[1].split("\n}")[0]
+    assert "지은것 && x.목적 && PURPOSE_TO_KO[state.purpose] && x.목적 !== PURPOSE_TO_KO[state.purpose]" in 카드
+    assert "새로 받으면 '${PURPOSE_TO_KO[state.purpose]}' 에 맞춰 지어요." in 카드
+
+
 def test_거절과_예외도_폴백한다(monkeypatch):
     _fake_sdk(monkeypatch, _지은응답(), stop="refusal")
     assert air.compose(사용자, "성인") is None

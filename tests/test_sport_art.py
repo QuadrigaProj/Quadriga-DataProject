@@ -25,7 +25,7 @@ def _art() -> dict:
     있는 = defaultdict(str)
     for p in sorted(ART.glob("*-[mf].webp")):
         있는[p.stem[:-2]] += p.stem[-1]
-    return {i: "".join(sorted(v)) for i, v in 있는.items()}
+    return {i: "".join(sorted(v, reverse=True)) for i, v in 있는.items()}        # 'mf' · 'm' · 'f' — 남자 먼저 (코드의 표와 같은 순서)
 
 
 def _sport_ids() -> set:

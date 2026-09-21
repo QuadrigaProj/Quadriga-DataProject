@@ -640,6 +640,20 @@ def test_다음_점검일을_캘린더에_넣는다():
     assert "$('profileTools').hidden = false;" in 그림
 
 
+def test_날짜는_기기의_날짜로_적는다():
+    """배포본을 새벽 1시 31분(KST)에 돌려 보니 끝낸 루틴이 어제(9/21) 날짜로 적혔다. 오늘을 toISOString()(UTC)으로 잡아서
+    한국에선 0~9시에 한 일이 전날로 들어갔고, 기기 날짜를 쓰는 곳(daypartDone · tomorrowIso)과 어긋나 '이 시간대 끝' 도 안 떴다."""
+    html = _index()
+    assert "const todayIso = () => isoDate(new Date());" in html
+    assert "function isoDate(d){ return `${d.getFullYear()}-" in html                  # 기기의 연 · 월 · 일
+    남은 = [줄.strip() for 줄 in html.splitlines()
+          if "toISOString()" in 줄 and "const stamp" not in 줄 and "예전엔 toISOString" not in 줄]
+    assert not 남은, 남은                          # 날짜 키를 UTC 로 잡는 곳이 남지 않았다 (캘린더 파일의 DTSTAMP 는 표준대로 UTC)
+    완료 = html.split("function logRoutineDone(부분 = playScope)")[1].split("\n}\n")[0]
+    assert "const today = todayIso();" in 완료
+    assert "const iso = isoDate;" in html.split("function streakDays(log)")[1].split("\n}")[0]
+
+
 def test_체력나이_카드를_이미지로_만든다():
     """결과를 이미지 한 장(1080×1350)으로 — 이름은 넣지 않는다. 항목 줄은 프로필과 같은 순서·같은 별점이고,
     서버에 못 붙어 예시 값일 때는 만들지 않는다(예시 값이 돌아다니면 안 된다)."""

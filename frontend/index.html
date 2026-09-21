@@ -2757,7 +2757,8 @@ function programWeek() { return Math.min(12, Math.floor(programDay() / 7) + 1); 
    홈의 "재측정하기" 를 누르면 지금 기간을 history 로 넘기고 새 기간을 연다 (F3/F4).
    --------------------------------------------------------------------------- */
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+/* 오늘 날짜 'yyyy-mm-dd' — 기기의 날짜(한국이면 KST)로. 예전엔 toISOString()(UTC)이라 한국에서 0~9시에 한 일이 전날로 적혔다 */
+const todayIso = () => isoDate(new Date());
 
 /* 지금 기간을 history 에 보관하고 운동 기록을 비운다.
    state.first 는 그대로 둔다 — 최초 점검과의 비교는 계속 의미가 있다. */
@@ -3400,7 +3401,7 @@ function snapshot(){
     commute: state.commute,
     styleTest: state.styleTest,
     uiMode: state.uiMode,
-    updated: new Date().toISOString().slice(0, 10),
+    updated: todayIso(),
   };
 }
 
@@ -3842,7 +3843,7 @@ function streakDays(log){
   const days = new Set((log || []).map(e => e.date));
   if (!days.size) return 0;
   const d = new Date();
-  const iso = (x) => x.toISOString().slice(0, 10);
+  const iso = isoDate;                       // 기기의 날짜 — 기록(routineLog)과 같은 기준
   if (!days.has(iso(d))) d.setDate(d.getDate() - 1);
   let n = 0;
   while (days.has(iso(d))) { n++; d.setDate(d.getDate() - 1); }
@@ -6167,7 +6168,7 @@ function starFromPct(pct){ return Math.max(1, Math.min(5, Math.floor(pct / 20) +
 async function loadHome(){
   if (!state.result) return;
   // 기간 시작일을 아직 안 잡았으면 오늘로 잡는다 (재측정하면 archivePeriod 가 다시 잡는다)
-  if (!state.programStart) { state.programStart = new Date().toISOString().slice(0,10); saveProfile(); }
+  if (!state.programStart) { state.programStart = todayIso(); saveProfile(); }
 
   const stars = starCount(state.result.항목별.근력 ?? state.result.체력나이);
   try {
@@ -6622,7 +6623,7 @@ function nextStep(){
 /* 오늘 루틴 완료 기록 (사용자별, 새로고침 후에도 유지).
    당일 루틴(daily)과 고른 종목(sport)은 따로 끝내도 그날 한 줄에 합친다 — 날짜당 한 줄이어야 체력나이·자세히 보기가 그대로 돈다. */
 function logRoutineDone(부분 = playScope){
-  const today = new Date().toISOString().slice(0,10);
+  const today = todayIso();                  // 기기의 날짜 — UTC 로 적으면 한국의 새벽 · 아침 운동이 어제로 들어간다
   const no = state.routineMeta?.루틴번호 ?? null;
   // AI 루틴은 시간대마다 한 번씩 기록한다 — 아침에 끝냈다고 낮 것까지 끝난 게 아니다.
   const 시간대 = state.routineMeta?.구성 === 'ai' ? effectiveDaypart() : null;
@@ -7334,9 +7335,9 @@ function openMoveSheet(slug){
    - 변화추이: state.measureLog(+계정이면 /me/measurements 지난 스냅샷)의 체력나이를
      기간(7/30/90/전체)으로 걸러 인라인 SVG 선 그래프와 해석 문구를 그린다.
    측정 시점은 F3 의 commitResult → appendMeasureLog 가 남긴 것을 읽기만 한다 (여기서 쓰지 않는다).
-   날짜 키는 routineLog·streakDays·todayIso 와 같은 toISOString 기준(UTC 날짜)을 쓴다.
+   날짜 키는 routineLog·streakDays·todayIso 와 같은 기기의 날짜(한국이면 KST)를 쓴다 — 예전엔 UTC 였다.
    --------------------------------------------------------------------------- */
-const isoDay = (d) => d.toISOString().slice(0, 10);   // 임의의 Date 용 — 오늘은 todayIso()
+const isoDay = (d) => isoDate(d);                     // 임의의 Date 용 — 오늘은 todayIso()
 const pad2 = (n) => String(n).padStart(2, '0');
 let calYm = null;            // 달력에 보이는 달 { y, m(0~11) }
 let calSelected = null;      // 선택한 날짜 'yyyy-mm-dd'
@@ -7822,7 +7823,7 @@ async function submitStyleTest(){
   $('styleChoices').innerHTML = '';
   try {
     const r = await API.styleTestResult(styleAnswers.slice(0, (styleQs || []).length));
-    state.styleTest = { answers: r.답변, result: r, date: new Date().toISOString().slice(0, 10) };
+    state.styleTest = { answers: r.답변, result: r, date: todayIso() };
     saveProfile();
     styleView = 'result';
     renderStyleResult(r);
@@ -8073,8 +8074,8 @@ function paintLogSaveBtn(){
 const ACTIVITY_WINDOW = 28;
 function activityCounts(끝날){
   const 끝 = 끝날 || todayIso();
-  const 시작 = new Date(new Date(끝 + 'T00:00:00').getTime()
-                      - (ACTIVITY_WINDOW - 1) * 86400000).toISOString().slice(0, 10);
+  const 시작 = isoDate(new Date(new Date(끝 + 'T00:00:00').getTime()
+                      - (ACTIVITY_WINDOW - 1) * 86400000));        // 기기의 자정에서 거꾸로 — UTC 로 읽으면 한국에선 하루 앞당겨졌다
   const 날별 = new Map();
   const 넣기 = (날, 요인들) => {
     if (!날 || 날 < 시작 || 날 > 끝) return;
@@ -9079,7 +9080,7 @@ function myLocation(){
    시키지 않으려면 이것이 있어야 한다. 통째로 보내지 않는다. */
 function recentWorkouts(days){
   const 경계 = new Date(); 경계.setDate(경계.getDate() - days);
-  const 부터 = 경계.toISOString().slice(0, 10);
+  const 부터 = isoDate(경계);
   const out = [];
   (state.workoutLog || []).forEach(w => {
     if (!w?.date || w.date < 부터) return;
@@ -9617,7 +9618,7 @@ async function loadCredit(){
       const c = await API.credit();
       state.credit = c['잔액'] || 0;
       state.creditLog = (c['내역'] || []).map(e => ({
-        date: new Date((e['때'] || 0) * 1000).toISOString().slice(0, 10),
+        date: isoDate(new Date((e['때'] || 0) * 1000)),
         종류: e['종류'], 금액: e['금액'], 결제: e['결제'] ?? e['금액'],
         주문번호: e['주문번호'] || null, 환불가능: !!e['환불가능'], 사유: e['사유'] || null,
       }));

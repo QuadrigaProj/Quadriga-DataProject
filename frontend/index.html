@@ -305,6 +305,10 @@
   .exercise-3d-tips h4{ margin:0 0 6px; font-size:13px; }
   .exercise-3d-tips ul{ margin:0; padding-left:16px; font-size:12.5px; line-height:1.5; }
   .exercise-3d-tips li{ margin:2px 0; word-break:keep-all; }
+  /* 고른 종목의 그림 — 3D 동작과 같은 자리·같은 크기 */
+  .sport-art{ display:flex; flex-direction:column; align-items:center; gap:6px; width:100%; margin:8px 0 10px; }
+  .sport-art:not([hidden]) ~ .player-daypart{ display:none; }
+  .sport-art img{ width:min(100%, 320px); aspect-ratio:1; border-radius:16px; display:block; }
   /* 시간대 흐름 (홈) */
   .daypart-row{ margin:10px 22px 0; }   /* 다른 카드와 같은 좌우 여백 */
   .daypart-done{ font-size:14px; font-weight:800; color:var(--pine-deep); padding:10px 12px;
@@ -2052,6 +2056,11 @@
           <div class="exercise-3d-note" id="exercise3dSub" hidden></div>
           <!-- 우리가 만든 동작은 바른 자세 설명도 같이 보여 준다 (docs/3d-exercise-form-notes.md → js/move-notes.js) -->
           <div class="exercise-3d-tips" id="exercise3dTips" hidden></div>
+        </div>
+        <!-- 고른 종목(테니스 · 발레 …)은 배워서 하는 운동이라, 따라 할 3D 동작 대신 '무슨 운동인지' 알려 주는 그림 한 장 -->
+        <div id="sportArt" class="sport-art" hidden>
+          <img id="sportArtImg" src="" alt="" />
+          <div class="exercise-3d-note">*배워서 하는 종목이라 동작 대신 그림으로 보여 드려요. (그림: AI 생성)</div>
         </div>
         <div class="player-tag" id="playerTag">1 / 5</div>
         <div class="player-daypart" id="playerDaypart" hidden></div>
@@ -6268,6 +6277,17 @@ const POSE_FOR_SPORT = {
   pilates: 'plank', yoga: 'deep-breath', climbing: 'lat-pulldown',
 };
 
+/* 고른 종목은 그림 한 장으로 (예현, 2026-09-21: "학원에서 배워야 하거나 이미 기본적인 것들을 알고 있을 가능성이 커서").
+   앱이 가르칠 동작이 아니니 따라 할 자세를 3D 로 보여 줄 게 아니라 '무슨 운동인지'만 알려 주면 된다.
+   그림은 frontend/img/sport/<종목id>.webp (640px WebP, AI 로 그렸고 오른쪽 아래 ✦ 는 그 표식이라 지우지 않는다).
+   아직 그림이 없는 종목은 예전처럼 3D(POSE_FOR_SPORT)로 간다 — 그림이 들어오는 대로 여기에 id 를 더한다.
+   목록을 두는 이유: 없는 그림을 부르면 404 가 나고 빈 칸이 잠깐 보인다 (tests/test_sport_art.py 가 파일과 맞춰 본다). */
+const SPORT_ART = new Set(['badminton', 'basketball', 'bowling', 'cycling', 'golf', 'hiking', 'jumprope', 'marathon', 'running', 'soccer', 'squash', 'swimming', 'tabletennis', 'tennis']);
+function sportArtUrl(step){
+  if (!step || step.출처 !== '종목' || youtubeVideoId(step.youtube_id)) return null;   // 영상이 있으면 영상
+  return SPORT_ART.has(step.id) ? `/img/sport/${step.id}.webp` : null;
+}
+
 function poseForStep(step){
   if (!step || youtubeVideoId(step.youtube_id)) return null;      // 영상이 있으면 영상
   if (step.출처 === '기록') return step.id || null;
@@ -6477,9 +6497,23 @@ function render3dTips(pose){
   el.hidden = false;
 }
 
+/* 고른 종목의 그림을 띄운다. 띄웠으면 true — 그러면 3D 는 접는다. */
+function showSportArt(step){
+  const art = $('sportArt');
+  if (!art) return false;
+  const url = sportArtUrl(step);
+  if (!url) { art.hidden = true; return false; }
+  const img = $('sportArtImg');
+  if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+  img.alt = `${step.운동명 || ''} 그림`;
+  art.hidden = false;
+  return true;
+}
+
 function show3dForStep(step){
   const box = $('exercise3d');
   if (!box) return;
+  if (showSportArt(step)) { MOVE_3D.stop(); box.hidden = true; return; }   // 고른 종목은 그림 한 장으로
   const pose = poseForStep(step);
   const onNote = t => { const s = $('exercise3dSub'); if (s) { s.textContent = t || ''; s.hidden = !t; } };
   if (!pose || !MOVE_3D.start($('exercise3dCanvas'), pose, { onNote, sex: state.sex })) { MOVE_3D.stop(); box.hidden = true; return; }

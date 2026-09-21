@@ -8,14 +8,18 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/img/logo-180.png" />
 <link rel="stylesheet" href="/easy-mode.css" />
-<meta name="theme-color" content="#EDEFE6" />
+<meta name="theme-color" content="#EEE7D6" />
 <style>
+  /* 바탕은 아이보리 (예현, 2026-09-21: "흰색에 가까운 것 같은데 좀 더 아이보리나 베이지 컬러감이 보였으면").
+     전엔 --bg #EDEFE6 · --paper #FAFAF4 (흰색에 가까운 회녹색) 였다. 바탕이 어두워진 만큼 흐린 글씨(--muted)를 한 단계 어둡게 해
+     화면(5.23) · 바깥(4.71) · 연초록 칸(4.62) · 연호박 칸(4.58) 어디에 놓여도 명암 대비 4.5:1 을 지킨다 — tests/test_palette.py 가 잰다.
+     개인정보 · 약관(_policy.css)과 쉬운 모드(easy-mode.css)도 같은 값이다. */
   :root{
-    --bg:#EDEFE6;
-    --paper:#FAFAF4;
+    --bg:#EEE7D6;
+    --paper:#F8F3E4;
     --ink:#20261F;
-    --muted:#666F62;
-    --line:#DCDCC9;
+    --muted:#5F685B;
+    --line:#DDD7C2;
     --pine:#2E5B4B;
     --pine-deep:#1F4136;
     --pine-tint:#DEE8DF;
@@ -6840,9 +6844,9 @@ function drawShareCard(cv){
   cv.width = W; cv.height = H;
   const css = getComputedStyle(document.documentElement), c = (n, d) => css.getPropertyValue(n).trim() || d;
   const sans = '-apple-system, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif', serif = '"Iowan Old Style", "Palatino Linotype", Georgia, serif';
-  const ink = c('--ink', '#20261F'), muted = c('--muted', '#666F62'), pine = c('--pine', '#2E5B4B'), star = c('--star', '#C1793C'), line = c('--line', '#DCDCC9');
+  const ink = c('--ink', '#20261F'), muted = c('--muted', '#5F685B'), pine = c('--pine', '#2E5B4B'), star = c('--star', '#C1793C'), line = c('--line', '#DDD7C2');
   g.fillStyle = c('--pine-deep', '#1F4136'); g.fillRect(0, 0, W, H);
-  g.fillStyle = c('--paper', '#FAFAF4');
+  g.fillStyle = c('--paper', '#F8F3E4');
   const x0 = 60, y0 = 60, w = W - 120, h = H - 120, rad = 48;
   g.beginPath(); g.moveTo(x0 + rad, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, rad); g.arcTo(x0 + w, y0 + h, x0, y0 + h, rad);
   g.arcTo(x0, y0 + h, x0, y0, rad); g.arcTo(x0, y0, x0 + w, y0, rad); g.closePath(); g.fill();
@@ -6939,10 +6943,10 @@ function drawStyleCard(cv, r, img){
   cv.width = W; cv.height = H;
   const css = getComputedStyle(document.documentElement), c = (n, d) => css.getPropertyValue(n).trim() || d;
   const sans = '-apple-system, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif', serif = '"Iowan Old Style", "Palatino Linotype", Georgia, serif';
-  const ink = c('--ink', '#20261F'), muted = c('--muted', '#666F62'), pine = c('--pine', '#2E5B4B'), line = c('--line', '#DCDCC9');
+  const ink = c('--ink', '#20261F'), muted = c('--muted', '#5F685B'), pine = c('--pine', '#2E5B4B'), line = c('--line', '#DDD7C2');
   const t = r.유형 || {}, code = r.코드, tone = STYLE_ART.tone(t.id);
   g.fillStyle = tone ? tone[1] : c('--pine-deep', '#1F4136'); g.fillRect(0, 0, W, H);      // 바깥 틀은 그 유형의 선색
-  g.fillStyle = c('--paper', '#FAFAF4');
+  g.fillStyle = c('--paper', '#F8F3E4');
   const x0 = 60, y0 = 60, w = W - 120, h = H - 120, rad = 48;
   g.beginPath(); g.moveTo(x0 + rad, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, rad); g.arcTo(x0 + w, y0 + h, x0, y0 + h, rad);
   g.arcTo(x0, y0 + h, x0, y0, rad); g.arcTo(x0, y0, x0 + w, y0, rad); g.closePath(); g.fill();

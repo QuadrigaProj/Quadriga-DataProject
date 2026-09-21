@@ -4,8 +4,8 @@
    큰 글자(네 단계) · 또렷한 색(검정 바탕 · 흰 글자 · 노란 버튼) · 누르는 곳은 52px 이상 · 상태는 모양 + 말 + 색 세 가지로.
    일반 화면 위에 통째로 덮는 층(#easyRoot)이라, 색 이름(--paper …)을 이 층 안에서만 다시 정한다 — 일반 화면의 색은 건드리지 않는다. */
 #easyRoot{
-  position:fixed; inset:0; z-index:900; background:#E9ECE1;
-  --paper:#FAFAF4; --raise:#FFFFFF; --ink:#1B211B; --soft:#3F4A40; --line:#CDD2BF;
+  position:fixed; inset:0; z-index:900; background:#EEE7D6;
+  --paper:#F8F3E4; --raise:#FFFFFF; --ink:#1B211B; --soft:#3F4A40; --line:#D2CCB5;      /* 바탕은 일반 화면과 같은 아이보리 — 글씨 대비는 그대로 7:1 을 넘는다 (soft 8.4, ink 14.8) */
   --pine:#2E5B4B; --pine-deep:#1F4136; --pine-tint:#DEE8DF; --on-pine:#FFFFFF;
   --clay:#A9573D; --amber:#7A5312; --amber-tint:#F3E2CC; --brick:#9A3B26; --brick-tint:#F4DDD5;
   --sans:inherit; --serif:inherit;          /* 웹 글꼴을 따로 받지 않는다 — 앱과 같은 글꼴로 */

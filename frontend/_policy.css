@@ -1,6 +1,6 @@
 :root{
-  --bg:#EDEFE6; --paper:#FAFAF4; --ink:#20261F; --muted:#666F62;
-  --line:#DCDCC9; --pine:#2E5B4B; --pine-deep:#1F4136; --amber-tint:#F3E2CC;
+  --bg:#EEE7D6; --paper:#F8F3E4; --ink:#20261F; --muted:#5F685B;      /* 앱(index.html)과 같은 아이보리 */
+  --line:#DDD7C2; --pine:#2E5B4B; --pine-deep:#1F4136; --amber-tint:#F3E2CC;
 }
 *{ box-sizing:border-box; }
 body{

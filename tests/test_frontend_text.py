@@ -3676,6 +3676,19 @@ def test_오늘의_스케줄_미리보기():
     assert "일정을 적어 두면 바쁜 시간과 비는 시간도 여기에 함께 보여요" in 본문
 
 
+def test_스케줄_미리보기는_시간대마다_할_운동을_순서대로():
+    """예현(2026-09-21): "오늘의 스케줄 미리 보기는 루틴 명이 아니라 그 시간대에 해야 할 운동을 순서대로 나열해서 보여 줘".
+    시간대 줄마다 당일 루틴(고른 종목을 뺀 것)의 운동을 플레이어가 도는 순서대로, 수행량이 있으면 옆에."""
+    html = _index()
+    본문 = html.split("function openTodayPreview()")[1].split("\n}")[0]
+    assert "const 할것 = dailySteps();" in 본문                                        # 홈의 당일 루틴 칸 · 플레이어와 같은 목록
+    assert '<ol class="today-steps">' in 본문 and "esc(s.운동명)" in 본문 and "esc(s.수행량)" in 본문
+    assert "${할것.length ? '' : ` · ${esc(이름)}`}" in 본문                            # 루틴 이름은 운동을 모를 때만
+    assert '<span class="today-head">' in 본문 and "${x.아래 || ''}" in 본문
+    assert ".today-line.done .today-head{ text-decoration:line-through; }" in html     # 끝난 시간대는 제목에만 줄을 긋는다
+    assert ".today-line.done .today-what{ text-decoration:line-through;" not in html
+
+
 def test_미리하기는_계정에_남고_홈_로딩에_잇는다():
     html = _index()
     assert "previewDaypart: null," in html and "previewDaypart: state.previewDaypart," in html

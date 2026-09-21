@@ -323,7 +323,11 @@
   .today-what b{ color:var(--pine-deep); }
   .today-line.busy .today-what{ color:var(--muted); }
   .today-line.spare .today-what b{ color:var(--amber, #C98A62); }
-  .today-line.done .today-what{ text-decoration:line-through; color:var(--muted); }
+  .today-line.done .today-what{ color:var(--muted); }
+  .today-line.done .today-head{ text-decoration:line-through; }      /* 줄은 제목에만 — 운동 목록까지 그으면 읽기 어렵다 */
+  .today-steps{ margin:4px 0 0; padding-left:20px; }                 /* 그 시간대에 할 운동, 하는 순서대로 */
+  .today-steps li{ margin:1px 0; }
+  .today-dose{ font-size:12px; color:var(--muted); }
   .today-line.now{ background:var(--pine-tint); border-radius:10px; padding-left:8px; padding-right:8px; }  /* 오늘 날씨에 맞춘 대안 — 밖에서 하는 동작이 있을 때만 */
   .weather-card{ border:1px solid var(--line); border-radius:var(--radius-lg);
     padding:14px 16px; margin:14px 22px 0; background:var(--paper); }
@@ -8409,13 +8413,18 @@ function renderPlayerDaypart(){
 }
 
 /* 오늘의 스케줄 미리보기 — 시간대별로 몇 시부터 몇 시까지 무엇을 할지.
-   짬시간을 쓰는 사람이면 바쁜 시간과 비는 칸도 같은 줄로 함께. */
+   시간대 줄에는 루틴 이름이 아니라 그 시간대에 할 운동을 하는 순서대로 적는다 (예현, 2026-09-21: "루틴 명이 아니라
+   그 시간대에 해야 할 운동을 순서대로 나열해서") — 당일 루틴(dailySteps, 고른 종목은 뺀다)이고 플레이어가 도는 순서 그대로다.
+   루틴을 아직 못 받았으면 예전처럼 이름만. 짬시간을 쓰는 사람이면 바쁜 시간과 비는 칸도 같은 줄로 함께. */
 function openTodayPreview(){
   const 오늘 = isoDate(new Date()), 요일 = todayDow(), 지금 = daypartOf();
   const 이름 = state.routineMeta?.루틴명 || state.aiRoutine?.루틴명 || '오늘의 루틴';
+  const 할것 = dailySteps();
+  const 목록 = 할것.length ? `<ol class="today-steps">${할것.map(s =>
+    `<li>${esc(s.운동명)}${s.수행량 ? ` <span class="today-dose">${esc(s.수행량)}</span>` : ''}</li>`).join('')}</ol>` : '';
   const 줄 = DAYPARTS.map(d => ({ 시작: d.시작, 끝: d.끝, 종류: 'daypart', 이름: d.이름,
-    글: `<b>${d.이름}</b> · ${esc(이름)}${daypartGuide(d.이름) ? ` — ${esc(daypartGuide(d.이름))}` : ''}`,
-    끝남: daypartDone(d.이름), 지금: d.이름 === 지금 }));
+    글: `<b>${d.이름}</b>${할것.length ? '' : ` · ${esc(이름)}`}${daypartGuide(d.이름) ? ` — ${esc(daypartGuide(d.이름))}` : ''}`,
+    아래: 목록, 끝남: daypartDone(d.이름), 지금: d.이름 === 지금 }));
   const 바쁜 = state.schedule?.바쁜시간?.[요일] || [];
   바쁜.forEach(b => 줄.push({ 시작: b.시작, 끝: b.끝, 종류: 'busy', 글: '바쁜 시간' }));
   (sparePlan?.[요일] || []).forEach(c => {
@@ -8429,7 +8438,7 @@ function openTodayPreview(){
     <div class="today-list">${줄.map(x => `
       <div class="today-line ${x.종류}${x.끝남 ? ' done' : ''}${x.지금 ? ' now' : ''}">
         <div class="today-when">${esc(x.시작)}–${esc(x.끝)}</div>
-        <div class="today-what">${x.글}${x.끝남 ? ' · 끝났어요' : ''}</div>
+        <div class="today-what"><span class="today-head">${x.글}${x.끝남 ? ' · 끝났어요' : ''}</span>${x.아래 || ''}</div>
       </div>`).join('')}</div>
     ${안내}
     <div class="prof-actions"><button type="button" onclick="closeSheet()">닫기</button></div>`);

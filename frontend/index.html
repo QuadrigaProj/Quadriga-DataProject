@@ -6279,13 +6279,18 @@ const POSE_FOR_SPORT = {
 
 /* 고른 종목은 그림 한 장으로 (예현, 2026-09-21: "학원에서 배워야 하거나 이미 기본적인 것들을 알고 있을 가능성이 커서").
    앱이 가르칠 동작이 아니니 따라 할 자세를 3D 로 보여 줄 게 아니라 '무슨 운동인지'만 알려 주면 된다.
-   그림은 frontend/img/sport/<종목id>.webp (640px WebP, AI 로 그렸고 오른쪽 아래 ✦ 는 그 표식이라 지우지 않는다).
-   아직 그림이 없는 종목은 예전처럼 3D(POSE_FOR_SPORT)로 간다 — 그림이 들어오는 대로 여기에 id 를 더한다.
-   목록을 두는 이유: 없는 그림을 부르면 404 가 나고 빈 칸이 잠깐 보인다 (tests/test_sport_art.py 가 파일과 맞춰 본다). */
-const SPORT_ART = new Set(['badminton', 'basketball', 'bowling', 'cycling', 'golf', 'hiking', 'jumprope', 'marathon', 'running', 'soccer', 'squash', 'swimming', 'tabletennis', 'tennis']);
+   그림은 frontend/img/sport/<종목id>-<m|f>.webp (640px WebP) — 스타일 테스트 그림처럼 **남녀 따로**다
+   (예현: "같은 유형이어도 성별이 다르면 이미지가 달라"). AI 로 그렸고 오른쪽 아래 ✦ 는 그 표식이라 지우지 않는다.
+   SPORT_ART 는 종목 id → 가지고 있는 그림('mf' · 'm' · 'f'). 아직 한쪽만 그린 종목은 있는 쪽을 보여 주고,
+   아예 없는 종목은 예전처럼 3D(POSE_FOR_SPORT)로 간다 — 없는 그림을 부르면 404 가 나고 빈 칸이 깜빡인다.
+   (tests/test_sport_art.py 가 이 표와 파일을 맞춰 본다.) */
+const SPORT_ART = { badminton: 'm', basketball: 'm', bowling: 'm', cycling: 'm', golf: 'm', hiking: 'm', jumprope: 'm', marathon: 'm', running: 'm', soccer: 'm', squash: 'm', swimming: 'm', tabletennis: 'm', tennis: 'm' };
 function sportArtUrl(step){
   if (!step || step.출처 !== '종목' || youtubeVideoId(step.youtube_id)) return null;   // 영상이 있으면 영상
-  return SPORT_ART.has(step.id) ? `/img/sport/${step.id}.webp` : null;
+  const 있는 = SPORT_ART[step.id];
+  if (!있는) return null;
+  const 원하는 = state.sex === 'F' ? 'f' : 'm';
+  return `/img/sport/${step.id}-${있는.includes(원하는) ? 원하는 : 있는[0]}.webp`;
 }
 
 function poseForStep(step){
@@ -6504,7 +6509,7 @@ function showSportArt(step){
   const url = sportArtUrl(step);
   if (!url) { art.hidden = true; return false; }
   const img = $('sportArtImg');
-  if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+  if (img.getAttribute('src') !== url) img.setAttribute('src', url);      // 성별을 바꾸면 주소가 달라져 다시 받는다
   img.alt = `${step.운동명 || ''} 그림`;
   art.hidden = false;
   return true;

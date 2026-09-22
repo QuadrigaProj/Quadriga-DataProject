@@ -66,8 +66,10 @@ const API = (() => {
     recommendWithSchedule: (b) => post('/recommend/routines', b),
     // '이 루틴으로 자세히 도전하기' — 계절마다 어떻게 이어갈지 (유료)
     recommendSeasons: (b) => post('/recommend/seasons', b),
-    // 구간을 골라 본다 — 계절별 | 시간대별. 값이 들지 않는다
+    // 구간을 골라 본다 — 계절별 | 시간대별. '자세히 보기' 안에서(시연 기간에는 하루 횟수)
     recommendPeriods: (b) => post('/recommend/periods', b),
+    // '자세히 보기' 를 산다 — 이용권에서 빼고 7일 동안 구간 계획 · 시간표 사진을 연다
+    aiDetail: () => post('/ai/detail', {}),
     activityAge: (b) => post('/fitness-age/activity', b),
     activityAgeDays: (b) => post('/fitness-age/activity/days', b),
     // 이용권 결제 (J2). 카드번호 같은 건 오가지 않는다 — 금액과 주문번호뿐이다.
@@ -103,7 +105,7 @@ const API = (() => {
     weatherCheck: (b) => post('/routine/weather-check', b),
     // 시간표 사진에서 바쁜 시간을 읽는다 (유료). 저장은 사용자가 확인한 뒤에
     schedulePhoto: (b) => post('/schedule/photo', b),
-    // 약봉지·처방전 사진에서 건강 상태 후보를 읽는다. 값이 들지 않고 저장하지 않는다
+    // 약봉지·처방전 사진에서 건강 상태 후보를 읽는다 (유료 — 글로 직접 적는 건 무료). 저장하지 않는다
     healthPhoto: (b) => post('/health/photo', b),
     commMeta: () => call('/community/meta'),
     commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),

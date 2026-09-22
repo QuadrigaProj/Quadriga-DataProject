@@ -2436,7 +2436,7 @@
         <button type="button" class="on" data-mode="free" onclick="setRecoMode('free')">
           무료 추천<span class="mode-sub">소유 데이터 기반</span></button>
         <button type="button" data-mode="ai" onclick="setRecoMode('ai')">
-          AI 추천<span class="mode-sub">1회 100원</span></button>
+          AI 추천<span class="mode-sub">1회 500원</span></button>
       </div>
       <div id="recoBody"></div>
     </div>
@@ -5448,23 +5448,46 @@ async function saveHealth(){
   showToast(목록.length ? '건강 상태를 저장했어요. 다음 AI 추천부터 반영돼요' : '건강 상태를 비웠어요');
 }
 
-/* 약봉지·처방전 사진 → 후보를 채운다. 저장은 사용자가 누른다. */
-async function onHealthPhoto(ev){
-  const f = ev.target.files?.[0];
-  ev.target.value = '';
-  if (!f) return;
-  if (f.size > 4 * 1024 * 1024) { showToast('사진이 너무 커요. 4MB 아래로 줄여주세요'); return; }
-  if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return; }
-  const 사진 = await new Promise((ok, no) => {
+/* 사진을 보내기 전에 화면에서 줄인다 — 긴 변 1568px · JPEG.
+   AI 는 픽셀 수로 값을 매겨서(폰 원본 약 4,800토큰 → 1568px 약 2,500토큰) 원가가 절반이 되고, 캔버스로 다시 그리면
+   위치 정보(EXIF)도 떨어져 나간다. 약봉지 · 시간표 글씨는 이 크기로 충분히 읽힌다. 못 줄이면(GIF 등) 원본 그대로. */
+const PHOTO_MAX_EDGE = 1568;
+async function shrinkPhoto(f){
+  const dataUrl = await new Promise((ok, no) => {
     const r = new FileReader();
     r.onload = () => ok(r.result);
     r.onerror = () => no(new Error('사진을 읽지 못했어요'));
     r.readAsDataURL(f);
   }).catch(() => null);
+  if (!dataUrl) return null;
+  try {
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = dataUrl; });
+    const 비율 = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * 비율));
+    c.height = Math.max(1, Math.round(img.naturalHeight * 비율));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const out = c.toDataURL('image/jpeg', 0.85);
+    return out.length < dataUrl.length || 비율 < 1 ? out : dataUrl;
+  } catch (e) {
+    return f.size > 4 * 1024 * 1024 ? null : dataUrl;             // 못 줄였고 4MB 를 넘으면 서버도 안 받는다
+  }
+}
+
+/* 약봉지·처방전 사진 → 후보를 채운다. 저장은 사용자가 누른다. */
+async function onHealthPhoto(ev){
+  const f = ev.target.files?.[0];
+  ev.target.value = '';
+  if (!f) return;
+  if (!값을치를까(`약봉지 사진에서 건강 상태를 읽어올까요? ${won(aiPrice('건강사진'))}이 결제됩니다.\n`
+                + '읽은 뒤에 직접 고칠 수 있어요. 글로 직접 적는 건 무료예요.', '건강사진', '사진')) return;
+  const 사진 = await shrinkPhoto(f);
   if (!사진) { showToast('사진을 읽지 못했어요'); return; }
   showToast('사진을 읽는 중이에요…');
   try {
     const r = await API.healthPhoto({ 사진 });
+    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    오늘남음갱신(r);
     // 이미 고른 것을 지우지 않는다. 읽어 온 것을 얹기만 한다.
     (r.건강상태 || []).forEach(x => {
       if (HEALTH_KINDS.includes(x)) { if (!HEALTH.항목.includes(x) && HEALTH.항목.length < HEALTH_MAX) HEALTH.항목.push(x); }
@@ -8695,7 +8718,7 @@ function renderSchedule(){
     <div class="share-field">
       <label>바쁜 시간을 적어주세요 (적은 요일만 씁니다)</label>
       <button type="button" class="sch-photo" onclick="$('schPhotoFile').click()">
-        시간표 사진에서 읽어오기 · ${AI_PRICE}원</button>
+        시간표 사진에서 읽어오기 · ${aiDemo() || aiInfo?.관리자 ? '시연 무료' : hasDetail() ? '자세히 보기에 포함' : `자세히 보기 ${won(DETAIL_PRICE)}`}</button>
       <input type="file" id="schPhotoFile" accept="image/*" hidden
              onchange="onSchedulePhoto(event)" />
       ${WEEKDAYS.map(d => `
@@ -8723,20 +8746,14 @@ async function onSchedulePhoto(ev){
   const f = ev.target.files?.[0];
   ev.target.value = '';
   if (!f) return;
-  if (f.size > 4 * 1024 * 1024) { showToast('사진이 너무 커요. 4MB 아래로 줄여주세요'); return; }
-  if (!값을치를까(`사진에서 시간표를 읽어올까요?\n${AI_PRICE}원이 결제됩니다.`
-                + '\n읽은 뒤에 직접 고칠 수 있어요.')) return;
-  const 사진 = await new Promise((ok, no) => {
-    const r = new FileReader();
-    r.onload = () => ok(r.result);
-    r.onerror = () => no(new Error('사진을 읽지 못했어요'));
-    r.readAsDataURL(f);
-  }).catch(() => null);
+  if (!(await 자세히보기_준비('사진'))) return;
+  const 사진 = await shrinkPhoto(f);
   if (!사진) { showToast('사진을 읽지 못했어요'); return; }
   showToast('사진을 읽는 중이에요…');
   try {
     const r = await API.schedulePhoto({ 사진 });
     if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    오늘남음갱신(r);
     const 읽은것 = r.바쁜시간 || {};
     // 이미 적어 둔 것을 지우지 않는다. 읽어 온 것을 얹기만 한다.
     WEEKDAYS.forEach(d => {
@@ -8809,6 +8826,7 @@ async function refreshAiStatus(){
     try {
       const r = await API.aiStatus();
       recoAiReady = !!r.ai가능;
+      aiInfo = r;
       if (recoAiReady) autoFuseSeasonTime();
       recoAiWhy = r.이유 || null;
       if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
@@ -8932,11 +8950,16 @@ function aiIntroHtml(){
   // 왜 못 쓰는지를 여기서 말해 준다 — 버튼만 잠가 두면 손쓸 방법이 없다.
   const 확인중 = recoAiReady === null;
   const 못씀 = recoAiReady === false;
-  const 모자람 = (state.credit || 0) < AI_PRICE;
+  const 공짜 = aiDemo() || !!aiInfo?.관리자;
+  const 다씀 = aiDemo() && aiLeft('루틴') === 0;
+  const 모자람 = !공짜 && (state.credit || 0) < AI_PRICE;
   const 안내 = 확인중 ? 'AI 를 쓸 수 있는지 확인하는 중이에요…'
     : 못씀 ? (recoAiWhy || 'AI 추천은 지금 쓸 수 없어요.')
-    : 모자람 ? '이용권이 모자라요. 프로필에서 선결제하면 쓸 수 있어요.'
-    : `한 번 받을 때 ${AI_PRICE}원이 결제돼요. 받고 나면 다시 받기 전까지 그대로 남아요.`;
+    : 다씀 ? '시연 기간이라 무료예요. 오늘 받을 수 있는 횟수를 다 썼어요 — 내일 다시 받을 수 있어요.'
+    : aiDemo() ? `시연 기간이라 무료예요. 오늘 ${aiLeft('루틴')}번 더 받을 수 있어요. 받고 나면 다시 받기 전까지 그대로 남아요.`
+    : aiInfo?.관리자 ? '관리자 계정이라 값도 횟수도 없어요.'
+    : 모자람 ? `이용권이 모자라요 (1회 ${won(AI_PRICE)}). 프로필에서 선결제하면 쓸 수 있어요.`
+    : `한 번 받을 때 ${won(AI_PRICE)}이 결제돼요. 받고 나면 다시 받기 전까지 그대로 남아요 — 몇 달을 이어 써요.`;
   return `<div class="rec-card">
     <div class="rec-purpose">AI 추천</div>
     <div class="rec-title">AI 가 후보를 다시 읽고 순서와 설명을 다듬어요</div>
@@ -8953,7 +8976,7 @@ function aiIntroHtml(){
         : '내 건강 상태 적기 (선택) — 해로운 동작은 빼고 짜 드려요'}</button>
     <div class="reco-actions">
       <button type="button" class="reco-btn go" onclick="askAiRecommend()"
-              ${확인중 || 못씀 || 모자람 ? 'disabled' : ''}>AI 추천 받기</button>
+              ${확인중 || 못씀 || 모자람 || 다씀 ? 'disabled' : ''}>AI 추천 받기</button>
       ${못씀 ? `<button type="button" class="reco-btn"
         onclick="refreshAiStatus()">다시 확인</button>` : ''}
       <button type="button" class="reco-btn" onclick="setRecoMode('free')">무료 추천 보기</button>
@@ -8969,11 +8992,11 @@ async function askAiRecommend(방향){
   // 알게 되면 늦다.
   const 다시 = !!state.aiReco?.추천?.length;
   const 물음 = 방향
-    ? `지금 루틴을 바탕으로 ${방향} 다시 지어요. ${AI_PRICE}원이 결제됩니다.`
+    ? `지금 루틴을 바탕으로 ${방향} 다시 지어요. ${won(aiPrice('조정'))}이 결제됩니다.`
     : 다시
-    ? `AI 추천을 다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다.`
-    : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${AI_PRICE}원이 결제됩니다.`;
-  if (!값을치를까(물음)) return;
+    ? `AI 추천을 다시 받으시겠습니까? ${won(aiPrice('루틴'))}이 결제됩니다.`
+    : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${won(aiPrice('루틴'))}이 결제됩니다.`;
+  if (!값을치를까(물음, 방향 ? '조정' : '루틴', '루틴')) return;
   if (방향) {                                                      // 시작일은 그대로 — 같은 루틴을 방향만 바꿔 다시 짓는다
     recoAdjust = 방향;
     const 끝 = showAiWait(`AI 가 ${방향} 다시 짓는 중이에요…`);
@@ -9160,6 +9183,8 @@ async function fetchRecommend(ai){
     // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
     // 바꿔 공짜로 쓸 수 있다.
     if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    오늘남음갱신(r);
+    if (ai && recoBy !== 'ai' && r.안내) showToast(r.안내);
     if (ai && recoBy !== 'ai') recoMode = 'free';
     paintRecoMode();
     recoAt = 0;
@@ -9233,7 +9258,7 @@ function paintRecommend(){
       ${spareRecoHtml()}
       ${seasonHtml()}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
-      <div class="rec-by">${recoBy === 'ai' ? `AI 가 지었어요 · 이용권 ${AI_PRICE}원 사용` : '측정값과 고른 것들로 골랐어요'}</div>
+      <div class="rec-by">${recoBy === 'ai' ? (aiDemo() || aiInfo?.관리자 ? 'AI 가 지었어요' : `AI 가 지었어요 · 이용권 ${won(AI_PRICE)} 사용`) : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
         <button type="button" class="reco-btn" onclick="backRecommend()" ${hasBackReco() ? '' : 'disabled'}>이전 루틴</button>
         ${지은것 ? (state.aiRecoNext?.length ? `<button type="button" class="reco-btn" onclick="forwardAiReco()">다음 루틴</button>` : '')
@@ -9344,10 +9369,8 @@ function seasonHtml(){
 }
 
 /* '이 루틴 자세히 알아보기' — 무엇을 더 볼지 고르는 메뉴.
-   값은 받지 않는다. AI 추천을 받을 때 이미 치렀고, 이건 그 루틴을 더
-   알아보는 선택 사항이다. 돈이 들지 않으니 묻지 않고 바로 받아 온다. */
-/* 여러 개를 한 번에 고른다. 고르기 전에는 아무것도 그리지 않고,
-   '받기' 를 눌러야 고른 것들을 함께 받아 온다. 값이 들지 않는다. */
+   계절·시간대 계획과 시간표 사진은 '자세히 보기'(DETAIL_PRICE, DETAIL_DAYS 일) 안에서 쓴다 — 없으면 받기 전에
+   사겠냐고 묻는다. 시연 기간에는 하루 횟수로 무료. 여러 개를 한 번에 고르고 '받기' 를 눌러야 함께 받아 온다. */
 let DETAIL_PICK = new Set();
 
 function askDetail(){
@@ -9379,6 +9402,9 @@ function renderDetailMenu(){
             '바쁜 시간을 적어 두면 비는 시간에 할 것을 홈에 띄우고, 다음 AI 추천부터 함께 짜 드려요',
             일정있음 ? '일정 있음' : '')}
     </div>
+    <div class="sch-hint">${aiDemo() || aiInfo?.관리자 ? `시연 기간이라 무료예요${aiLeft('구간') != null ? ` · 오늘 ${aiLeft('구간')}번 남음` : ''}`
+      : hasDetail() ? '자세히 보기 이용 중 — 더 내지 않아요'
+      : `계절·시간대 계획과 시간표 사진은 '자세히 보기'(${won(DETAIL_PRICE)}, ${DETAIL_DAYS}일)에 들어 있어요`}</div>
     <div class="prof-actions">
       <button type="button" onclick="fetchDetail()" ${DETAIL_PICK.size ? '' : 'disabled'}>
         ${DETAIL_PICK.size ? `고른 ${DETAIL_PICK.size}개 받기` : '받을 것을 골라주세요'}</button>
@@ -9400,7 +9426,7 @@ async function fetchDetail(){
   const 축들 = 고른것.filter(k => PERIOD_AXES[k]);
   if (고른것.includes('짬시간')) openSchedule();
   if (!축들.length) return;
-  if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return; }
+  if (!(await 자세히보기_준비('구간'))) return;
   // 계절과 시간대를 둘 다 골랐으면 따로 두 덩이가 아니다. 계절 하나하나 안에
   // 아침·낮·저녁·밤을 넣어 한 번에 받는다 — 그래야 "가을 아침엔 이렇게" 가 된다.
   const 둘다 = 축들.includes('계절') && 축들.includes('시간대');
@@ -9570,42 +9596,93 @@ async function useRecommend(){
 /* ---------------------------------------------------------------------------
    AI 추천 선결제 (I1·K3) — 추천을 두 방식으로 나눈다.
      무료  가지고 있는 데이터로 점수를 매겨 고른다 (지금까지와 같다)
-     유료  거기에 AI 를 한 번 불러 순서와 설명을 다듬는다. 1회 100원
+     유료  거기에 AI 를 불러 이 사람의 루틴을 직접 짓는다. 1회 500원 (2026-09-22 값표)
    미리 충전해 두고 쓰며, 잔액과 내역은 프로필에서 본다.
+
+   값표(서버 main.PRICES 와 같아야 한다 — 서버가 /pay/methods · /recommend/ai-status 로 내려주는 값이 기준이다)
+     루틴 500 · 조정('더 쉽게/더 어렵게') 300 · 자세히 보기(구간 계획 + 시간표 사진, 7일) 500 · 약봉지 사진 300
+   시연 기간(aiInfo.시연)에는 값 대신 하루 무료 횟수다 — 서버가 '오늘남음' 으로 알려 준다.
 
    ⚠ 지금 결제는 시연용 모의 승인이다. 실제 카드 결제는 PG 계약과 사업자
    등록이 필요하고, 카드 번호를 앱이 직접 받아서는 안 된다. 그래서 결제창은
    흐름만 보여주고 카드 정보를 묻지 않는다.
    --------------------------------------------------------------------------- */
-const AI_PRICE = 100;                       // AI 추천 1회 값(원)
+const AI_PRICE = 500;                       // AI 루틴 추천 1회 값(원)
+const ADJUST_PRICE = 300;                   // '더 쉽게 / 더 어렵게' 조정
+const DETAIL_PRICE = 500;                   // '자세히 보기' — 계절·시간대 계획 + 시간표 사진, 7일
+const HEALTH_PHOTO_PRICE = 300;             // 약봉지·처방전 사진 읽기
+const DETAIL_DAYS = 7;
+let aiInfo = null;                          // /recommend/ai-status 가 준 것 — 시연 · 오늘남음 · 자세히 · 값표 · 관리자
+function aiPrice(종류){ return aiInfo?.값표?.[종류] ?? { 루틴: AI_PRICE, 조정: ADJUST_PRICE, 자세히: DETAIL_PRICE, 건강사진: HEALTH_PHOTO_PRICE }[종류]; }
+function aiDemo(){ return !!aiInfo?.시연 && !aiInfo?.관리자; }
+function aiLeft(묶음){ return aiInfo?.오늘남음?.[묶음]; }
+function hasDetail(){ return !!aiInfo?.자세히 && (aiInfo.자세히.까지 || 0) * 1000 > Date.now(); }
 
 /* 값이 빠지는 일을 시작하기 전에 한 자리에서 다 본다.
-   쓸 수 있는지 · 이용권이 남았는지 · 정말 할 것인지. 세 군데(AI 추천 ·
-   계절별 도전 · 시간표 사진)가 같은 순서로 물어야 한다 — 한 곳만 빠지면
-   그 버튼만 묻지 않고 돈이 빠진다. */
-function 값을치를까(물음){
+   쓸 수 있는지 · 이용권이 남았는지(시연이면 오늘 남은 횟수) · 정말 할 것인지. 네 군데(AI 추천 · 조정 ·
+   약봉지 사진 · 자세히 보기)가 같은 순서로 물어야 한다 — 한 곳만 빠지면 그 버튼만 묻지 않고 돈이 빠진다.
+   종류: 루틴 · 조정 · 건강사진 · 자세히.  묶음(시연 횟수): 루틴 · 사진 · 구간 */
+function 값을치를까(물음, 종류 = '루틴', 묶음 = '루틴'){
   if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return false; }
-  if ((state.credit || 0) < AI_PRICE) {
-    showToast('이용권이 모자라요. 프로필에서 선결제해주세요');
+  if (aiInfo?.관리자) return confirm(물음.split('\n')[0]);
+  if (aiDemo()) {
+    const 남음 = aiLeft(묶음);
+    if (남음 === 0) { showToast('시연 기간이라 무료예요. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요'); return false; }
+    return confirm(`${물음.split('\n')[0]}\n시연 기간이라 무료예요${남음 != null ? ` (오늘 ${남음}번 남음)` : ''}.`);
+  }
+  if ((state.credit || 0) < aiPrice(종류)) {
+    showToast(`이용권이 모자라요 (${won(aiPrice(종류))} 필요). 프로필에서 선결제해주세요`);
     return false;
   }
   return confirm(물음);
 }
-/* 선결제 할인 (K3) — 이용권은 앱 안에서 쓰는 금액, 결제는 실제로 내는 돈.
+
+/* '자세히 보기' 가 있어야 하는 일(계절·시간대 계획 · 시간표 사진) 앞에서 — 없으면 사겠냐고 묻고 산다.
+   시연 기간에는 살 것이 없다(하루 횟수로 무료). 됐으면 true. */
+async function 자세히보기_준비(묶음 = '구간'){
+  if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return false; }
+  if (aiInfo?.관리자) return true;
+  if (aiDemo()) {
+    const 남음 = aiLeft(묶음);
+    if (남음 === 0) { showToast('시연 기간이라 무료예요. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요'); return false; }
+    return true;
+  }
+  if (hasDetail()) return true;
+  if ((state.credit || 0) < aiPrice('자세히')) {
+    showToast(`'자세히 보기'는 ${won(aiPrice('자세히'))}이에요. 프로필에서 선결제해주세요`);
+    return false;
+  }
+  if (!confirm(`'자세히 보기'를 추가할까요? ${won(aiPrice('자세히'))}이 결제됩니다.\n`
+             + `${DETAIL_DAYS}일 동안 계절·시간대 계획과 시간표 사진 읽기를 쓸 수 있어요.`)) return false;
+  try {
+    const r = await API.aiDetail();
+    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+    aiInfo = { ...(aiInfo || {}), 자세히: r.자세히 };
+    showToast(`자세히 보기를 ${DETAIL_DAYS}일 동안 쓸 수 있어요`);
+    return true;
+  } catch (e) { showToast(e.message); return false; }
+}
+
+/* AI 응답에 실려 온 '오늘남음' 을 받아 둔다 — 시연 기간의 남은 횟수 */
+function 오늘남음갱신(r){
+  if (r && r['오늘남음'] && aiInfo) aiInfo = { ...aiInfo, 오늘남음: r['오늘남음'] };
+}
+/* 선결제 보너스 (K3) — 이용권은 앱 안에서 쓰는 금액, 결제는 실제로 내는 돈. 많이 낼수록 이용권을 더 얹어 준다.
    **서버(/pay/methods)가 준 값이 기준이다.** 여기 있는 건 서버를 못 부를 때 쓰는 사본이라
-   백엔드 PAY_PACKS 와 같아야 한다. 실제 청구 금액은 서버가 다시 계산한다. */
+   백엔드 PAY_PACKS 와 같아야 한다. 실제 청구 금액은 서버가 다시 계산한다.
+   보너스는 25% 까지 — 한 번 쓸 때마다 원가가 실제로 나가서 그보다 깊으면 팔수록 손해다. */
 const PAY_PACKS = [
-  { 이용권: 100,  결제: 100,  할인: 0  },     // 1회만 결제 — 할인 없음
-  { 이용권: 1000, 결제: 700,  할인: 30 },
-  { 이용권: 2000, 결제: 1300, 할인: 35 },
-  { 이용권: 3000, 결제: 1800, 할인: 40 },
-  { 이용권: 5000, 결제: 2500, 할인: 50 },
+  { 이용권: 500,   결제: 500,    보너스: 0  },     // 1회만 결제 — 보너스 없음
+  { 이용권: 1100,  결제: 1000,  보너스: 10 },
+  { 이용권: 3450,  결제: 3000,  보너스: 15 },
+  { 이용권: 6000,  결제: 5000,  보너스: 20 },
+  { 이용권: 12500, 결제: 10000, 보너스: 25 },
 ];
 
 function payPacks(){ return payInfo?.packs?.length ? payInfo.packs : PAY_PACKS; }
 function packFor(이용권){ return payPacks().find(p => p.이용권 === 이용권) || payPacks()[0]; }
 let recoMode = 'free';
-let payPick = 1000;        // 고른 이용권 금액(원)
+let payPick = 1100;        // 고른 이용권 금액(원)
 
 const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 
@@ -9735,15 +9812,16 @@ function paySheetHtml(){
 function payAmountHtml(){
   const 목록 = payPacks().map(p => {
     const 한번 = p.이용권 === AI_PRICE;
+    const 보너스 = p.보너스 ?? (p.할인 ? Math.round((p.이용권 / p.결제 - 1) * 100) : 0);
     return `
     <button type="button" class="${p.이용권 === payPick ? 'on' : ''}" onclick="pickPay(${p.이용권})">
       <span class="left">
-        <span>${한번 ? '1회만 결제' : `AI 추천 ${p.이용권 / AI_PRICE}회`}${
-          p.할인 ? `<span class="pay-off">${p.할인}% 할인</span>` : ''}</span>
+        <span>${한번 ? '1회만 결제' : `AI 추천 ${Math.floor(p.이용권 / AI_PRICE)}회`}${
+          보너스 ? `<span class="pay-off">+${보너스}% 보너스</span>` : ''}</span>
         <span class="sub">${한번 ? '선결제 없이 이번 한 번만' : `앱에서 ${won(p.이용권)}으로 써요`}</span>
       </span>
       <span class="right">
-        ${p.할인 ? `<span class="was">${won(p.이용권)}</span>` : ''}
+        ${보너스 ? `<span class="was">${won(p.결제)} 내고</span>` : ''}
         <b>${won(p.결제)}</b>
       </span>
     </button>`;
@@ -9767,8 +9845,9 @@ function payAmountHtml(){
     <div class="pay-pick">${목록}</div>
     <div class="pay-step">어떻게 결제할까요</div>
     <div class="pay-ways">${수단}</div>
-    <div class="pay-note">선결제한 이용권은 AI 추천에만 쓰입니다(1회 ${won(AI_PRICE)}).
-      미리 많이 낼수록 더 싸게 드려요. 무료 추천은 언제나 그대로예요.</div>`;
+    <div class="pay-note">이용권은 AI 루틴 추천(1회 ${won(AI_PRICE)}) · 조정(${won(ADJUST_PRICE)}) ·
+      자세히 보기(${won(DETAIL_PRICE)}, ${DETAIL_DAYS}일) · 약봉지 사진(${won(HEALTH_PHOTO_PRICE)})에 쓰입니다.
+      미리 많이 낼수록 이용권을 더 얹어 드려요. 무료 추천은 언제나 그대로예요.</div>`;
 }
 
 /* 2단계 — 고른 수단의 자세한 화면 */
@@ -9903,8 +9982,10 @@ function paintRecoMode(){
     ? '확인하는 중…'
     : !recoAiReady
       ? '관리자가 키를 등록하면 켜져요'
-      : (횟수 ? `1회 ${AI_PRICE}원 · ${횟수}회 남음`
-              : `1회 ${AI_PRICE}원 · 선결제하면 최대 50% 저렴하게 이용 가능해요`);
+      : aiInfo?.관리자 ? '관리자 · 값도 횟수도 없어요'
+      : aiDemo() ? `시연 기간 무료 · 오늘 ${aiLeft('루틴') ?? '-'}회 남음`
+      : (횟수 ? `1회 ${won(AI_PRICE)} · ${횟수}회 남음`
+              : `1회 ${won(AI_PRICE)} · 선결제하면 이용권을 더 얹어 드려요`);
 }
 
 /* 소셜 로그인이 어디서 막혔는지 말해 준다 — 서버가 단계(why)와 제공자가 준 오류 이름(e)을 돌려준다.

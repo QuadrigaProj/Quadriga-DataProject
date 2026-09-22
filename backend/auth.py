@@ -437,7 +437,7 @@ def user_for_token(token: str | None) -> dict | None:
         return None
     with db() as con:
         row = con.execute(
-            "SELECT u.id, u.display_name, u.email, u.provider FROM sessions s"
+            "SELECT u.id, u.display_name, u.email, u.provider, u.provider_uid FROM sessions s"
             " JOIN users u ON u.id = s.user_id"
             " WHERE s.token=? AND s.expires_at > ?",
             (token, int(time.time()))).fetchone()

@@ -1639,7 +1639,7 @@ def test_카카오페이만_진짜_결제창으로_보낸다():
     html = _index()
     본문 = html.split("async function startPay()")[1].split("\n}")[0]
     assert "if (payWay === 'kakao')" in 본문
-    assert "API.payReady({ amount: payPick })" in 본문
+    assert "API.payReady(payPick === '구독' ? { product: '구독' } : { amount: payPick })" in 본문   # 구독은 상품으로, 나머지는 이용권 금액으로
     assert "location.href = payRedirect(r)" in 본문   # 접속 환경에 맞는 주소를 고른다
     # 카드·계좌를 화면에서 모의로 올리면 그게 곧 무료 충전 통로가 된다
     assert "addCredit(팩" not in 본문
@@ -2679,7 +2679,7 @@ def test_받은_적_없으면_받기_버튼만_보여준다():
     html = _index()
     본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
     assert "askAiRecommend()" in 본문
-    assert "이 결제돼요" in 본문 and "시연 기간이라 무료예요" in 본문
+    assert "이 결제돼요" in 본문 and "aiCountedWhy()" in 본문        # 시연 기간 · 구독 중이면 값 대신 오늘 남은 횟수
     assert "모자람 || 다씀 ? 'disabled' : ''" in 본문
 
 
@@ -3080,7 +3080,7 @@ def test_유료_확인은_한_자리에서_한다():
     본문 = html.split("function 값을치를까(물음, 종류 = '루틴', 묶음 = '루틴')")[1].split("\n}")[0]
     assert "recoAiReady" in 본문                       # 쓸 수 있는지
     assert "(state.credit || 0) < aiPrice(종류)" in 본문   # 이용권이 남았는지 (종류마다 값이 다르다)
-    assert "aiDemo()" in 본문 and "aiLeft(묶음)" in 본문  # 시연이면 오늘 남은 횟수
+    assert "aiCounted()" in 본문 and "aiLeft(묶음)" in 본문  # 시연 기간 · 구독이면 값 대신 오늘 남은 횟수
     assert "return confirm(물음);" in 본문             # 정말 할 것인지
     # 부르는 곳은 둘(AI 추천 · 약봉지 사진). 각자 confirm 을 따로 부르지 않는다.
     assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2
@@ -3890,3 +3890,16 @@ def test_루틴_카드는_AI_가_쓴_글자를_이스케이프한다():
         assert 자리 in 카드, 자리
     for 맨것 in ("${x.루틴명}", "${x.한마디}", "`<li>${y}</li>`", "${s.수행량 || ''}", "${s.동작}"):
         assert 맨것 not in 카드, 맨것
+
+
+def test_결제창에_한_달_구독이_있고_구독은_상품으로_결제한다():
+    """구독은 이용권을 거치지 않는다 — 선결제 팩의 보너스(+25%)로 구독을 싸게 사는 길이 생기지 않게. 자동 갱신은 없다."""
+    html = _index()
+    assert "const SUB_PRICE = 9900;" in html and "const SUB_DAYS = 30;" in html
+    금액 = html.split("function payAmountHtml()")[1].split("\n}")[0]
+    assert "pickPay('구독')" in 금액 and "자동 갱신 없음" in 금액 and "커뮤니티 쓰기 제한 해제" in 금액
+    수단 = html.split("function payWayHtml()")[1].split("\n}")[0]
+    assert "const 구독 = payPick === '구독';" in 수단 and "자동으로 다시 결제되지 않습니다" in 수단
+    돌아옴 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
+    assert "r.product === '구독'" in 돌아옴 and "await refreshAiStatus();" in 돌아옴
+    assert "function aiSub(){" in html and "function aiCounted(){ return aiDemo() || aiSub(); }" in html

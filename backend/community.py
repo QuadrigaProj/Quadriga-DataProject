@@ -30,9 +30,12 @@ except ImportError:
 #   구독  한 달 구독(ai_addons 의 '구독')이 살아 있으면 — 글 하루 30개 · 사진 6장 · 본문 3,000자
 # 댓글 300자 · 채팅 500자는 등급과 상관없다 — 긴 글이 아니라 대화다.
 # 바이트는 data URL(base64) 문자열 길이 — 원본의 4/3.
+# 하루바이트 = 하루에 올릴 수 있는 사진·동영상 합계(base64 길이) — 개수 제한을 다 채워도 DB 가 하루에 이만큼만 자란다.
 LIMITS = {
-    "무료": {"글하루": 5, "사진": 3, "사진바이트": 1_400_000, "동영상바이트": 4_200_000, "본문": 1000, "댓글": 300, "채팅": 500},
-    "구독": {"글하루": 30, "사진": 6, "사진바이트": 1_400_000, "동영상바이트": 4_200_000, "본문": 3000, "댓글": 300, "채팅": 500},
+    "무료": {"글하루": 5, "사진": 3, "사진바이트": 1_400_000, "동영상바이트": 4_200_000, "하루바이트": 20_000_000,
+           "본문": 1000, "댓글": 300, "채팅": 500},
+    "구독": {"글하루": 30, "사진": 6, "사진바이트": 1_400_000, "동영상바이트": 4_200_000, "하루바이트": 60_000_000,
+           "본문": 3000, "댓글": 300, "채팅": 500},
 }
 # 예전 이름 — /meta 와 화면이 쓴다. 무료 등급 값이다.
 MEDIA_MAX_BYTES = LIMITS["무료"]["동영상바이트"]
@@ -418,6 +421,14 @@ def posts_today(user_id: int, now: float | None = None) -> int:
     return int(r["n"] or 0)
 
 
+def media_bytes_today(user_id: int, now: float | None = None) -> int:
+    """오늘 올린 사진·동영상의 합(base64 길이) — media 칸 그대로의 길이라 JSON 껍데기만큼 조금 크다."""
+    with auth.db() as con:
+        r = con.execute("SELECT COALESCE(SUM(LENGTH(media)), 0) AS n FROM community_posts WHERE user_id=? AND created_at>=?",
+                        (user_id, _day_start(now))).fetchone()
+    return int(r["n"] or 0)
+
+
 # ---------------------------------------------------------------------------
 # 게시글 · 댓글 · 반응
 # ---------------------------------------------------------------------------
@@ -491,6 +502,8 @@ def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
     if posts_today(user_id) >= 제한["글하루"]:
         raise HTTPException(429, f"글은 하루 {제한['글하루']}개까지예요. 내일 다시 올릴 수 있어요."
                                  + (f" 구독하면 하루 {LIMITS['구독']['글하루']}개까지 올릴 수 있어요." if 제한["글하루"] < LIMITS["구독"]["글하루"] else ""))
+    if media_json != "[]" and media_bytes_today(user_id) + len(media_json) > 제한["하루바이트"]:
+        raise HTTPException(429, f"오늘 올릴 수 있는 사진·동영상 용량({제한['하루바이트'] // 1_400_000}MB)을 다 썼어요. 내일 다시 올릴 수 있어요.")
     # 공유하는 기록에는 항목별 지표와 그날 운동까지 담긴다. 그래도 한 줄에
     # 들어갈 크기다 — 그보다 크면 화면에 쓰라고 보낸 것이 아니다.
     if record is not None and len(json.dumps(record, ensure_ascii=False)) > 4000:

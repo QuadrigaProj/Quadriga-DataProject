@@ -8751,7 +8751,7 @@ function renderSchedule(){
     <div class="share-field">
       <label>바쁜 시간을 적어주세요 (적은 요일만 씁니다)</label>
       <button type="button" class="sch-photo" onclick="$('schPhotoFile').click()">
-        시간표 사진에서 읽어오기 · ${aiDemo() || aiInfo?.관리자 ? '시연 무료' : hasDetail() ? '자세히 보기에 포함' : `자세히 보기 ${won(DETAIL_PRICE)}`}</button>
+        시간표 사진에서 읽어오기 · ${aiSub() ? '구독에 포함' : aiDemo() || aiInfo?.관리자 ? '시연 무료' : hasDetail() ? '자세히 보기에 포함' : `자세히 보기 ${won(DETAIL_PRICE)}`}</button>
       <input type="file" id="schPhotoFile" accept="image/*" hidden
              onchange="onSchedulePhoto(event)" />
       ${WEEKDAYS.map(d => `
@@ -8983,13 +8983,13 @@ function aiIntroHtml(){
   // 왜 못 쓰는지를 여기서 말해 준다 — 버튼만 잠가 두면 손쓸 방법이 없다.
   const 확인중 = recoAiReady === null;
   const 못씀 = recoAiReady === false;
-  const 공짜 = aiDemo() || !!aiInfo?.관리자;
-  const 다씀 = aiDemo() && aiLeft('루틴') === 0;
+  const 공짜 = aiCounted() || !!aiInfo?.관리자;
+  const 다씀 = aiCounted() && aiLeft('루틴') === 0;
   const 모자람 = !공짜 && (state.credit || 0) < AI_PRICE;
   const 안내 = 확인중 ? 'AI 를 쓸 수 있는지 확인하는 중이에요…'
     : 못씀 ? (recoAiWhy || 'AI 추천은 지금 쓸 수 없어요.')
-    : 다씀 ? '시연 기간이라 무료예요. 오늘 받을 수 있는 횟수를 다 썼어요 — 내일 다시 받을 수 있어요.'
-    : aiDemo() ? `시연 기간이라 무료예요. 오늘 ${aiLeft('루틴')}번 더 받을 수 있어요. 받고 나면 다시 받기 전까지 그대로 남아요.`
+    : 다씀 ? `${aiCountedWhy()}. 오늘 받을 수 있는 횟수를 다 썼어요 — 내일 다시 받을 수 있어요.`
+    : aiCounted() ? `${aiCountedWhy()}. 오늘 ${aiLeft('루틴')}번 더 받을 수 있어요. 받고 나면 다시 받기 전까지 그대로 남아요.`
     : aiInfo?.관리자 ? '관리자 계정이라 값도 횟수도 없어요.'
     : 모자람 ? `이용권이 모자라요 (1회 ${won(AI_PRICE)}). 프로필에서 선결제하면 쓸 수 있어요.`
     : `한 번 받을 때 ${won(AI_PRICE)}이 결제돼요. 받고 나면 다시 받기 전까지 그대로 남아요 — 몇 달을 이어 써요.`;
@@ -9291,7 +9291,7 @@ function paintRecommend(){
       ${spareRecoHtml()}
       ${seasonHtml()}
       ${recoCare.length ? `<div class="rec-care">고른 종목이 ${esc(recoCare.join(' · '))}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
-      <div class="rec-by">${recoBy === 'ai' ? (aiDemo() || aiInfo?.관리자 ? 'AI 가 지었어요' : `AI 가 지었어요 · 이용권 ${won(AI_PRICE)} 사용`) : '측정값과 고른 것들로 골랐어요'}</div>
+      <div class="rec-by">${recoBy === 'ai' ? (aiCounted() || aiInfo?.관리자 ? 'AI 가 지었어요' : `AI 가 지었어요 · 이용권 ${won(AI_PRICE)} 사용`) : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
         <button type="button" class="reco-btn" onclick="backRecommend()" ${hasBackReco() ? '' : 'disabled'}>이전 루틴</button>
         ${지은것 ? (state.aiRecoNext?.length ? `<button type="button" class="reco-btn" onclick="forwardAiReco()">다음 루틴</button>` : '')
@@ -9435,7 +9435,7 @@ function renderDetailMenu(){
             '바쁜 시간을 적어 두면 비는 시간에 할 것을 홈에 띄우고, 다음 AI 추천부터 함께 짜 드려요',
             일정있음 ? '일정 있음' : '')}
     </div>
-    <div class="sch-hint">${aiDemo() || aiInfo?.관리자 ? `시연 기간이라 무료예요${aiLeft('구간') != null ? ` · 오늘 ${aiLeft('구간')}번 남음` : ''}`
+    <div class="sch-hint">${aiCounted() || aiInfo?.관리자 ? `${aiSub() ? '구독에 들어 있어요' : '시연 기간이라 무료예요'}${aiLeft('구간') != null ? ` · 오늘 ${aiLeft('구간')}번 남음` : ''}`
       : hasDetail() ? '자세히 보기 이용 중 — 더 내지 않아요'
       : `계절·시간대 계획과 시간표 사진은 '자세히 보기'(${won(DETAIL_PRICE)}, ${DETAIL_DAYS}일)에 들어 있어요`}</div>
     <div class="prof-actions">
@@ -9645,9 +9645,15 @@ const ADJUST_PRICE = 300;                   // '더 쉽게 / 더 어렵게' 조�
 const DETAIL_PRICE = 500;                   // '자세히 보기' — 계절·시간대 계획 + 시간표 사진, 7일
 const HEALTH_PHOTO_PRICE = 300;             // 약봉지·처방전 사진 읽기
 const DETAIL_DAYS = 7;
-let aiInfo = null;                          // /recommend/ai-status 가 준 것 — 시연 · 오늘남음 · 자세히 · 값표 · 관리자
+const SUB_PRICE = 9900;                     // 한 달 구독 — AI 하루 5회 · 자세히 보기 포함 · 커뮤니티 쓰기 제한 해제 (자동 갱신 없음)
+const SUB_DAYS = 30;
+let aiInfo = null;                          // /recommend/ai-status 가 준 것 — 시연 · 오늘남음 · 자세히 · 구독 · 값표 · 관리자
+function aiSub(){ return !!aiInfo?.구독 && (aiInfo.구독.까지 || 0) * 1000 > Date.now(); }
 function aiPrice(종류){ return aiInfo?.값표?.[종류] ?? { 루틴: AI_PRICE, 조정: ADJUST_PRICE, 자세히: DETAIL_PRICE, 건강사진: HEALTH_PHOTO_PRICE }[종류]; }
-function aiDemo(){ return !!aiInfo?.시연 && !aiInfo?.관리자; }
+function aiDemo(){ return !!aiInfo?.시연 && !aiInfo?.관리자 && !aiSub(); }
+/* 값 대신 하루 횟수로 쓰는 사람 — 시연 기간이거나 구독 중. 문구만 다르다 */
+function aiCounted(){ return aiDemo() || aiSub(); }
+function aiCountedWhy(){ return aiSub() ? '구독 중이라 값이 들지 않아요' : '시연 기간이라 무료예요'; }
 function aiLeft(묶음){ return aiInfo?.오늘남음?.[묶음]; }
 function hasDetail(){ return !!aiInfo?.자세히 && (aiInfo.자세히.까지 || 0) * 1000 > Date.now(); }
 
@@ -9658,10 +9664,10 @@ function hasDetail(){ return !!aiInfo?.자세히 && (aiInfo.자세히.까지 || 
 function 값을치를까(물음, 종류 = '루틴', 묶음 = '루틴'){
   if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return false; }
   if (aiInfo?.관리자) return confirm(물음.split('\n')[0]);
-  if (aiDemo()) {
+  if (aiCounted()) {
     const 남음 = aiLeft(묶음);
-    if (남음 === 0) { showToast('시연 기간이라 무료예요. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요'); return false; }
-    return confirm(`${물음.split('\n')[0]}\n시연 기간이라 무료예요${남음 != null ? ` (오늘 ${남음}번 남음)` : ''}.`);
+    if (남음 === 0) { showToast(`${aiCountedWhy()}. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요`); return false; }
+    return confirm(`${물음.split('\n')[0]}\n${aiCountedWhy()}${남음 != null ? ` (오늘 ${남음}번 남음)` : ''}.`);
   }
   if ((state.credit || 0) < aiPrice(종류)) {
     showToast(`이용권이 모자라요 (${won(aiPrice(종류))} 필요). 프로필에서 선결제해주세요`);
@@ -9675,9 +9681,9 @@ function 값을치를까(물음, 종류 = '루틴', 묶음 = '루틴'){
 async function 자세히보기_준비(묶음 = '구간'){
   if (!recoAiReady) { showToast(recoAiWhy || 'AI 기능은 지금 쓸 수 없어요'); return false; }
   if (aiInfo?.관리자) return true;
-  if (aiDemo()) {
+  if (aiCounted()) {
     const 남음 = aiLeft(묶음);
-    if (남음 === 0) { showToast('시연 기간이라 무료예요. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요'); return false; }
+    if (남음 === 0) { showToast(`${aiCountedWhy()}. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요`); return false; }
     return true;
   }
   if (hasDetail()) return true;
@@ -9749,7 +9755,9 @@ function renderCredit(){
   const 횟수 = creditTimes();
   $('creditAmt').textContent = won(state.credit || 0);
   $('creditTimes').textContent = `AI 추천 ${횟수}회`;
-  $('creditState').textContent = 횟수
+  $('creditState').textContent = aiSub()
+    ? `한 달 구독 중이에요 — ${fmtDate(isoDate(new Date(aiInfo.구독.까지 * 1000)))}까지. AI 추천 하루 ${aiInfo.구독.하루?.루틴 ?? 5}회 · 자세히 보기 포함 · 커뮤니티 제한 해제.`
+    : 횟수
     ? `선결제돼 있어요. AI 추천을 ${횟수}번 더 쓸 수 있습니다.`
     : '아직 선결제하지 않았어요. 무료 추천은 그대로 쓸 수 있어요.';
 
@@ -9825,7 +9833,7 @@ const PAY_WAYS = {
 };
 
 async function openPaySheet(){
-  payPick = PAY_PACKS[0];
+  payPick = (payPacks()[1] || PAY_PACKS[0]).이용권;
   payWay = null; payIssuer = null; payAgree = false; paying = false;
   openSheet('AI 추천 선결제', '<div class="pay-note">결제 수단을 불러오는 중이에요…</div>');
   try { payInfo = await API.payMethods(); } catch (e) { payInfo = null; }
@@ -9873,8 +9881,20 @@ function payAmountHtml(){
         <span class="txt">${w.이름}<span class="sub">${아래}</span></span>
       </button>`;
   }).join('');
+  const 구독 = aiSub() ? `<div class="pay-note">한 달 구독 중이에요 (${fmtDate(isoDate(new Date(aiInfo.구독.까지 * 1000)))}까지). 끝나면 여기서 다시 결제할 수 있어요.</div>` : `
+    <div class="pay-pick">
+      <button type="button" class="${payPick === '구독' ? 'on' : ''}" onclick="pickPay('구독')">
+        <span class="left">
+          <span>한 달 구독<span class="pay-off">${SUB_DAYS}일</span></span>
+          <span class="sub">AI 추천 하루 5회 · 자세히 보기 포함 · 커뮤니티 쓰기 제한 해제 · 자동 갱신 없음</span>
+        </span>
+        <span class="right"><b>${won(aiInfo?.구독값 || SUB_PRICE)}</b></span>
+      </button>
+    </div>`;
   return `
-    <div class="pay-step">얼마나 선결제할까요</div>
+    <div class="pay-step">한 달 구독</div>
+    ${구독}
+    <div class="pay-step">아니면 쓸 만큼만 선결제</div>
     <div class="pay-pick">${목록}</div>
     <div class="pay-step">어떻게 결제할까요</div>
     <div class="pay-ways">${수단}</div>
@@ -9886,7 +9906,8 @@ function payAmountHtml(){
 /* 2단계 — 고른 수단의 자세한 화면 */
 function payWayHtml(){
   const w = PAY_WAYS[payWay];
-  const 팩 = packFor(payPick);
+  const 구독 = payPick === '구독';
+  const 팩 = 구독 ? { 이용권: 0, 결제: aiInfo?.구독값 || SUB_PRICE, 보너스: 0 } : packFor(payPick);
   const 목록 = payWay === 'card' ? (payInfo?.카드 || [])
              : payWay === 'bank' ? (payInfo?.은행 || []) : [];
   const 고르기 = 목록.length ? `
@@ -9908,18 +9929,20 @@ function payWayHtml(){
     : payWay === 'card' ? `${payIssuer || '카드'} 등록하고 ${won(팩.결제)} 결제`
     : `${payIssuer || '계좌'} 등록하고 ${won(팩.결제)} 결제`;
 
+  const 보너스 = 팩.보너스 ?? (팩.할인 ? Math.round((팩.이용권 / 팩.결제 - 1) * 100) : 0);
   return `
     <div class="pay-sum">
-      <span>${w.이름} · ${팩.이용권 === AI_PRICE ? '1회만 결제'
-        : `AI 추천 ${팩.이용권 / AI_PRICE}회`}${
-        팩.할인 ? ` · <b style="font-size:13px;color:var(--pine-deep)">${팩.할인}% 할인</b>` : ''}</span>
+      <span>${w.이름} · ${구독 ? `한 달 구독 ${SUB_DAYS}일` : 팩.이용권 === AI_PRICE ? '1회만 결제'
+        : `AI 추천 ${Math.floor(팩.이용권 / AI_PRICE)}회`}${
+        보너스 ? ` · <b style="font-size:13px;color:var(--pine-deep)">+${보너스}% 보너스</b>` : ''}</span>
       <b>${won(팩.결제)}</b>
     </div>
     ${고르기}
     ${안내}
     <label class="pay-agree">
       <input type="checkbox" ${payAgree ? 'checked' : ''} onchange="setPayAgree(this.checked)" />
-      <span>결제 진행에 동의합니다. 이용권은 AI 추천에만 쓰이며, 사용한 만큼 차감됩니다.</span>
+      <span>${구독 ? `결제 진행에 동의합니다. 구독은 ${SUB_DAYS}일 뒤 저절로 끝나고 자동으로 다시 결제되지 않습니다.`
+                 : '결제 진행에 동의합니다. 이용권은 AI 추천에만 쓰이며, 사용한 만큼 차감됩니다.'}</span>
     </label>
     <button type="button" class="pay-btn" ${준비됨 ? '' : 'disabled'}
             onclick="startPay()">${버튼글}</button>
@@ -9938,7 +9961,7 @@ async function startPay(){
   paying = true;
   if (payWay === 'kakao') {
     try {
-      const r = await API.payReady({ amount: payPick });
+      const r = await API.payReady(payPick === '구독' ? { product: '구독' } : { amount: payPick });
       location.href = payRedirect(r);      // 카카오 결제창으로
       return;
     } catch (e) {
@@ -9977,7 +10000,15 @@ async function handlePayReturn(){
   if (결과 !== 'ok' || !order) { alert('결제가 완료되지 않았어요. 다시 시도해 주세요.'); return; }
   try {
     const r = await API.payResult(order);
-    if (!(r?.paid && r.amount > 0)) return;
+    if (!r?.paid) return;
+    if (r.product === '구독') {
+      // 구독은 서버가 이미 열었다 — 상태를 다시 읽어 문구와 횟수를 맞춘다
+      await refreshAiStatus();
+      await addCredit();
+      alert(`${won(r.결제)} 결제하고 한 달 구독을 시작했어요.\nAI 추천 하루 5회 · 자세히 보기 포함 · 커뮤니티 쓰기 제한 해제.`);
+      return;
+    }
+    if (!(r.amount > 0)) return;
     // 충전은 서버에서 이미 끝났다. 화면은 잔액을 다시 읽기만 한다.
     await addCredit();
     alert(`${won(r.결제 ?? r.amount)} 결제하고 이용권 ${won(r.amount)} 받았어요.`);
@@ -10016,6 +10047,7 @@ function paintRecoMode(){
     : !recoAiReady
       ? '관리자가 키를 등록하면 켜져요'
       : aiInfo?.관리자 ? '관리자 · 값도 횟수도 없어요'
+      : aiSub() ? `구독 중 · 오늘 ${aiLeft('루틴') ?? '-'}회 남음`
       : aiDemo() ? `시연 기간 무료 · 오늘 ${aiLeft('루틴') ?? '-'}회 남음`
       : (횟수 ? `1회 ${won(AI_PRICE)} · ${횟수}회 남음`
               : `1회 ${won(AI_PRICE)} · 선결제하면 이용권을 더 얹어 드려요`);

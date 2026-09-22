@@ -368,8 +368,29 @@ def test_폴백이면_한_푼도_안_깎는다(monkeypatch):
     assert billing.ai_cost_summary(1)["루틴·버림"]["호출"] == 1
 
 
-def test_모델은_opus5다():
-    assert air.MODEL == "claude-opus-5"
+def test_모델은_opus5다_사진은_sonnet5(monkeypatch):
+    """루틴 짓기 · 구간 계획은 Opus 5. 사진 읽기 둘은 Sonnet 5 — 단순 판독이라 결과가 같았다(2026-09-22 비교, 예현 결정)."""
+    assert air.MODEL == "claude-opus-5" and air.PHOTO_MODEL == "claude-sonnet-5"
+    본 = []
+
+    class _Messages:
+        def create(self, **kw):
+            본.append(kw["model"])
+            return _Msg('{"건강상태":["당뇨"],"메모":"","바쁜시간":{}}')
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    air.read_health_photo("AAAA", "image/png")
+    air.read_schedule_photo("AAAA", "image/png")
+    assert 본 == ["claude-sonnet-5", "claude-sonnet-5"]
+    본2 = _잡는_sdk(monkeypatch, _지은응답())
+    _paid(1000).post("/recommend/routines", json={"age_gbn": "성인", "limit": 3})
+    assert 본2["model"] == "claude-opus-5"                              # 루틴 짓기는 그대로 Opus
 
 
 # ---------- I1 추천 2방식과 이용권 ----------
@@ -1004,6 +1025,7 @@ def _잡는_sdk(monkeypatch, 응답: str):
         def create(self, **kw):
             본["글"] = kw["messages"][0]["content"] if isinstance(kw["messages"][0]["content"], str) else ""
             본["시스템"] = kw["system"]
+            본["model"] = kw.get("model")
             return _Msg(응답)
 
     class _Client:

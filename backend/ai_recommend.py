@@ -24,6 +24,9 @@ import time
 from datetime import date
 
 MODEL = "claude-opus-5"
+# 사진 읽기(약봉지 · 시간표)는 Sonnet 5 — 단순 판독이라 결과가 Opus 와 글자 하나 다르지 않았다(2026-09-22 비교, 예현 결정).
+# 루틴 짓기 · 구간 계획은 Opus 그대로: '이 사람의 숫자' 를 읽어 쓰는 부분이 Sonnet 은 뭉뚱그려졌다.
+PHOTO_MODEL = "claude-sonnet-5"
 TIMEOUT_SEC = 20.0
 COMPOSE_TIMEOUT_SEC = 120.0    # 루틴 하나를 짓는 데 — 재료 표가 길고 하루를 시간대 넷으로 나눠 12줄까지 쓴다. 60초로도 늦을 때가 있었다
 PERIOD_TIMEOUT_SEC = 60.0      # 구간(계절·시간대) 계획 — 네 덩이, 계절 안에 시간대까지면 열여섯 줄. 20초로는 늘 늦었다
@@ -401,7 +404,7 @@ def read_health_photo(데이터: str, 미디어형: str) -> dict | None:
 
         client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=SDK_RETRIES)
         message = client.messages.create(
-            model=MODEL,
+            model=PHOTO_MODEL,
             max_tokens=MAX_TOKENS,
             system=HEALTH_PHOTO_SYSTEM,
             output_config={"effort": "low"},
@@ -448,7 +451,7 @@ def read_schedule_photo(데이터: str, 미디어형: str) -> dict | None:
 
         client = anthropic.Anthropic(timeout=TIMEOUT_SEC * 2, max_retries=SDK_RETRIES)
         message = client.messages.create(
-            model=MODEL,
+            model=PHOTO_MODEL,
             max_tokens=MAX_TOKENS,
             system=PHOTO_SYSTEM,
             output_config={"effort": "low"},

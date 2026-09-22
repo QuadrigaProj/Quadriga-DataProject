@@ -3927,3 +3927,21 @@ def test_가입_때_만14세_확인과_건강_상태_민감정보_동의를_받�
     저장 = html.split("async function saveHealth()")[1].split("\n}")[0]
     assert "!$('healthAgree')?.checked" in 저장 and "state.healthAgreed = " in 저장
     assert "healthAgreed: !!state.healthAgreed," in html                     # 한 번 동의하면 기억한다
+    # 사진은 동의 전에 보내지 않는다 — 사진이 AI 서버로 가는 것 자체가 민감정보 전송이다
+    사진 = html.split("async function onHealthPhoto(ev)")[1].split("\n}")[0]
+    assert 사진.index("!$('healthAgree')?.checked") < 사진.index("값을치를까(")
+    # 카카오 로그인은 콜백에서 바로 계정이 생겨 체크할 자리가 없다 — 버튼 아래에 같은 뜻의 문장
+    assert 'id="socialConsent"' in html and "만 14세 이상</b>이며" in html
+    # 계정 삭제 — 남은 이용권 · 구독이 사라진다고 알린다
+    삭제 = html.split("function askDelete()")[1].split("\n}")[0]
+    assert "환불되지 않아요" in 삭제 and "API.deletePreview()" in 삭제
+
+
+def test_계정_삭제_전에_환불될_것과_사라질_것을_적는다():
+    """안 쓴 충전은 삭제하면서 자동 환불, 쓴 금액권의 남은 잔액과 구독은 사라진다 — 서버(delete-preview)가 계산한 값으로."""
+    html = _index()
+    본문 = html.split("async function askDelete()")[1].split("\n}")[0]
+    assert "API.deletePreview()" in 본문
+    assert "자동으로 환불</b>돼요" in 본문 and "사용한 금액권의 남은 잔액" in 본문 and "환불되지 않아요" in 본문
+    api = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    assert "deletePreview: () => call('/auth/me/delete-preview')" in api

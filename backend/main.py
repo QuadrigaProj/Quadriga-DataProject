@@ -1081,14 +1081,51 @@ def auth_rename(body: RenameIn, quadriga_session: str | None = Cookie(None)) -> 
     return {"이름": name}
 
 
-@app.delete("/auth/me")
-def auth_delete_me(response: Response,
-                   quadriga_session: str | None = Cookie(None)) -> dict:
-    """계정과 측정 기록을 모두 지운다. 되돌릴 수 없다."""
+@app.get("/auth/me/delete-preview")
+def auth_delete_preview(quadriga_session: str | None = Cookie(None)) -> dict:
+    """지우기 전에 보여 줄 것 — 자동 환불될 충전과 사라질 잔액·구독. 화면이 이걸로 확인 문구를 만든다."""
     user = _require_user(quadriga_session)
+    billing.init_db()                                       # 테스트처럼 서버 시작 절차 없이 부를 때도 표가 있게
+    p = billing.delete_preview(user["id"])
+    return {"환불건수": p["환불건수"], "환불금액": p["환불금액"], "소멸잔액": p["소멸잔액"],
+            "구독": {"까지": p["구독"]["ends_at"]} if p["구독"] else None}
+
+
+async def _refund_unused_before_delete(user_id: int) -> list[str]:
+    """안 쓴 충전을 전부 카카오에 취소 요청한다. 하나라도 실패하면 삭제를 막는다 — 돈이 걸린 자리라 조용히 넘기지 않는다."""
+    끝난것 = []
+    for o in billing.unused_orders(user_id):
+        if not billing.set_status(o["order_id"], "refunding", only_from="paid"):
+            continue                                              # 다른 요청이 처리 중이면 그쪽에 맡긴다
+        ok = await kp.cancel(tid=o["tid"], amount=o["amount"])
+        if not ok or ok["canceled"] != o["amount"]:
+            billing.set_status(o["order_id"], "paid", only_from="refunding")
+            raise HTTPException(502, f"안 쓴 충전({won_text(o['amount'])})의 환불이 되지 않아 삭제하지 않았어요. "
+                                     "잠시 뒤 다시 하거나 결제 내역에서 먼저 환불해 주세요.")
+        billing.set_status(o["order_id"], "refunded", only_from="refunding")
+        billing.refund(user_id, o["credit"], o["order_id"], memo="계정 삭제로 환불")
+        끝난것.append(o["order_id"])
+    return 끝난것
+
+
+def won_text(n: int) -> str:
+    return f"{int(n):,}원"
+
+
+@app.delete("/auth/me")
+async def auth_delete_me(response: Response,
+                         quadriga_session: str | None = Cookie(None)) -> dict:
+    """계정과 측정 기록을 모두 지운다. 되돌릴 수 없다.
+
+    지우기 전에 **안 쓴 충전은 자동으로 환불**한다(약관 6조의2 · 예현 2026-09-23). 일부라도 쓴 충전의 남은 잔액과
+    구독은 함께 사라진다 — 화면이 /auth/me/delete-preview 로 미리 알리고 확인을 받는다.
+    """
+    user = _require_user(quadriga_session)
+    billing.init_db()
+    환불 = await _refund_unused_before_delete(user["id"])
     auth.delete_account(user["id"])
     response.delete_cookie(auth.SESSION_COOKIE)
-    return {"ok": True}
+    return {"ok": True, "환불건수": len(환불)}
 
 
 # ---------- 소셜 로그인 ----------

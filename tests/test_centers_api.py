@@ -122,3 +122,58 @@ def test_진단은_칸_이름만_낸다(monkeypatch):
     assert "KEY" not in json.dumps(s)
     a = client.get("/centers/all").json()
     assert a["출처"] == "api" and len(a["items"]) == 3
+
+
+# ---------- 좌표 (2026-09-22 배포 서버에서 본 것: 공단 API 는 좌표를 주지 않는다) ----------
+
+def test_어림_좌표는_시도부터_본다():
+    """뒤에서부터 보면 "울산광역시 남구" 의 '남구' 가 서울 '강남구' 에 부분 일치해 울산 센터가 서울에 찍혔다."""
+    got = {c["fcltyNm"]: c for c in ca.normalize([
+        {"center_nm": "울산", "center_addr1": "울산광역시 남구 웅촌로 1342 (무거동)문수체육관 내"},
+        {"center_nm": "관악", "center_addr1": "서울 관악구 신림동 1646"},
+        {"center_nm": "오산", "center_addr1": "경기도 오산시 경기동로 33 (오산동)"},
+    ], known={})}
+    assert abs(got["울산"]["la"] - 35.54) < 0.1 and abs(got["울산"]["lo"] - 129.31) < 0.1      # 울산이지 서울이 아니다
+    assert abs(got["관악"]["la"] - 37.478) < 0.01                                            # 서울은 자치구로
+    assert got["오산"]["la"] is None                                                           # 모르면 모른다고 둔다
+
+
+def test_스냅숏의_지오코딩_좌표를_먼저_쓴다():
+    """API 행에 좌표가 없으면 스냅숏(data/sample/centers_kspo.json)에 적어 둔 좌표를 이름으로 찾아 넣는다."""
+    ca.SNAPSHOT.write_text(json.dumps({"items": [{"fcltyNm": "오산", "la": 37.15, "lo": 127.07, "좌표어림": False}]},
+                                      ensure_ascii=False), encoding="utf-8")
+    got = ca.normalize([{"center_nm": "오산", "center_addr1": "경기도 오산시 경기동로 33", "test_cnt": "5"}])
+    assert (got[0]["la"], got[0]["lo"], got[0]["좌표어림"]) == (37.15, 127.07, False)
+    assert ca.known_coords() == {"오산": (37.15, 127.07, False)}
+
+
+def test_저장소의_스냅숏은_전국_센터의_좌표를_다_갖고_있다():
+    """2026-09-22 배포 서버가 받은 100곳(시험 행 2곳 제외 98곳)을 Nominatim 으로 지오코딩해 둔 것."""
+    from backend.paths import ROOT
+    items = json.loads((ROOT / "data" / "sample" / "centers_kspo.json").read_text(encoding="utf-8"))["items"]
+    assert len(items) >= 90 and all(c["la"] is not None and c["lo"] is not None for c in items)
+    assert all(33 <= c["la"] <= 39 and 124 <= c["lo"] <= 132 for c in items)                # 전부 한국 안
+    울산 = next(c for c in items if c["fcltyNm"] == "울산")
+    assert abs(울산["la"] - 35.5) < 0.2                                                       # 예전 버그였던 자리
+
+
+def test_공단_자료의_시험_행은_버린다():
+    got = ca.normalize([{"center_nm": "2026 국민체력100 1번 업체", "test_cnt": "14"},
+                        {"center_nm": "노원", "center_addr1": "서울특별시 노원구 월계로 378"}], known={})
+    assert [c["fcltyNm"] for c in got] == ["노원"]
+
+
+def test_포털이_한_쪽을_100줄로_깎아도_끝까지_받는다():
+    """numOfRows=1000 을 보내도 100줄씩 주는 API 가 있다 — totalCount 를 보고 다음 쪽을 받는다."""
+    pages = []
+
+    def handler(req: httpx.Request):
+        q = dict(req.url.params)
+        pages.append(int(q["pageNo"]))
+        n = int(q["pageNo"])
+        items = [{"center_nm": f"센터{n}-{i}", "center_addr1": "서울특별시 노원구 x"} for i in range(100 if n < 3 else 50)]
+        return httpx.Response(200, json={"response": {"body": {"items": {"item": items}, "totalCount": "250"}}})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        rows, _ = ca.fetch("KEY", client=c, today=dt.date(2026, 9, 22))
+    assert pages == [1, 2, 3] and len(rows) == 250

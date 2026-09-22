@@ -75,16 +75,34 @@ def _num(v) -> float | None:
 
 
 def _approx_coord(addr: str) -> tuple[float, float] | None:
-    """좌표가 없으면 주소의 낱말(구 · 시 · 역 이름)로 대략의 좌표를 찾는다(geo.PLACES)."""
-    for word in reversed(str(addr).split()):
+    """좌표가 없으면 주소의 낱말(시 · 도 · 구 이름)로 대략의 좌표를 찾는다(geo.PLACES).
+
+    **앞에서부터** 본다 — 시·도가 먼저 잡혀야 한다. 뒤에서부터 보면 "울산광역시 남구 …" 의 '남구' 가 서울 '강남구' 에
+    부분 일치해 울산 센터가 서울에 찍혔다(2026-09-22 배포 서버에서 확인). 시·도는 잡혔는데 구가 다른 도시 것이면 시·도만 쓴다.
+    """
+    words = str(addr).split()
+    for i, word in enumerate(words[:3]):                 # 시·도 · 시·군·구 · 읍·면·동 까지만 — 그 뒤는 길 이름이다
+        if i == 0 and word.startswith("서울"):
+            continue                                     # 서울은 자치구로 잡는다 — '서울' 은 '서울역' 에 부분 일치해 버린다
         c = geo.geocode(word)
         if c:
-            return c
+            return c                                     # 광역시·도가 먼저 잡히면 그 도시 중심 — 구 이름은 다른 도시와 겹친다
     return None
 
 
-def normalize(rows: list[dict]) -> list[dict]:
-    """API 행 → 화면이 쓰는 모양(fcltyNm · addr · la · lo · telno · 측정건수 · 기준월). 같은 센터는 하나로 묶는다."""
+def known_coords() -> dict[str, tuple[float, float, bool]]:
+    """스냅숏에 적어 둔 센터 좌표 {이름: (위도, 경도, 어림인지)} — 공단 API 는 좌표를 주지 않아서 주소를 한 번 지오코딩해 뒀다."""
+    return {c["fcltyNm"]: (c["la"], c["lo"], bool(c.get("좌표어림")))
+            for c in (load_snapshot() or []) if c.get("la") is not None and c.get("lo") is not None}
+
+
+def normalize(rows: list[dict], known: dict | None = None) -> list[dict]:
+    """API 행 → 화면이 쓰는 모양(fcltyNm · addr · la · lo · telno · 측정건수 · 기준월). 같은 센터는 하나로 묶는다.
+
+    좌표는 API 행 → 스냅숏의 지오코딩 좌표(known) → 주소 낱말의 어림 순서로 채운다.
+    이름에 '업체' 가 들어가고 주소가 없는 행은 공단 자료의 시험 행이라 버린다("2026 국민체력100 1번 업체").
+    """
+    known = known_coords() if known is None else known
     out: dict[tuple, dict] = {}
     for r in rows:
         if not isinstance(r, dict):
@@ -93,10 +111,14 @@ def normalize(rows: list[dict]) -> list[dict]:
         if not name:
             continue
         addr = " ".join(str(x).strip() for x in (_first(r, ADDR1_KEYS), _first(r, ADDR2_KEYS)) if x)
+        if "업체" in str(name) and not addr:
+            continue
         la, lo = _num(_first(r, LAT_KEYS)), _num(_first(r, LON_KEYS))
         if la is not None and lo is not None and not (33 <= la <= 39 and 124 <= lo <= 132):
             la, lo = (lo, la) if (33 <= lo <= 39 and 124 <= la <= 132) else (None, None)   # 위도 · 경도가 뒤바뀐 경우
         approx = False
+        if (la is None or lo is None) and str(name).strip() in known:
+            la, lo, approx = known[str(name).strip()]
         if la is None or lo is None:
             c = _approx_coord(addr)
             if c:
@@ -144,7 +166,8 @@ def fetch(key: str, *, client: httpx.Client | None = None, today: _dt.date | Non
                 r.raise_for_status()
                 got, total = _items_of(r.json())
                 rows += got
-                if not got or len(got) < ROWS or (total is not None and len(rows) >= total):
+                # 포털은 numOfRows 를 100 으로 깎아 주기도 한다 — totalCount 를 알면 그것을 기준으로 다음 쪽을 받는다
+                if not got or (total is not None and len(rows) >= total) or (total is None and len(got) < ROWS):
                     break
             if rows:
                 return rows, sorted({k for row in rows[:20] if isinstance(row, dict) for k in row})
@@ -196,4 +219,4 @@ def status() -> dict:
     got, source = items()
     return {"출처": source, "센터수": len(got), "응답필드": _cache["fields"], "오류": _cache["error"],
             "좌표어림": sum(1 for c in got if c.get("좌표어림")), "좌표없음": sum(1 for c in got if c.get("la") is None),
-            "데이터": SOURCE_PAGE}
+            "스냅숏좌표": len(known_coords()), "데이터": SOURCE_PAGE}

@@ -1407,7 +1407,7 @@ def _activity_one(body: "ActivityIn") -> dict:
     체성분 = None
     if _dist is not None and body.sex and (body.체지방률 is not None or (body.키 and body.몸무게)):
         체성분 = fa.body_part(_dist, body.age_gbn, body.sex,
-                            키=body.키, 몸무게=body.몸무게, 체지방률=body.체지방률)
+                            키=body.키, 몸무게=body.몸무게, 체지방률=body.체지방률, age=body.age)
     out = fa.activity_adjusted(body.항목별, body.신뢰구간, body.활동,
                                body.age_gbn, body.age, 체성분)
     if out["체력나이"] is None:

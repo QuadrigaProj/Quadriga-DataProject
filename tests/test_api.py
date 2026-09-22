@@ -62,7 +62,7 @@ def test_purposes():
 
 @needs_data
 def test_fitness_age_성인():
-    b = client.post("/fitness-age", json=ADULT).json()
+    b = client.post("/fitness-age", json={**ADULT, "age": 45}).json()
     assert 10 < b["체력나이"] < 100
     assert b["신뢰구간"] > 0
     # 교차윗몸일으키기는 근력이 아니라 근지구력이다 (G6 에서 라벨 정정)
@@ -81,12 +81,13 @@ def test_fitness_age_어르신():
 
 @needs_data
 def test_bmi_는_양방향_편차():
-    """저체중도 과체중처럼 불리하게 잡혀야 한다 (BMI 는 U 자형)."""
+    """저체중도 과체중처럼 불리하게 잡혀야 한다 (BMI 는 U 자형). 정상 범위(18.5~22.9)면 실제 나이 그대로다."""
     def 체성분(bmi):
         return client.post("/fitness-age",
-                           json={"age_gbn": "성인", "sex": "M", "bmi": bmi}
+                           json={"age_gbn": "성인", "sex": "M", "age": 34, "bmi": bmi}
                            ).json()["항목별"]["체성분"]
 
+    assert 체성분(22.0) == 34.0
     assert 체성분(16.0) > 체성분(22.0)
     assert 체성분(30.0) > 체성분(22.0)
 
@@ -774,9 +775,9 @@ def test_별명을_바꿔도_기록은_그대로다():
 @needs_data
 def test_선택입력을_주면_근력과_심폐지구력이_늘어난다():
     """악력·왕복오래달리기를 잰 사람만 넣는다. 안 넣으면 지금까지와 같다."""
-    기본 = client.post("/fitness-age", json=ADULT).json()
+    기본 = client.post("/fitness-age", json={**ADULT, "age": 45}).json()
     더함 = client.post("/fitness-age",
-                     json={**ADULT, "grip_kg": 42, "endurance": 60}).json()
+                     json={**ADULT, "age": 45, "grip_kg": 42, "endurance": 60}).json()
     assert "근력" not in 기본["항목별"]
     assert "심폐지구력" not in 기본["항목별"]
     assert {"근력", "심폐지구력"} <= set(더함["항목별"])
@@ -947,20 +948,24 @@ def test_80세_이상_구간은_100세가_아니라_80대_초반으로_읽는다
 
 
 @needs_data
-def test_거꾸로_움직이는_BMI_곡선은_나이로_읽지_않는다():
-    """BMI 환산은 '나이 들수록 적정치(22)에서 멀어진다' 는 전제 위에 있다. 남성 어르신의 BMI 중앙값은 24.5 → 23.7 로
-    오히려 가까워져서, 그대로 환산하면 건강한 BMI 22 가 100세 · '집중 개선 영역: 체성분' 으로 나온다. 그런 곡선은 환산하지 않는다."""
+def test_BMI_는_정상_범위면_실제_나이_벗어나면_그만큼_더한다():
+    """예전 환산은 BMI 중앙값 곡선을 거꾸로 읽었다 — 남성 어르신은 곡선이 거꾸로 움직여(24.5 → 23.7) 건강한 BMI 22 가
+    100세로 나와서 환산을 빼 두었고, 성인은 34세 여성의 BMI 22 가 37세 · 23.5 가 27세로 나왔다. 이제는 정상 범위(18.5~22.9)면
+    실제 나이 그대로, 벗어나면 벗어난 만큼 나이를 더한다 — 남녀 · 연령군 모두 같은 규칙이다."""
     남72 = {"age_gbn": "어르신", "sex": "M", "age": 72, "flexibility": 6, "strength": 22, "height_cm": 167}
     건강 = client.post("/fitness-age", json={**남72, "weight_kg": 62}).json()       # BMI 22.2
     비만 = client.post("/fitness-age", json={**남72, "weight_kg": 84}).json()       # BMI 30.1
+    assert 건강["항목별"]["체성분"] == 72.0 and "체성분" not in 건강["집중개선영역"]
+    assert 비만["항목별"]["체성분"] > 72.0
+    assert 비만["체력나이"] > 건강["체력나이"]                                     # 예전에는 비만 쪽이 6살 넘게 젊게 나왔다
     for r in (건강, 비만):
-        assert "체성분" not in r["항목별"] and "체성분" not in r["집중개선영역"]
         assert r["또래비교"]["체성분"]["항목"] == "BMI"                             # 값과 또래 중앙값은 그대로 나간다
-    assert 건강["체력나이"] == 비만["체력나이"]                                     # 예전에는 비만 쪽이 6살 넘게 젊게 나왔다
-    # 여성 어르신은 곡선이 전제대로 움직인다 — 그대로 환산한다
-    여 = client.post("/fitness-age", json={"age_gbn": "어르신", "sex": "F", "age": 72, "flexibility": 14, "strength": 19,
-                                           "height_cm": 155, "weight_kg": 53}).json()
-    assert "체성분" in 여["항목별"]
+    # 성인 여성 — 적정치가 '늙게', 과체중이 '어리게' 나오던 곳
+    def 여34(bmi):
+        return client.post("/fitness-age", json={"age_gbn": "성인", "sex": "F", "age": 34, "bmi": bmi}).json()["항목별"]["체성분"]
+    assert 여34(20.0) == 여34(22.0) == 34.0
+    assert 34.0 < 여34(23.5) < 여34(25.0) < 여34(28.0)
+    assert 34.0 < 여34(18.0) < 여34(16.0)
     # 도달 시점 추정도 같은 항목으로 '지금' 을 낸다
     eta = client.post("/fitness-age/eta", json={**남72, "weight_kg": 62, "target": 65}).json()
     assert eta["지금"] == 건강["체력나이"]

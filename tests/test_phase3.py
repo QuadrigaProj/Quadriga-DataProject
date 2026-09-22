@@ -22,6 +22,19 @@ def data_ready() -> bool:
 needs_data = pytest.mark.skipif(not data_ready(), reason="분포 데이터 없음")
 
 
+@pytest.fixture(autouse=True)
+def _sample_centers(monkeypatch):
+    """센터 검색 테스트는 예시 목록(data/sample/centers.json)으로 돌린다.
+
+    /centers 는 이제 공단 오픈API(없으면 저장소의 스냅숫 98곳)를 쓴다. 여기 테스트는 '양천구 한 곳' 처럼 예시 목록을
+    전제로 주소 대조 규칙을 보는 것이라 실제 목록이 들어오면 깨진다(#260 뒤 CI 실패). 실제 목록은 tests/test_centers_api.py 가 본다.
+    """
+    from backend import centers_api
+    from backend.paths import load_json
+    예시 = load_json("centers.json").get("items", [])
+    monkeypatch.setattr(centers_api, "items", lambda force=False: (예시, "sample"))
+
+
 # ---------- InBody ----------
 
 def test_bodycomp_분석_판정():

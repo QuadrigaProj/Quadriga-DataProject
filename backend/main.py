@@ -1288,6 +1288,13 @@ DETAIL_DAYS = 7
 DETAIL_LIMITS = {"구간": 5, "시간표사진": 3}    # 자세히 보기 한 번으로 쓸 수 있는 횟수 — 원가가 드는 호출이라 무한정은 아니다
 PRICES = {"루틴": AI_PRICE, "조정": ADJUST_PRICE, "자세히": DETAIL_PRICE, "건강사진": HEALTH_PHOTO_PRICE}
 
+# 한 달 구독 — 자동 갱신 없는 30일 이용권(사업자 없이는 정기결제 계약이 안 된다). 매달 직접 결제한다.
+# AI 루틴 하루 5회(조정 포함) · 자세히 보기 포함(구간 계획 · 시간표 사진 하루 5회) · 약봉지 사진 하루 5회 ·
+# 커뮤니티 쓰기 제한 해제(community.LIMITS["구독"]). 원가: 20~40회 쓰면 4~8천 원 — 하루 5회를 매일 다 쓰면 적자라 사용량을 본다.
+SUB_PRICE = 9900
+SUB_DAYS = 30
+SUB_LIMITS = {"루틴": 5, "구간": 5, "사진": 5}
+
 # 시연 기간 — 실결제가 안 되는 동안(카카오페이 키가 없거나 테스트 가맹점) 값 대신 **하루 무료 횟수**로 제한한다.
 # 테스트 결제로는 누구나 이용권을 공짜로 채울 수 있어서, 값으로 막는 건 막는 게 아니다.
 DEMO_LIMITS = {"루틴": 3, "구간": 3, "사진": 2}   # 조정은 루틴에, 시간표·약봉지 사진은 '사진' 에 함께 센다
@@ -1365,6 +1372,8 @@ async def post_pay_refund(order: str,
     o = billing.get_order(order)
     if not o or o["user_id"] != user["id"] or o["status"] != "paid":
         raise HTTPException(404, "환불할 결제를 찾을 수 없어요.")
+    if o.get("product") == "구독":
+        raise HTTPException(409, "구독은 여기서 환불하지 않아요. 문의를 남겨 주세요.")
     if billing.used_after(user["id"], order):
         raise HTTPException(409, "이미 사용한 이용권은 환불할 수 없어요.")
 
@@ -1382,7 +1391,8 @@ BANKS = ["KB국민", "신한", "우리", "하나", "NH농협", "IBK기업", "카
 
 
 class PayReadyIn(BaseModel):
-    amount: int = Field(..., description="충전할 이용권 금액(원). 실제 결제액은 서버가 정한다")
+    amount: int = Field(0, description="충전할 이용권 금액(원). 실제 결제액은 서버가 정한다. 구독이면 무시")
+    product: Literal["구독"] | None = Field(None, description="'구독' 이면 한 달 구독(SUB_PRICE)을 산다")
 
 
 @app.post("/pay/kakao/ready")
@@ -1393,7 +1403,10 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
     실제 결제는 로그인한 회원만 할 수 있다. 잔액이 서버 원장에 쌓이므로
     붙일 계정이 없으면 돈만 받고 줄 곳이 없다.
     """
-    pack = pack_for(body.amount)
+    if body.product == "구독":
+        pack = {"이용권": 0, "결제": SUB_PRICE}
+    else:
+        pack = pack_for(body.amount)
     if not pack:
         raise HTTPException(400, "고를 수 없는 금액입니다.")
     if not kp.available():
@@ -1413,7 +1426,7 @@ async def post_pay_ready(body: PayReadyIn, request: Request,
         # 왜 실패했는지 그대로 알려 준다. "실패했다" 만으로는 손쓸 방법이 없다.
         raise HTTPException(502, kp.hint(out))
 
-    billing.new_order(order, 누구["id"], out["tid"], pack["이용권"], pack["결제"])
+    billing.new_order(order, 누구["id"], out["tid"], pack["이용권"], pack["결제"], product=body.product)
     # 접속 환경은 화면이 안다. 셋 다 주고 고르게 한다 — PC 는 QR 화면으로 가야 한다.
     return {"order": order,
             "redirect": out["redirect_mobile"],        # 예전 화면 호환
@@ -1445,8 +1458,11 @@ async def get_pay_approve(order: str, pg_token: str = "") -> RedirectResponse:
         billing.set_status(order, "failed")
         return RedirectResponse("/?pay=fail")
 
-    # 이용권은 주문에 적힌 값으로 올린다 — 화면이 보낸 숫자를 믿지 않는다.
-    billing.charge(o["user_id"], o["credit"], o["amount"], order)
+    # 이용권은 주문에 적힌 값으로 올린다 — 화면이 보낸 숫자를 믿지 않는다. 구독 주문이면 구독을 연다.
+    if o.get("product") == "구독":
+        billing.subscribe(o["user_id"], o["amount"], order, SUB_DAYS)
+    else:
+        billing.charge(o["user_id"], o["credit"], o["amount"], order)
     billing.set_status(order, "paid", ok.get("aid"))
     return RedirectResponse(f"/?pay=ok&order={order}")
 
@@ -1476,7 +1492,9 @@ def get_pay_result(order: str, quadriga_session: str | None = Cookie(None)) -> d
         raise HTTPException(404, "승인된 결제가 아닙니다.")
     if o["status"] != "paid":
         raise HTTPException(404, "승인된 결제가 아닙니다.")
-    return {"paid": True, "amount": o["credit"], "결제": o["amount"],
+    구독 = subscribed(user) if o.get("product") == "구독" else None
+    return {"paid": True, "amount": o["credit"], "결제": o["amount"], "product": o.get("product"),
+            "구독": {"까지": 구독["ends_at"]} if 구독 else None,
             "잔액": billing.balance(user["id"])}
 
 
@@ -1569,11 +1587,17 @@ _ai_inflight_lock = threading.Lock()
 
 
 def is_admin(누구: dict | None) -> bool:
-    """ADMIN_USERS 에 적힌 계정인지 — 이메일 또는 'provider:uid'(예 kakao:12345) 를 쉼표로."""
+    """ADMIN_USERS 에 적힌 계정인지 — 'provider:uid'(예 kakao:12345 · password:me@x.com) 또는 소셜 계정의 이메일을 쉼표로.
+
+    비밀번호 계정의 이메일은 확인한 적이 없는 값이라 이메일만으로는 관리자가 되지 않는다 — 누군가 관리자 이메일로
+    비밀번호 계정을 만들면 그대로 관리자가 되는 구멍이다. 비밀번호 계정은 'password:이메일' 로 적는다.
+    """
     if not 누구:
         return False
     허용 = {e.strip().lower() for e in (os.getenv("ADMIN_USERS") or "").split(",") if e.strip()}
-    이름들 = {str(누구.get("email") or "").lower(), f"{누구.get('provider')}:{누구.get('provider_uid')}".lower()}
+    이름들 = {f"{누구.get('provider')}:{누구.get('provider_uid')}".lower()}
+    if 누구.get("provider") != "password" and 누구.get("email"):
+        이름들.add(str(누구["email"]).lower())
     return bool(허용 & 이름들)
 
 
@@ -1581,9 +1605,15 @@ def _demo_group(kind: str) -> str:
     return next(g for g, ks in DEMO_KINDS.items() if kind in ks)
 
 
-def demo_left(user_id: int) -> dict:
-    """시연 기간에 오늘 남은 횟수 {루틴, 구간, 사진}."""
-    return {g: max(0, DEMO_LIMITS[g] - billing.ai_uses_today(user_id, ks)) for g, ks in DEMO_KINDS.items()}
+def demo_left(user_id: int, 한도: dict | None = None) -> dict:
+    """오늘 남은 횟수 {루틴, 구간, 사진} — 시연 기간(DEMO_LIMITS) 또는 구독(SUB_LIMITS)."""
+    한도 = 한도 or DEMO_LIMITS
+    return {g: max(0, 한도[g] - billing.ai_uses_today(user_id, ks)) for g, ks in DEMO_KINDS.items()}
+
+
+def subscribed(누구: dict | None) -> dict | None:
+    """살아 있는 구독. 없으면 None."""
+    return billing.active_addon(누구["id"], "구독") if 누구 else None
 
 
 def ai_allow(누구: dict | None, ip: str, kind: str) -> tuple[bool, str | None, int]:
@@ -1595,9 +1625,14 @@ def ai_allow(누구: dict | None, ip: str, kind: str) -> tuple[bool, str | None,
         return False, "로그인 후 이용할 수 있어요.", 0
     if is_admin(누구):
         return True, None, 0
+    if billing_mode() == "demo" and billing.ai_uses_today_ip(ip) >= DEMO_IP_LIMIT:
+        return False, "이곳에서 오늘 쓸 수 있는 AI 횟수를 다 썼어요. 내일 다시 쓸 수 있어요.", 0
+    if subscribed(누구):                                          # 구독 — 값 없이 하루 횟수
+        묶음 = _demo_group(kind)
+        if demo_left(누구["id"], SUB_LIMITS)[묶음] <= 0:
+            return False, f"구독으로 오늘 쓸 수 있는 {SUB_LIMITS[묶음]}번을 다 썼어요 — 내일 다시 쓸 수 있어요.", 0
+        return True, None, 0
     if billing_mode() == "demo":
-        if billing.ai_uses_today_ip(ip) >= DEMO_IP_LIMIT:
-            return False, "이곳에서 오늘 쓸 수 있는 AI 횟수를 다 썼어요. 내일 다시 쓸 수 있어요.", 0
         묶음 = _demo_group(kind)
         남음 = demo_left(누구["id"])[묶음]
         if 남음 <= 0:
@@ -1650,9 +1685,20 @@ def ai_status_for(누구: dict | None) -> dict:
     """화면이 버튼과 문구를 정하는 데 쓰는 것 — 값표 · 시연 여부 · 오늘 남은 횟수 · 자세히 보기 · 잔액."""
     시연 = billing_mode() == "demo"
     상세 = billing.active_addon(누구["id"], "상세") if 누구 else None
+    구독 = subscribed(누구)
+    if 누구 and is_admin(누구):
+        오늘남음 = None
+    elif 구독:
+        오늘남음 = demo_left(누구["id"], SUB_LIMITS)
+    elif 누구 and 시연:
+        오늘남음 = demo_left(누구["id"])
+    else:
+        오늘남음 = None
     return {"값": AI_PRICE, "값표": PRICES, "시연": 시연, "관리자": is_admin(누구),
-            "오늘남음": demo_left(누구["id"]) if (누구 and 시연 and not is_admin(누구)) else None,
+            "오늘남음": 오늘남음,
             "자세히": {"까지": 상세["ends_at"]} if 상세 else None,
+            "구독": {"까지": 구독["ends_at"], "하루": SUB_LIMITS} if 구독 else None,
+            "구독값": SUB_PRICE, "구독일수": SUB_DAYS,
             "잔액": billing.balance(누구["id"]) if 누구 else 0,
             "로그인": bool(누구)}
 
@@ -1677,7 +1723,7 @@ def post_ai_detail(quadriga_session: str | None = Cookie(None)) -> dict:
     시연 기간에는 살 필요가 없다(하루 횟수로 무료) — 그때는 사지 않게 400.
     """
     누구 = _require_user(quadriga_session)
-    if billing_mode() == "demo" or is_admin(누구):
+    if billing_mode() == "demo" or is_admin(누구) or subscribed(누구):
         raise HTTPException(400, "지금은 자세히 보기가 무료예요. 따로 살 필요가 없어요.")
     잔액 = billing.spend(누구["id"], DETAIL_PRICE, "자세히 보기 (구간 계획 · 시간표 사진)")
     상세 = billing.add_addon(누구["id"], "상세", DETAIL_DAYS, memo=f"{DETAIL_PRICE}원")
@@ -1893,8 +1939,8 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                                       "AI 루틴 추천" if 종류 == "루틴" else f"AI 루틴 조정 ({adjust})")
             else:
                 billing.note_ai_use(누구["id"], ip, f"{종류}·버림", 0, air.take_usage())
-    if 누구 and billing_mode() == "demo" and not is_admin(누구):
-        out["오늘남음"] = demo_left(누구["id"])
+    if 누구 and not is_admin(누구) and (subscribed(누구) or billing_mode() == "demo"):
+        out["오늘남음"] = demo_left(누구["id"], SUB_LIMITS if subscribed(누구) else None)
     return out
 
 
@@ -1994,8 +2040,8 @@ def post_health_photo(body: HealthPhotoIn, request: Request,
     if not 읽은것["건강상태"]:
         읽은것["안내"] = "사진에서 건강 상태를 찾지 못했어요. 직접 골라주세요."
     읽은것["잔액"] = ai_settle(누구, ip, "건강사진", 값, "약봉지 사진 읽기")
-    if billing_mode() == "demo" and not is_admin(누구):
-        읽은것["오늘남음"] = demo_left(누구["id"])
+    if not is_admin(누구) and (subscribed(누구) or billing_mode() == "demo"):
+        읽은것["오늘남음"] = demo_left(누구["id"], SUB_LIMITS if subscribed(누구) else None)
     return 읽은것
 
 
@@ -2043,8 +2089,8 @@ def post_schedule_photo(body: SchedulePhotoIn, request: Request,
     if not 읽은것:
         # 부르긴 했지만 시간표가 아니었다. 횟수는 세되 왜 비었는지는 알려준다.
         out["안내"] = "사진에서 시간표를 찾지 못했어요. 직접 적어주세요."
-    if billing_mode() == "demo" and not is_admin(누구):
-        out["오늘남음"] = demo_left(누구["id"])
+    if not is_admin(누구) and (subscribed(누구) or billing_mode() == "demo"):
+        out["오늘남음"] = demo_left(누구["id"], SUB_LIMITS if subscribed(누구) else None)
     return out
 
 

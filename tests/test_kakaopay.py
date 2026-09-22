@@ -541,3 +541,42 @@ def test_실패_이유를_서버_로그에_남긴다(키, monkeypatch, caplog):
         _login().post("/pay/kakao/ready", json={"amount": 500})
     합친것 = " ".join(r.getMessage() for r in caplog.records)
     assert "ready" in 합친것 and "-403" in 합친것
+
+
+# ---------- 한 달 구독 — 자동 갱신 없는 30일 이용권 (2026-09-22 예현: AI 하루 5회 · 커뮤니티 쓰기 제한 해제) ----------
+
+def test_구독은_9900원을_한_번에_결제하고_30일을_연다(키, monkeypatch):
+    from backend import main as m
+    a = _login()
+    기록 = []
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(READY_OK, 기록))
+    d = a.post("/pay/kakao/ready", json={"product": "구독"}).json()
+    assert d["결제"] == m.SUB_PRICE == 9900 and d["이용권"] == 0
+    assert 기록[0]["body"]["total_amount"] == 9900
+    o = billing.get_order(d["order"])
+    assert o["product"] == "구독" and o["credit"] == 0 and o["amount"] == 9900
+
+    r = 승인(a, d["order"], 9900, monkeypatch)
+    assert f"pay=ok&order={d['order']}" in r.headers["location"]
+    # 이용권은 그대로 0, 구독이 30일 열린다
+    c = a.get("/credit").json()
+    assert c["잔액"] == 0
+    assert (c["내역"][0]["종류"], c["내역"][0]["결제"], c["내역"][0]["메모"]) == ("구독", 9900, "한 달 구독 30일")
+    res = a.get(f"/pay/result/{d['order']}").json()
+    assert res["product"] == "구독" and res["구독"]["까지"] > 0
+    s = a.get("/recommend/ai-status").json()
+    assert s["구독"]["하루"] == m.SUB_LIMITS and 29 * 86400 < s["구독"]["까지"] - __import__("time").time() <= 30 * 86400
+    # 같은 승인 콜백이 두 번 와도 두 번 열리지 않는다
+    승인(a, d["order"], 9900, monkeypatch)
+    assert len([x for x in a.get("/credit").json()["내역"] if x["종류"] == "구독"]) == 1
+    # 구독은 이 창구에서 환불하지 않는다
+    assert a.post(f"/pay/refund/{d['order']}").status_code == 409
+
+
+def test_청구액과_다르게_승인된_구독은_열리지_않는다(키, monkeypatch):
+    a = _login()
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(READY_OK))
+    d = a.post("/pay/kakao/ready", json={"product": "구독"}).json()
+    r = 승인(a, d["order"], 500, monkeypatch)
+    assert "pay=fail" in r.headers["location"]
+    assert a.get("/recommend/ai-status").json()["구독"] is None

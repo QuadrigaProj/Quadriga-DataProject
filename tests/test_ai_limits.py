@@ -105,7 +105,7 @@ def test_한_곳에서_계정을_늘려도_하루_합계가_있다(monkeypatch):
 def test_관리자는_값도_횟수도_없다(monkeypatch):
     """팀이 직접 써 보는 데 값을 치르지 않게 — 이메일이나 'provider:uid' 로 적는다."""
     _fake_sdk(monkeypatch, _지은응답())
-    monkeypatch.setenv("ADMIN_USERS", "boss@x.com, kakao:777")
+    monkeypatch.setenv("ADMIN_USERS", "password:boss@x.com, kakao:777, social@x.com")
     a = _user("boss@x.com")
     assert a.get("/auth/me").json()["계정"] == "password:boss@x.com"
     for _ in range(5):
@@ -117,6 +117,9 @@ def test_관리자는_값도_횟수도_없다(monkeypatch):
     assert _ai(a)["출처"] == "ai" and a.get("/credit").json()["잔액"] == 0
     assert m.is_admin({"email": None, "provider": "kakao", "provider_uid": "777"})
     assert not m.is_admin({"email": "x@x.com", "provider": "kakao", "provider_uid": "778"})
+    # 소셜 계정은 이메일로도 되지만, 비밀번호 계정은 이메일을 확인한 적이 없어 이메일만으로는 안 된다
+    assert m.is_admin({"email": "social@x.com", "provider": "kakao", "provider_uid": "1"})
+    assert not m.is_admin({"email": "social@x.com", "provider": "password", "provider_uid": "social@x.com"})
 
 
 def test_호출마다_토큰_수를_남긴다(monkeypatch):
@@ -139,7 +142,7 @@ def test_호출마다_토큰_수를_남긴다(monkeypatch):
     mod.Anthropic = _Client
     monkeypatch.setitem(sys.modules, "anthropic", mod)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-    monkeypatch.setenv("ADMIN_USERS", "boss@x.com")
+    monkeypatch.setenv("ADMIN_USERS", "password:boss@x.com")
     a = _user("a@x.com")
     assert _ai(a)["출처"] == "ai"
     assert a.get("/ai/usage").status_code == 403
@@ -174,3 +177,24 @@ def test_값표와_선결제_팩():
     assert 표 == {500: (500, 0), 1000: (1100, 10), 3000: (3450, 15), 5000: (6000, 20), 10000: (12500, 25)}
     # 보너스는 25% 까지 — 한 번 쓸 때마다 원가 200원 안팎이 나가서 그보다 깊으면 팔수록 손해다
     assert max(p["보너스"] for p in packs["packs"]) <= 25
+
+
+def test_구독하면_값_없이_하루_다섯_번(monkeypatch):
+    """한 달 구독 — AI 루틴 하루 5회(조정 포함) · 자세히 보기 포함 · 약봉지 사진 5회. 실결제 모드에서도 이용권이 빠지지 않는다."""
+    _fake_sdk(monkeypatch, _지은응답())
+    monkeypatch.setenv("AI_BILLING_MODE", "real")
+    a = _user("sub@x.com")
+    uid = auth.user_for_token(a.cookies.get("quadriga_session"))["id"]
+    assert _ai(a)["출처"] == "점수"                                    # 이용권도 구독도 없다
+    billing.add_addon(uid, "구독", 30, memo="테스트")
+    for i in range(5):
+        d = _ai(a)
+        assert d["출처"] == "ai" and d["잔액"] == 0 and d["오늘남음"]["루틴"] == 4 - i, i
+    d = _ai(a)
+    assert d["출처"] == "점수" and "구독으로 오늘" in d["안내"]
+    s = a.get("/recommend/ai-status").json()
+    assert s["구독"]["까지"] > 0 and s["오늘남음"] == {"루틴": 0, "구간": 5, "사진": 5}
+    assert a.post("/ai/detail").status_code == 400                    # 자세히 보기는 구독에 들어 있다
+    _fake_sdk(monkeypatch, _네계절())
+    assert a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴}).status_code == 200
+    assert a.get("/credit").json()["잔액"] == 0

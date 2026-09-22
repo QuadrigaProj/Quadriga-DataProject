@@ -45,12 +45,13 @@ CREATE TABLE IF NOT EXISTS pay_orders (
   order_id   TEXT PRIMARY KEY,
   user_id    INTEGER,                   -- 손님 결제는 NULL
   tid        TEXT NOT NULL,
-  credit     INTEGER NOT NULL,          -- 올려 줄 이용권
+  credit     INTEGER NOT NULL,          -- 올려 줄 이용권 (구독이면 0)
   amount     INTEGER NOT NULL,          -- 실제 청구액
   status     TEXT NOT NULL,             -- ready | paid | canceled | failed | refunded
   aid        TEXT,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  product    TEXT                       -- NULL=이용권 충전 · '구독'=한 달 구독
 );
 CREATE INDEX IF NOT EXISTS idx_orders_user ON pay_orders(user_id, created_at DESC);
 
@@ -89,6 +90,12 @@ def init_db() -> None:
     with auth.db() as con:
         for stmt in filter(str.strip, schema.split(";")):
             con.execute(stmt)
+    # 예전에 만든 표에는 product 칸이 없다 — 있으면 그대로, 없으면 붙인다
+    with auth.db() as con:
+        try:
+            con.execute("ALTER TABLE pay_orders ADD COLUMN product TEXT")
+        except Exception:                 # 이미 있다 (sqlite · postgres 둘 다 '중복 칸' 오류를 낸다)
+            pass
 
 
 # ---------------- 잔액 ----------------
@@ -117,7 +124,7 @@ def history(user_id: int, limit: int = 30) -> list[dict]:
         낸주문 = {o["order_id"]: o["status"] for o in con.execute(
             "SELECT order_id, status FROM pay_orders WHERE user_id=?", (user_id,)).fetchall()}
 
-    종류 = {"charge": "충전", "use": "사용", "refund": "환불"}
+    종류 = {"charge": "충전", "use": "사용", "refund": "환불", "sub": "구독"}
     out = []
     for r in rows:
         줄 = {"종류": 종류.get(r["kind"], r["kind"]),
@@ -287,13 +294,23 @@ def ai_cost_summary(days: int = 30, now: float | None = None) -> dict:
 # ---------------- 주문 ----------------
 
 def new_order(order_id: str, user_id: int | None, tid: str,
-              credit: int, amount: int) -> None:
+              credit: int, amount: int, product: str | None = None) -> None:
     now = int(time.time())
     with auth.db() as con:
         con.execute(
             "INSERT INTO pay_orders (order_id, user_id, tid, credit, amount, status,"
-            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            (order_id, user_id, tid, int(credit), int(amount), "ready", now, now))
+            " created_at, updated_at, product) VALUES (?,?,?,?,?,?,?,?,?)",
+            (order_id, user_id, tid, int(credit), int(amount), "ready", now, now, product))
+
+
+def subscribe(user_id: int, paid: int, order_id: str, days: int) -> dict:
+    """구독 결제 승인분 — 원장에 '구독' 줄(이용권 증감 0, 낸 돈만)을 남기고 구독을 연다. 같은 주문은 한 번만."""
+    with auth.db() as con:
+        있음 = con.execute("SELECT 1 FROM credit_ledger WHERE order_id=?", (order_id,)).fetchone()
+        if 있음:
+            return active_addon(user_id, "구독") or {}
+        _add(con, user_id, 0, "sub", paid=paid, order_id=order_id, memo=f"한 달 구독 {days}일")
+    return add_addon(user_id, "구독", days, memo=order_id)
 
 
 def get_order(order_id: str) -> dict | None:

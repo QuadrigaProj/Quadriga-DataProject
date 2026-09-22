@@ -1399,3 +1399,16 @@ def test_고칠_때도_같은_제한():
     pid = a.post("/community/posts", json={"body": "처음"}).json()["id"]
     assert a.put(f"/community/posts/{pid}", json={"body": "가" * 1001}).status_code == 400
     assert a.put(f"/community/posts/{pid}", json={"body": "가" * 1000}).status_code == 200
+
+
+def test_하루_사진_용량에도_상한이_있다(monkeypatch):
+    """개수 제한을 다 채워도 DB 가 하루에 자라는 양은 정해져 있다 — 무료 20MB · 구독 60MB."""
+    from backend import billing
+    billing.init_db()
+    monkeypatch.setitem(community.LIMITS["무료"], "하루바이트", 3000)
+    a = _login(None, "cap@x.com", "가")
+    assert a.post("/community/posts", json={"media": [_사진(1000)]}).status_code == 200
+    assert a.post("/community/posts", json={"media": [_사진(1000)]}).status_code == 200
+    r = a.post("/community/posts", json={"media": [_사진(1000)]})
+    assert r.status_code == 429 and "용량" in r.json()["detail"]
+    assert a.post("/community/posts", json={"body": "글만은 된다"}).status_code == 200

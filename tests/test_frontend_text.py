@@ -3945,3 +3945,16 @@ def test_계정_삭제_전에_환불될_것과_사라질_것을_적는다():
     assert "자동으로 환불</b>돼요" in 본문 and "사용한 금액권의 남은 잔액" in 본문 and "환불되지 않아요" in 본문
     api = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     assert "deletePreview: () => call('/auth/me/delete-preview')" in api
+
+
+def test_남의_글에는_신고_관리자에게는_삭제_버튼이_있다():
+    """신고하면 관리자가 검토하고, 관리자(ADMIN_USERS)는 아무 글 · 댓글 · 메시지나 지운다 (2차 점검 8번)."""
+    html = _index()
+    for 자리 in ("reportContent('post', ${p.id})", "reportContent('comment', ${c.id})", "reportContent('message', ${m.id})",
+               "adminRemove('post', ${p.id})", "adminRemove('comment', ${c.id}, ${id})", "adminRemove('message', ${m.id})"):
+        assert 자리 in html, 자리
+    assert 'id="reportsBtn"' in html and "async function openReports()" in html and "function renderReports(list)" in html
+    assert "COMM.admin = !!m?.['관리자'];" in html
+    api = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    for 경로 in ("post('/community/report'", "call('/community/admin/reports')", "`/community/admin/${type}/${id}`"):
+        assert 경로 in api, 경로

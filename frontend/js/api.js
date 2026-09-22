@@ -114,6 +114,11 @@ const API = (() => {
     commMeta: () => call('/community/meta'),
     commFeed: (before) => call('/community/posts' + (before ? '?before=' + before : '')),
     commPost: (b) => post('/community/posts', b),
+    // 신고 — 관리자가 검토한다. 관리자는 신고 목록을 보고 아무 글이나 지우거나 넘긴다
+    commReport: (target_type, target_id, reason) => post('/community/report', { target_type, target_id, reason: reason || '' }),
+    commReports: () => call('/community/admin/reports'),
+    commAdminDelete: (type, id) => call(`/community/admin/${type}/${id}`, { method: 'DELETE' }),
+    commAdminDismiss: (type, id) => post(`/community/admin/${type}/${id}/dismiss`, {}),
     // 글마다 누구에게 보일지 고른다 — 'chosen' 은 고른 친구만
     commChosen: () => call('/community/share/chosen'),
     commChosenSet: (handles) => call('/community/share/chosen', {

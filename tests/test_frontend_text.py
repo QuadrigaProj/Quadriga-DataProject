@@ -3293,7 +3293,7 @@ def test_고른_종목은_표시가_붙고_영상이_없어도_그린다():
     html = _index()
     본문 = html.split("function paintRecommend()")[1].split("\n}")[0]
     assert "s.출처 === '종목'" in 본문 and "고른 종목</span>" in 본문
-    assert "${s.아이콘 ? s.아이콘 + ' ' : ''}" in 본문
+    assert "${s.아이콘 ? esc(s.아이콘) + ' ' : ''}" in 본문
     assert ".rec-step-tag{" in html
 
 
@@ -3869,3 +3869,24 @@ def test_커뮤니티_사진은_줄여서_세_장까지_보낸다():
     올리기 = html.split("async function submitPost()")[1].split("\n}")[0]
     assert "body.length > L.본문" in 올리기
     assert 'maxlength="1000"' in html and 'maxlength="500"' in html and 'maxlength="${commLimits().댓글}"' in html
+
+
+# ---------- 화면 보안 — AI 가 쓴 글자와 남이 쓴 글자는 전부 esc() 를 거친다 (2026-09-22 보안 점검) ----------
+
+def test_esc는_숫자와_따옴표도_다룬다():
+    """예전엔 (s||'').replace 라 숫자가 오면 멈췄다 — 기록 공유 글의 요약에 1 이 오면 피드 전체가 안 그려졌다.
+    작은따옴표도 바꾼다: onclick 안의 f('…') 처럼 따옴표 사이에 넣는 자리가 있다."""
+    html = _index()
+    정의 = html.split("function esc(s){")[1].split("\n")[0]
+    assert "String(s ?? '')" in 정의 and "&#39;" in 정의 and '&quot;' in 정의
+
+
+def test_루틴_카드는_AI_가_쓴_글자를_이스케이프한다():
+    """루틴명 · 한마디 · 이유 · 수행량 · 동작 이름은 AI 응답에서 온다. 서버가 재료 표와 대조하지만 문장은 그대로다."""
+    html = _index()
+    카드 = html.split('<div class="rec-card${recoBy')[1].split('<div class="reco-actions">')[0]
+    for 자리 in ("${esc(x.루틴명)}", "${esc(x.한마디)}", "`<li>${esc(y)}</li>`", "${esc(s.수행량 || '')}", "${esc(s.동작)}",
+               "${esc(s.단계)}", "${esc(x.표시목적 || x.목적)}", "${esc(recoCare.join(' · '))}"):
+        assert 자리 in 카드, 자리
+    for 맨것 in ("${x.루틴명}", "${x.한마디}", "`<li>${y}</li>`", "${s.수행량 || ''}", "${s.동작}"):
+        assert 맨것 not in 카드, 맨것

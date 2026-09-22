@@ -4342,7 +4342,10 @@ async function copyMyHandle(){
 }
 
 /* ---- 피드 ---- */
-function esc(s){ return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* HTML 에 끼워 넣기 전에 — 남이 쓴 글 · AI 가 쓴 글 · 서버가 준 이름은 전부 이걸 거친다.
+   숫자 · null 이 와도 죽지 않고(예전엔 (s||'').replace 라 숫자에서 멈췄다 — 기록 요약에 1 이 오면 피드 전체가 안 그려졌다),
+   작은따옴표도 바꾼다 — onclick 안의 f('…') 처럼 따옴표 사이에 넣는 자리가 있다. */
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function ago(sec){
   const d = Date.now()/1000 - sec;
   if (d < 60) return '방금';
@@ -9264,30 +9267,30 @@ function paintRecommend(){
       ${지은것 && x.시작 ? `<div class="rec-start">${startLine(x.시작)}</div>` : ''}
       <div class="rec-rank">${지은것 ? (state.aiRecoNext?.length ? '이전에 받은 루틴이에요 · ' : '') + 'AI 가 내 측정값 · 기록 · 일정을 읽고 지었어요' + (x.조정 ? ` · 이전 루틴보다 ${x.조정}` : '')
         : `${recoBack.length ? `${recoBack.length}번 옮겨봤어요 · ` : ''}후보 ${recoList.length}개 중에서`}</div>
-      <div class="rec-purpose">${x.표시목적 || x.목적}</div>
-      <div class="rec-title">${x.루틴명}<span class="rec-level ${lv}">${x.난이도 || ''}</span></div>
-      <div class="rec-meta">동작 ${x.동작수}개 · ${(x.예상시간분 || []).join('~')}분 · ${(x.체력요인 || []).slice(0, 3).join(' · ')}</div>
+      <div class="rec-purpose">${esc(x.표시목적 || x.목적)}</div>
+      <div class="rec-title">${esc(x.루틴명)}<span class="rec-level ${lv}">${esc(x.난이도 || '')}</span></div>
+      <div class="rec-meta">동작 ${esc(x.동작수)}개 · ${esc((x.예상시간분 || []).join('~'))}분 · ${esc((x.체력요인 || []).slice(0, 3).join(' · '))}</div>
       <div class="rec-steps">${(x.steps || []).map(s => `
         <div class="rec-step">
-          <div class="rec-step-phase">${s.단계}</div>
+          <div class="rec-step-phase">${esc(s.단계)}</div>
           <div class="rec-step-main">
-            <div class="rec-step-name">${s.아이콘 ? s.아이콘 + ' ' : ''}${s.동작}${s.출처 === '종목'
+            <div class="rec-step-name">${s.아이콘 ? esc(s.아이콘) + ' ' : ''}${esc(s.동작)}${s.출처 === '종목'
               ? ' <span class="rec-step-tag">고른 종목</span>' : ''}</div>
-            <div class="rec-step-sub">${(s.체력요인 || []).join(' · ')}${s.도구 && s.도구 !== '맨몸' ? ` · ${s.도구}` : ''}${(s.부담부위 || []).length ? ` · ${s.부담부위.join('·')} 주의` : ''}${s.왜 ? `<br/>${esc(s.왜)}` : ''}</div>
+            <div class="rec-step-sub">${esc((s.체력요인 || []).join(' · '))}${s.도구 && s.도구 !== '맨몸' ? ` · ${esc(s.도구)}` : ''}${(s.부담부위 || []).length ? ` · ${esc(s.부담부위.join('·'))} 주의` : ''}${s.왜 ? `<br/>${esc(s.왜)}` : ''}</div>
           </div>
-          <div class="rec-step-amt">${s.수행량 || ''}</div>
+          <div class="rec-step-amt">${esc(s.수행량 || '')}</div>
         </div>`).join('')}</div>
       <div class="rec-why">
         <div class="rec-why-head">왜 이걸 골랐나요</div>
-        <ul>${(x.이유 || []).map(y => `<li>${y}</li>`).join('')}</ul>
+        <ul>${(x.이유 || []).map(y => `<li>${esc(y)}</li>`).join('')}</ul>
       </div>
-      ${x.한마디 ? `<div class="rec-word">${x.한마디}</div>` : ''}
+      ${x.한마디 ? `<div class="rec-word">${esc(x.한마디)}</div>` : ''}
       ${지은것 && x.목적 && PURPOSE_TO_KO[state.purpose] && x.목적 !== PURPOSE_TO_KO[state.purpose]
         ? `<div class="rec-care">지금 운동 단계는 '${PURPOSE_TO_KO[state.purpose]}' 예요. 이 루틴은 '${esc(x.목적)}' 로 지었어요 — 새로 받으면 '${PURPOSE_TO_KO[state.purpose]}' 에 맞춰 지어요.</div>` : ''}
       ${(x.주의 || []).length ? `<div class="rec-care">${x.주의.map(esc).join('<br/>')}</div>` : ''}
       ${spareRecoHtml()}
       ${seasonHtml()}
-      ${recoCare.length ? `<div class="rec-care">고른 종목이 ${recoCare.join(' · ')}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
+      ${recoCare.length ? `<div class="rec-care">고른 종목이 ${esc(recoCare.join(' · '))}에 부담을 줄 수 있어요. 아프면 쉬어가세요.</div>` : ''}
       <div class="rec-by">${recoBy === 'ai' ? (aiDemo() || aiInfo?.관리자 ? 'AI 가 지었어요' : `AI 가 지었어요 · 이용권 ${won(AI_PRICE)} 사용`) : '측정값과 고른 것들로 골랐어요'}</div>
       <div class="reco-actions">
         <button type="button" class="reco-btn" onclick="backRecommend()" ${hasBackReco() ? '' : 'disabled'}>이전 루틴</button>

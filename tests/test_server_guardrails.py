@@ -195,3 +195,13 @@ def test_끊긴_뒤에_읽힌_시간표_사진도_횟수를_세지_않는다(이
     r = c.post("/schedule/photo", json={"사진": "data:image/png;base64,AAAA"})
     assert r.status_code == 200 and r.json()["잔액"] == 1000 - m.DETAIL_PRICE
     assert billing.ai_uses_since(uid, "시간표사진", 0) == 1
+
+
+def test_응답에_보안_헤더가_붙는다():
+    """다른 사이트의 iframe 에 끼워 넣기(클릭 가로채기) · 파일 형식 추측 · 참조 주소 흘리기를 브라우저가 막게 한다."""
+    r = client.get("/health")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert "geolocation=(self)" in r.headers["permissions-policy"]      # 날씨에 위치를 쓴다
+    assert "camera=()" in r.headers["permissions-policy"]

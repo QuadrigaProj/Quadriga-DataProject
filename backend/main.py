@@ -217,6 +217,20 @@ async def 화면은_늘_다시_확인(request: Request, call_next):
 # index.html 이 380KB 라 켜고 끄고가 눈에 띄게 다르다.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
+
+@app.middleware("http")
+async def 보안_헤더(request: Request, call_next):
+    """브라우저가 지켜 주는 것들 — 다른 사이트의 iframe 에 끼워 넣기(클릭 가로채기) · 파일 형식 추측 · 참조 주소 흘리기를 막는다.
+
+    CSP 는 넣지 않는다 — 화면이 인라인 스크립트와 CDN(three.js 등)을 써서 지금은 목록을 만들 수 없다. 2차 점검에서.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), payment=()")
+    return response
+
 # 개발 중에는 프론트 로컬 서버를 허용한다. 배포 시 도메인으로 좁힐 것.
 app.add_middleware(
     CORSMiddleware,

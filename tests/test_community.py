@@ -1412,3 +1412,36 @@ def test_하루_사진_용량에도_상한이_있다(monkeypatch):
     r = a.post("/community/posts", json={"media": [_사진(1000)]})
     assert r.status_code == 429 and "용량" in r.json()["detail"]
     assert a.post("/community/posts", json={"body": "글만은 된다"}).status_code == 200
+
+def test_못_보는_글에는_댓글도_반응도_못_단다():
+    """'고른 친구' 에게만 보이는 글은 글 번호를 알아도 남이 댓글 · 이모지를 못 단다 — 없는 글과 똑같이 404 (2차 점검 A-4)."""
+    from backend import billing
+    billing.init_db()
+    a, b, c = _login(None, "va@x.com", "가"), _login(None, "vb@x.com", "나"), _login(None, "vc@x.com", "다")
+    hb = b.get("/community/me/handle").json()["아이디"]
+    _친구(a, b)
+    pid = a.post("/community/posts", json={"body": "b 만", "audience": "chosen", "to": [hb]}).json()["id"]
+    assert b.post(f"/community/posts/{pid}/comments", json={"body": "보여요"}).status_code == 200
+    assert c.post(f"/community/posts/{pid}/comments", json={"body": "안 보이는데"}).status_code == 404
+    assert c.post("/community/reactions", json={"target_type": "post", "target_id": pid, "emoji": "👍"}).status_code == 404
+    cid = a.get(f"/community/posts/{pid}").json()["댓글"][0]["id"]
+    assert c.post("/community/reactions", json={"target_type": "comment", "target_id": cid, "emoji": "👍"}).status_code == 404
+    assert b.post("/community/reactions", json={"target_type": "comment", "target_id": cid, "emoji": "👍"}).status_code == 200
+
+
+def test_모임_비밀번호는_다섯_번_틀리면_잠긴다():
+    """숫자 비밀번호는 자동으로 다 넣어 볼 수 있다 — 로그인과 같은 잠금 (2차 점검 A-5)."""
+    from backend import billing
+    billing.init_db()
+    a, b = _login(None, "ra@x.com", "가"), _login(None, "rb@x.com", "나")
+    rid = a.post("/community/rooms", json={"name": "비공개", "is_private": True, "password": "1234"}).json()["id"]
+    for i in range(4):
+        r = b.post(f"/community/rooms/{rid}/join", json={"password": f"000{i}"})
+        assert r.status_code == 403, i
+    assert "1번 더 틀리면" in r.json()["detail"]
+    r = b.post(f"/community/rooms/{rid}/join", json={"password": "0004"})
+    assert r.status_code == 429
+    r = b.post(f"/community/rooms/{rid}/join", json={"password": "1234"})        # 맞아도 잠긴 동안은 안 된다
+    assert r.status_code == 429
+    auth.guard_clear(f"room:{rid}:2")
+    assert b.post(f"/community/rooms/{rid}/join", json={"password": "1234"}).status_code == 200

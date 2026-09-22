@@ -644,11 +644,17 @@ def add_comment(user_id: int, post_id: int, body: str) -> int:
     if not body:
         raise HTTPException(400, "댓글 내용을 입력해 주세요.")
     with auth.db() as con:
-        if not con.execute("SELECT 1 FROM community_posts WHERE id=?", (post_id,)).fetchone():
-            raise HTTPException(404, "글을 찾을 수 없어요.")
+        _visible_or_404(con, user_id, post_id)            # 못 보는 글에는 못 단다 — 있다는 사실도 정보다
         return con.insert_id(
             "INSERT INTO community_comments (post_id, user_id, body, created_at) VALUES (?,?,?,?)",
             (post_id, user_id, body, int(time.time())))
+
+
+def _visible_or_404(con, me: int, post_id: int) -> None:
+    """그 글이 나에게 보이는 글인지. 아니면 없는 글과 똑같이 404."""
+    볼조건, 볼값 = _visible_sql(me)
+    if not con.execute("SELECT 1 FROM community_posts p WHERE p.id=? AND" + 볼조건, (post_id, *볼값)).fetchone():
+        raise HTTPException(404, "글을 찾을 수 없어요.")
 
 
 def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) -> dict:
@@ -665,6 +671,13 @@ def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) 
                 raise HTTPException(404, "메시지를 찾을 수 없어요.")
             if not _is_member(con, m["room_id"], user_id):
                 raise HTTPException(403, "먼저 모임에 참여해 주세요.")
+        elif target_type == "post":
+            _visible_or_404(con, user_id, target_id)      # 못 보는 글에는 못 단다
+        else:
+            c = con.execute("SELECT post_id FROM community_comments WHERE id=?", (target_id,)).fetchone()
+            if not c:
+                raise HTTPException(404, "댓글을 찾을 수 없어요.")
+            _visible_or_404(con, user_id, c["post_id"])
         hit = con.execute(
             "SELECT 1 FROM community_reactions WHERE target_type=? AND target_id=? AND user_id=? AND emoji=?",
             (target_type, target_id, user_id, emoji)).fetchone()
@@ -973,13 +986,22 @@ def join_room(user_id: int, room_id: int, password: str | None = None) -> None:
         if room["room_type"] == "direct":
             raise HTTPException(403, "개인 채팅방에는 초대된 사람만 참여할 수 있어요.")
         if room["is_private"]:
+            # 숫자 비밀번호는 자동으로 다 넣어 볼 수 있다 — 로그인과 같은 잠금(5번 틀리면 15분). 방 하나 · 사람 하나 기준.
+            잠금키 = f"room:{room_id}:{user_id}"
+            남은초 = auth.guard_locked(잠금키)
+            if 남은초:
+                raise HTTPException(429, f"비밀번호를 여러 번 틀려 잠시 잠겼어요. {max(1, -(-남은초 // 60))}분 뒤에 다시 해 주세요.")
             try:
                 valid = auth.verify_password(password or "", bytes.fromhex(room["password_salt"]),
                                              bytes.fromhex(room["password_hash"]))
             except (TypeError, ValueError):
                 valid = False
             if not valid:
-                raise HTTPException(403, "비공개 방 비밀번호가 맞지 않아요.")
+                남은횟수 = auth.guard_hit(잠금키, auth.LOGIN_MAX_FAILURES)
+                raise HTTPException(429 if 남은횟수 == 0 else 403,
+                                    "비밀번호를 여러 번 틀려 15분 동안 잠겼어요." if 남은횟수 == 0
+                                    else "비공개 방 비밀번호가 맞지 않아요." + (f" ({남은횟수}번 더 틀리면 15분 잠겨요)" if 남은횟수 <= 2 else ""))
+            auth.guard_clear(잠금키)
         con.execute("INSERT INTO chat_members (room_id, user_id, joined_at) VALUES (?,?,?)",
                     (room_id, user_id, int(time.time())))
 

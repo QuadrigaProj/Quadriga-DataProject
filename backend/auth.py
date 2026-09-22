@@ -197,6 +197,11 @@ class Cur:
         self._raw.execute(sql.replace("?", "%s") if self._pg else sql, params)
         return self
 
+    @property
+    def rowcount(self) -> int:
+        """마지막 문장이 바꾼(넣은 · 고친 · 지운) 줄 수 — 조건 걸린 갱신이 실제로 통했는지 볼 때."""
+        return int(self._raw.rowcount)
+
     def fetchone(self):
         return self._raw.fetchone()
 

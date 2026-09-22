@@ -154,13 +154,18 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=len(USERS))
     ap.add_argument("--out", default=str(ROOT / "data" / "processed" / "ai_eval"))
     args = ap.parse_args()
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        print("ANTHROPIC_API_KEY 가 없어요. 로컬 .env 에 넣고 다시 돌려 주세요 (키는 저장소에 올리지 않는다).")
-        return 2
-    try:
-        from dotenv import load_dotenv  # noqa: F401
+    try:                                                    # 저장소 루트의 .env 를 읽는다 — 서버(uvicorn)와 같은 자리
+        from dotenv import load_dotenv
+        try:
+            load_dotenv(ROOT / ".env")
+        except UnicodeDecodeError:                          # 메모장이 CP949 로 저장한 .env
+            load_dotenv(ROOT / ".env", encoding="cp949")
     except ImportError:
         pass
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("ANTHROPIC_API_KEY 가 없어요. 저장소 루트의 .env 에 ANTHROPIC_API_KEY=sk-ant-... 한 줄을 넣고 다시 돌려 주세요"
+              " (Render → Environment 의 값을 복사. .env 는 .gitignore 에 있어 저장소에 올라가지 않는다).")
+        return 2
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M")

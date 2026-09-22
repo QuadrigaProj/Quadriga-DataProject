@@ -90,12 +90,14 @@ def init_db() -> None:
     with auth.db() as con:
         for stmt in filter(str.strip, schema.split(";")):
             con.execute(stmt)
-    # 예전에 만든 표에는 product 칸이 없다 — 있으면 그대로, 없으면 붙인다
+    # 예전에 만든 표에는 product 칸이 없다 — 없을 때만 붙인다 (Postgres 는 실패한 문장이 트랜잭션을 통째로 깨서 try 로 못 가린다)
     with auth.db() as con:
-        try:
-            con.execute("ALTER TABLE pay_orders ADD COLUMN product TEXT")
-        except Exception:                 # 이미 있다 (sqlite · postgres 둘 다 '중복 칸' 오류를 낸다)
-            pass
+        if auth.is_postgres():
+            con.execute("ALTER TABLE pay_orders ADD COLUMN IF NOT EXISTS product TEXT")
+        else:
+            있는것 = {row["name"] for row in con.execute("PRAGMA table_info(pay_orders)").fetchall()}
+            if "product" not in 있는것:
+                con.execute("ALTER TABLE pay_orders ADD COLUMN product TEXT")
 
 
 # ---------------- 잔액 ----------------

@@ -1324,3 +1324,78 @@ def test_들어가기_전_글은_안_읽은_것으로_잡힌다():
     가.post(f"/community/rooms/{rid}/messages", json={"body": "먼저 온 글"})
     나.post(f"/community/rooms/{rid}/join")
     assert _room(나, rid)["안읽음"] == 1
+
+
+# ---------- 쓰기 제한 — 등급별 (2026-09-22 예현: 사진 최대 3장, 크기·본문 길이는 적정선에서) ----------
+
+def _사진(길이: int = 1000) -> dict:
+    return {"url": "data:image/jpeg;base64," + "A" * 길이, "name": "a.jpg"}
+
+
+def test_무료_등급의_쓰기_제한():
+    """사진은 배포 DB(1GB)에 base64 로 들어가서 개수·크기를 꽉 잡는다. 넘으면 잘라 넣지 않고 거절한다 — 조용히 잘리면 쓴 사람이 모른다."""
+    from backend import billing
+    billing.init_db()
+    a = _login(None, "lim@x.com", "가")
+    제한 = a.get("/community/meta").json()
+    assert 제한["등급"] == "무료" and 제한["제한"]["사진"] == 3 and 제한["제한"]["본문"] == 1000 and 제한["제한"]["오늘남은글"] == 5
+    # 사진 3장까지 — 4장은 거절
+    assert a.post("/community/posts", json={"body": "셋", "media": [_사진()] * 3}).status_code == 200
+    r = a.post("/community/posts", json={"body": "넷", "media": [_사진()] * 4})
+    assert r.status_code == 400 and "최대 3개" in r.json()["detail"] and "구독하면" in r.json()["detail"]
+    # 한 장 1MB(base64 1,400,000자) — 그보다 크면 거절, 동영상은 3MB
+    assert a.post("/community/posts", json={"body": "큰 사진", "media": [_사진(1_400_001)]}).status_code == 400
+    assert a.post("/community/posts", json={"media": [{"url": "data:video/mp4;base64," + "A" * 4_200_001}]}).status_code == 400
+    assert a.post("/community/posts", json={"media": [{"url": "data:video/mp4;base64," + "A" * 4_000_000}]}).status_code == 200
+    # 본문 1,000자 — 1,001자는 거절 (요청 모델은 구독 상한 3,000자까지 받아 준 뒤 등급으로 가른다)
+    r = a.post("/community/posts", json={"body": "가" * 1001})
+    assert r.status_code == 400 and "1,000자까지" in r.json()["detail"]
+    assert a.post("/community/posts", json={"body": "가" * 1000}).status_code == 200
+    assert a.post("/community/posts", json={"body": "가" * 3001}).status_code == 422
+    # 댓글 300자 · 채팅 500자
+    pid = a.get("/community/posts").json()["posts"][0]["id"]
+    assert a.post(f"/community/posts/{pid}/comments", json={"body": "가" * 300}).status_code == 200
+    assert a.post(f"/community/posts/{pid}/comments", json={"body": "가" * 301}).status_code == 422
+    rid = _방(a)
+    assert a.post(f"/community/rooms/{rid}/messages", json={"body": "가" * 500}).status_code == 200
+    assert a.post(f"/community/rooms/{rid}/messages", json={"body": "가" * 501}).status_code == 422
+
+
+def test_글은_하루_다섯_개까지():
+    from backend import billing
+    billing.init_db()
+    a = _login(None, "day@x.com", "가")
+    for i in range(5):
+        assert a.post("/community/posts", json={"body": f"글 {i}"}).status_code == 200, i
+    r = a.post("/community/posts", json={"body": "여섯"})
+    assert r.status_code == 429 and "하루 5개" in r.json()["detail"] and "구독하면 하루 30개" in r.json()["detail"]
+    assert a.get("/community/meta").json()["제한"]["오늘남은글"] == 0
+    # 오늘 0시(한국 시간) 이후만 센다 — 내일이 되면 오늘 글은 셈에 들지 않는다
+    assert community.posts_today(1, now=community._day_start() + 86400 + 10) == 0
+    assert community._day_start(community._day_start() + 3600) == community._day_start()   # 같은 날 안에서는 0시가 같다
+
+
+def test_구독하면_제한이_풀린다():
+    """한 달 구독(ai_addons 의 '구독')이 살아 있으면 글 하루 30개 · 사진 6장 · 본문 3,000자. 댓글·채팅은 그대로."""
+    from backend import billing
+    billing.init_db()
+    a = _login(None, "sub@x.com", "가")
+    uid = auth.user_for_token(a.cookies.get("quadriga_session"))["id"]
+    billing.add_addon(uid, "구독", 30, memo="테스트")
+    제한 = a.get("/community/meta").json()
+    assert 제한["등급"] == "구독" and 제한["제한"] == {**community.LIMITS["구독"], "오늘남은글": 30}
+    assert a.post("/community/posts", json={"body": "가" * 3000, "media": [_사진()] * 6}).status_code == 200
+    assert a.post("/community/posts", json={"media": [_사진()] * 7}).status_code == 400
+    for i in range(29):
+        assert a.post("/community/posts", json={"body": f"글 {i}"}).status_code == 200, i
+    assert a.post("/community/posts", json={"body": "서른하나"}).status_code == 429
+    assert community.tier_for(uid + 1) == "무료"                      # 다른 사람은 그대로
+
+
+def test_고칠_때도_같은_제한():
+    from backend import billing
+    billing.init_db()
+    a = _login(None, "edit@x.com", "가")
+    pid = a.post("/community/posts", json={"body": "처음"}).json()["id"]
+    assert a.put(f"/community/posts/{pid}", json={"body": "가" * 1001}).status_code == 400
+    assert a.put(f"/community/posts/{pid}", json={"body": "가" * 1000}).status_code == 200

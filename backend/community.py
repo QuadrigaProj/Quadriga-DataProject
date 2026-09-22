@@ -4,11 +4,13 @@
 (SQLite 로컬 / Postgres 배포)을 그대로 쓴다.
 
 사진·동영상은 data URL(base64)로 본문과 함께 저장한다. 용량이 커서 프로덕션은
-객체 스토리지(S3 등)로 옮겨야 한다 — MEDIA_MAX_BYTES 로 크기를 제한한다.
+객체 스토리지(S3 등)로 옮겨야 한다 — 그래서 크기와 개수를 꽉 잡는다(LIMITS). 배포 DB(Render 무료 Postgres)는
+1GB 라, 사진 한 장 1MB 면 글 300개 남짓에 찬다.
 채팅은 폴링 방식이다(GET .../messages?after=). 실시간이 필요하면 WebSocket 으로 바꾼다.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import re
 import secrets
@@ -18,14 +20,43 @@ from fastapi import APIRouter, Cookie, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from backend import auth
+    from backend import auth, billing
 except ImportError:
     import auth
+    import billing
 
-# data URL 한 개의 최대 크기 (base64 인코딩 후 문자열 길이 기준)
-MEDIA_MAX_BYTES = 8 * 1024 * 1024
-MEDIA_MAX_COUNT = 4
+# 쓰기 제한 — 등급마다 다르다 (2026-09-22 예현 결정: 사진 최대 3장, 크기·본문 길이는 적정선에서).
+#   무료  글 하루 5개 · 사진 3장(한 장 1MB, 화면이 긴 변 1600px 로 줄여 보낸다) · 동영상 3MB · 본문 1,000자
+#   구독  한 달 구독(ai_addons 의 '구독')이 살아 있으면 — 글 하루 30개 · 사진 6장 · 본문 3,000자
+# 댓글 300자 · 채팅 500자는 등급과 상관없다 — 긴 글이 아니라 대화다.
+# 바이트는 data URL(base64) 문자열 길이 — 원본의 4/3.
+LIMITS = {
+    "무료": {"글하루": 5, "사진": 3, "사진바이트": 1_400_000, "동영상바이트": 4_200_000, "본문": 1000, "댓글": 300, "채팅": 500},
+    "구독": {"글하루": 30, "사진": 6, "사진바이트": 1_400_000, "동영상바이트": 4_200_000, "본문": 3000, "댓글": 300, "채팅": 500},
+}
+# 예전 이름 — /meta 와 화면이 쓴다. 무료 등급 값이다.
+MEDIA_MAX_BYTES = LIMITS["무료"]["동영상바이트"]
+MEDIA_MAX_COUNT = LIMITS["무료"]["사진"]
+KST = _dt.timezone(_dt.timedelta(hours=9))
 ALLOWED_EMOJI = ["👍", "🔥", "💪", "👏", "🥲", "🎉"]
+
+
+def tier_for(user_id: int) -> str:
+    """'구독' 이 살아 있으면 구독, 아니면 무료."""
+    try:
+        return "구독" if billing.active_addon(user_id, "구독") else "무료"
+    except Exception:                 # billing 표가 아직 없는 환경(초기화 전) — 무료로 본다
+        return "무료"
+
+
+def limits_for(user_id: int) -> dict:
+    return dict(LIMITS[tier_for(user_id)])
+
+
+def _day_start(now: float | None = None) -> int:
+    """오늘(한국 시간) 0시의 epoch — 하루 글 수를 셀 때."""
+    t = _dt.datetime.fromtimestamp(now if now is not None else time.time(), KST)
+    return int(t.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
 
 SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS community_posts (
@@ -350,22 +381,41 @@ def friends(me: int) -> dict:
         }
 
 
-def _clean_media(media) -> str:
-    """[{type, url, name}] 검증 → JSON 문자열."""
+def _clean_media(media, 제한: dict | None = None) -> str:
+    """[{type, url, name}] 검증 → JSON 문자열. 개수와 크기는 등급의 제한(LIMITS)대로."""
+    제한 = 제한 or LIMITS["무료"]
     if not media:
         return "[]"
-    if not isinstance(media, list) or len(media) > MEDIA_MAX_COUNT:
-        raise HTTPException(400, f"사진·동영상은 최대 {MEDIA_MAX_COUNT}개까지예요.")
+    if not isinstance(media, list) or len(media) > 제한["사진"]:
+        raise HTTPException(400, f"사진·동영상은 최대 {제한['사진']}개까지예요."
+                                 + ("" if 제한 is LIMITS["구독"] or 제한["사진"] >= LIMITS["구독"]["사진"] else
+                                    f" 구독하면 {LIMITS['구독']['사진']}개까지 올릴 수 있어요."))
     out = []
     for m in media:
         url = (m or {}).get("url", "")
         if not DATA_URL.match(url):
             raise HTTPException(400, "사진·동영상 형식을 확인해 주세요.")
-        if len(url) > MEDIA_MAX_BYTES:
-            raise HTTPException(400, "파일이 너무 커요. 더 작은 파일로 올려주세요.")
-        out.append({"type": "video" if url.startswith("data:video") else "image",
+        동영상 = url.startswith("data:video")
+        if len(url) > (제한["동영상바이트"] if 동영상 else 제한["사진바이트"]):
+            raise HTTPException(400, "동영상은 3MB 아래로 올려주세요." if 동영상
+                                     else "사진이 너무 커요. 앱이 줄여 보내는 크기(1MB)를 넘었어요.")
+        out.append({"type": "video" if 동영상 else "image",
                     "url": url, "name": str(m.get("name", ""))[:120]})
     return json.dumps(out, ensure_ascii=False)
+
+
+def _check_text(body: str, 상한: int, 이름: str) -> str:
+    """길이를 넘으면 잘라 넣지 않고 거절한다 — 조용히 잘리면 쓴 사람이 모른다."""
+    if len(body) > 상한:
+        raise HTTPException(400, f"{이름}은 {상한:,}자까지예요. 지금 {len(body):,}자예요.")
+    return body
+
+
+def posts_today(user_id: int, now: float | None = None) -> int:
+    with auth.db() as con:
+        r = con.execute("SELECT COUNT(*) AS n FROM community_posts WHERE user_id=? AND created_at>=?",
+                        (user_id, _day_start(now))).fetchone()
+    return int(r["n"] or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -433,9 +483,14 @@ def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
                 record: dict | None = None, audience: str = "all",
                 to: list[str] | None = None, record_date: str | None = None) -> int:
     body = (body or "").strip()
-    media_json = _clean_media(media)
+    제한 = limits_for(user_id)
+    _check_text(body, 제한["본문"], "본문")
+    media_json = _clean_media(media, 제한)
     if not body and media_json == "[]" and not record:
         raise HTTPException(400, "내용이나 사진을 하나는 넣어주세요.")
+    if posts_today(user_id) >= 제한["글하루"]:
+        raise HTTPException(429, f"글은 하루 {제한['글하루']}개까지예요. 내일 다시 올릴 수 있어요."
+                                 + (f" 구독하면 하루 {LIMITS['구독']['글하루']}개까지 올릴 수 있어요." if 제한["글하루"] < LIMITS["구독"]["글하루"] else ""))
     # 공유하는 기록에는 항목별 지표와 그날 운동까지 담긴다. 그래도 한 줄에
     # 들어갈 크기다 — 그보다 크면 화면에 쓰라고 보낸 것이 아니다.
     if record is not None and len(json.dumps(record, ensure_ascii=False)) > 4000:
@@ -448,7 +503,7 @@ def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
             "INSERT INTO community_posts"
             " (user_id, kind, body, media, record, created_at, audience, record_date)"
             " VALUES (?,?,?,?,?,?,?,?)",
-            (user_id, kind, body[:4000], media_json,
+            (user_id, kind, body, media_json,
              json.dumps(record, ensure_ascii=False) if record else None,
              int(time.time()), audience, record_date))
         for u in 볼사람:
@@ -572,7 +627,7 @@ def get_post(me: int, post_id: int) -> dict:
 
 
 def add_comment(user_id: int, post_id: int, body: str) -> int:
-    body = (body or "").strip()
+    body = _check_text((body or "").strip(), LIMITS["무료"]["댓글"], "댓글")
     if not body:
         raise HTTPException(400, "댓글 내용을 입력해 주세요.")
     with auth.db() as con:
@@ -580,7 +635,7 @@ def add_comment(user_id: int, post_id: int, body: str) -> int:
             raise HTTPException(404, "글을 찾을 수 없어요.")
         return con.insert_id(
             "INSERT INTO community_comments (post_id, user_id, body, created_at) VALUES (?,?,?,?)",
-            (post_id, user_id, body[:2000], int(time.time())))
+            (post_id, user_id, body, int(time.time())))
 
 
 def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) -> dict:
@@ -652,10 +707,11 @@ def delete_post(user_id: int, post_id: int) -> None:
 
 def edit_post(user_id: int, post_id: int, body: str) -> None:
     """본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
+    _check_text(body, limits_for(user_id)["본문"], "본문")
     with auth.db() as con:
         _mine_or_403(con, "community_posts", post_id, user_id, "글")
         con.execute("UPDATE community_posts SET body=?, edited_at=? WHERE id=?",
-                    (_edited(body, 4000), int(time.time()), post_id))
+                    (_edited(body, LIMITS["구독"]["본문"]), int(time.time()), post_id))
 
 
 def delete_comment(user_id: int, comment_id: int) -> None:
@@ -666,10 +722,11 @@ def delete_comment(user_id: int, comment_id: int) -> None:
 
 
 def edit_comment(user_id: int, comment_id: int, body: str) -> None:
+    _check_text(body, LIMITS["무료"]["댓글"], "댓글")
     with auth.db() as con:
         _mine_or_403(con, "community_comments", comment_id, user_id, "댓글")
         con.execute("UPDATE community_comments SET body=?, edited_at=? WHERE id=?",
-                    (_edited(body, 2000), int(time.time()), comment_id))
+                    (_edited(body, LIMITS["무료"]["댓글"]), int(time.time()), comment_id))
 
 
 def delete_message(user_id: int, message_id: int) -> int:
@@ -683,10 +740,11 @@ def delete_message(user_id: int, message_id: int) -> int:
 
 
 def edit_message(user_id: int, message_id: int, body: str) -> int:
+    _check_text(body, LIMITS["무료"]["채팅"], "메시지")
     with auth.db() as con:
         r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
         con.execute("UPDATE chat_messages SET body=?, edited_at=? WHERE id=?",
-                    (_edited(body, 2000), int(time.time()), message_id))
+                    (_edited(body, LIMITS["무료"]["채팅"]), int(time.time()), message_id))
         return r["room_id"]
 
 
@@ -1165,7 +1223,7 @@ def _reply_targets(con, ids: list) -> dict[int, dict]:
 
 def send_message(user_id: int, room_id: int, body: str,
                  reply_to: int | None = None) -> int:
-    body = (body or "").strip()
+    body = _check_text((body or "").strip(), LIMITS["무료"]["채팅"], "메시지")
     if not body:
         raise HTTPException(400, "메시지를 입력해 주세요.")
     with auth.db() as con:
@@ -1180,7 +1238,7 @@ def send_message(user_id: int, room_id: int, body: str,
         return con.insert_id(
             "INSERT INTO chat_messages (room_id, user_id, body, created_at, reply_to)"
             " VALUES (?,?,?,?,?)",
-            (room_id, user_id, body[:2000], int(time.time()), reply_to))
+            (room_id, user_id, body, int(time.time()), reply_to))
 
 
 # ---------------------------------------------------------------------------
@@ -1198,7 +1256,7 @@ def _uid(token: str | None) -> int:
 
 
 class PostIn(BaseModel):
-    body: str = Field("", max_length=4000)
+    body: str = Field("", max_length=LIMITS["구독"]["본문"])
     media: list[dict] = Field(default_factory=list)
     kind: str = Field("post", pattern="^(post|record)$")
     record: dict | None = None
@@ -1216,11 +1274,11 @@ class ChosenIn(BaseModel):
 
 class PostEditIn(BaseModel):
     """글은 본문만 고친다. 사진과 공유한 기록은 그대로 둔다."""
-    body: str = Field(..., max_length=4000)
+    body: str = Field(..., max_length=LIMITS["구독"]["본문"])
 
 
 class CommentIn(BaseModel):
-    body: str = Field(..., max_length=2000)
+    body: str = Field(..., max_length=LIMITS["무료"]["댓글"])
 
 
 class ReactionIn(BaseModel):
@@ -1250,15 +1308,21 @@ class RoomPasswordIn(BaseModel):
 
 
 class MessageIn(BaseModel):
-    body: str = Field(..., max_length=2000)
+    body: str = Field(..., max_length=LIMITS["무료"]["채팅"])
     # 답장이면 원글 id. 답장도 그냥 메시지라, 자리는 시간순 그대로다.
     reply_to: int | None = None
 
 
 @router.get("/meta")
-def meta() -> dict:
-    return {"이모지": ALLOWED_EMOJI, "미디어최대개수": MEDIA_MAX_COUNT,
-            "미디어최대바이트": MEDIA_MAX_BYTES}
+def meta(quadriga_session: str | None = Cookie(None)) -> dict:
+    """화면이 그릴 것 — 이모지와 이 사람의 쓰기 제한(등급). 로그인 전에는 무료 등급 값."""
+    user = auth.user_for_token(quadriga_session)
+    등급 = tier_for(user["id"]) if user else "무료"
+    제한 = dict(LIMITS[등급])
+    if user:
+        제한["오늘남은글"] = max(0, 제한["글하루"] - posts_today(user["id"]))
+    return {"이모지": ALLOWED_EMOJI, "미디어최대개수": 제한["사진"],
+            "미디어최대바이트": 제한["동영상바이트"], "등급": 등급, "제한": 제한}
 
 
 @router.get("/posts")

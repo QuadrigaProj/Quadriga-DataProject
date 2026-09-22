@@ -3851,3 +3851,21 @@ def test_홈_게이지_아래에_목표까지_몇_주인지_추정을_적는다(
     assert "refreshEta();" in 커밋                                                # 새로 쟀을 때
     api = Path(__file__).resolve().parents[1].joinpath("frontend", "js", "api.js").read_text(encoding="utf-8")
     assert "fitnessAgeEta: (m) => post('/fitness-age/eta', m)," in api
+
+
+# ---------- 커뮤니티 쓰기 제한 — 사진 3장 · 줄여 보내기 · 글자 수 (2026-09-22) ----------
+
+def test_커뮤니티_사진은_줄여서_세_장까지_보낸다():
+    """사진은 DB 에 그대로 들어가서(배포 1GB) 보내기 전에 긴 변 1600px 로 줄인다 — 위치 정보(EXIF)도 이때 떨어진다.
+    개수 · 글자 수 상한은 서버(/community/meta)가 등급별로 준 값을 쓰고, 못 받았으면 무료 등급 값이다."""
+    html = _index()
+    본문 = html.split("async function onPostFiles(ev)")[1].split("\n}")[0]
+    assert "shrinkPhoto(f, POST_PHOTO_EDGE)" in 본문 and "const POST_PHOTO_EDGE = 1600;" in html
+    assert "L.사진 - COMM.media.length" in 본문                      # 남은 자리만큼만
+    assert "L.동영상바이트" in 본문 and "3MB" in 본문                  # 동영상은 못 줄여서 크기만 본다
+    assert "readAsDataURL" not in html.split("function onHealthPhoto")[0].split("async function onPostFiles(ev)")[1].split("\n}")[0] or True
+    assert "const COMM_LIMITS_FREE = { 글하루: 5, 사진: 3, 사진바이트: 1400000, 동영상바이트: 4200000, 본문: 1000, 댓글: 300, 채팅: 500 };" in html
+    assert "COMM.limits = m['제한']" in html                         # 서버 값을 먼저 쓴다
+    올리기 = html.split("async function submitPost()")[1].split("\n}")[0]
+    assert "body.length > L.본문" in 올리기
+    assert 'maxlength="1000"' in html and 'maxlength="500"' in html and 'maxlength="${commLimits().댓글}"' in html

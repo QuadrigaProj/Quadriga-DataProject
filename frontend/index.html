@@ -2509,7 +2509,7 @@
           <label class="comm-attach-icon" aria-label="사진·영상 첨부" title="사진·영상">📷
             <input type="file" id="postFile" accept="image/*,video/*" multiple hidden onchange="onPostFiles(event)" />
           </label>
-          <input id="postBody" type="text" placeholder="오늘 운동은 어땠나요?"
+          <input id="postBody" type="text" placeholder="오늘 운동은 어땠나요? (1,000자까지)" maxlength="1000"
                  onkeydown="if(event.key==='Enter')submitPost()" />
           <button class="post-send" type="button" onclick="submitPost()" aria-label="게시" title="게시">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.3 21 23 12 2.3 3v7l14.9 2-14.9 2z"/></svg>
@@ -2566,7 +2566,7 @@
           <div id="chatMsgs" class="chat-msgs"></div>
           <div id="replyStrip" class="reply-strip" hidden></div>
           <div class="chat-compose-row">
-            <input id="chatInput" type="text" placeholder="메시지 입력"
+            <input id="chatInput" type="text" placeholder="메시지 입력" maxlength="500"
                    onkeydown="if(event.key==='Enter')sendChat()" />
             <button type="button" class="post-send" onclick="sendChat()"
                     aria-label="보내기" title="보내기">
@@ -4232,14 +4232,18 @@ function goTo(id){
    --------------------------------------------------------------------------- */
 const COMM = { tab: 'feed', emojis: ['👍','🔥','💪','👏','🥲','🎉'],
                media: [], oldest: null, room: null, poll: null,
-               roomFilter: 'all' };
+               roomFilter: 'all',
+               limits: null, tier: '무료' };          // 쓰기 제한 — 서버 /community/meta 가 준다 (등급별)
 
 function initCommunity(){
   const ok = !!state.account;
   $('commGate').hidden = ok;
   $('commTab').style.display = ok ? '' : 'none';
   if (!ok) { $('commFeed').hidden = true; $('commChat').hidden = true; return; }
-  API.commMeta().then(m => { if (m && m['이모지']) COMM.emojis = m['이모지']; }).catch(()=>{});
+  API.commMeta().then(m => {
+    if (m && m['이모지']) COMM.emojis = m['이모지'];
+    if (m && m['제한']) { COMM.limits = m['제한']; COMM.tier = m['등급'] || '무료'; paintCommLimits(); }
+  }).catch(()=>{});
   commTab(COMM.tab);
 }
 
@@ -4584,7 +4588,7 @@ async function toggleComments(id){
           </div>` : ''}
       </div>`).join('') + `
       <div class="comment-row">
-        <input type="text" id="ci-${id}" placeholder="댓글 달기" onkeydown="if(event.key==='Enter')sendComment(${id})" />
+        <input type="text" id="ci-${id}" placeholder="댓글 달기 (${commLimits().댓글}자까지)" maxlength="${commLimits().댓글}" onkeydown="if(event.key==='Enter')sendComment(${id})" />
         <button type="button" class="post-send sm" onclick="sendComment(${id})"
                 aria-label="댓글 등록" title="등록">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.3 21 23 12 2.3 3v7l14.9 2-14.9 2z"/></svg>
@@ -4613,27 +4617,53 @@ async function removePost(id){
   catch (e) { showToast(e.message); }
 }
 
-/* ---- 글 작성 ---- */
-function onPostFiles(ev){
+/* ---- 글 작성 ----
+   쓰기 제한(COMM.limits — 서버 /community/meta)은 등급마다 다르다: 무료는 사진 3장 · 본문 1,000자 · 글 하루 5개,
+   구독은 6장 · 3,000자 · 30개. 사진은 DB 에 그대로 들어가서 보내기 전에 긴 변 1600px JPEG 로 줄인다 —
+   한 장 1MB 아래가 되고, 캔버스로 다시 그리면서 위치 정보(EXIF)도 떨어져 나간다. 동영상은 줄일 수 없어 3MB 까지만. */
+const COMM_LIMITS_FREE = { 글하루: 5, 사진: 3, 사진바이트: 1400000, 동영상바이트: 4200000, 본문: 1000, 댓글: 300, 채팅: 500 };
+function commLimits(){ return COMM.limits || COMM_LIMITS_FREE; }
+const POST_PHOTO_EDGE = 1600;
+
+/* 글자 수 상한을 입력 칸에 건다 — 서버가 거절하기 전에 화면에서 막는다 */
+function paintCommLimits(){
+  const L = commLimits();
+  const body = $('postBody');
+  if (body) { body.maxLength = L.본문; body.placeholder = `오늘 운동은 어땠나요? (${L.본문.toLocaleString('ko-KR')}자까지)`; }
+  const chat = $('chatInput');
+  if (chat) chat.maxLength = L.채팅;
+}
+
+async function onPostFiles(ev){
   togglePostComposer(true);
-  const files = [...ev.target.files].slice(0, 4);
-  const prev = $('postPreview');
-  files.forEach(f => {
-    if (f.size > 8 * 1024 * 1024) { showToast(`${f.name} 은 8MB를 넘어 건너뛰었어요`); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      COMM.media.push({ url: reader.result, name: f.name });
-      prev.insertAdjacentHTML('beforeend', f.type.startsWith('video')
-        ? `<video src="${reader.result}" muted></video>` : `<img src="${reader.result}" alt="" />`);
-    };
-    reader.readAsDataURL(f);
-  });
+  const L = commLimits();
+  const 남은자리 = L.사진 - COMM.media.length;
+  const files = [...ev.target.files];
   ev.target.value = '';
+  if (남은자리 <= 0) { showToast(`사진·동영상은 ${L.사진}개까지예요${COMM.tier === '구독' ? '' : ' (구독하면 6개)'}`); return; }
+  if (files.length > 남은자리) showToast(`사진·동영상은 ${L.사진}개까지예요. 앞의 ${남은자리}개만 넣었어요`);
+  const prev = $('postPreview');
+  for (const f of files.slice(0, 남은자리)) {
+    let url;
+    if (f.type.startsWith('video')) {
+      if (f.size * 4 / 3 > L.동영상바이트) { showToast(`${f.name} 은 3MB를 넘어 건너뛰었어요`); continue; }
+      url = await new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => ok(null); r.readAsDataURL(f); });
+    } else {
+      url = await shrinkPhoto(f, POST_PHOTO_EDGE);           // 줄이면서 EXIF(위치 정보)도 떨어진다
+      if (url && url.length > L.사진바이트) { showToast(`${f.name} 은 줄여도 너무 커서 건너뛰었어요`); continue; }
+    }
+    if (!url) { showToast(`${f.name} 을 읽지 못했어요`); continue; }
+    COMM.media.push({ url, name: f.name });
+    prev.insertAdjacentHTML('beforeend', f.type.startsWith('video')
+      ? `<video src="${url}" muted></video>` : `<img src="${url}" alt="" />`);
+  }
 }
 
 async function submitPost(){
   const body = $('postBody').value.trim();
+  const L = commLimits();
   if (!body && !COMM.media.length) { showToast('내용이나 사진을 넣어주세요'); return; }
+  if (body.length > L.본문) { showToast(`본문은 ${L.본문.toLocaleString('ko-KR')}자까지예요 (지금 ${body.length.toLocaleString('ko-KR')}자)`); return; }
   try {
     await API.commPost({ body, media: COMM.media });
     $('postBody').value = ''; $('postPreview').innerHTML = ''; COMM.media = [];
@@ -5452,7 +5482,7 @@ async function saveHealth(){
    AI 는 픽셀 수로 값을 매겨서(폰 원본 약 4,800토큰 → 1568px 약 2,500토큰) 원가가 절반이 되고, 캔버스로 다시 그리면
    위치 정보(EXIF)도 떨어져 나간다. 약봉지 · 시간표 글씨는 이 크기로 충분히 읽힌다. 못 줄이면(GIF 등) 원본 그대로. */
 const PHOTO_MAX_EDGE = 1568;
-async function shrinkPhoto(f){
+async function shrinkPhoto(f, maxEdge = PHOTO_MAX_EDGE){
   const dataUrl = await new Promise((ok, no) => {
     const r = new FileReader();
     r.onload = () => ok(r.result);
@@ -5462,7 +5492,7 @@ async function shrinkPhoto(f){
   if (!dataUrl) return null;
   try {
     const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = dataUrl; });
-    const 비율 = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+    const 비율 = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(img.naturalWidth * 비율));
     c.height = Math.max(1, Math.round(img.naturalHeight * 비율));

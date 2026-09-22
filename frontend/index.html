@@ -3674,13 +3674,24 @@ function loginLocal(name){
 
 /* 계정 삭제 — 서버에 저장된 계정과 측정 기록을 전부 지운다.
    되돌릴 수 없으므로 인라인 확인 단계를 한 번 거친다. */
-function askDelete(){
-  // 남은 이용권 · 구독은 계정과 함께 사라지고 환불되지 않는다 — 지우기 전에 알린다 (개인정보처리방침 3)
+/* 지우기 전에 돈 이야기를 먼저 한다 (예현, 2026-09-23):
+     안 쓴 충전은 삭제하면서 자동으로 환불되고, 일부라도 쓴 충전의 남은 잔액과 구독은 사라진다 — 그걸 확인받는다.
+   서버(/auth/me/delete-preview)가 계산한 값으로 적는다. 못 받으면 잔액만으로 보수적으로 적는다. */
+async function askDelete(){
   const note = $('deleteCreditNote');
   if (note) {
-    const 잔액 = state.credit || 0;
-    const 구독 = aiSub() ? ` 구독(${fmtDate(isoDate(new Date(aiInfo.구독.까지 * 1000)))}까지)도 함께 끝나요.` : '';
-    note.innerHTML = (잔액 > 0 ? ` <b>남은 이용권 ${won(잔액)}도 사라지고 환불되지 않아요.</b> 환불받으려면 먼저 결제 내역에서 환불한 뒤 삭제하세요.` : '') + 구독;
+    note.innerHTML = '';
+    let p = null;
+    try { p = await API.deletePreview(); } catch (e) { p = null; }
+    const 글 = [];
+    if (p) {
+      if (p.환불건수 > 0) 글.push(`안 쓴 충전 ${p.환불건수}건(${won(p.환불금액)})은 삭제하면서 <b>자동으로 환불</b>돼요.`);
+      if (p.소멸잔액 > 0) 글.push(`<b>사용한 금액권의 남은 잔액 ${won(p.소멸잔액)}은 사라지고 환불되지 않아요.</b>`);
+      if (p.구독) 글.push(`구독(${fmtDate(isoDate(new Date(p.구독.까지 * 1000)))}까지)도 함께 끝나고 환불되지 않아요.`);
+    } else if ((state.credit || 0) > 0) {
+      글.push(`<b>남은 이용권 ${won(state.credit)}은 사라질 수 있어요.</b> 환불받으려면 먼저 결제 내역에서 환불한 뒤 삭제하세요.`);
+    }
+    note.innerHTML = 글.length ? ' ' + 글.join(' ') : '';
   }
   $('deleteBox').style.display = 'block';
 }

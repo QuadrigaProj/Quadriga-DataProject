@@ -205,6 +205,27 @@ def used_after(user_id: int, order_id: str) -> bool:
     return bool(뒤)
 
 
+def unused_orders(user_id: int) -> list[dict]:
+    """안 쓴 충전 결제 — 환불할 수 있는 것. 구독은 여기 들지 않는다(환불 규정이 따로다)."""
+    with auth.db() as con:
+        rows = con.execute("SELECT * FROM pay_orders WHERE user_id=? AND status='paid' ORDER BY created_at",
+                           (user_id,)).fetchall()
+    return [dict(o) for o in rows if not o["product"] and not used_after(user_id, o["order_id"])]
+
+
+def delete_preview(user_id: int) -> dict:
+    """계정을 지우면 돈이 어떻게 되는지 — 화면이 확인 문구를 만드는 재료.
+
+    환불: 안 쓴 충전(전액 자동 환불). 소멸: 쓴 충전의 남은 잔액(환불 규정상 돌려주지 않는다) + 살아 있는 구독.
+    """
+    환불 = unused_orders(user_id)
+    환불이용권 = sum(int(o["credit"]) for o in 환불)
+    잔액 = balance(user_id)
+    return {"환불건수": len(환불), "환불금액": sum(int(o["amount"]) for o in 환불),
+            "소멸잔액": max(0, 잔액 - 환불이용권),
+            "구독": active_addon(user_id, "구독")}
+
+
 def refund(user_id: int, credit: int, order_id: str, memo: str = "") -> int:
     """환불한 만큼 이용권을 되돌린다(음수 한 줄).
 

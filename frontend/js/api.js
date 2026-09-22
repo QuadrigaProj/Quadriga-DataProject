@@ -90,6 +90,8 @@ const API = (() => {
     signin: (b) => post('/auth/login', b),
     signout: () => post('/auth/logout', {}),
     deleteAccount: () => call('/auth/me', { method: 'DELETE' }),
+    // 지우기 전에 — 자동 환불될 충전과 사라질 잔액 · 구독
+    deletePreview: () => call('/auth/me/delete-preview'),
     rename: (이름) => call('/auth/me', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

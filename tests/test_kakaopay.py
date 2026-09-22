@@ -613,3 +613,47 @@ def test_환불은_먼저_잡은_요청만_카카오를_부른다(키, monkeypat
     assert a.post(f"/pay/refund/{order}").status_code == 200
     assert billing.get_order(order)["status"] == "refunded"
     assert a.post(f"/pay/refund/{order}").status_code == 404                     # 이미 환불됨
+
+
+# ---------- 계정 삭제와 돈 (예현, 2026-09-23: 안 쓴 금액권은 환불, 쓴 금액권은 사라진다고 확인) ----------
+
+def test_삭제_전에_보여_줄_것을_계산한다(키, monkeypatch):
+    a, 첫 = 충전된(monkeypatch)                                  # 3,000원 내고 3,450 이용권
+    assert a.get("/auth/me/delete-preview").json() == {"환불건수": 1, "환불금액": 3000, "소멸잔액": 0, "구독": None}
+    billing.spend(1, 500, "AI 추천")                             # 일부라도 쓰면 그 충전은 환불 대상이 아니다
+    assert a.get("/auth/me/delete-preview").json() == {"환불건수": 0, "환불금액": 0, "소멸잔액": 2950, "구독": None}
+    둘 = 준비(a, monkeypatch, 1100)["order"]                      # 그 뒤에 또 충전(1,000원) — 이건 아직 안 썼다
+    승인(a, 둘, 1000, monkeypatch)
+    p = a.get("/auth/me/delete-preview").json()
+    assert p["환불건수"] == 1 and p["환불금액"] == 1000 and p["소멸잔액"] == 2950     # 새 충전은 환불, 쓴 충전의 남은 잔액은 소멸
+
+
+def test_삭제하면_안_쓴_충전은_자동_환불된다(키, monkeypatch):
+    a, order = 충전된(monkeypatch)
+    기록 = []
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(3000), 기록))
+    r = a.delete("/auth/me")
+    assert r.status_code == 200 and r.json() == {"ok": True, "환불건수": 1}
+    assert 기록[0]["url"].endswith("/online/v1/payment/cancel") and 기록[0]["body"]["cancel_amount"] == 3000
+    assert billing.get_order(order)["status"] == "refunded"        # 주문 기록은 남는다(계정은 지워졌다)
+    assert a.get("/auth/me").json()["로그인"] is False
+
+
+def test_환불이_안_되면_삭제하지_않는다(키, monkeypatch):
+    """돈이 걸린 자리라 조용히 넘기지 않는다 — 카카오가 취소를 거절하면 계정도 그대로 둔다."""
+    a, order = 충전된(monkeypatch)
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜({"error": "no"}, status=400))
+    r = a.delete("/auth/me")
+    assert r.status_code == 502 and "환불이 되지 않아 삭제하지 않았어요" in r.json()["detail"]
+    assert a.get("/auth/me").json()["로그인"] is True
+    assert billing.get_order(order)["status"] == "paid" and a.get("/credit").json()["잔액"] == 3450
+
+
+def test_쓴_충전은_환불_없이_지워진다(키, monkeypatch):
+    a, order = 충전된(monkeypatch)
+    billing.spend(1, 500, "AI 추천")
+    기록 = []
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(3000), 기록))
+    r = a.delete("/auth/me")
+    assert r.status_code == 200 and r.json()["환불건수"] == 0 and 기록 == []      # 카카오를 부르지 않는다
+    assert billing.get_order(order)["status"] == "paid"

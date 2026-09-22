@@ -8928,6 +8928,17 @@ async function refreshAiStatus(){
   })();
   return aiStatusInFlight;
 }
+
+/* 무료 추천을 받은 뒤 — AI 버튼 아래 글(시연 무료 · 구독 · 값)만 맞춘다. 추천 목록은 다시 그리지 않는다
+   (refreshAiStatus 는 추천 화면을 다시 그려서, 첫 방문인데 '먼저 받은 추천이에요' 로 바뀜다). */
+async function ensureAiInfo(){
+  if (aiInfo || aiStatusInFlight) return;
+  try {
+    const r = await API.aiStatus();
+    aiInfo = r; recoAiReady = !!r.ai가능; recoAiWhy = r.이유 || null;
+  } catch (e) { /* 못 물어봤으면 지금 글 그대로 */ }
+  paintRecoMode();
+}
 let recoAiWhy = null;     // 못 쓰면 그 까닭 (서버가 준 한 줄)
 
 /* 체력나이 항목별에서 뒤처지는 요인 — 값이 큰(늙은) 쪽이 약점이다.
@@ -9267,6 +9278,8 @@ async function fetchRecommend(ai){
     recoBy = r.출처 || '점수';
     recoAiReady = !!r.ai가능;
     recoAiWhy = r.ai이유 || null;
+    // 시연·구독·값표는 ai-status 가 안다 — 무료 추천만 받은 손님도 AI 버튼 문구가 맞게(시연인데 '1회 500원' 으로 보이던 것)
+    ensureAiInfo();
     // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
     // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
     // 바꿔 공짜로 쓸 수 있다.

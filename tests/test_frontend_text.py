@@ -3952,4 +3952,9 @@ def test_손님의_AI_추천_버튼은_오늘_남음_대신_로그인하면_하�
     칠 = html.split("function paintRecoMode()")[1].split("\n}")[0]
     assert "aiDemo() && !aiInfo?.로그인 ? `시연 기간 무료 · 로그인하면 하루 ${aiInfo?.시연하루?.루틴 ?? 3}회`" in 칠
     assert 칠.index("!aiInfo?.로그인") < 칠.index("시연 기간 무료 · 오늘 ${aiLeft")   # 손님 분기가 먼저
+    # 무료 추천만 받은 손님도 ai-status 를 한 번은 물어야 시연 문구가 나온다 (안 물으면 aiInfo 가 없어 '1회 500원' 으로 보였다)
+    받기 = html.split("recoBy = r.출처 || '점수';")[1][:400]
+    assert "ensureAiInfo();" in 받기
+    보충 = html.split("async function ensureAiInfo(){")[1].split("\n}")[0]
+    assert "if (aiInfo || aiStatusInFlight) return;" in 보충 and "paintRecoMode();" in 보충 and "renderRecommend" not in 보충   # 목록은 안 건드린다
 

@@ -113,7 +113,9 @@ def validate(answers) -> list[int]:
     qs = load()["문항"]
     if not isinstance(answers, list):
         raise ValueError("answers 는 선택지 번호 목록이어야 해요")
-    if len(answers) != len(qs):
+    # 예산 문항(맨 뒤, "예산": true)은 성향 채점에 들지 않아서, 그 문항이 생기기 전의 답(하나 짧음)도 그대로 받는다
+    필수 = [q for q in qs if not q.get("예산")]
+    if len(answers) not in (len(qs), len(필수)):
         raise ValueError(f"문항은 {len(qs)}개인데 답이 {len(answers)}개예요")
     out = []
     for i, (a, q) in enumerate(zip(answers, qs)):
@@ -183,4 +185,26 @@ def score(answers) -> dict:
             best, best_val = t, val
     out = {k: v for k, v in best.items() if k != "가중치"}
     out["목적키"] = PURPOSE_KEY.get(out.get("추천목적"))
-    return {"유형": out, "점수": norm, "코드": type_code(norm), "답변": ans}
+    return {"유형": out, "점수": norm, "코드": type_code(norm), "답변": ans, "예산": budget_of(ans)}
+
+
+BUDGET_NAMES = ("거의 없음", "3만 원 안쪽", "10만 원 안쪽", "부담 없음")
+
+
+def budget_of(answers: list[int]) -> dict | None:
+    """예산 문항의 답 → {"단계": 0~3, "이름"}. 예산 문항이 없거나 답이 짧으면(예전 결과) None."""
+    for i, q in enumerate(load()["문항"]):
+        if q.get("예산") and i < len(answers):
+            단계 = int(q["선택지"][answers[i]].get("예산", 0))
+            return {"단계": 단계, "이름": BUDGET_NAMES[단계]}
+    return None
+
+
+def sports_for_budget(sports: list[dict], 예산: dict | None) -> list[dict]:
+    """추천 종목을 예산에 맞춰 — 예산 안의 종목을 앞에, 넘는 종목은 뒤로 보내고 '예산넘음' 표시. 예산을 모르면 그대로."""
+    if not 예산:
+        return [dict(s) for s in sports]
+    단계 = int(예산["단계"])
+    안 = [dict(s, 예산넘음=False) for s in sports if int(s.get("비용", 0)) <= 단계]
+    밖 = [dict(s, 예산넘음=True) for s in sports if int(s.get("비용", 0)) > 단계]
+    return 안 + 밖

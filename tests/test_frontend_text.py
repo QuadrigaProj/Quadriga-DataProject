@@ -3903,3 +3903,13 @@ def test_결제창에_한_달_구독이_있고_구독은_상품으로_결제한�
     돌아옴 = html.split("async function handlePayReturn()")[1].split("\n}")[0]
     assert "r.product === '구독'" in 돌아옴 and "await refreshAiStatus();" in 돌아옴
     assert "function aiSub(){" in html and "function aiCounted(){ return aiDemo() || aiSub(); }" in html
+
+def test_운동_예산이_결과_화면과_AI_추천에_이어진다():
+    """스타일 테스트 결과에 예산 한 줄, 예산을 넘는 종목 카드에는 표시. AI 추천 요청에 예산 답을 싣는다."""
+    html = _index()
+    assert "예산: state.styleTest?.result?.예산?.단계 ?? null" in html
+    결과 = html.split("function renderStyleResult")[1].split("\n}")[0] if "function renderStyleResult" in html else html
+    assert "r.예산 ? ` 한 달 운동비는 ${r.예산.이름}" in html and "const BUDGET_HINT = [" in html
+    카드 = html.split("function renderStyleSports(r)")[1].split("\n}")[0]
+    assert "s.예산넘음 ? ' over-budget' : ''" in 카드 and "예산 넘음" in 카드
+    assert ".sport-card.over-budget{" in html

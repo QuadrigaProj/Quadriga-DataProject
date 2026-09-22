@@ -1457,3 +1457,16 @@ def test_공식_영상이_있는_기록_종목은_영상으로_보여준다(monk
     assert by["squat"]["youtube_id"] is None
     steps = air.compose(사용자, "어르신", 종목ids=[])["루틴"]["steps"]
     assert {s.get("id"): s["youtube_id"] for s in steps if s["출처"] == "기록"}["shoulder-stretch"] == "yC9FdKEaqCI"
+
+
+def test_운동_예산이_짓는_프롬프트에_실린다(monkeypatch):
+    """스타일 테스트의 예산 답(0~3)이 '운동 예산' 으로 AI 에 실린다 — 돈이 드는 종목을 넣을지 정할 때. 안 보내면 None."""
+    본 = _잡는_sdk(monkeypatch, _지은응답())
+    a = _paid(1000)
+    d = a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3, "예산": 0}).json()
+    assert d["출처"] == "ai" and '"운동 예산": "거의 없음"' in 본["글"]
+    assert "'운동 예산' 이 있으면 그에 맞춥니다" in 본["시스템"] and "맨몸 · 걷기 · 달리기" in 본["시스템"]
+    assert a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3, "예산": 4}).status_code == 422
+    본2 = _잡는_sdk(monkeypatch, _지은응답())
+    a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3})
+    assert '"운동 예산": null' in 본2["글"]

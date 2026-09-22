@@ -422,6 +422,9 @@
   }
   .sport-card:hover{ border-color:var(--pine-tint); }
   .sport-card.on{ background:var(--pine-tint); border-color:var(--pine); }
+  /* 운동 스타일 테스트의 예산 답을 넘는 종목 — 뒤로 보내고 옅게, '예산 넘음' 표시 (고를 수는 있다) */
+  .sport-card.over-budget{ opacity:.72; }
+  .sport-cost{ display:block; font-size:11px; font-weight:500; color:var(--muted); letter-spacing:0; }
   .sport-icon{ font-size:22px; line-height:1; flex-shrink:0; }
   .sport-name{ font-size:14px; font-weight:600; letter-spacing:-0.01em;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -7909,9 +7912,14 @@ function renderStyleResult(r){
   $('styleDesc').textContent = t.설명 || '';
   renderStyleCode(r);
   $('stylePurpose').textContent = t.추천목적 || '';
-  $('styleMinutes').textContent = t.하루투자분 ? `하루 ${t.하루투자분}분이면 충분해요.` : '';
+  $('styleMinutes').textContent = (t.하루투자분 ? `하루 ${t.하루투자분}분이면 충분해요.` : '')
+    + (r.예산 ? ` 한 달 운동비는 ${r.예산.이름} — ${BUDGET_HINT[r.예산.단계] || ''}` : '');
   renderStyleSports(r);
 }
+
+/* 예산 문항의 답에 따라 결과 화면에 붙는 한마디. 종목 카드는 서버가 예산 안의 것을 앞에 두고 넘는 것에 표시를 붙여 준다. */
+const BUDGET_HINT = ['맨몸·걷기·공원 종목을 앞에 뒀어요.', '공공 수영장·구민체육센터까지 앞에 뒀어요.',
+                     '헬스장·강습 종목까지 앞에 뒀어요.', '어떤 종목이든 좋아요.'];
 
 /* 대표 그림 + MBTI 처럼 읽는 네 글자 성향 코드 + 축마다 어느 쪽으로 얼마나 기울었는지.
    글자와 비율은 서버(style_test.type_code)가 준다 — 기준은 data/sample/style_test.json 의 "코드" 에 있다.
@@ -7952,9 +7960,9 @@ function renderStyleSports(r){
   const list = r.종목 || [];
   const have = new Set(state.sports || []);
   $('styleSports').innerHTML = list.map(s => `
-    <button type="button" class="sport-card${have.has(s.id) ? ' on' : ''}" data-sport="${s.id}" onclick="styleToggleSport('${s.id}')">
+    <button type="button" class="sport-card${have.has(s.id) ? ' on' : ''}${s.예산넘음 ? ' over-budget' : ''}" data-sport="${s.id}" onclick="styleToggleSport('${s.id}')">
       <span class="sport-icon">${s.아이콘}</span>
-      <span class="sport-name">${s.이름}</span>
+      <span class="sport-name">${s.이름}${s.예산넘음 ? '<span class="sport-cost">예산 넘음</span>' : ''}</span>
       <span class="sport-check"></span>
     </button>`).join('');
   const all = list.length > 0 && list.every(s => have.has(s.id));
@@ -9188,6 +9196,7 @@ async function fetchRecommend(ai){
           최근기록: recentWorkouts(14),
           건강상태: healthList(),
           시작일: state.routineStart || tomorrowIso(),
+          예산: state.styleTest?.result?.예산?.단계 ?? null,             // 운동 스타일 테스트의 예산 답 — 시설·강습 종목을 넣을지
           조정: 조정 || null,
           이전루틴: 조정 ? 이전AI루틴() : null,                       // 바탕이 될 루틴 — 이름·강도·줄만
           ...(await myLocation() || {}),

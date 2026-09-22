@@ -43,8 +43,8 @@ def test_문항이_나온다():
     assert r.status_code == 200
     body = r.json()
     qs = body["문항"]
-    assert len(qs) == 20                           # 9문항은 너무 짧다는 피드백 (예현)
-    assert len({q["id"] for q in qs}) == 20
+    assert len(qs) == 21                           # 성향 20문항(9문항은 너무 짧다는 피드백, 예현) + 예산 1문항(2026-09-22)
+    assert len({q["id"] for q in qs}) == 21
     for q in qs:
         assert q["질문"]
         assert 2 <= len(q["선택지"]) <= 5
@@ -307,3 +307,37 @@ def test_운동_고르기에서_결과_카드를_다시_볼_수_있다():
     열기 = html.split("function openStyleTest(from){")[1].split("\n}")[0]
     assert "if (state.styleTest?.result) {" in 열기 and "styleView = 'result';" in 열기   # 누르면 테스트가 아니라 결과부터
     assert ".style-mine[hidden]{ display:none; }" in html
+
+
+# ---------- 운동 예산 문항 (2026-09-22 예현: "사용자가 운동에 얼마나 비용을 쓰는지 측정하는 항목도 추천에 반영") ----------
+
+def test_예산_문항은_성향_점수에_들지_않고_결과에_따로_나온다():
+    """q21 은 점수가 비어 있어 유형 판정을 바꾸지 않는다. 답은 결과의 '예산' 으로 나가고, 예전 스무 답도 그대로 채점된다."""
+    qs = st.load()["문항"]
+    assert qs[-1]["예산"] is True and all(c["점수"] == {} for c in qs[-1]["선택지"])
+    for tid, ans in KNOWN.items():
+        a = c.post("/style-test/result", json={"answers": ans}).json()          # 예전 결과(20개) — 예산 없이
+        assert a["유형"]["id"] == tid and a["예산"] is None
+        for 단계 in range(4):
+            b = c.post("/style-test/result", json={"answers": ans + [단계]}).json()
+            assert b["유형"]["id"] == tid                                        # 예산이 유형을 바꾸지 않는다
+            assert b["예산"] == {"단계": 단계, "이름": st.BUDGET_NAMES[단계]}
+    assert c.post("/style-test/result", json={"answers": KNOWN["runner"] + [4]}).status_code == 400
+    assert c.post("/style-test/result", json={"answers": KNOWN["runner"][:19]}).status_code == 400
+
+
+def test_종목마다_비용_등급이_있고_예산_안의_종목이_앞에_온다():
+    from backend import sports as sp
+    표 = sp.by_id()
+    assert all(x.get("비용") in (0, 1, 2, 3) for x in 표.values()) and len(표) == 32
+    assert 표["walking"]["비용"] == 0 and 표["swimming"]["비용"] == 1 and 표["gym"]["비용"] == 2 and 표["golf"]["비용"] == 3
+    종목 = sp.resolve(["golf", "running", "gym", "swimming"])
+    앞 = [s["id"] for s in st.sports_for_budget(종목, {"단계": 1, "이름": "3만 원 안쪽"})]
+    assert 앞 == ["running", "swimming", "golf", "gym"]                          # 예산 안(0·1)이 먼저, 넘는 것은 뒤로 (원래 순서 유지)
+    표시 = {s["id"]: s["예산넘음"] for s in st.sports_for_budget(종목, {"단계": 1, "이름": "3만 원 안쪽"})}
+    assert 표시 == {"running": False, "swimming": False, "golf": True, "gym": True}
+    assert [s["id"] for s in st.sports_for_budget(종목, None)] == ["golf", "running", "gym", "swimming"]   # 예산을 모르면 그대로
+    assert "예산넘음" not in st.sports_for_budget(종목, None)[0]
+    # 결과 API 에도 반영된다 — 골프 유형(racket)에 '거의 없음' 을 답하면 비싼 종목이 뒤로 간다
+    r = c.post("/style-test/result", json={"answers": KNOWN["racket"] + [0]}).json()
+    assert r["종목"] and [s["예산넘음"] for s in r["종목"]] == sorted(s["예산넘음"] for s in r["종목"])

@@ -14,6 +14,7 @@ API 문서:
 """
 from __future__ import annotations
 
+import hmac
 import os
 import sys
 import time
@@ -896,6 +897,19 @@ def is_https(request: Request) -> bool:
     return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
 
 
+def client_ip(request: Request) -> str:
+    """요청한 쪽의 주소. 프록시(Render) 뒤에서는 X-Forwarded-For 의 **마지막** 값 — 프록시가 붙인 것이라 위조하기 어렵다."""
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd.strip():
+        return fwd.split(",")[-1].strip()
+    return request.client.host if request.client else "?"
+
+
+def _잠금_안내(남은초: int) -> str:
+    분 = max(1, -(-남은초 // 60))
+    return f"로그인을 여러 번 틀려 잠시 잠겼어요. {분}분 뒤에 다시 해 주세요."
+
+
 def _set_session(response: Response, user_id: int, request: Request) -> None:
     response.set_cookie(
         auth.SESSION_COOKIE, auth.create_session(user_id),
@@ -974,6 +988,11 @@ def auth_signup(body: SignupIn, response: Response, request: Request) -> dict:
         raise HTTPException(400, problem)
     if auth.find_password_user(email):
         raise HTTPException(409, "이미 가입된 이메일입니다.")
+    # 한 곳에서 계정을 무더기로 만드는 것을 막는다 — 시연 기간의 무료 AI 횟수를 계정을 늘려 우회하는 길이기도 하다
+    가입키 = f"signup:{client_ip(request)}"
+    if auth.guard_locked(가입키):
+        raise HTTPException(429, "가입 요청이 너무 많아요. 잠시 뒤에 다시 해 주세요.")
+    auth.guard_hit(가입키, auth.SIGNUP_MAX_PER_IP)
 
     salt, pw_hash = auth.hash_password(body.password)
     uid = auth.upsert_user("password", email, email=email,
@@ -986,12 +1005,26 @@ def auth_signup(body: SignupIn, response: Response, request: Request) -> dict:
 @app.post("/auth/login")
 def auth_login(body: LoginIn, response: Response, request: Request) -> dict:
     auth.init_db()
-    row = auth.find_password_user(body.email)
+    email = body.email.strip().lower()
+    이메일키, 주소키 = f"email:{email}", f"ip:{client_ip(request)}"
+    # 비밀번호를 5번 틀리면 15분 잠근다 — 잠긴 동안은 비밀번호를 대조하지도 않는다 (scrypt 는 한 번에 16MB · 수십 ms 다).
+    # 가입 여부와 상관없이 잠근다: 있는 이메일만 잠그면 잠기는지로 가입 여부를 알아낼 수 있다.
+    남은초 = max(auth.guard_locked(이메일키), auth.guard_locked(주소키))
+    if 남은초:
+        raise HTTPException(429, _잠금_안내(남은초))
+    row = auth.find_password_user(email)
     # 이메일이 없을 때와 비밀번호가 틀렸을 때의 응답을 같게 둔다.
     # 다르게 두면 어떤 이메일이 가입돼 있는지 알아낼 수 있다.
     if not row or not auth.verify_password(body.password, row["password_salt"],
                                            row["password_hash"]):
-        raise HTTPException(401, "이메일 또는 비밀번호가 맞지 않습니다.")
+        남은횟수 = auth.guard_hit(이메일키, auth.LOGIN_MAX_FAILURES)
+        auth.guard_hit(주소키, auth.IP_MAX_FAILURES)
+        if 남은횟수 == 0:
+            raise HTTPException(429, f"비밀번호를 {auth.LOGIN_MAX_FAILURES}번 틀려 "
+                                     f"{auth.LOGIN_LOCK_SEC // 60}분 동안 잠겼어요. 잠시 뒤에 다시 해 주세요.")
+        경고 = f" ({남은횟수}번 더 틀리면 {auth.LOGIN_LOCK_SEC // 60}분 동안 잠겨요)" if 남은횟수 <= 2 else ""
+        raise HTTPException(401, "이메일 또는 비밀번호가 맞지 않습니다." + 경고)
+    auth.guard_clear(이메일키)
     _set_session(response, row["id"], request)
     return {"ok": True, "이름": row["display_name"]}
 
@@ -1063,7 +1096,19 @@ def auth_start(provider: str, request: Request) -> RedirectResponse:
     scope = auth.scope_for(provider)
     if scope:
         params["scope"] = scope
-    return RedirectResponse(conf["authorize"] + "?" + urlencode(params))
+    res = RedirectResponse(conf["authorize"] + "?" + urlencode(params))
+    # 같은 state 를 이 브라우저에도 남긴다. 콜백은 DB 와 쿠키 양쪽을 대조한다 — 남이 시작한 로그인의
+    # 콜백 주소를 열어도(로그인 CSRF) 쿠키가 없거나 다르니 진행되지 않는다.
+    # SameSite=Lax 라도 제공자에서 돌아오는 최상위 이동(GET)에는 실려 온다.
+    res.set_cookie(auth.OAUTH_COOKIE, params["state"], max_age=auth.OAUTH_STATE_SEC,
+                   httponly=True, samesite="lax", secure=is_https(request), path="/auth/")
+    return res
+
+
+def _drop_oauth_cookie(res: RedirectResponse) -> RedirectResponse:
+    """콜백이 끝나면(성공이든 실패든) state 쿠키는 쓸모가 없다 — 지운다."""
+    res.delete_cookie(auth.OAUTH_COOKIE, path="/auth/")
+    return res
 
 
 def _login_failed(provider: str, 단계: str, error=None, desc: str | None = None) -> RedirectResponse:
@@ -1082,7 +1127,7 @@ def _login_failed(provider: str, 단계: str, error=None, desc: str | None = Non
         # 네이버는 무엇이 틀려도 오류 이름이 invalid_request 하나다 — 갈라 주는 것은 설명뿐이다
         # ("wrong client secret" · "no valid data in session" …). 제공자가 쓴 짧은 영어 문장이고 비밀 값은 들어 있지 않다.
         q["d"] = str(desc)[:80]
-    return RedirectResponse("/?" + urlencode(q))
+    return _drop_oauth_cookie(RedirectResponse("/?" + urlencode(q)))
 
 
 @app.get("/auth/{provider}/callback", name="auth_callback")
@@ -1109,7 +1154,11 @@ async def auth_callback(provider: str, request: Request,
             "지금 이 화면이 보이는 건 <b>서버가 정상 동작한다는 뜻</b>입니다.</p>"
             "<p>콘솔에 등록할 주소는 <a href='/auth/setup'>/auth/setup</a> 에서 확인하세요.</p>"
             "<p><a href='/'>← 서비스로 돌아가기</a></p></div>", status_code=200)
-    if not code or not state or auth.take_state(state) != provider:
+    # state 는 DB 에 있어야 하고(우리가 만든 것) **이 브라우저의 쿠키와도 같아야** 한다(이 브라우저가 시작한 것).
+    # 쿠키 대조가 없으면 공격자가 제 브라우저로 시작한 로그인의 콜백 주소를 남에게 열게 해서
+    # 그 사람의 세션을 공격자 계정으로 묶을 수 있다 — 그 뒤로 그 사람이 적는 기록이 공격자에게 보인다.
+    쿠키 = request.cookies.get(auth.OAUTH_COOKIE) or ""
+    if not code or not state or not hmac.compare_digest(state.encode(), 쿠키.encode())             or auth.take_state(state) != provider:
         # state 가 안 맞으면 남이 만든 요청이다. 진행하지 않는다. (10분이 지나 만료된 것도 여기로 온다)
         return _login_failed(provider, "state")
 
@@ -1153,7 +1202,7 @@ async def auth_callback(provider: str, request: Request,
 
     uid = auth.upsert_user(provider, profile["uid"],
                            email=profile.get("email"), name=profile.get("name"))
-    res = RedirectResponse("/?login=ok")
+    res = _drop_oauth_cookie(RedirectResponse("/?login=ok"))
     _set_session(res, uid, request)
     return res
 

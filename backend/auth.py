@@ -57,6 +57,20 @@ SESSION_DAYS = 30
 SCRYPT = dict(n=2**14, r=8, p=1, dklen=32)
 MIN_PASSWORD = 8
 
+# 로그인 시도 제한 — 비밀번호를 계속 틀리면 잠시 잠근다 (login_guard 표).
+# 이메일 하나에 LOGIN_MAX_FAILURES 번 틀리면 LOGIN_LOCK_SEC 동안 그 이메일로는 로그인을 받지 않는다.
+# 가입된 이메일인지와 상관없이 센다 — 있는 이메일만 잠그면 잠기는지로 가입 여부를 알아낼 수 있다.
+# 한 곳(IP)에서 여러 이메일로 두드리는 것도 따로 센다 — 계정 잠금을 피하려고 이메일을 바꿔 가며 시도하는 경우.
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCK_SEC = 15 * 60
+LOGIN_WINDOW_SEC = 15 * 60          # 틀린 횟수를 세는 기간. 이 안에 안 틀리면 다시 0 부터
+IP_MAX_FAILURES = 30
+SIGNUP_MAX_PER_IP = 20              # 같은 곳에서 LOGIN_WINDOW_SEC 안에 만들 수 있는 계정 수
+
+# 소셜 로그인의 state — 시작할 때 만들어 DB 와 브라우저 쿠키 양쪽에 두고, 콜백에서 둘 다 대조한다.
+OAUTH_COOKIE = "quadriga_oauth"
+OAUTH_STATE_SEC = 10 * 60
+
 # 소셜 응답에서 이것만 남긴다. 나머지(전화번호·생일·성별·주소 등)는 버린다.
 KEEP_FIELDS = ("uid", "email", "name")
 
@@ -154,6 +168,12 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   state      TEXT PRIMARY KEY,
   provider   TEXT NOT NULL,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS login_guard (
+  guard_key    TEXT PRIMARY KEY,   -- 'email:<이메일>' · 'ip:<주소>' · 'signup:<주소>'
+  failures     INTEGER NOT NULL,
+  first_at     INTEGER NOT NULL,
+  locked_until INTEGER NOT NULL
 );
 """
 
@@ -331,6 +351,46 @@ def password_problem(password: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# 로그인 시도 제한
+# ---------------------------------------------------------------------------
+
+def guard_locked(key: str, now: int | None = None) -> int:
+    """잠겨 있으면 남은 초, 아니면 0."""
+    now = now or int(time.time())
+    with db() as con:
+        row = con.execute("SELECT locked_until FROM login_guard WHERE guard_key=?", (key,)).fetchone()
+    return max(0, row["locked_until"] - now) if row else 0
+
+
+def guard_hit(key: str, limit: int, now: int | None = None) -> int:
+    """실패(또는 시도)를 하나 센다. LOGIN_WINDOW_SEC 안에 limit 에 닿으면 LOGIN_LOCK_SEC 동안 잠근다.
+
+    돌려주는 값은 잠기기까지 남은 횟수 — 0 이면 방금 잠겼다.
+    """
+    now = now or int(time.time())
+    with db() as con:
+        row = con.execute("SELECT failures, first_at FROM login_guard WHERE guard_key=?", (key,)).fetchone()
+        if row and now - row["first_at"] < LOGIN_WINDOW_SEC:
+            failures, first_at = row["failures"] + 1, row["first_at"]
+        else:
+            failures, first_at = 1, now
+        locked_until = now + LOGIN_LOCK_SEC if failures >= limit else 0
+        con.execute("DELETE FROM login_guard WHERE guard_key=?", (key,))
+        con.execute("INSERT INTO login_guard (guard_key, failures, first_at, locked_until) VALUES (?,?,?,?)",
+                    (key, failures, first_at, locked_until))
+        # 다 지난 줄은 치운다 — 표가 끝없이 자라지 않게
+        con.execute("DELETE FROM login_guard WHERE first_at < ? AND locked_until < ?",
+                    (now - LOGIN_WINDOW_SEC, now))
+    return max(0, limit - failures)
+
+
+def guard_clear(key: str) -> None:
+    """제대로 로그인했으면 그 이메일의 실패 횟수를 지운다."""
+    with db() as con:
+        con.execute("DELETE FROM login_guard WHERE guard_key=?", (key,))
+
+
+# ---------------------------------------------------------------------------
 # 사용자 · 세션
 # ---------------------------------------------------------------------------
 
@@ -427,21 +487,31 @@ def delete_account(user_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 def new_state(provider: str) -> str:
-    """CSRF 방지용 1회용 값. 콜백에서 대조하고 바로 버린다."""
+    """CSRF 방지용 1회용 값. 콜백에서 대조하고 바로 버린다.
+
+    부르는 쪽(main.auth_start)은 같은 값을 OAUTH_COOKIE 에도 넣는다 — 콜백은 DB 에 있는지와
+    그 브라우저가 시작한 것인지를 둘 다 본다. 안 그러면 공격자가 자기 브라우저로 시작한 로그인의
+    콜백 주소를 남에게 열게 해서 남의 세션을 공격자 계정으로 묶을 수 있다.
+    """
     state = secrets.token_urlsafe(24)
     with db() as con:
-        con.execute("DELETE FROM oauth_states WHERE created_at < ?", (int(time.time()) - 600,))
+        con.execute("DELETE FROM oauth_states WHERE created_at < ?", (int(time.time()) - OAUTH_STATE_SEC,))
         con.execute("INSERT INTO oauth_states (state, provider, created_at) VALUES (?,?,?)",
                     (state, provider, int(time.time())))
     return state
 
 
-def take_state(state: str) -> str | None:
+def take_state(state: str, now: int | None = None) -> str | None:
+    """state 를 쓰고 버린다. 없거나 OAUTH_STATE_SEC 이 지났으면 None — 만료는 여기서도 본다.
+    (new_state 가 오래된 줄을 치우지만, 그동안 아무도 로그인을 시작하지 않으면 그대로 남아 있다.)"""
+    now = now or int(time.time())
     with db() as con:
-        row = con.execute("SELECT provider FROM oauth_states WHERE state=?", (state,)).fetchone()
+        row = con.execute("SELECT provider, created_at FROM oauth_states WHERE state=?", (state,)).fetchone()
         if row:
             con.execute("DELETE FROM oauth_states WHERE state=?", (state,))
-    return row["provider"] if row else None
+    if not row or now - row["created_at"] > OAUTH_STATE_SEC:
+        return None
+    return row["provider"]
 
 
 def normalize_profile(provider: str, raw: dict) -> dict:

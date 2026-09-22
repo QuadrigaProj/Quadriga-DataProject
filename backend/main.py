@@ -50,6 +50,7 @@ try:                                        # 저장소 루트에서 실행할 �
     from backend import kakaopay as kp
     from backend import billing
     from backend import community
+    from backend import centers_api
     from backend import spare_time as spare
     from backend import season as ssn
     from backend import outdoor
@@ -73,6 +74,7 @@ except ImportError:                         # backend/ 안에서 직접 실행�
     import route                            # noqa: E402
     import kakaopay as kp                   # noqa: E402
     import billing                          # noqa: E402
+    import centers_api                      # noqa: E402
     import community                        # noqa: E402
     import spare_time as spare              # noqa: E402
     import season as ssn  # type: ignore
@@ -119,6 +121,8 @@ async def lifespan(_: FastAPI):
         print(f"[warn] DB 초기화 실패: {type(e).__name__}")
     url = keep_awake_url()
     깨우기 = asyncio.create_task(_keep_awake(url)) if url else None
+    # 체력인증센터 목록은 공단 오픈API 에서 받아 둔다 — 첫 검색이 기다리지 않게 뒤에서 미리
+    asyncio.get_running_loop().run_in_executor(None, centers_api.items)
     yield
     if 깨우기:
         깨우기.cancel()
@@ -772,6 +776,19 @@ def post_hometest(body: HomeTestIn) -> dict:
 BOOKING_URL = "https://nfa.kspo.or.kr/reserve/main.kspo"    # 국민체력100 공식 예약
 
 
+@app.get("/centers/source")
+def get_centers_source() -> dict:
+    """센터 목록을 어디서 받았는지 — api · snapshot · sample, 센터 수, 응답에 있던 칸 이름(값은 내지 않는다)."""
+    return centers_api.status()
+
+
+@app.get("/centers/all")
+def get_centers_all() -> dict:
+    """받아 둔 전국 센터 목록 전부 — 저장소 스냅숏(data/sample/centers_kspo.json)을 만들 때 쓴다. 공개된 센터 정보뿐이다."""
+    전체, 출처 = centers_api.items()
+    return {"출처": 출처, "기준일": time.strftime("%Y-%m-%d"), "데이터": centers_api.SOURCE_PAGE, "items": 전체}
+
+
 @app.get("/centers")
 def get_centers(lat: float | None = None, lon: float | None = None,
                 region: str | None = Query(None, description="구 단위 지역명 (예: 성북구)"),
@@ -787,15 +804,15 @@ def get_centers(lat: float | None = None, lon: float | None = None,
     길찾기 API 가 없어 **도보 시간은 계산하지 않으며**, 예약은 공식 예약 페이지로 연결한다.
     """
     resolved = None
-    matched = daily.centers_by_addr(region) if region else []
+    전체, 출처 = centers_api.items()
+    matched = daily.centers_by_addr(region, items=전체) if region else []
     by_addr = bool(matched)
     if lat is None and lon is None and region:
         c = geo.geocode(region)
         if c:
             lat, lon, resolved = c[0], c[1], region
-    items = daily.centers(lat, lon, limit, items=matched if by_addr else None)
-    for it in items:
-        it["예약"] = BOOKING_URL
+    items = daily.centers(lat, lon, limit, items=matched if by_addr else 전체)
+    items = [{**it, "예약": BOOKING_URL} for it in items]            # 기억해 둔 목록을 고치지 않는다
     if by_addr:
         note = "입력한 구 주소와 일치하는 센터예요. 예약은 국민체력100 공식 페이지에서 진행합니다."
     elif region and lat is not None:
@@ -804,7 +821,8 @@ def get_centers(lat: float | None = None, lon: float | None = None,
     else:
         note = "직선거리 기준이에요. 도보 시간은 지도 앱에서 확인하세요. 예약은 국민체력100 공식 페이지에서 진행합니다."
     return {
-        "출처": "sample",
+        "출처": 출처,                               # api · snapshot(받아 둔 공단 목록) · sample(예시)
+        "데이터": "국민체력100 체력인증센터 측정건수 정보(공공데이터포털)" if 출처 != "sample" else "예시 목록",
         "매칭방식": "주소" if by_addr else "거리",
         "기준좌표": {"위도": lat, "경도": lon, "입력": resolved} if lat is not None else None,
         "지역인식실패": bool(region) and lat is None and not by_addr,

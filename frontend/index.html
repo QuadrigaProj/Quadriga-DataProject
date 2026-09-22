@@ -5896,13 +5896,17 @@ async function searchCenters(){
     const r = await res.json();
     if (r.지역인식실패) { box.innerHTML = '<div class="center-item">지역을 못 찾았어요. 구 이름으로 다시 입력해 주세요. (예: 성북구)</div>'; return; }
     // 매칭방식 '주소' = 입력한 구가 센터 주소에 그대로 있음 / '거리' = 주소 일치가 없어 가까운 순 (안내를 먼저 보여준다)
-    const note = `<div class="center-item" style="color:var(--muted)">${r.안내}</div>`;
+    // 목록은 공단 오픈API(국민체력100 체력인증센터 측정건수 정보)에서 받은 것 — 밖에서 온 글이라 모두 esc() 로 적는다
+    const 출처 = r.출처 && r.출처 !== 'sample'
+      ? `<div class="center-item" style="color:var(--muted);font-size:12px">출처: ${esc(r.데이터 || '국민체력100 체력인증센터 측정건수 정보')}</div>` : '';
+    const note = `<div class="center-item" style="color:var(--muted)">${esc(r.안내 || '')}</div>`;
+    const 월 = ym => /^\d{6}$/.test(String(ym || '')) ? `${String(ym).slice(0, 4)}년 ${Number(String(ym).slice(4))}월 ` : '';
     const list = (r.items || []).map(c =>
-      `<div class="center-item"><b>${c.fcltyNm || c.name || '체력인증센터'}</b><br/>
-        ${c.addr || ''}${c.거리km != null ? ' · 직선거리 ' + c.거리km + 'km' : ''}<br/>
-        ${c.telno ? c.telno + ' · ' : ''}<a href="${c.예약}" target="_blank" rel="noreferrer">공식 예약하기 →</a></div>`
+      `<div class="center-item"><b>${esc(c.fcltyNm || c.name || '체력인증센터')}</b><br/>
+        ${esc(c.addr || '')}${c.거리km != null ? ' · 직선거리 ' + esc(String(c.거리km)) + 'km' : ''}<br/>
+        ${c.측정건수 ? `${월(c.기준월)}측정 ${Number(c.측정건수).toLocaleString()}건 · ` : ''}${c.telno ? esc(c.telno) + ' · ' : ''}<a href="${esc(c.예약 || 'https://nfa.kspo.or.kr/reserve/main.kspo')}" target="_blank" rel="noreferrer">공식 예약하기 →</a></div>`
     ).join('');
-    box.innerHTML = r.매칭방식 === '거리' ? note + list : list + note;
+    box.innerHTML = (r.매칭방식 === '거리' ? note + list : list + note) + 출처;
   } catch (e) {
     box.innerHTML = '<div class="center-item">센터 정보를 불러오지 못했어요.</div>';
   }

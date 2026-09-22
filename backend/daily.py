@@ -100,7 +100,7 @@ def _addr_has(addr: str, cand: str) -> bool:
     return cand in addr
 
 
-def centers_by_addr(query: str) -> list[dict]:
+def centers_by_addr(query: str, items: list[dict] | None = None) -> list[dict]:
     """주소(addr) 필드에 query 가 들어 있는 센터만 돌려준다.
 
     구 단위 검색(C7)용. "성북구" 처럼 구 이름은 주소의 낱말과 통째로 대조하고(동구 ≠ 남동구),
@@ -110,7 +110,8 @@ def centers_by_addr(query: str) -> list[dict]:
     q = (query or "").strip()
     if len(q) < 2:
         return []
-    items = load_json("centers.json").get("items", [])
+    if items is None:
+        items = load_json("centers.json").get("items", [])
     candidates = [q] + ([q.split()[-1]] if " " in q else [])
     for cand in candidates:
         if len(cand) < 2:
@@ -130,9 +131,11 @@ def centers(lat: float | None = None, lon: float | None = None, limit: int = 5,
     if items is None:
         items = load_json("centers.json").get("items", [])
     if lat is not None and lon is not None:
+        # 좌표를 모르는 센터는 거리를 못 재니 맨 뒤로 보낸다(주소로는 여전히 찾힌다)
         items = sorted(
-            ({**c, "거리km": round(_km(lat, lon, c["la"], c["lo"]), 1)} for c in items),
-            key=lambda c: c["거리km"],
+            ({**c, "거리km": round(_km(lat, lon, c["la"], c["lo"]), 1)} if c.get("la") is not None and c.get("lo") is not None
+             else {**c, "거리km": None} for c in items),
+            key=lambda c: (c["거리km"] is None, c["거리km"] or 0),
         )
     return items[:limit]
 

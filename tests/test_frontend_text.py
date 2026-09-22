@@ -3913,3 +3913,17 @@ def test_운동_예산이_결과_화면과_AI_추천에_이어진다():
     카드 = html.split("function renderStyleSports(r)")[1].split("\n}")[0]
     assert "s.예산넘음 ? ' over-budget' : ''" in 카드 and "예산 넘음" in 카드
     assert ".sport-card.over-budget{" in html
+
+
+def test_가입_때_만14세_확인과_건강_상태_민감정보_동의를_받는다():
+    """개인정보처리방침에 적은 두 동의가 화면에도 있다 — 방침에만 있고 화면에 없으면 거짓말이다 (2차 점검 A-2)."""
+    html = _index()
+    assert 'id="authAge14"' in html and 'id="ageRow"' in html
+    보내기 = html.split("async function submitAuth()")[1].split("\n}")[0]
+    assert "authMode === 'signup' && !$('authAge14').checked" in 보내기
+    assert "$('ageRow').style.display = mode === 'signup' ? 'flex' : 'none';" in html
+    건강 = html.split("function renderHealth()")[1].split("\n}")[0]
+    assert 'id="healthAgree"' in 건강 and "민감정보" in 건강 and "Anthropic" in 건강
+    저장 = html.split("async function saveHealth()")[1].split("\n}")[0]
+    assert "!$('healthAgree')?.checked" in 저장 and "state.healthAgreed = " in 저장
+    assert "healthAgreed: !!state.healthAgreed," in html                     # 한 번 동의하면 기억한다

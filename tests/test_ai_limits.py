@@ -223,3 +223,9 @@ def test_실결제로_바꿀_때_시연_이용권을_정리한다(monkeypatch):
     내역 = a.get("/credit").json()["내역"]
     assert 내역[0]["종류"] == "시연 정리" and 내역[0]["금액"] == 2950                          # 내역은 남는다
     assert boss.post("/admin/reset-demo-credits", json=확인).json()["지운사람"] == 0          # 두 번 눌러도 더 지울 게 없다
+
+def test_손님에게도_시연_하루_횟수를_알려준다():
+    """비로그인 상태의 ai-status — 오늘남음은 없지만(누구인지 모른다) 시연하루로 '로그인하면 하루 3회' 를 적을 수 있다."""
+    s = TestClient(app).get("/recommend/ai-status").json()
+    assert s["로그인"] is False and s["시연"] is True and s["오늘남음"] is None
+    assert s["시연하루"] == {"루틴": 3, "구간": 3, "사진": 2}

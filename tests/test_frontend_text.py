@@ -3945,3 +3945,11 @@ def test_계정_삭제_전에_환불될_것과_사라질_것을_적는다():
     assert "자동으로 환불</b>돼요" in 본문 and "사용한 금액권의 남은 잔액" in 본문 and "환불되지 않아요" in 본문
     api = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     assert "deletePreview: () => call('/auth/me/delete-preview')" in api
+
+def test_손님의_AI_추천_버튼은_오늘_남음_대신_로그인하면_하루_몇_회를_적는다():
+    """비로그인은 오늘남음이 없어 '오늘 -회 남음' 으로 보이던 것 — 심사위원이 손님으로 보는 첫 화면이다."""
+    html = _index()
+    칠 = html.split("function paintRecoMode()")[1].split("\n}")[0]
+    assert "aiDemo() && !aiInfo?.로그인 ? `시연 기간 무료 · 로그인하면 하루 ${aiInfo?.시연하루?.루틴 ?? 3}회`" in 칠
+    assert 칠.index("!aiInfo?.로그인") < 칠.index("시연 기간 무료 · 오늘 ${aiLeft")   # 손님 분기가 먼저
+

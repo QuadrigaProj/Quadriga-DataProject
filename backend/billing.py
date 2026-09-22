@@ -126,7 +126,7 @@ def history(user_id: int, limit: int = 30) -> list[dict]:
         낸주문 = {o["order_id"]: o["status"] for o in con.execute(
             "SELECT order_id, status FROM pay_orders WHERE user_id=?", (user_id,)).fetchall()}
 
-    종류 = {"charge": "충전", "use": "사용", "refund": "환불", "sub": "구독"}
+    종류 = {"charge": "충전", "use": "사용", "refund": "환불", "sub": "구독", "demo_reset": "시연 정리"}
     out = []
     for r in rows:
         줄 = {"종류": 종류.get(r["kind"], r["kind"]),
@@ -298,6 +298,31 @@ def ai_cost_summary(days: int = 30, now: float | None = None) -> dict:
             " WHERE created_at>=? GROUP BY kind", (since,)).fetchall()
     return {r["kind"]: {"호출": int(r["n"]), "받은값": int(r["paid"]), "입력토큰": int(r["i"]),
                         "출력토큰": int(r["o"]), "캐시토큰": int(r["c"])} for r in rows}
+
+
+# ---------------- 시연 이용권 정리 ----------------
+
+def reset_demo_credits(now: float | None = None) -> dict:
+    """실결제로 바꿀 때 한 번 — 시연 기간(테스트 가맹점)의 결제로 얻은 이용권 · 구독을 모두 지운다.
+
+    원장은 지우지 않고 잔액만큼 음수 줄('demo_reset')을 넣어 0 으로 만든다(내역은 남는다). 살아 있는 구독은 지금 끝낸다.
+    'paid' 주문은 'demo' 로 바꿔 환불 대상에서 뺀다 — 돈이 실제로 오가지 않은 결제다(약관 6조의2 '시연 기간').
+    돌려주는 값은 몇 사람 · 얼마를 지웠는지.
+    """
+    now = int(now if now is not None else time.time())
+    with auth.db() as con:
+        rows = con.execute("SELECT user_id, COALESCE(SUM(amount), 0) AS s FROM credit_ledger GROUP BY user_id").fetchall()
+        지운사람, 지운금액 = 0, 0
+        for r in rows:
+            잔액 = int(r["s"] or 0)
+            if 잔액 > 0:
+                _add(con, r["user_id"], -잔액, "demo_reset", memo="시연 이용권 정리 (실결제 전환)")
+                지운사람 += 1
+                지운금액 += 잔액
+        구독 = con.execute("UPDATE ai_addons SET ends_at=? WHERE kind='구독' AND ends_at>?", (now, now)).rowcount
+        상세 = con.execute("UPDATE ai_addons SET ends_at=? WHERE kind='상세' AND ends_at>?", (now, now)).rowcount
+        주문 = con.execute("UPDATE pay_orders SET status='demo', updated_at=? WHERE status='paid'", (now,)).rowcount
+    return {"지운사람": 지운사람, "지운이용권": 지운금액, "끝낸구독": int(구독), "끝낸자세히": int(상세), "시연주문": int(주문)}
 
 
 # ---------------- 주문 ----------------

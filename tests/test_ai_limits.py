@@ -198,3 +198,27 @@ def test_구독하면_값_없이_하루_다섯_번(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
     assert a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴}).status_code == 200
     assert a.get("/credit").json()["잔액"] == 0
+
+
+def test_실결제로_바꿀_때_시연_이용권을_정리한다(monkeypatch):
+    """시연 결제로 얻은 이용권 · 구독은 정식 결제가 열릴 때 소멸(약관 6조의2). 관리자만, 실결제 모드에서만, 확인 문구가 맞아야."""
+    monkeypatch.setenv("ADMIN_USERS", "password:boss@x.com")
+    a, boss = _user("a@x.com"), _user("boss@x.com")
+    uid = auth.user_for_token(a.cookies.get("quadriga_session"))["id"]
+    billing.charge(uid, 3450, 3000, "demo-order")
+    billing.new_order("demo-order", uid, "T1", 3450, 3000)
+    billing.set_status("demo-order", "paid")
+    billing.spend(uid, 500, "AI 추천")
+    billing.add_addon(uid, "구독", 30)
+    확인 = {"확인": "시연 이용권을 모두 지웁니다"}
+    assert a.post("/admin/reset-demo-credits", json=확인).status_code == 403                 # 관리자만
+    assert boss.post("/admin/reset-demo-credits", json=확인).status_code == 409              # 아직 시연 모드
+    monkeypatch.setenv("AI_BILLING_MODE", "real")
+    assert boss.post("/admin/reset-demo-credits", json={"확인": "지워"}).status_code == 400   # 문구가 달라도 안 됨
+    d = boss.post("/admin/reset-demo-credits", json=확인).json()
+    assert d == {"지운사람": 1, "지운이용권": 2950, "끝낸구독": 1, "끝낸자세히": 0, "시연주문": 1}
+    assert billing.balance(uid) == 0 and billing.active_addon(uid, "구독") is None
+    assert billing.get_order("demo-order")["status"] == "demo"                                # 환불 대상에서 빠졌다
+    내역 = a.get("/credit").json()["내역"]
+    assert 내역[0]["종류"] == "시연 정리" and 내역[0]["금액"] == 2950                          # 내역은 남는다
+    assert boss.post("/admin/reset-demo-credits", json=확인).json()["지운사람"] == 0          # 두 번 눌러도 더 지울 게 없다

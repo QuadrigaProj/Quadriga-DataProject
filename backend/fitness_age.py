@@ -3,6 +3,8 @@
 
 data/processed/ (없으면 data/sample/) 의 fitness_distribution.csv 의 연령구간별 중앙값(p50)을 이용해
 사용자 측정값이 어느 연령대 수준인지 선형보간으로 역산한다.
+나이에 따라 거의 움직이지 않는 항목(성인 유연성 등)은 곡선을 거꾸로 읽을 수 없어 또래 안 순위로 나이를 매기고(rank_age),
+BMI 는 정상 범위면 실제 나이 그대로, 벗어난 만큼만 나이를 더한다(bmi_age).
 
 국민체력100은 등급(1~6)만 제공하고 체력나이는 제공하지 않는다.
 공개 측정결과 데이터의 성별·연령대별 분포에서 우리가 직접 산출하는 지표다.
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -22,8 +25,6 @@ try:                                     # 저장소 루트에서 실행할 때
     from backend.paths import find_data
 except ImportError:                      # backend/ 안에서 직접 실행할 때
     from paths import find_data
-
-BMI_IDEAL = 22.0
 
 
 def _given(v) -> bool:
@@ -238,26 +239,113 @@ STABILIZE_LIMIT = 15.0
 FOCUS_GAP = 10.0
 
 
-def u_shaped_age(d, age_gbn, sex, item, value, ideal=None) -> float | None:
-    """BMI·체지방률처럼 U자형(적정치에서 멀수록 나쁨) 항목의 환산나이.
+# 나이에 따라 거의 움직이지 않는 항목 — p50 곡선을 거꾸로 읽어 '몇 살 수준' 을 낼 수 없다.
+# (구간 중앙값의 최대 − 최소) ÷ (같은 구간 안 IQR 의 중앙값) 이 이보다 작으면 또래 안 순위로 나이를 매긴다(rank_age).
+# 2026-09-22 점검: 성인 유연성 여 0.17 · 남 0.16(중앙값이 해마다 0.006cm · 0.036cm, 오르내림이 다섯 번 뒤집힌다),
+# 성장기 남 체지방률 0.10. 그 밖에 쓰는 항목은 0.29 이상이다. 예전에는 곡선을 그대로 읽어
+# 34세 여성의 유연성이 12cm 면 42세, 16cm 로 늘면 47.7세 — 좋아졌는데 늙게 나왔다.
+AGE_SIGNAL_MIN = 0.2
 
-    적정치로부터의 편차 절댓값을 그 성별·연령군 p50 편차 곡선에 대조한다.
-    """
+# BMI 정상 범위 — 대한비만학회 기준(18.5 이상 23 미만). 이 안이면 체성분은 실제 나이 그대로다(bmi_age).
+BMI_NORMAL = (18.5, 23.0)
+# 정상 범위를 벗어나면 단계 하나에 5세씩 더한다(사이는 직선으로). (BMI, 더하는 나이)
+#   위쪽 — 대한비만학회: 비만 전단계 23~24.9 → 1단계 25 → 2단계 30 → 3단계 35
+#   아래쪽 — WHO 저체중 단계: 경도 17~18.4 → 중등도 16~16.9 → 고도 16 미만
+# BMI 는 체력을 재는 값이 아니라 건강 위험을 알리는 값이라, 다른 항목의 '순위 한 칸' 눈금(성인 약 25세)을 쓰지 않는다 —
+# 그 눈금이면 45세 남성의 BMI 26 이 +15세(상한)가 된다. 단계로 끊으면 BMI 26 은 +6세다.
+BMI_ADD_OVER = ((23.0, 0.0), (25.0, 5.0), (30.0, 10.0), (35.0, 15.0))
+BMI_ADD_UNDER = ((15.0, 15.0), (16.0, 10.0), (17.0, 5.0), (18.5, 0.0))
+
+_NORMAL = NormalDist()
+
+
+def _curve(d: pd.DataFrame, age_gbn: str, sex: str, item: str) -> pd.DataFrame:
+    """그 성별·연령군 · 항목의 연령구간별 줄 — 나이순."""
     sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == item)]
-    sub = sub.sort_values("age_mid")
+    return sub.sort_values("age_mid")
+
+
+def age_signal(d: pd.DataFrame, age_gbn: str, sex: str, item: str) -> float | None:
+    """중앙값이 나이에 따라 얼마나 움직이는가 — (구간 중앙값의 최대 − 최소) ÷ (구간 안 IQR 의 중앙값)."""
+    sub = _curve(d, age_gbn, sex, item)
     if len(sub) < MIN_BANDS:
         return None
-    if ideal is None:
-        ideal = float(sub["p50"].median()) if (age_gbn == GROWTH or item != "BMI") else BMI_IDEAL
-    dev = (sub["p50"] - ideal).abs().to_numpy()
-    ages = sub["age_mid"].to_numpy()
-    # 이 환산은 "나이 들수록 적정치에서 멀어진다" 는 전제 위에 있다. 곡선이 거꾸로 움직이면 — 어르신 남성의 BMI 중앙값은
-    # 24.5 → 23.7 로 적정치(22)에 가까워진다 — 건강한 값이 가장 늙게(BMI 22 → 100세) 읽힌다. 그런 곡선은 환산하지 않는다.
-    # 값은 또래비교(BMI · 또래 중앙값)로는 그대로 나간다.
-    if age_gbn != GROWTH and dev[-1] <= dev[0]:
+    iqr = float(np.median(sub["p75"] - sub["p25"]))
+    return float(sub["p50"].max() - sub["p50"].min()) / iqr if iqr > 0 else None
+
+
+def years_per_sd(d: pd.DataFrame, age_gbn: str, sex: str) -> float | None:
+    """또래 안 순위 한 칸(표준편차 1)이 몇 살인지 — 그 연령군의 기본 항목(누구나 재는 근지구력 · 순발력) 곡선에서 잰다.
+
+    (구간 안 표준편차의 중앙값) ÷ (1년에 중앙값이 움직이는 양). 성인 교차윗몸일으키기 여 25.0세 · 남 23.3세,
+    어르신 의자앉았다일어서기 여 14.9세 · 남 12.0세. 순위로 나이를 매기는 항목도 같은 사람의 이 항목과 같은 눈금을 쓴다.
+    """
+    _, item = POWER_ITEM.get(age_gbn, DEFAULT_POWER)
+    sub = _curve(d, age_gbn, sex, item)
+    if len(sub) < MIN_BANDS:
         return None
-    order = np.argsort(dev)
-    return float(np.interp(abs(value - ideal), dev[order], ages[order]))
+    slope = float(np.polyfit(sub["age_mid"].to_numpy(), sub["p50"].to_numpy(), 1)[0])
+    sd = float(np.median(sub["표준편차"]))
+    return sd / abs(slope) if slope and sd > 0 else None
+
+
+def _age_bounds(d: pd.DataFrame, age_gbn: str, sex: str, item: str, age: float) -> tuple[float, float]:
+    """순위 · 정상 범위로 매긴 나이가 머무를 범위 — 실제 나이 ±STABILIZE_LIMIT, 그리고 그 연령군 구간의 양 끝.
+
+    곡선으로 읽는 항목(convert_age)과 같은 끝을 쓴다: 성인은 가장 나이 든 구간의 대표 나이, 끝이 열린 구간(80+)은 OLDEST_AGE.
+    실제 나이는 언제나 범위 안에 둔다 — 구간 끝에 걸려 좋은 기록이 늙게, 나쁜 기록이 어리게 읽히지 않게.
+    """
+    sub = _curve(d, age_gbn, sex, item)
+    lo_band = float(sub["age_mid"].min())
+    hi_band = OLDEST_AGE if str(sub["연령구간"].iloc[-1]).endswith("+") else float(sub["age_mid"].max())
+    lo = min(age, max(lo_band, age - STABILIZE_LIMIT))
+    hi = max(age, min(hi_band, age + STABILIZE_LIMIT))
+    return lo, hi
+
+
+def rank_age(d: pd.DataFrame, age_gbn: str, sex: str, age, item: str, value: float) -> float | None:
+    """또래 안 순위 → 나이. 나이에 따라 거의 움직이지 않는 항목(AGE_SIGNAL_MIN)에 쓴다.
+
+    또래 중앙값이면 실제 나이 그대로, 또래보다 좋으면 어리게(성장기는 앞서게) — 좋아지면 언제나 좋은 쪽으로 움직인다.
+    백분위를 2.5~97.5 로 자른 뒤 정규분포의 몇 칸(표준편차)인지로 바꾸고, 한 칸에 years_per_sd 만큼 움직인다.
+    """
+    if not _given(age):
+        return None                              # 실제 나이가 없으면 또래를 정할 수 없다
+    r = peer_stats(d, age_gbn, sex, float(age), item, value)
+    rate = years_per_sd(d, age_gbn, sex)
+    if r is None or rate is None or "백분위" not in r:
+        return None
+    z = _NORMAL.inv_cdf(min(max(r["백분위"], 2.5), 97.5) / 100)
+    a = float(age) + z * rate if age_gbn == GROWTH else float(age) - z * rate
+    lo, hi = _age_bounds(d, age_gbn, sex, item, float(age))
+    return float(np.clip(a, lo, hi))
+
+
+def item_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float, age=None) -> float | None:
+    """한 항목의 환산나이 — 나이에 따라 움직이는 항목은 p50 곡선으로(convert_age), 거의 안 움직이는 항목은 또래 순위로(rank_age)."""
+    signal = age_signal(d, age_gbn, sex, item)
+    if signal is not None and signal < AGE_SIGNAL_MIN:
+        return rank_age(d, age_gbn, sex, age, item, value)
+    return convert_age(d, age_gbn, sex, item, value)
+
+
+def bmi_age(d: pd.DataFrame, age_gbn: str, sex: str, bmi: float, age=None) -> float | None:
+    """BMI → 체성분 환산나이.
+
+    BMI 는 U자형이고 성인 · 어르신의 BMI 중앙값은 나이에 따라 거의 움직이지 않아 곡선을 거꾸로 읽을 수 없다
+    (예전 방식에서는 34세 여성의 BMI 22 가 37세, 23.5 가 27세로 나왔다). 그래서 정상 범위(BMI_NORMAL) 안이면
+    실제 나이 그대로 두고, 벗어나면 비만 · 저체중 단계만큼 나이를 더한다(BMI_ADD_OVER · BMI_ADD_UNDER).
+    정상 범위 안에서 '더 좋은' BMI 는 없으므로 어리게 만들지는 않는다.
+    성장기는 BMI 로 발달 수준을 말할 수 없어 나이로 바꾸지 않는다(또래비교에는 그대로 나온다).
+    """
+    if not _given(bmi) or not _given(age) or age_gbn == GROWTH:
+        return None
+    lo, hi = BMI_NORMAL
+    if lo <= bmi < hi:
+        return float(age)
+    steps = BMI_ADD_OVER if bmi >= hi else BMI_ADD_UNDER
+    add = float(np.interp(bmi, [b for b, _ in steps], [y for _, y in steps]))   # 양 끝 밖은 끝값(15세)
+    return float(min(float(age) + add, _age_bounds(d, age_gbn, sex, "BMI", float(age))[1]))
 
 
 def aggregate_age(parts: dict[str, float], age_gbn: str, age=None) -> dict:
@@ -294,40 +382,40 @@ def fitness_age(d, age_gbn, sex, *, flexibility=None, strength=None, bmi=None,
     parts: dict[str, float] = {}
 
     if _given(flexibility):
-        a = convert_age(d, age_gbn, sex, "앉아윗몸앞으로굽히기", flexibility)
+        a = item_age(d, age_gbn, sex, "앉아윗몸앞으로굽히기", flexibility, age)
         if a is not None:
             parts["유연성"] = a
 
     if _given(strength):
         label, item = POWER_ITEM.get(age_gbn, DEFAULT_POWER)
-        a = convert_age(d, age_gbn, sex, item, strength)
+        a = item_age(d, age_gbn, sex, item, strength, age)
         if a is not None:
             parts[label] = a
 
     if _given(grip):
-        a = convert_age(d, age_gbn, sex, GRIP_ITEM, grip)
+        a = item_age(d, age_gbn, sex, GRIP_ITEM, grip, age)
         if a is not None:
             parts["근력"] = a
 
     cardio = CARDIO_ITEM.get(age_gbn)
     if _given(endurance) and cardio and age_gbn not in CARDIO_NO_AGE:
-        a = convert_age(d, age_gbn, sex, cardio, endurance)
+        a = item_age(d, age_gbn, sex, cardio, endurance, age)
         if a is not None:
             parts["심폐지구력"] = a
 
     for label, item, v in extra_items(age_gbn, extras):
-        a = convert_age(d, age_gbn, sex, item, v)
+        a = item_age(d, age_gbn, sex, item, v, age)
         if a is not None:
             parts[label] = a
 
     if _given(bmi):
-        a = u_shaped_age(d, age_gbn, sex, "BMI", bmi)
+        a = bmi_age(d, age_gbn, sex, bmi, age)
         if a is not None:
             parts["체성분"] = a
 
     if _given(body_fat):
-        # 체지방률은 높을수록 불리하고 나이 들수록 오르는 단조 항목 → 곡선에 직접 대조한다.
-        a = convert_age(d, age_gbn, sex, "체지방률", body_fat)
+        # 체지방률은 높을수록 불리하고 나이 들수록 오르는 단조 항목 → 곡선에 직접 대조한다(곡선이 평평하면 또래 순위로).
+        a = item_age(d, age_gbn, sex, "체지방률", body_fat, age)
         if a is not None:                        # 체지방률이 있으면 체성분을 이 값으로 대체(더 직접적)
             parts["체성분"] = a
 
@@ -423,20 +511,20 @@ def peer_report(d: pd.DataFrame, age_gbn: str, sex: str, age: float, *,
 ACTIVITY_STEP = 0.2          # 그 요인을 운동한 하루당 당기는 폭(세)
 
 
-def body_part(d, age_gbn: str, sex: str, *, 키=None, 몸무게=None, 체지방률=None):
+def body_part(d, age_gbn: str, sex: str, *, 키=None, 몸무게=None, 체지방률=None, age=None):
     """그날 잰 몸무게·체지방률 → 체성분 환산나이 (K1).
 
     이건 추정이 아니라 **그날 실제로 잰 값**이라 그대로 항목별에 넣는다.
-    체지방률이 있으면 그쪽이 더 직접적이라 우선한다.
+    체지방률이 있으면 그쪽이 더 직접적이라 우선한다. 측정 때와 같은 함수(item_age · bmi_age)로 환산한다.
     """
     if 체지방률 is not None:
-        a = convert_age(d, age_gbn, sex, "체지방률", 체지방률)
+        a = item_age(d, age_gbn, sex, "체지방률", 체지방률, age)
         if a is not None:
             return a
     if 키 and 몸무게:
         h = float(키) / 100
         if h > 0:
-            a = u_shaped_age(d, age_gbn, sex, "BMI", float(몸무게) / (h * h))
+            a = bmi_age(d, age_gbn, sex, float(몸무게) / (h * h), age)
             if a is not None:
                 return a
     return None

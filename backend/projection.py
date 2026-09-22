@@ -2,7 +2,7 @@
 
 측정 항목이 12주에 보통 얼마나 좋아지는지(문헌, docs/effective_dose.md 뒤에 정리)를
 지금 측정값에 얹어 다시 환산나이를 내고, 체력나이가 목표 아래로 내려가는 주를 찾는다.
-계산은 backend/fitness_age.py 의 같은 함수(convert_age · u_shaped_age · aggregate_age)로 한다 —
+계산은 backend/fitness_age.py 의 같은 함수(item_age · bmi_age · aggregate_age)로 한다 —
 측정과 다른 잣대를 쓰지 않는다.
 
 오차가 커서 "빠르면 N주, 늦으면 M주" 범위로만 말하고, 재측정 때마다 다시 잡는다.
@@ -52,38 +52,39 @@ def improved(item: str, value: float, weeks: float, hi: bool) -> float:
     return value + 폭
 
 
-def _parts(d, age_gbn: str, sex: str, raw: dict, weeks: float, hi: bool) -> dict:
+def _parts(d, age_gbn: str, sex: str, raw: dict, weeks: float, hi: bool, age=None) -> dict:
     """fitness_age.fitness_age 와 같은 항목 구성으로, 값만 weeks 주 뒤로 옮겨서."""
     parts: dict[str, float] = {}
     v = raw.get("flexibility")
     if fa._given(v):
-        a = fa.convert_age(d, age_gbn, sex, "앉아윗몸앞으로굽히기", improved("앉아윗몸앞으로굽히기", v, weeks, hi))
+        a = fa.item_age(d, age_gbn, sex, "앉아윗몸앞으로굽히기", improved("앉아윗몸앞으로굽히기", v, weeks, hi), age)
         if a is not None:
             parts["유연성"] = a
     v = raw.get("strength")
     if fa._given(v):
         label, item = fa.POWER_ITEM.get(age_gbn, fa.DEFAULT_POWER)
-        a = fa.convert_age(d, age_gbn, sex, item, improved(item, v, weeks, hi))
+        a = fa.item_age(d, age_gbn, sex, item, improved(item, v, weeks, hi), age)
         if a is not None:
             parts[label] = a
     v = raw.get("grip")
     if fa._given(v):
-        a = fa.convert_age(d, age_gbn, sex, fa.GRIP_ITEM, improved(fa.GRIP_ITEM, v, weeks, hi))
+        a = fa.item_age(d, age_gbn, sex, fa.GRIP_ITEM, improved(fa.GRIP_ITEM, v, weeks, hi), age)
         if a is not None:
             parts["근력"] = a
     v = raw.get("endurance")
     cardio = fa.CARDIO_ITEM.get(age_gbn)
     if fa._given(v) and cardio:
-        a = fa.convert_age(d, age_gbn, sex, cardio, improved(cardio, v, weeks, hi))
+        a = fa.item_age(d, age_gbn, sex, cardio, improved(cardio, v, weeks, hi), age)
         if a is not None:
             parts["심폐지구력"] = a
     for label, item, v in fa.extra_items(age_gbn, raw.get("extras")):      # 선택 항목 — 향상 폭 표에 없는 것은 그대로 둔다
-        a = fa.convert_age(d, age_gbn, sex, item, improved(item, v, weeks, hi))
+        a = fa.item_age(d, age_gbn, sex, item, improved(item, v, weeks, hi), age)
         if a is not None:
             parts[label] = a
     v = raw.get("bmi")
     if fa._given(v):
-        a = fa.u_shaped_age(d, age_gbn, sex, "BMI", improved("BMI", v, weeks, hi))
+        # 운동으로 BMI 가 줄어드는 건 정상 범위 위쪽일 때만 좋아지는 쪽이다 — 저체중 · 정상은 그대로 둔다
+        a = fa.bmi_age(d, age_gbn, sex, improved("BMI", v, weeks, hi) if v >= fa.BMI_NORMAL[1] else v, age)
         if a is not None:
             parts["체성분"] = a
     return parts
@@ -99,7 +100,7 @@ def project(d, *, age_gbn: str, sex: str, age, target: float, flexibility=None, 
         return {"가능": False, "안내": "성장기는 발달 수준으로 읽어서 도달 시점을 추정하지 않아요."}
     raw = {"flexibility": flexibility, "strength": strength, "grip": grip,
            "endurance": endurance, "bmi": bmi, "extras": extras}
-    지금 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, 0, False), age_gbn, age)["체력나이"]
+    지금 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, 0, False, age), age_gbn, age)["체력나이"]
     if 지금 is None:
         return {"가능": False, "안내": "측정값이 부족해 추정할 수 없어요."}
     out = {"가능": True, "지금": 지금, "목표": float(target), "가정": ASSUMPTION,
@@ -110,11 +111,11 @@ def project(d, *, age_gbn: str, sex: str, age, target: float, flexibility=None, 
         return out
     빠르면 = 늦으면 = None
     for weeks in range(STEP_WEEKS, MAX_WEEKS + 1, STEP_WEEKS):
-        높게 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, weeks, True), age_gbn, age)["체력나이"]
-        낮게 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, weeks, False), age_gbn, age)["체력나이"]
+        높게 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, weeks, True, age), age_gbn, age)["체력나이"]
+        낮게 = fa.aggregate_age(_parts(d, age_gbn, sex, raw, weeks, False, age), age_gbn, age)["체력나이"]
         if weeks == 12:
             out["12주뒤"] = {"빠르면": 높게, "늦으면": 낮게}
-            out["요인별_12주뒤"] = fa.aggregate_age(_parts(d, age_gbn, sex, raw, 12, True), age_gbn, age)["항목별"]
+            out["요인별_12주뒤"] = fa.aggregate_age(_parts(d, age_gbn, sex, raw, 12, True, age), age_gbn, age)["항목별"]
         if 빠르면 is None and 높게 is not None and 높게 <= target:
             빠르면 = weeks
         if 늦으면 is None and 낮게 is not None and 낮게 <= target:

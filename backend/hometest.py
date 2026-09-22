@@ -52,10 +52,10 @@ def evaluate(dist, *, sex: str, age: float, height_cm: float, weight_kg: float,
 
     if age_gbn:
         if fa._given(curlup_30s):
-            a = fa.convert_age(dist, age_gbn, sex, "교차윗몸일으키기", curlup_30s)
+            a = fa.item_age(dist, age_gbn, sex, "교차윗몸일으키기", curlup_30s, age)
             if a is not None:
                 parts["근지구력"] = a
-        cb = fa.u_shaped_age(dist, age_gbn, sex, "BMI", bmi)
+        cb = fa.bmi_age(dist, age_gbn, sex, bmi, age)
         if cb is not None:
             parts["체성분"] = cb
 

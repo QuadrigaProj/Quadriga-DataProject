@@ -205,3 +205,9 @@ def test_응답에_보안_헤더가_붙는다():
     assert r.headers["referrer-policy"] == "strict-origin-when-cross-origin"
     assert "geolocation=(self)" in r.headers["permissions-policy"]      # 날씨에 위치를 쓴다
     assert "camera=()" in r.headers["permissions-policy"]
+
+
+def test_https_로_들어오면_HSTS_헤더가_붙는다():
+    r = client.get("/health", headers={"x-forwarded-proto": "https"})
+    assert r.headers["strict-transport-security"] == "max-age=31536000"
+    assert "strict-transport-security" not in client.get("/health").headers      # 로컬(http)에는 안 붙인다

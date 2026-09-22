@@ -229,6 +229,8 @@ async def 보안_헤더(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), payment=()")
+    if is_https(request):                            # 브라우저에 "이 주소는 앞으로 https 로만" 을 못 박는다 (1년)
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return response
 
 # 개발 중에는 프론트 로컬 서버를 허용한다. 배포 시 도메인으로 좁힐 것.
@@ -1377,11 +1379,15 @@ async def post_pay_refund(order: str,
     if billing.used_after(user["id"], order):
         raise HTTPException(409, "이미 사용한 이용권은 환불할 수 없어요.")
 
+    # 같은 주문을 동시에 두 번 환불하지 못하게 — 먼저 상태를 'refunding' 으로 잡은 요청만 카카오를 부른다.
+    if not billing.set_status(order, "refunding", only_from="paid"):
+        raise HTTPException(409, "이미 환불 처리 중이에요.")
     ok = await kp.cancel(tid=o["tid"], amount=o["amount"])
     if not ok or ok["canceled"] != o["amount"]:
+        billing.set_status(order, "paid", only_from="refunding")      # 카카오가 안 받았다 — 되돌린다
         raise HTTPException(502, "결제 취소에 실패했어요. 잠시 뒤 다시 시도해 주세요.")
 
-    billing.set_status(order, "refunded")
+    billing.set_status(order, "refunded", only_from="refunding")
     남음 = billing.refund(user["id"], o["credit"], order, memo="결제 취소")
     return {"ok": True, "환불": o["amount"], "잔액": 남음}
 
@@ -1446,6 +1452,9 @@ async def get_pay_approve(order: str, pg_token: str = "") -> RedirectResponse:
         return RedirectResponse(f"/?pay=ok&order={order}")
     if o["status"] != "ready":
         return RedirectResponse("/?pay=fail")
+    # 같은 콜백이 동시에 두 번 오면 하나만 승인으로 간다
+    if not billing.set_status(order, "approving", only_from="ready"):
+        return RedirectResponse(f"/?pay=ok&order={order}")
 
     ok = await kp.approve(tid=o["tid"], pg_token=pg_token,
                           order_id=order, user_id=f"u{o['user_id']}")

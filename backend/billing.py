@@ -168,17 +168,24 @@ def charge(user_id: int, credit: int, paid: int, order_id: str) -> int:
 
 
 def spend(user_id: int, amount: int, memo: str = "") -> int:
-    """차감. 잔액이 모자라면 402 로 막고 한 푼도 쓰지 않는다."""
+    """차감. 잔액이 모자라면 402 로 막고 한 푼도 쓰지 않는다.
+
+    "잔액 확인 → 차감" 두 문장이면 같은 순간 온 두 요청이 둘 다 통과한다. 차감 줄을 넣는 INSERT 안에서 잔액을 다시 재서
+    (INSERT … SELECT … WHERE 잔액 >= 값) 한 문장으로 한다 — 두 번째 요청은 줄이 안 들어가 402 가 된다.
+    """
     if amount <= 0:
         raise HTTPException(400, "차감 금액을 확인해 주세요.")
     with auth.db() as con:
-        r = con.execute("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger"
-                        " WHERE user_id=?", (user_id,)).fetchone()
-        남음 = int(r["s"] or 0)
-        if 남음 < amount:
+        들어감 = con.execute(
+            "INSERT INTO credit_ledger (user_id, amount, kind, paid, order_id, memo, created_at)"
+            " SELECT ?, ?, 'use', NULL, NULL, ?, ?"
+            " WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id=?) >= ?",
+            (user_id, -int(amount), memo, int(time.time()), user_id, int(amount))).rowcount
+        if 들어감 != 1:
             raise HTTPException(402, "이용권이 모자라요. 먼저 충전해 주세요.")
-        _add(con, user_id, -amount, "use", memo=memo)
-        return 남음 - amount
+        r = con.execute("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger WHERE user_id=?",
+                        (user_id,)).fetchone()
+        return int(r["s"] or 0)
 
 
 def used_after(user_id: int, order_id: str) -> bool:
@@ -321,7 +328,15 @@ def get_order(order_id: str) -> dict | None:
     return dict(r) if r else None
 
 
-def set_status(order_id: str, status: str, aid: str | None = None) -> None:
+def set_status(order_id: str, status: str, aid: str | None = None,
+               only_from: str | None = None) -> bool:
+    """주문 상태를 바꾼다. only_from 을 주면 지금 상태가 그것일 때만 — 같은 순간 온 두 환불 요청 가운데 첫 것만 통과한다.
+    돌려주는 값은 실제로 바뀌었는지."""
     with auth.db() as con:
-        con.execute("UPDATE pay_orders SET status=?, aid=COALESCE(?, aid), updated_at=?"
-                    " WHERE order_id=?", (status, aid, int(time.time()), order_id))
+        if only_from:
+            바뀜 = con.execute("UPDATE pay_orders SET status=?, aid=COALESCE(?, aid), updated_at=?"
+                             " WHERE order_id=? AND status=?", (status, aid, int(time.time()), order_id, only_from)).rowcount
+        else:
+            바뀜 = con.execute("UPDATE pay_orders SET status=?, aid=COALESCE(?, aid), updated_at=?"
+                             " WHERE order_id=?", (status, aid, int(time.time()), order_id)).rowcount
+    return 바뀜 == 1

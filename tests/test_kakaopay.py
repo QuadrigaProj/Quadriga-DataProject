@@ -580,3 +580,36 @@ def test_청구액과_다르게_승인된_구독은_열리지_않는다(키, mon
     r = 승인(a, d["order"], 500, monkeypatch)
     assert "pay=fail" in r.headers["location"]
     assert a.get("/recommend/ai-status").json()["구독"] is None
+
+# ---------- 같은 순간의 두 요청 (2차 점검 A-3) ----------
+
+def test_차감은_한_문장이라_같은_순간_두_요청이_둘_다_통과하지_않는다():
+    """"잔액 확인 → 차감" 두 문장이면 둘 다 잔액을 보고 통과한다. INSERT 안에서 잔액을 다시 재서 한 문장으로."""
+    _login()
+    billing.charge(1, 500, 500, "seed")
+    assert billing.spend(1, 500, "AI 추천") == 0
+    with pytest.raises(Exception) as e:
+        billing.spend(1, 1, "AI 추천")
+    assert e.value.status_code == 402
+    assert billing.balance(1) == 0                                    # 음수로 내려가지 않는다
+    import inspect
+    src = inspect.getsource(billing.spend)
+    assert "INSERT INTO credit_ledger" in src and "WHERE (SELECT COALESCE(SUM(amount), 0)" in src and ".rowcount" in src
+
+
+def test_환불은_먼저_잡은_요청만_카카오를_부른다(키, monkeypatch):
+    """같은 주문의 환불 요청이 두 번 오면 상태를 'refunding' 으로 먼저 잡은 쪽만 진행한다. 카카오가 거절하면 되돌린다."""
+    a = _login()
+    order = 준비(a, monkeypatch)["order"]
+    승인(a, order, 3000, monkeypatch)
+    assert billing.set_status(order, "refunding", only_from="paid") is True
+    assert billing.set_status(order, "refunding", only_from="paid") is False      # 두 번째는 못 잡는다
+    assert billing.set_status(order, "paid", only_from="refunding") is True
+    # 카카오 취소 실패 → 상태가 paid 로 돌아와 다시 시도할 수 있다
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜({"error_code": -1, "error_message": "x"}, status=500))
+    assert a.post(f"/pay/refund/{order}").status_code == 502
+    assert billing.get_order(order)["status"] == "paid"
+    monkeypatch.setattr(kp.httpx, "AsyncClient", 가짜(환불응답(3000)))
+    assert a.post(f"/pay/refund/{order}").status_code == 200
+    assert billing.get_order(order)["status"] == "refunded"
+    assert a.post(f"/pay/refund/{order}").status_code == 404                     # 이미 환불됨

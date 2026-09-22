@@ -143,6 +143,7 @@ def test_호출마다_토큰_수를_남긴다(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", mod)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("ADMIN_USERS", "password:boss@x.com")
+    air.take_usage()                                                # 다른 테스트가 이 스레드에 남긴 것을 비운다 (스레드마다 따로다)
     a = _user("a@x.com")
     assert _ai(a)["출처"] == "ai"
     assert a.get("/ai/usage").status_code == 403

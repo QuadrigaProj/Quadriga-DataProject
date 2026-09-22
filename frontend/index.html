@@ -1511,6 +1511,8 @@
   .comment .c-body{ margin-top:3px; }
   /* 내가 쓴 것 고치기·지우기 — 눈에 띄지 않게 작게 둔다 */
   .own-actions{ display:flex; gap:10px; margin-top:4px; }
+  .admin-del{ color:#B23B3B !important; font-weight:600; }
+  .report-item .rec-name{ white-space:pre-wrap; word-break:break-word; }
   .own-actions button{ background:none; border:none; padding:0; cursor:pointer;
     font-family:inherit; font-size:12px; color:var(--muted); }
   .own-actions button:hover{ color:var(--pine-deep); text-decoration:underline;
@@ -2510,6 +2512,7 @@
       <div id="commFeed" hidden>
         <div class="comm-list-head"><span>게시글</span>
           <span class="comm-head-btns">
+            <button type="button" class="comm-share-btn" id="reportsBtn" hidden onclick="openReports()">🚩 신고함</button>
             <button type="button" class="comm-share-btn" onclick="shareMyRecord()">📈 내 기록 공유</button>
             <button type="button" id="postAddBtn" class="comm-add" aria-label="게시글 작성"
                     aria-expanded="false" onclick="togglePostComposer()">＋</button>
@@ -4273,7 +4276,8 @@ function goTo(id){
 const COMM = { tab: 'feed', emojis: ['👍','🔥','💪','👏','🥲','🎉'],
                media: [], oldest: null, room: null, poll: null,
                roomFilter: 'all',
-               limits: null, tier: '무료' };          // 쓰기 제한 — 서버 /community/meta 가 준다 (등급별)
+               limits: null, tier: '무료',           // 쓰기 제한 — 서버 /community/meta 가 준다 (등급별)
+               admin: false };                      // 관리자(ADMIN_USERS)면 신고함과 '관리자 삭제' 가 보인다
 
 function initCommunity(){
   const ok = !!state.account;
@@ -4283,6 +4287,8 @@ function initCommunity(){
   API.commMeta().then(m => {
     if (m && m['이모지']) COMM.emojis = m['이모지'];
     if (m && m['제한']) { COMM.limits = m['제한']; COMM.tier = m['등급'] || '무료'; paintCommLimits(); }
+    COMM.admin = !!m?.['관리자'];
+    paintReportsBtn(m?.['신고']);
   }).catch(()=>{});
   commTab(COMM.tab);
 }
@@ -4496,7 +4502,9 @@ function postCard(p){
     <div class="post-actions">
       <button onclick="toggleComments(${p.id})">💬 댓글 ${p['댓글수']||0}</button>
       ${p['내글'] ? `<button onclick="editPost(${p.id})">수정</button>
-                     <button onclick="removePost(${p.id})">삭제</button>` : ''}
+                     <button onclick="removePost(${p.id})">삭제</button>`
+                  : `<button onclick="reportContent('post', ${p.id})">🚩 신고</button>${
+                     COMM.admin ? `<button class="admin-del" onclick="adminRemove('post', ${p.id})">관리자 삭제</button>` : ''}`}
     </div>
     <div class="comment-box" id="cbox-${p.id}" hidden></div>
   </div>`;
@@ -4628,7 +4636,10 @@ async function toggleComments(id){
         ${c['내글'] ? `<div class="own-actions">
             <button type="button" onclick="editComment(${id}, ${c.id})">수정</button>
             <button type="button" onclick="removeComment(${id}, ${c.id})">삭제</button>
-          </div>` : ''}
+          </div>` : `<div class="own-actions">
+            <button type="button" onclick="reportContent('comment', ${c.id})">🚩 신고</button>${
+            COMM.admin ? `<button type="button" class="admin-del" onclick="adminRemove('comment', ${c.id}, ${id})">관리자 삭제</button>` : ''}
+          </div>`}
       </div>`).join('') + `
       <div class="comment-row">
         <input type="text" id="ci-${id}" placeholder="댓글 달기 (${commLimits().댓글}자까지)" maxlength="${commLimits().댓글}" onkeydown="if(event.key==='Enter')sendComment(${id})" />
@@ -4657,6 +4668,65 @@ async function sendComment(id){
 async function removePost(id){
   if (!confirm('이 글을 삭제할까요?')) return;
   try { await API.commPostDelete(id); $('post-' + id).remove(); }
+  catch (e) { showToast(e.message); }
+}
+
+/* ---- 신고 · 관리자 검토 ----
+   신고하면 바로 사라지지 않고 관리자(ADMIN_USERS)가 본다. 같은 것을 두 번 눌러도 한 번으로 친다. */
+async function reportContent(type, id){
+  const 사유 = prompt('무엇이 문제인가요? (선택 · 200자까지)\n예: 광고, 욕설, 남의 개인정보');
+  if (사유 === null) return;
+  try {
+    const r = await API.commReport(type, id, 사유.slice(0, 200));
+    showToast(`신고했어요. 관리자가 확인해요 (지금까지 ${r.신고수}명)`);
+  } catch (e) { showToast(e.message); }
+}
+
+function paintReportsBtn(n){
+  const b = $('reportsBtn');
+  if (!b) return;
+  b.hidden = !COMM.admin;
+  b.textContent = `🚩 신고함${n ? ` ${n}` : ''}`;
+}
+
+/* 관리자 — 아무 글 · 댓글 · 메시지나 지운다. 지우면 그 신고는 닫힌다. */
+async function adminRemove(type, id, postId){
+  if (!confirm(`관리자로 이 ${{ post: '글', comment: '댓글', message: '메시지' }[type]}을 삭제할까요? 쓴 사람에게 되돌려 줄 수 없어요.`)) return;
+  try {
+    const r = await API.commAdminDelete(type, id);
+    paintReportsBtn((r.신고 || []).length);
+    if (type === 'post') $('post-' + id)?.remove();
+    else if (type === 'comment' && postId) { $('cbox-' + postId).hidden = true; await toggleComments(postId); }
+    else if (type === 'message') await pollChat();
+    if ($('sheetTitle')?.textContent === '신고함') renderReports(r.신고 || []);
+    showToast('지웠어요');
+  } catch (e) { showToast(e.message); }
+}
+
+async function openReports(){
+  openSheet('신고함', '<div class="pay-note">신고를 불러오는 중이에요…</div>');
+  try { renderReports((await API.commReports()).신고 || []); }
+  catch (e) { $('sheetBody').innerHTML = `<div class="pay-note">${esc(e.message)}</div>`; }
+}
+
+function renderReports(list){
+  const box = $('sheetBody');
+  if (!box) return;
+  paintReportsBtn(list.length);
+  if (!list.length) { box.innerHTML = '<div class="rec-empty">처리할 신고가 없어요.</div>'; return; }
+  box.innerHTML = list.map(r => `
+    <div class="rec-item report-item">
+      <div class="rec-date">${esc(r.이름)} · ${esc(r.작성자)} · ${ago(r.작성시각)} · 신고 ${r.신고수}명${r.사유 ? ` · "${esc(r.사유)}"` : ''}</div>
+      <div class="rec-name">${esc(r.내용) || '(글 없음)'}${r.미디어 ? ` <span class="pay-why">사진·영상 ${r.미디어}개</span>` : ''}</div>
+      <div class="own-actions">
+        <button type="button" class="admin-del" onclick="adminRemove('${r.종류}', ${r.id})">삭제</button>
+        <button type="button" onclick="dismissReport('${r.종류}', ${r.id})">문제없음 · 넘기기</button>
+      </div>
+    </div>`).join('');
+}
+
+async function dismissReport(type, id){
+  try { renderReports((await API.commAdminDismiss(type, id)).신고 || []); }
   catch (e) { showToast(e.message); }
 }
 
@@ -5631,7 +5701,9 @@ function chatMsgHtml(m){
         <button type="button" onclick="openReactPickerFor('message', ${m.id})">반응 남기기</button>
         <button type="button" onclick="replyFromMenu(${m.id})">답장하기</button>
         ${m['내글'] ? `<button type="button" onclick="editMessage(${m.id})">수정</button>
-          <button type="button" onclick="removeMessage(${m.id})">삭제</button>` : ''}
+          <button type="button" onclick="removeMessage(${m.id})">삭제</button>`
+          : `<button type="button" onclick="reportContent('message', ${m.id})">🚩 신고</button>${
+            COMM.admin ? `<button type="button" class="admin-del" onclick="adminRemove('message', ${m.id})">관리자 삭제</button>` : ''}`}
         <button type="button" onclick="closeMsgMenu(${m.id})">닫기</button>
       </div>` : ''}
   </div>`;

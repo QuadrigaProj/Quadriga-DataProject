@@ -87,6 +87,18 @@ CREATE TABLE IF NOT EXISTS post_audience (
   PRIMARY KEY (post_id, user_id)
 );
 
+/* 신고 — 글 · 댓글 · 메시지. 같은 사람이 같은 것을 두 번 신고할 수 없다. 관리자가 보고 지우거나 넘긴다. */
+CREATE TABLE IF NOT EXISTS community_reports (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_type TEXT NOT NULL,           -- post | comment | message
+  target_id   INTEGER NOT NULL,
+  reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason      TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  handled_at  INTEGER,                 -- 관리자가 처리한 때(지웠든 넘겼든). NULL 이면 아직
+  UNIQUE (target_type, target_id, reporter_id)
+);
+
 /* 자주 고르는 친구 묶음 — '고른 친구' 로 올릴 때 기본으로 채워 준다. */
 CREATE TABLE IF NOT EXISTS share_chosen (
   user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -693,12 +705,12 @@ def toggle_reaction(user_id: int, target_type: str, target_id: int, emoji: str) 
     return summary.get(target_id, {"counts": {}, "mine": []})
 
 
-def _mine_or_403(con, table: str, row_id: int, user_id: int, 이름: str):
-    """내가 쓴 것만 고치거나 지울 수 있다. 없으면 404, 남의 것이면 403."""
+def _mine_or_403(con, table: str, row_id: int, user_id: int, 이름: str, admin: bool = False):
+    """내가 쓴 것만 고치거나 지울 수 있다. 없으면 404, 남의 것이면 403. 관리자(admin)는 지울 때만 예외."""
     r = con.execute(f"SELECT * FROM {table} WHERE id=?", (row_id,)).fetchone()
     if not r:
         raise HTTPException(404, f"{이름}을 찾을 수 없어요.")
-    if r["user_id"] != user_id:
+    if r["user_id"] != user_id and not admin:
         raise HTTPException(403, f"내 {이름}만 고치거나 지울 수 있어요.")
     return r
 
@@ -720,9 +732,11 @@ def _edited(body: str, 자리: int) -> str:
     return body[:자리]
 
 
-def delete_post(user_id: int, post_id: int) -> None:
+def delete_post(user_id: int, post_id: int, admin: bool = False) -> None:
     with auth.db() as con:
-        _mine_or_403(con, "community_posts", post_id, user_id, "글")
+        _mine_or_403(con, "community_posts", post_id, user_id, "글", admin=admin)
+        con.execute("UPDATE community_reports SET handled_at=? WHERE target_type='post' AND target_id=? AND handled_at IS NULL",
+                    (int(time.time()), post_id))
         cids = [c["id"] for c in con.execute(
             "SELECT id FROM community_comments WHERE post_id=?", (post_id,)).fetchall()]
         _drop_reactions(con, "comment", cids)
@@ -740,9 +754,11 @@ def edit_post(user_id: int, post_id: int, body: str) -> None:
                     (_edited(body, LIMITS["구독"]["본문"]), int(time.time()), post_id))
 
 
-def delete_comment(user_id: int, comment_id: int) -> None:
+def delete_comment(user_id: int, comment_id: int, admin: bool = False) -> None:
     with auth.db() as con:
-        _mine_or_403(con, "community_comments", comment_id, user_id, "댓글")
+        _mine_or_403(con, "community_comments", comment_id, user_id, "댓글", admin=admin)
+        con.execute("UPDATE community_reports SET handled_at=? WHERE target_type='comment' AND target_id=? AND handled_at IS NULL",
+                    (int(time.time()), comment_id))
         _drop_reactions(con, "comment", [comment_id])
         con.execute("DELETE FROM community_comments WHERE id=?", (comment_id,))
 
@@ -755,9 +771,11 @@ def edit_comment(user_id: int, comment_id: int, body: str) -> None:
                     (_edited(body, LIMITS["무료"]["댓글"]), int(time.time()), comment_id))
 
 
-def delete_message(user_id: int, message_id: int) -> int:
+def delete_message(user_id: int, message_id: int, admin: bool = False) -> int:
     with auth.db() as con:
-        r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지")
+        r = _mine_or_403(con, "chat_messages", message_id, user_id, "메시지", admin=admin)
+        con.execute("UPDATE community_reports SET handled_at=? WHERE target_type='message' AND target_id=? AND handled_at IS NULL",
+                    (int(time.time()), message_id))
         _drop_reactions(con, "message", [message_id])
         # 답장은 남긴다. 원글이 없어졌다는 이유로 남의 글까지 지울 수는 없다.
         con.execute("UPDATE chat_messages SET reply_to=NULL WHERE reply_to=?", (message_id,))
@@ -772,6 +790,76 @@ def edit_message(user_id: int, message_id: int, body: str) -> int:
         con.execute("UPDATE chat_messages SET body=?, edited_at=? WHERE id=?",
                     (_edited(body, LIMITS["무료"]["채팅"]), int(time.time()), message_id))
         return r["room_id"]
+
+
+# ---------------------------------------------------------------------------
+# 신고 · 관리자 검토
+# ---------------------------------------------------------------------------
+
+REPORT_TARGETS = {"post": ("community_posts", "글"), "comment": ("community_comments", "댓글"), "message": ("chat_messages", "메시지")}
+
+
+def report(user_id: int, target_type: str, target_id: int, reason: str = "") -> dict:
+    """글 · 댓글 · 메시지를 신고한다. 내 것은 신고할 수 없고, 같은 것을 두 번 신고하면 그대로(한 번으로 친다).
+    보이는 글에만 — 못 보는 글은 없는 글과 같은 404 (있다는 사실도 정보다). 메시지는 그 방 사람만."""
+    if target_type not in REPORT_TARGETS:
+        raise HTTPException(400, "잘못된 대상이에요.")
+    table, 이름 = REPORT_TARGETS[target_type]
+    reason = (reason or "").strip()[:200]
+    with auth.db() as con:
+        r = con.execute(f"SELECT * FROM {table} WHERE id=?", (target_id,)).fetchone()
+        if not r:
+            raise HTTPException(404, f"{이름}을 찾을 수 없어요.")
+        if target_type == "post":
+            _visible_or_404(con, user_id, target_id)
+        elif target_type == "comment":
+            _visible_or_404(con, user_id, r["post_id"])
+        elif not _is_member(con, r["room_id"], user_id):
+            raise HTTPException(403, "먼저 모임에 참여해 주세요.")
+        if r["user_id"] == user_id:
+            raise HTTPException(400, f"내 {이름}은 신고할 수 없어요. 직접 지울 수 있어요.")
+        있음 = con.execute("SELECT 1 FROM community_reports WHERE target_type=? AND target_id=? AND reporter_id=?",
+                          (target_type, target_id, user_id)).fetchone()
+        if not 있음:
+            con.execute("INSERT INTO community_reports (target_type, target_id, reporter_id, reason, created_at)"
+                        " VALUES (?,?,?,?,?)", (target_type, target_id, user_id, reason, int(time.time())))
+        n = con.execute("SELECT COUNT(*) AS n FROM community_reports WHERE target_type=? AND target_id=?",
+                        (target_type, target_id)).fetchone()["n"]
+    return {"ok": True, "신고수": int(n)}
+
+
+def open_reports(limit: int = 50) -> list[dict]:
+    """아직 처리하지 않은 신고 — 대상마다 하나로 묶고, 관리자가 볼 수 있게 내용 한 줄과 쓴 사람을 붙인다."""
+    with auth.db() as con:
+        rows = con.execute(
+            "SELECT target_type, target_id, COUNT(*) AS n, MIN(created_at) AS first_at, MAX(reason) AS reason"
+            " FROM community_reports WHERE handled_at IS NULL GROUP BY target_type, target_id"
+            " ORDER BY first_at DESC LIMIT ?", (limit,)).fetchall()
+        out = []
+        for r in rows:
+            table, 이름 = REPORT_TARGETS[r["target_type"]]
+            t = con.execute(f"SELECT * FROM {table} WHERE id=?", (r["target_id"],)).fetchone()
+            if not t:                                                # 이미 지워졌다 — 처리된 것으로 닫는다
+                con.execute("UPDATE community_reports SET handled_at=? WHERE target_type=? AND target_id=? AND handled_at IS NULL",
+                            (int(time.time()), r["target_type"], r["target_id"]))
+                continue
+            u = con.execute("SELECT display_name FROM users WHERE id=?", (t["user_id"],)).fetchone()
+            body = t["body"] or ""
+            out.append({"종류": r["target_type"], "이름": 이름, "id": int(r["target_id"]), "신고수": int(r["n"]),
+                        "사유": r["reason"] or "", "처음신고": int(r["first_at"]),
+                        "내용": body[:140] + ("…" if len(body) > 140 else ""),
+                        "미디어": len(json.loads(t["media"] or "[]")) if r["target_type"] == "post" else 0,
+                        "작성자": (u["display_name"] if u else "(탈퇴)"), "작성시각": int(t["created_at"])})
+    return out
+
+
+def dismiss_reports(target_type: str, target_id: int) -> int:
+    """신고를 넘긴다(지우지 않고 처리 완료로). 돌려주는 값은 닫은 신고 수."""
+    if target_type not in REPORT_TARGETS:
+        raise HTTPException(400, "잘못된 대상이에요.")
+    with auth.db() as con:
+        return con.execute("UPDATE community_reports SET handled_at=? WHERE target_type=? AND target_id=? AND handled_at IS NULL",
+                           (int(time.time()), target_type, target_id)).rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -1316,6 +1404,12 @@ class CommentIn(BaseModel):
     body: str = Field(..., max_length=LIMITS["무료"]["댓글"])
 
 
+class ReportIn(BaseModel):
+    target_type: str = Field(..., pattern="^(post|comment|message)$")
+    target_id: int
+    reason: str = Field("", max_length=200)
+
+
 class ReactionIn(BaseModel):
     target_type: str = Field(..., pattern="^(post|comment|message)$")
     target_id: int
@@ -1348,16 +1442,72 @@ class MessageIn(BaseModel):
     reply_to: int | None = None
 
 
+def _admin_uid(token: str | None) -> int:
+    """관리자(main.ADMIN_USERS)만. 커뮤니티가 main 을 되돌아 부르지 않게 늦게 읽는다."""
+    user = auth.user_for_token(token)
+    if not user:
+        raise HTTPException(401, "커뮤니티는 로그인 후 이용할 수 있어요.")
+    try:
+        from backend.main import is_admin
+    except ImportError:
+        from main import is_admin  # type: ignore
+    if not is_admin(user):
+        raise HTTPException(403, "관리자만 할 수 있어요.")
+    return user["id"]
+
+
+@router.post("/report")
+def report_new(body: ReportIn, quadriga_session: str | None = Cookie(None)) -> dict:
+    """글 · 댓글 · 메시지 신고. 관리자가 검토한다 — 신고했다고 바로 사라지진 않는다."""
+    return report(_uid(quadriga_session), body.target_type, body.target_id, body.reason)
+
+
+@router.get("/admin/reports")
+def admin_reports(quadriga_session: str | None = Cookie(None)) -> dict:
+    _admin_uid(quadriga_session)
+    return {"신고": open_reports()}
+
+
+@router.delete("/admin/{target_type}/{target_id}")
+def admin_remove(target_type: str, target_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    """관리자가 아무 글 · 댓글 · 메시지나 지운다. 그 대상의 신고는 처리 완료로 닫힌다."""
+    me = _admin_uid(quadriga_session)
+    if target_type == "post":
+        delete_post(me, target_id, admin=True)
+    elif target_type == "comment":
+        delete_comment(me, target_id, admin=True)
+    elif target_type == "message":
+        delete_message(me, target_id, admin=True)
+    else:
+        raise HTTPException(400, "잘못된 대상이에요.")
+    print(f"[admin] {target_type} {target_id} 삭제 by user {me}", flush=True)
+    return {"ok": True, "신고": open_reports()}
+
+
+@router.post("/admin/{target_type}/{target_id}/dismiss")
+def admin_dismiss(target_type: str, target_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    """신고를 넘긴다 — 지우지 않고 처리 완료로."""
+    _admin_uid(quadriga_session)
+    return {"닫음": dismiss_reports(target_type, target_id), "신고": open_reports()}
+
+
 @router.get("/meta")
 def meta(quadriga_session: str | None = Cookie(None)) -> dict:
     """화면이 그릴 것 — 이모지와 이 사람의 쓰기 제한(등급). 로그인 전에는 무료 등급 값."""
     user = auth.user_for_token(quadriga_session)
     등급 = tier_for(user["id"]) if user else "무료"
     제한 = dict(LIMITS[등급])
+    관리자 = False
     if user:
         제한["오늘남은글"] = max(0, 제한["글하루"] - posts_today(user["id"]))
+        try:
+            from backend.main import is_admin
+        except ImportError:
+            from main import is_admin  # type: ignore
+        관리자 = is_admin(user)
     return {"이모지": ALLOWED_EMOJI, "미디어최대개수": 제한["사진"],
-            "미디어최대바이트": 제한["동영상바이트"], "등급": 등급, "제한": 제한}
+            "미디어최대바이트": 제한["동영상바이트"], "등급": 등급, "제한": 제한, "관리자": 관리자,
+            "신고": len(open_reports()) if 관리자 else None}
 
 
 @router.get("/posts")

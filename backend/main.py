@@ -1269,7 +1269,8 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    out["종목"] = sp.resolve(out["유형"]["추천종목"])   # 화면이 이름·아이콘을 바로 그리게
+    # 화면이 이름·아이콘을 바로 그리게. 예산 안의 종목을 앞에 — 돈이 드는 종목은 뒤로 보내고 표시한다
+    out["종목"] = st.sports_for_budget(sp.resolve(out["유형"]["추천종목"]), out.get("예산"))
     return out
 
 
@@ -1784,6 +1785,7 @@ class RecommendIn(BaseModel):
     경도: float | None = Field(None, ge=-180, le=180)
     # 받아 둔 AI 루틴을 바탕으로 방향만 바꿔 다시 짓는다. '다시 받기' 대신 이 둘 중 하나를 고른다.
     조정: Literal["더 쉽게", "더 어렵게"] | None = Field(None, description="이전 루틴보다 더 쉽게/더 어렵게 다시 짓는다")
+    예산: int | None = Field(None, ge=0, le=3, description="운동 스타일 테스트의 예산 답 (0 거의 없음 … 3 부담 없음). AI 가 시설·강습 종목을 넣을지 정할 때")
     이전루틴: dict | None = Field(None, description="조정의 바탕 {루틴명, 강도, steps: [{동작, 단계, 수행량}]}")
 
 
@@ -1837,7 +1839,8 @@ def post_recommend_routines(body: RecommendIn, request: Request,
         profile={"항목별": _short_numbers(body.항목별), "체력나이": body.체력나이,
                  "최근기록": _short_records(body.최근기록),
                  "건강상태": _short_list(body.건강상태),
-                 "시작": ssn.start_info(body.시작일, body.위도, body.경도)},
+                 "시작": ssn.start_info(body.시작일, body.위도, body.경도),
+                 "예산": st.BUDGET_NAMES[body.예산] if body.예산 is not None else None},
         adjust=body.조정, previous=_previous_routine(body.이전루틴) if body.조정 else None,
         method="POST", ip=client_ip(request))
 
@@ -1931,6 +1934,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 "최근 기록": ((profile or {}).get("최근기록") or [])[:30],
                 "건강 상태": (profile or {}).get("건강상태") or [],
                 "시작": (profile or {}).get("시작"),   # {시작일, 계절, 날씨(예보)} 또는 None
+                "운동 예산": (profile or {}).get("예산"),   # "거의 없음" … "부담 없음" 또는 None
             }
             if adjust:
                 사용자["조정"] = {"방향": adjust, "이전 루틴": previous or {}}

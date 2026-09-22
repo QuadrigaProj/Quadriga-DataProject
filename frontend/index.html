@@ -1689,6 +1689,9 @@
           <span class="social-mark">K</span> 카카오로 계속하기</button>
       </div>
       <div class="login-hint" id="socialHint"></div>
+      <div class="login-hint" id="socialConsent">카카오로 계속하면 <b>만 14세 이상</b>이며
+        <a href="/terms" target="_blank" rel="noreferrer">이용약관</a>·<a href="/privacy" target="_blank" rel="noreferrer">개인정보처리방침</a>에
+        동의한 것으로 봅니다.</div>
 
       <div class="divider"><span>또는 이메일로</span></div>
 
@@ -2230,6 +2233,7 @@
       <button onclick="askDelete()">계정 삭제</button>
       <div class="danger-confirm" id="deleteBox">
         계정과 지금까지의 <b>측정 기록이 모두 삭제</b>됩니다. 되돌릴 수 없어요.
+        <span id="deleteCreditNote"></span>
         <div class="row">
           <button onclick="cancelDelete()">취소</button>
           <button class="go" onclick="doDelete()">삭제할게요</button>
@@ -3670,7 +3674,16 @@ function loginLocal(name){
 
 /* 계정 삭제 — 서버에 저장된 계정과 측정 기록을 전부 지운다.
    되돌릴 수 없으므로 인라인 확인 단계를 한 번 거친다. */
-function askDelete(){ $('deleteBox').style.display = 'block'; }
+function askDelete(){
+  // 남은 이용권 · 구독은 계정과 함께 사라지고 환불되지 않는다 — 지우기 전에 알린다 (개인정보처리방침 3)
+  const note = $('deleteCreditNote');
+  if (note) {
+    const 잔액 = state.credit || 0;
+    const 구독 = aiSub() ? ` 구독(${fmtDate(isoDate(new Date(aiInfo.구독.까지 * 1000)))}까지)도 함께 끝나요.` : '';
+    note.innerHTML = (잔액 > 0 ? ` <b>남은 이용권 ${won(잔액)}도 사라지고 환불되지 않아요.</b> 환불받으려면 먼저 결제 내역에서 환불한 뒤 삭제하세요.` : '') + 구독;
+  }
+  $('deleteBox').style.display = 'block';
+}
 function cancelDelete(){ $('deleteBox').style.display = 'none'; }
 
 async function doDelete(){
@@ -5534,6 +5547,7 @@ async function onHealthPhoto(ev){
   const f = ev.target.files?.[0];
   ev.target.value = '';
   if (!f) return;
+  if (!$('healthAgree')?.checked) { showToast('사진을 읽으려면 먼저 아래 민감정보 이용에 동의해 주세요 — 사진이 AI 서버로 전송돼요'); return; }
   if (!값을치를까(`약봉지 사진에서 건강 상태를 읽어올까요? ${won(aiPrice('건강사진'))}이 결제됩니다.\n`
                 + '읽은 뒤에 직접 고칠 수 있어요. 글로 직접 적는 건 무료예요.', '건강사진', '사진')) return;
   const 사진 = await shrinkPhoto(f);

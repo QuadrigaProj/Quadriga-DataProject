@@ -19,26 +19,49 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from datetime import date
 
 MODEL = "claude-opus-5"
 TIMEOUT_SEC = 20.0
-COMPOSE_TIMEOUT_SEC = 60.0     # 루틴 하나를 짓는 데 — 재료 표가 길고 본운동이 여러 줄이라 40초로는 빠듯했다
+COMPOSE_TIMEOUT_SEC = 120.0    # 루틴 하나를 짓는 데 — 재료 표가 길고 하루를 시간대 넷으로 나눠 12줄까지 쓴다. 60초로도 늦을 때가 있었다
 PERIOD_TIMEOUT_SEC = 60.0      # 구간(계절·시간대) 계획 — 네 덩이, 계절 안에 시간대까지면 열여섯 줄. 20초로는 늘 늦었다
-SDK_RETRIES = 1                # 제한 시간에 걸리거나 저쪽이 바쁘다고 하면 SDK 가 한 번 더 부른다
+SDK_RETRIES = 1                # 제한 시간에 걸리거나 저쪽이 바쁘다고 하면 SDK 가 한 번 더 부른다 (싸고 짧은 호출만)
+COMPOSE_RETRIES = 0            # 루틴 짓기는 다시 부르지 않는다 — 제한 시간에 걸린 첫 호출도 저쪽에선 끝까지 돌아 값이 매겨지는데,
+                               # 한 번 더 부르면 그 값을 두 번 내고 사용자에겐 하나도 못 준다 (가장 비싼 호출이다)
 LAST_FAIL: dict = {}           # 마지막 실패 {어디, 이유, 때} — 화면이 "못 받았어요" 만 띄우면 손쓸 방법이 없다
 MAX_TOKENS = 8000
+_usage_local = threading.local()   # 이 스레드의 마지막 호출이 쓴 토큰 — 부른 쪽이 take_usage() 로 가져가 기록한다
 
 
 def longest_wait_sec() -> float:
-    """AI 호출 하나가 가장 오래 끌 수 있는 시간(초) — 가장 긴 제한 시간 × (처음 + 재시도).
+    """AI 호출 하나가 가장 오래 끌 수 있는 시간(초) — 제한 시간 × (처음 + 재시도) 가운데 가장 긴 것.
 
     서버의 요청 제한(main.AI_REQUEST_TIMEOUT_SEC)은 이보다 길어야 한다. 짧으면 화면에는 "너무 오래 걸려 멈췄어요" 가
     나가는데 여기서는 끝까지 지어서 값을 받는다 — 늦을 때는 AI 쪽이 먼저 포기해야 값을 안 받고 무료 추천으로 넘어간다.
     """
-    가장_긴 = max(TIMEOUT_SEC * 2, COMPOSE_TIMEOUT_SEC, PERIOD_TIMEOUT_SEC * 1.5)
-    return 가장_긴 * (SDK_RETRIES + 1)
+    return max(TIMEOUT_SEC * 2 * (SDK_RETRIES + 1),
+               COMPOSE_TIMEOUT_SEC * (COMPOSE_RETRIES + 1),
+               PERIOD_TIMEOUT_SEC * 1.5 * (SDK_RETRIES + 1))
+
+
+def _note_usage(어디: str, message) -> None:
+    """응답의 토큰 수를 이 스레드에 남기고 서버 로그에 한 줄 적는다 — 원가는 청구서가 아니라 여기서 안다."""
+    u = getattr(message, "usage", None)
+    기록 = {"어디": 어디, "model": getattr(message, "model", None) or MODEL,
+          "input": getattr(u, "input_tokens", None), "output": getattr(u, "output_tokens", None),
+          "cache": getattr(u, "cache_read_input_tokens", None)}
+    _usage_local.last = 기록
+    if u is not None:
+        print(f"[ai] {어디} in={기록['input']} out={기록['output']} cache={기록['cache']} model={기록['model']}", flush=True)
+
+
+def take_usage() -> dict | None:
+    """이 스레드의 마지막 호출이 쓴 토큰을 꺼낸다(한 번 꺼내면 비운다). 부른 적이 없으면 None."""
+    기록 = getattr(_usage_local, "last", None)
+    _usage_local.last = None
+    return 기록
 
 def available() -> bool:
     """지금 AI 를 부를 수 있는지. 키와 SDK 가 모두 있어야 한다."""
@@ -250,6 +273,7 @@ def periods(루틴: dict, 참고: dict, 연령대: str,
             messages=[{"role": "user",
                        "content": _season_prompt(루틴, 참고, 연령대, 상태, 일정)}],
         )
+        _note_usage("periods", message)
         if getattr(message, "stop_reason", None) == "refusal":
             return None
         d = _json_only(_text(message))
@@ -388,6 +412,7 @@ def read_health_photo(데이터: str, 미디어형: str) -> dict | None:
                 {"type": "text", "text": "이 사진에서 운동에 참고할 건강 상태만 옮겨 적어주세요."},
             ]}],
         )
+        _note_usage("health_photo", message)
         if getattr(message, "stop_reason", None) == "refusal":
             return None
         d = _json_only(_text(message))
@@ -434,6 +459,7 @@ def read_schedule_photo(데이터: str, 미디어형: str) -> dict | None:
                 {"type": "text", "text": "이 시간표에서 바쁜 시간을 옮겨 적어주세요."},
             ]}],
         )
+        _note_usage("schedule_photo", message)
         if getattr(message, "stop_reason", None) == "refusal":
             return None
         d = _json_only(_text(message))
@@ -694,7 +720,7 @@ def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None
     try:
         import anthropic
 
-        client = anthropic.Anthropic(timeout=COMPOSE_TIMEOUT_SEC, max_retries=SDK_RETRIES)
+        client = anthropic.Anthropic(timeout=COMPOSE_TIMEOUT_SEC, max_retries=COMPOSE_RETRIES)
         message = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
@@ -703,6 +729,7 @@ def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None
             messages=[{"role": "user",
                        "content": _compose_prompt(사용자, 재료, 일정)}],
         )
+        _note_usage("compose", message)
         if getattr(message, "stop_reason", None) == "refusal":
             return None
         d = _json_only(_text(message))

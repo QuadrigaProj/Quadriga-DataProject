@@ -397,7 +397,8 @@ def test_가입_로그인_로그아웃():
     r = c.post("/auth/signup", json={"email": "A@Example.com",
                                      "password": "abcd1234", "display_name": "예현"})
     assert r.status_code == 200
-    assert c.get("/auth/me").json() == {"로그인": True, "이름": "예현", "수단": "password"}
+    assert c.get("/auth/me").json() == {"로그인": True, "이름": "예현", "수단": "password",
+                                        "계정": "password:a@example.com"}   # 계정 = ADMIN_USERS 에 적을 이름
 
     c.post("/auth/logout")
     assert c.get("/auth/me").json()["로그인"] is False

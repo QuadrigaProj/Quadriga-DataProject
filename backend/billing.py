@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import datetime as _dt
 import time
 
 try:
@@ -52,6 +53,32 @@ CREATE TABLE IF NOT EXISTS pay_orders (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_orders_user ON pay_orders(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER,
+  ip         TEXT,
+  kind       TEXT NOT NULL,             -- 루틴 | 조정 | 구간 | 시간표사진 | 건강사진
+  day        TEXT NOT NULL,             -- YYYY-MM-DD (한국 시간). 하루 횟수를 셀 때
+  paid       INTEGER NOT NULL,          -- 받은 값(원). 시연 · 이용권 안이면 0
+  input_tok  INTEGER,                   -- 응답의 usage — 원가 계산용
+  output_tok INTEGER,
+  cache_tok  INTEGER,
+  model      TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(user_id, day);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_ip ON ai_usage(ip, day);
+
+CREATE TABLE IF NOT EXISTS ai_addons (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,             -- 상세 (자세히 보기) | 구독
+  starts_at  INTEGER NOT NULL,
+  ends_at    INTEGER NOT NULL,
+  memo       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_ai_addons_user ON ai_addons(user_id, ends_at DESC);
 """
 SCHEMA_PG = (SCHEMA_SQLITE
              .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"))
@@ -175,6 +202,86 @@ def refund(user_id: int, credit: int, order_id: str, memo: str = "") -> int:
             raise HTTPException(409, "이미 사용한 이용권은 환불할 수 없어요.")
         _add(con, user_id, -credit, "refund", order_id=f"refund:{order_id}", memo=memo)
     return balance(user_id)
+
+
+# ---------------- AI 사용 기록 · 부가 이용권 ----------------
+#
+# 호출 하나하나를 남긴다. 두 가지 쓸모 — (1) 시연 기간의 하루 무료 횟수를 센다,
+# (2) 응답의 토큰 수(usage)를 적어 두어 실제 원가를 안다. 청구서가 와야 아는 것과는 다르다.
+
+KST = _dt.timezone(_dt.timedelta(hours=9))
+
+
+def kst_today(now: float | None = None) -> str:
+    """한국 날짜 — 하루 횟수는 한국 자정에 새로 센다."""
+    return _dt.datetime.fromtimestamp(now if now is not None else time.time(), KST).date().isoformat()
+
+
+def note_ai_use(user_id: int | None, ip: str | None, kind: str, paid: int,
+                usage: dict | None = None, now: float | None = None) -> None:
+    u = usage or {}
+    with auth.db() as con:
+        con.execute(
+            "INSERT INTO ai_usage (user_id, ip, kind, day, paid, input_tok, output_tok, cache_tok, model, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (user_id, ip, kind, kst_today(now), int(paid), u.get("input"), u.get("output"), u.get("cache"),
+             u.get("model"), int(now if now is not None else time.time())))
+
+
+def ai_uses_today(user_id: int, kinds: tuple[str, ...], now: float | None = None) -> int:
+    """오늘(한국 시간) 이 사람이 그 종류들을 몇 번 썼는지."""
+    자리 = ",".join("?" * len(kinds))
+    with auth.db() as con:
+        r = con.execute(f"SELECT COUNT(*) AS n FROM ai_usage WHERE user_id=? AND day=? AND kind IN ({자리})",
+                        (user_id, kst_today(now), *kinds)).fetchone()
+    return int(r["n"] or 0)
+
+
+def ai_uses_today_ip(ip: str, now: float | None = None) -> int:
+    """오늘 한 곳(IP)에서 AI 를 몇 번 불렀는지 — 계정을 늘려 무료 횟수를 우회하는 것을 막는다."""
+    with auth.db() as con:
+        r = con.execute("SELECT COUNT(*) AS n FROM ai_usage WHERE ip=? AND day=?", (ip, kst_today(now))).fetchone()
+    return int(r["n"] or 0)
+
+
+def ai_uses_since(user_id: int, kind: str, since: int) -> int:
+    with auth.db() as con:
+        r = con.execute("SELECT COUNT(*) AS n FROM ai_usage WHERE user_id=? AND kind=? AND created_at>=?",
+                        (user_id, kind, int(since))).fetchone()
+    return int(r["n"] or 0)
+
+
+def add_addon(user_id: int, kind: str, days: int, memo: str = "", now: float | None = None) -> dict:
+    """부가 이용권(자세히 보기 · 구독)을 연다. 아직 남은 것이 있으면 그 끝에 이어 붙인다 — 겹쳐 사도 날이 사라지지 않는다."""
+    now = int(now if now is not None else time.time())
+    있는것 = active_addon(user_id, kind, now)
+    시작 = now
+    끝 = max(now, 있는것["ends_at"] if 있는것 else now) + days * 86400
+    with auth.db() as con:
+        con.execute("INSERT INTO ai_addons (user_id, kind, starts_at, ends_at, memo) VALUES (?,?,?,?,?)",
+                    (user_id, kind, 시작, 끝, memo))
+    return {"종류": kind, "부터": 시작, "까지": 끝}
+
+
+def active_addon(user_id: int, kind: str, now: float | None = None) -> dict | None:
+    """지금 살아 있는 부가 이용권. 여럿이면 가장 늦게 끝나는 것."""
+    now = int(now if now is not None else time.time())
+    with auth.db() as con:
+        r = con.execute("SELECT id, kind, starts_at, ends_at FROM ai_addons WHERE user_id=? AND kind=? AND ends_at>?"
+                        " ORDER BY ends_at DESC LIMIT 1", (user_id, kind, now)).fetchone()
+    return dict(r) if r else None
+
+
+def ai_cost_summary(days: int = 30, now: float | None = None) -> dict:
+    """최근 며칠의 호출 수 · 토큰 합 · 받은 값 — 관리자가 원가를 볼 때. 개인 정보는 없다."""
+    since = int(now if now is not None else time.time()) - days * 86400
+    with auth.db() as con:
+        rows = con.execute(
+            "SELECT kind, COUNT(*) AS n, COALESCE(SUM(paid),0) AS paid, COALESCE(SUM(input_tok),0) AS i,"
+            " COALESCE(SUM(output_tok),0) AS o, COALESCE(SUM(cache_tok),0) AS c FROM ai_usage"
+            " WHERE created_at>=? GROUP BY kind", (since,)).fetchall()
+    return {r["kind"]: {"호출": int(r["n"]), "받은값": int(r["paid"]), "입력토큰": int(r["i"]),
+                        "출력토큰": int(r["o"]), "캐시토큰": int(r["c"])} for r in rows}
 
 
 # ---------------- 주문 ----------------

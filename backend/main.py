@@ -17,6 +17,7 @@ from __future__ import annotations
 import hmac
 import os
 import sys
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -1042,7 +1043,9 @@ def auth_me(quadriga_session: str | None = Cookie(None)) -> dict:
     auth.init_db()
     user = auth.user_for_token(quadriga_session)
     return {"로그인": bool(user), "이름": user["display_name"] if user else None,
-            "수단": user["provider"] if user else None}
+            "수단": user["provider"] if user else None,
+            # ADMIN_USERS 에 적을 이름 — 'kakao:회원번호' 꼴. 비밀 값이 아니다(제공자 안의 번호일 뿐)
+            "계정": f"{user['provider']}:{user['provider_uid']}" if user else None}
 
 
 class RenameIn(BaseModel):
@@ -1260,18 +1263,47 @@ def post_style_test_result(body: StyleAnswersIn) -> dict:
 # 실제 서비스에서 그건 PG사 결제창이 받는다(PCI-DSS). 우리는 금액과
 # 주문번호만 다루고, 승인 결과도 PG가 알려준 금액을 그대로 믿는다.
 
-# 선결제 할인 (K3).
-#   이용권 = 앱 안에서 쓸 수 있는 금액,  결제 = 실제로 내는 금액
-# 많이 미리 낼수록 더 싸게 준다. 1회만 결제(100원)는 할인이 없다.
-# **이 표가 기준이다.** 화면이 보낸 결제 금액을 믿지 않고, 여기서 다시 계산한다.
-AI_PRICE = 100                          # AI 추천 1회 값(원). 화면과 같아야 한다
+# 값표 (2026-09-22 예현 결정). 기준은 둘 — 우리가 이익을 남기되, 사용자도 적정하다고 느끼게.
+# AI 호출 하나의 원가(Opus 5, 1달러 1,400원)는 루틴 짓기 180~240원 · 구간 계획 90~200원 · 사진 읽기 25~60원이다.
+# 실제 토큰 수는 ai_usage 표(billing.ai_cost_summary)에 쌓인다 — 값을 다시 정할 때 거기를 본다.
+AI_PRICE = 500                          # AI 루틴 추천 1회 — 한 번 받으면 몇 달 이어 쓴다. 화면과 같아야 한다
+ADJUST_PRICE = 300                      # '더 쉽게 / 더 어렵게' 조정 — 산 것을 고치는 일이라 새로 받기보다 싸게
+DETAIL_PRICE = 500                      # '자세히 보기' — 구간(계절·시간대) 계획 + 시간표 사진 읽기, DETAIL_DAYS 동안
+HEALTH_PHOTO_PRICE = 300                # 약봉지·처방전 사진 읽기 (글로 직접 적는 건 무료)
+DETAIL_DAYS = 7
+DETAIL_LIMITS = {"구간": 5, "시간표사진": 3}    # 자세히 보기 한 번으로 쓸 수 있는 횟수 — 원가가 드는 호출이라 무한정은 아니다
+PRICES = {"루틴": AI_PRICE, "조정": ADJUST_PRICE, "자세히": DETAIL_PRICE, "건강사진": HEALTH_PHOTO_PRICE}
 
+# 시연 기간 — 실결제가 안 되는 동안(카카오페이 키가 없거나 테스트 가맹점) 값 대신 **하루 무료 횟수**로 제한한다.
+# 테스트 결제로는 누구나 이용권을 공짜로 채울 수 있어서, 값으로 막는 건 막는 게 아니다.
+DEMO_LIMITS = {"루틴": 3, "구간": 3, "사진": 2}   # 조정은 루틴에, 시간표·약봉지 사진은 '사진' 에 함께 센다
+DEMO_IP_LIMIT = 15                                # 한 곳(IP)에서 하루 AI 호출 합계 — 계정을 늘려 우회하는 것을 막는다
+DEMO_KINDS = {"루틴": ("루틴", "조정"), "구간": ("구간",), "사진": ("시간표사진", "건강사진")}
+
+
+def billing_mode() -> str:
+    """'real'(이용권 차감) 또는 'demo'(하루 무료 횟수).
+
+    AI_BILLING_MODE 로 고정할 수 있고, 없으면 카카오페이 설정으로 정한다 — 실제 가맹점 코드(TC 로 시작하지 않는 것)와
+    키가 있을 때만 실결제다.
+    """
+    고정 = (os.getenv("AI_BILLING_MODE") or "").strip().lower()
+    if 고정 in ("real", "demo"):
+        return 고정
+    return "real" if (kp.available() and not kp.is_test()) else "demo"
+
+
+# 선결제 보너스 (K3).
+#   이용권 = 앱 안에서 쓸 수 있는 금액,  결제 = 실제로 내는 금액
+# 많이 미리 낼수록 이용권을 더 얹어 준다. 1회만 결제(500원)는 보너스가 없다.
+# 보너스는 25%(=값의 20% 할인)까지만 — 한 번 쓸 때마다 원가 200원 안팎이 실제로 나가서 그보다 깊으면 팔수록 손해다.
+# **이 표가 기준이다.** 화면이 보낸 결제 금액을 믿지 않고, 여기서 다시 계산한다.
 PAY_PACKS = (
-    {"이용권": 100,  "결제": 100},      # 1회만
-    {"이용권": 1000, "결제": 700},      # 30%
-    {"이용권": 2000, "결제": 1300},     # 35%
-    {"이용권": 3000, "결제": 1800},     # 40%
-    {"이용권": 5000, "결제": 2500},     # 50%
+    {"이용권": 500,   "결제": 500},     # 1회만
+    {"이용권": 1100,  "결제": 1000},    # +10%
+    {"이용권": 3450,  "결제": 3000},    # +15%
+    {"이용권": 6000,  "결제": 5000},    # +20%
+    {"이용권": 12500, "결제": 10000},   # +25%
 )
 
 
@@ -1283,15 +1315,18 @@ def pack_for(이용권: int) -> dict | None:
 
 
 def pack_view(p: dict) -> dict:
-    """화면에 줄 모양 — 할인율까지 서버가 계산해서 내려준다."""
+    """화면에 줄 모양 — 보너스율(과 예전 화면이 쓰던 할인율)까지 서버가 계산해서 내려준다."""
     할인 = round((1 - p["결제"] / p["이용권"]) * 100)
-    return {"이용권": p["이용권"], "결제": p["결제"], "할인": 할인}
+    보너스 = round((p["이용권"] / p["결제"] - 1) * 100)
+    return {"이용권": p["이용권"], "결제": p["결제"], "할인": 할인, "보너스": 보너스}
 
 @app.get("/pay/methods")
 def get_pay_methods() -> dict:
     """화면이 그릴 결제 수단. 카카오페이만 실제로 붙어 있다."""
     return {
         "packs": [pack_view(p) for p in PAY_PACKS],
+        "값표": PRICES,
+        "시연": billing_mode() == "demo",
         "kakao": {"쓸수있음": kp.available(), "테스트": kp.is_test()},
         "카드": CARD_ISSUERS,
         "은행": BANKS,
@@ -1510,6 +1545,104 @@ def post_activity_days(body: list[ActivityDayIn]) -> list[dict]:
 
 # ---------- 12. 루틴 추천 ----------
 
+# ---------- AI 관문 — 부르기 전에 되는지 보고, 지은 뒤에 받는다 ----------
+#
+# AI 호출은 종류마다 값이 다르고(PRICES), 시연 기간에는 값 대신 하루 횟수(DEMO_LIMITS)다.
+# 어느 쪽이든 순서는 같다: ai_allow → (AI 를 부른다) → ai_settle. 실패하면 settle 을 부르지 않는다 — 한 푼도 안 받는다.
+# 관리자(ADMIN_USERS)는 값도 횟수도 없이 쓴다 — 팀이 직접 써 보는 데 값을 치르지 않게. 원가는 그대로 나가니 기록은 남긴다.
+_ai_inflight: set[int] = set()          # 지금 AI 를 부르는 중인 사용자 — 한 사람이 동시에 둘을 부르지 못하게(두 번 눌러 두 번 내는 일)
+_ai_inflight_lock = threading.Lock()
+
+
+def is_admin(누구: dict | None) -> bool:
+    """ADMIN_USERS 에 적힌 계정인지 — 이메일 또는 'provider:uid'(예 kakao:12345) 를 쉼표로."""
+    if not 누구:
+        return False
+    허용 = {e.strip().lower() for e in (os.getenv("ADMIN_USERS") or "").split(",") if e.strip()}
+    이름들 = {str(누구.get("email") or "").lower(), f"{누구.get('provider')}:{누구.get('provider_uid')}".lower()}
+    return bool(허용 & 이름들)
+
+
+def _demo_group(kind: str) -> str:
+    return next(g for g, ks in DEMO_KINDS.items() if kind in ks)
+
+
+def demo_left(user_id: int) -> dict:
+    """시연 기간에 오늘 남은 횟수 {루틴, 구간, 사진}."""
+    return {g: max(0, DEMO_LIMITS[g] - billing.ai_uses_today(user_id, ks)) for g, ks in DEMO_KINDS.items()}
+
+
+def ai_allow(누구: dict | None, ip: str, kind: str) -> tuple[bool, str | None, int]:
+    """(되는지, 안 되면 사용자에게 보일 한 줄, 실결제면 받을 값).
+
+    kind: 루틴 · 조정 · 구간 · 시간표사진 · 건강사진.
+    """
+    if not 누구:
+        return False, "로그인 후 이용할 수 있어요.", 0
+    if is_admin(누구):
+        return True, None, 0
+    if billing_mode() == "demo":
+        if billing.ai_uses_today_ip(ip) >= DEMO_IP_LIMIT:
+            return False, "이곳에서 오늘 쓸 수 있는 AI 횟수를 다 썼어요. 내일 다시 쓸 수 있어요.", 0
+        묶음 = _demo_group(kind)
+        남음 = demo_left(누구["id"])[묶음]
+        if 남음 <= 0:
+            return False, f"시연 기간이라 무료예요. 오늘 {DEMO_LIMITS[묶음]}번을 다 썼어요 — 내일 다시 쓸 수 있어요.", 0
+        return True, None, 0
+    if kind in DETAIL_LIMITS:                                   # 구간 계획 · 시간표 사진은 '자세히 보기' 안에서
+        상세 = billing.active_addon(누구["id"], "상세")
+        if not 상세:
+            return False, (f"'자세히 보기'({DETAIL_PRICE}원)를 추가하면 계절·시간대 계획과 시간표 사진 읽기를 "
+                           f"{DETAIL_DAYS}일 동안 쓸 수 있어요."), 0
+        if billing.ai_uses_since(누구["id"], kind, 상세["starts_at"]) >= DETAIL_LIMITS[kind]:
+            return False, "이번 자세히 보기에서 쓸 수 있는 횟수를 다 썼어요.", 0
+        return True, None, 0
+    값 = PRICES[kind]
+    if billing.balance(누구["id"]) < 값:
+        return False, "이용권이 모자라요. 먼저 충전해 주세요.", 값
+    return True, None, 값
+
+
+def ai_settle(누구: dict, ip: str, kind: str, 값: int, memo: str) -> int:
+    """AI 가 실제로 지었을 때만 부른다 — 값을 받고(실결제) 사용을 기록한다. 돌려주는 값은 잔액."""
+    잔액 = billing.spend(누구["id"], 값, memo) if 값 > 0 else billing.balance(누구["id"])
+    billing.note_ai_use(누구["id"], ip, kind, 값, air.take_usage())
+    return 잔액
+
+
+class _ai_turn:
+    """with _ai_turn(user_id): — 같은 사람이 이미 AI 를 부르는 중이면 429."""
+
+    def __init__(self, user_id: int | None):
+        self.user_id = user_id
+
+    def __enter__(self):
+        if self.user_id is None:
+            return self
+        with _ai_inflight_lock:
+            if self.user_id in _ai_inflight:
+                raise HTTPException(429, "AI 가 아직 짓는 중이에요. 잠시만 기다려 주세요.")
+            _ai_inflight.add(self.user_id)
+        return self
+
+    def __exit__(self, *exc):
+        if self.user_id is not None:
+            with _ai_inflight_lock:
+                _ai_inflight.discard(self.user_id)
+        return False
+
+
+def ai_status_for(누구: dict | None) -> dict:
+    """화면이 버튼과 문구를 정하는 데 쓰는 것 — 값표 · 시연 여부 · 오늘 남은 횟수 · 자세히 보기 · 잔액."""
+    시연 = billing_mode() == "demo"
+    상세 = billing.active_addon(누구["id"], "상세") if 누구 else None
+    return {"값": AI_PRICE, "값표": PRICES, "시연": 시연, "관리자": is_admin(누구),
+            "오늘남음": demo_left(누구["id"]) if (누구 and 시연 and not is_admin(누구)) else None,
+            "자세히": {"까지": 상세["ends_at"]} if 상세 else None,
+            "잔액": billing.balance(누구["id"]) if 누구 else 0,
+            "로그인": bool(누구)}
+
+
 @app.get("/recommend/ai-status")
 def get_ai_status(quadriga_session: str | None = Cookie(None)) -> dict:
     """AI 를 쓸 수 있는지, 이용권이 얼마나 남았는지. 값은 들지 않는다.
@@ -1520,11 +1653,30 @@ def get_ai_status(quadriga_session: str | None = Cookie(None)) -> dict:
     잠겨 있었다. 루틴 점수를 매기지 않으니 가볍다.
     """
     누구 = auth.user_for_token(quadriga_session)
-    return {"ai가능": air.available(),
-            "이유": air.why_unavailable(),
-            "값": AI_PRICE,
-            "잔액": billing.balance(누구["id"]) if 누구 else 0,
-            "로그인": bool(누구)}
+    return {"ai가능": air.available(), "이유": air.why_unavailable(), **ai_status_for(누구)}
+
+
+@app.post("/ai/detail")
+def post_ai_detail(quadriga_session: str | None = Cookie(None)) -> dict:
+    """'자세히 보기' 를 산다 — 이용권에서 DETAIL_PRICE 를 빼고 DETAIL_DAYS 동안 구간 계획 · 시간표 사진을 연다.
+
+    시연 기간에는 살 필요가 없다(하루 횟수로 무료) — 그때는 사지 않게 400.
+    """
+    누구 = _require_user(quadriga_session)
+    if billing_mode() == "demo" or is_admin(누구):
+        raise HTTPException(400, "지금은 자세히 보기가 무료예요. 따로 살 필요가 없어요.")
+    잔액 = billing.spend(누구["id"], DETAIL_PRICE, "자세히 보기 (구간 계획 · 시간표 사진)")
+    상세 = billing.add_addon(누구["id"], "상세", DETAIL_DAYS, memo=f"{DETAIL_PRICE}원")
+    return {"자세히": {"까지": 상세["까지"]}, "잔액": 잔액}
+
+
+@app.get("/ai/usage")
+def get_ai_usage(days: int = Query(30, ge=1, le=365), quadriga_session: str | None = Cookie(None)) -> dict:
+    """관리자용 원가 표 — 최근 며칠의 호출 수 · 토큰 합 · 받은 값. ADMIN_USERS 에 적힌 계정만."""
+    누구 = _require_user(quadriga_session)
+    if not is_admin(누구):
+        raise HTTPException(403, "관리자만 볼 수 있어요.")
+    return {"일수": days, "종류별": billing.ai_cost_summary(days), "값표": PRICES, "시연": billing_mode() == "demo"}
 
 
 class RecommendIn(BaseModel):
@@ -1577,7 +1729,7 @@ def get_recommend_routines(
     target_gap: float | None = Query(None, description="목표 체력나이까지 남은 세"),
     limit: int = Query(12, ge=1, le=80, description="난이도를 오갈 수 있게 넉넉히 준다. 80이면 전부다 (목적 8 × 10)"),
     week: int = Query(1, ge=1, le=13, description="프로그램 주차 — 수행량 계산용"),
-    ai: bool = Query(True, description="AI 로 순서·설명을 다듬는다. 키가 없으면 조용히 점수 결과를 쓴다"),
+    ai: bool = Query(False, description="예전 화면 호환용 — GET 은 값이 드는 AI 를 부르지 않는다. AI 는 POST 로만"),
     quadriga_session: str | None = Cookie(None),
     real_age: float | None = Query(None),
 ) -> dict:
@@ -1585,6 +1737,9 @@ def get_recommend_routines(
 
     루틴을 새로 만들지 않는다. 이미 있는 것 중에서 고르고 왜 골랐는지를 함께 낸다.
     아무 정보가 없어도 안전한 기본 순위를 돌려준다.
+
+    **GET 은 AI 를 부르지 않는다.** 값이 드는 일을 주소 하나로 시킬 수 있으면 남이 만든 링크를 여는 것만으로
+    이용권이 빠진다(로그인 쿠키가 실려 가는 최상위 이동). AI 는 POST 로만 — 화면도 늘 POST 로 부른다.
     """
     return _recommend(
         age_gbn=age_gbn,
@@ -1592,12 +1747,12 @@ def get_recommend_routines(
         style_purpose=style_purpose, purpose=purpose,
         sports=[s.strip() for s in (sports or "").split(",") if s.strip()],
         areas=[a.strip() for a in (areas or "").split(",") if a.strip()],
-        target_gap=target_gap, limit=limit, week=week, ai=ai,
+        target_gap=target_gap, limit=limit, week=week, ai=False,
         real_age=real_age, token=quadriga_session)
 
 
 @app.post("/recommend/routines")
-def post_recommend_routines(body: RecommendIn,
+def post_recommend_routines(body: RecommendIn, request: Request,
                             quadriga_session: str | None = Cookie(None)) -> dict:
     """GET 과 같은 추천에 일정을 얹는다.
 
@@ -1608,14 +1763,14 @@ def post_recommend_routines(body: RecommendIn,
         age_gbn=body.age_gbn, weak=body.weak, style_purpose=body.style_purpose,
         purpose=body.purpose, sports=body.sports, areas=body.areas, target_gap=body.target_gap, limit=body.limit,
         week=body.week, ai=body.ai, real_age=body.real_age,
-        token=quadriga_session, busy=body.바쁜시간,
+        token=quadriga_session, busy=_short_busy(body.바쁜시간),
         life_kind=_life_kinds(body.상태),
-        profile={"항목별": body.항목별, "체력나이": body.체력나이,
-                 "최근기록": body.최근기록[:30],
+        profile={"항목별": _short_numbers(body.항목별), "체력나이": body.체력나이,
+                 "최근기록": _short_records(body.최근기록),
                  "건강상태": _short_list(body.건강상태),
                  "시작": ssn.start_info(body.시작일, body.위도, body.경도)},
         adjust=body.조정, previous=_previous_routine(body.이전루틴) if body.조정 else None,
-        method="POST")
+        method="POST", ip=client_ip(request))
 
 
 def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
@@ -1626,7 +1781,8 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                life_kind: list[str] | str | None = None,
                profile: dict | None = None,
                adjust: str | None = None, previous: dict | None = None,
-               purpose: str | None = None, areas: list[str] | None = None) -> dict:
+               purpose: str | None = None, areas: list[str] | None = None,
+               ip: str = "?") -> dict:
     """GET·POST 가 함께 쓰는 본체. 두 군데서 따로 굴면 화면이 갈린다.
 
     method 는 부른 쪽의 HTTP 메서드 — 요청 제한이 경로마다 달라서, 값을 받기 전에 아직 안 끊겼는지 볼 때 쓴다.
@@ -1676,11 +1832,12 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
         out["짬시간"] = 일정["요일별"]
 
     if ai and out["ai가능"]:
-        if not 누구:
-            out["안내"] = "AI 추천은 로그인 후 이용할 수 있어요."
-        elif out["잔액"] < AI_PRICE:
-            out["안내"] = "이용권이 모자라요. 먼저 충전해 주세요."
+        종류 = "조정" if adjust else "루틴"
+        됨, 안내, 값 = ai_allow(누구, ip, 종류)
+        if not 됨:
+            out["안내"] = "AI 추천은 로그인 후 이용할 수 있어요." if not 누구 else 안내
         else:
+          with _ai_turn(누구["id"]):
             # 무료 추천은 점수 순이라 맞춤이 아니다. AI 는 이 사람의 데이터를
             # 전부 읽고 루틴 하나를 직접 짓는다 — 검증된 재료(공식 동작·고른
             # 종목·기록 종목) 안에서만. 응답의 코드·id 는 서버가 대조한다.
@@ -1709,7 +1866,7 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
             if adjust:
                 사용자["조정"] = {"방향": adjust, "이전 루틴": previous or {}}
             지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
-            # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다.
+            # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다 — 다만 원가는 나갔으니 '버림' 으로 기록한다.
             # 짓는 동안 요청이 끊겼으면(화면에는 이미 실패가 나갔다) 지은 것을 버리고 값도 받지 않는다.
             if 지음 and 지음.get("루틴") and 아직_받을_수_있다(시작, method, "/recommend/routines"):
                 if (profile or {}).get("시작"):
@@ -1718,7 +1875,12 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
                 out["출처"] = "ai"
                 if 지음.get("짬시간"):
                     out["짬시간계획"] = 지음["짬시간"]
-                out["잔액"] = billing.spend(누구["id"], AI_PRICE, "AI 루틴 추천")
+                out["잔액"] = ai_settle(누구, ip, 종류, 값,
+                                      "AI 루틴 추천" if 종류 == "루틴" else f"AI 루틴 조정 ({adjust})")
+            else:
+                billing.note_ai_use(누구["id"], ip, f"{종류}·버림", 0, air.take_usage())
+    if 누구 and billing_mode() == "demo" and not is_admin(누구):
+        out["오늘남음"] = demo_left(누구["id"])
     return out
 
 
@@ -1737,6 +1899,35 @@ def _previous_routine(루틴) -> dict:
     out = {"루틴명": 글(루틴.get("루틴명"), 40), "동작": 줄들}
     if isinstance(루틴.get("강도"), dict):
         out["강도"] = {k: v for k, v in 루틴["강도"].items() if isinstance(v, (int, float, str))}
+    return out
+
+
+def _short_records(값) -> list[dict]:
+    """최근 기록 [{date, 이름, 값}] 을 프롬프트에 실을 만큼만 — 줄 30개, 칸마다 40자. 모르는 칸은 버린다."""
+    out = []
+    for x in (값 or [])[:30]:
+        if isinstance(x, dict):
+            줄 = {k: str(x[k]).strip()[:40] for k in ("date", "이름", "값") if isinstance(x.get(k), (str, int, float))}
+            if 줄:
+                out.append(줄)
+    return out
+
+
+def _short_numbers(값) -> dict:
+    """항목별 체력나이 {이름: 숫자} — 이름 20자 · 숫자만 · 20개까지."""
+    out = {}
+    for k, v in (값 or {}).items():
+        if isinstance(v, (int, float)) and isinstance(k, str) and len(out) < 20:
+            out[k.strip()[:20]] = round(float(v), 1)
+    return out
+
+
+def _short_busy(값) -> dict:
+    """바쁜 시간 {요일: [{시작, 끝}]} — 요일은 아는 것만, 하루 20칸까지, 시각은 8자까지."""
+    out = {}
+    for 요일, 목록 in (값 or {}).items():
+        if 요일 in spare.WEEKDAYS and isinstance(목록, list):
+            out[요일] = [{k: str(c.get(k, ""))[:8] for k in ("시작", "끝")} for c in 목록[:20] if isinstance(c, dict)]
     return out
 
 
@@ -1759,27 +1950,38 @@ class HealthPhotoIn(BaseModel):
 
 
 @app.post("/health/photo")
-def post_health_photo(body: HealthPhotoIn,
+def post_health_photo(body: HealthPhotoIn, request: Request,
                       quadriga_session: str | None = Cookie(None)) -> dict:
-    """약봉지·처방전 사진에서 건강 상태 **후보**를 읽는다.
+    """약봉지·처방전 사진에서 건강 상태 **후보**를 읽는다 (HEALTH_PHOTO_PRICE — 글로 직접 적는 건 무료다).
 
-    값을 받지 않는다 — 건강 상태는 AI 추천을 맞추는 재료이지 상품이 아니다.
     읽은 것을 저장하지 않는다. 화면이 사용자에게 보여 주고, 고쳐서 저장할지는
     사용자가 정한다. 사진도 남기지 않는다. 로그인은 있어야 한다.
+    값은 읽고 나서 받는다 — 못 읽으면 한 푼도 안 받는다. 사진이 약봉지가 아니어도(빈 목록) 읽은 건 읽은 것이라 받는다.
     """
+    시작 = time.monotonic()
     if not air.available():
         raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
-    _require_user(quadriga_session)
+    누구 = _require_user(quadriga_session)
+    ip = client_ip(request)
+    됨, 안내, 값 = ai_allow(누구, ip, "건강사진")
+    if not 됨:
+        raise HTTPException(402 if 값 else 429, 안내)
     데이터, 형식 = _split_data_url(body.사진, body.미디어형)
     if 형식 not in air.PHOTO_TYPES:
         raise HTTPException(415, "JPG · PNG · WEBP · GIF 사진만 읽을 수 있어요.")
     if len(데이터) * 3 // 4 > air.PHOTO_MAX_BYTES:
         raise HTTPException(413, "사진이 너무 커요. 4MB 아래로 줄여주세요.")
-    읽은것 = air.read_health_photo(데이터, 형식)
+    with _ai_turn(누구["id"]):
+        읽은것 = air.read_health_photo(데이터, 형식)
     if 읽은것 is None:
         raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
+    if not 아직_받을_수_있다(시작, "POST", "/health/photo"):
+        raise HTTPException(503, "처리가 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해주세요.")
     if not 읽은것["건강상태"]:
         읽은것["안내"] = "사진에서 건강 상태를 찾지 못했어요. 직접 골라주세요."
+    읽은것["잔액"] = ai_settle(누구, ip, "건강사진", 값, "약봉지 사진 읽기")
+    if billing_mode() == "demo" and not is_admin(누구):
+        읽은것["오늘남음"] = demo_left(누구["id"])
     return 읽은것
 
 
@@ -1791,9 +1993,9 @@ class SchedulePhotoIn(BaseModel):
 
 
 @app.post("/schedule/photo")
-def post_schedule_photo(body: SchedulePhotoIn,
+def post_schedule_photo(body: SchedulePhotoIn, request: Request,
                         quadriga_session: str | None = Cookie(None)) -> dict:
-    """시간표 사진에서 요일별 바쁜 시간을 읽는다 (유료).
+    """시간표 사진에서 요일별 바쁜 시간을 읽는다 — '자세히 보기' 안에서(시연 기간에는 하루 횟수).
 
     읽은 것을 곧바로 저장하지 않는다. 화면이 사용자에게 보여 주고 고치게
     한다 — 사진을 잘못 읽었는데 그대로 저장되면 손댈 곳이 없다.
@@ -1802,8 +2004,10 @@ def post_schedule_photo(body: SchedulePhotoIn,
     if not air.available():
         raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
     누구 = _require_user(quadriga_session)
-    if billing.balance(누구["id"]) < AI_PRICE:
-        raise HTTPException(402, "이용권이 모자라요. 먼저 충전해 주세요.")
+    ip = client_ip(request)
+    됨, 안내, 값 = ai_allow(누구, ip, "시간표사진")
+    if not 됨:
+        raise HTTPException(402 if billing_mode() == "real" else 429, 안내)
 
     데이터, 형식 = _split_data_url(body.사진, body.미디어형)
     if 형식 not in air.PHOTO_TYPES:
@@ -1813,19 +2017,21 @@ def post_schedule_photo(body: SchedulePhotoIn,
     if len(데이터) * 3 // 4 > air.PHOTO_MAX_BYTES:
         raise HTTPException(413, "사진이 너무 커요. 4MB 아래로 줄여주세요.")
 
-    읽은것 = air.read_schedule_photo(데이터, 형식)
+    with _ai_turn(누구["id"]):
+        읽은것 = air.read_schedule_photo(데이터, 형식)
     if 읽은것 is None:
         raise HTTPException(503, "사진을 못 읽었어요. 잠시 뒤 다시 시도해주세요.")
     if not 아직_받을_수_있다(시작, "POST", "/schedule/photo"):
         # 읽는 동안 요청이 끊겼다 — 화면에는 이미 실패가 나갔으니 값을 받지 않는다.
         raise HTTPException(503, "처리가 너무 오래 걸려 멈췄어요. 잠시 뒤 다시 시도해주세요.")
+    잔액 = ai_settle(누구, ip, "시간표사진", 값, "시간표 사진 읽기")
+    out = {"바쁜시간": 읽은것 or {}, "잔액": 잔액}
     if not 읽은것:
-        # 부르긴 했지만 시간표가 아니었다. 값은 받되 왜 비었는지는 알려준다.
-        잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")
-        return {"바쁜시간": {}, "잔액": 잔액,
-                "안내": "사진에서 시간표를 찾지 못했어요. 직접 적어주세요."}
-    잔액 = billing.spend(누구["id"], AI_PRICE, "시간표 사진 읽기")
-    return {"바쁜시간": 읽은것, "잔액": 잔액}
+        # 부르긴 했지만 시간표가 아니었다. 횟수는 세되 왜 비었는지는 알려준다.
+        out["안내"] = "사진에서 시간표를 찾지 못했어요. 직접 적어주세요."
+    if billing_mode() == "demo" and not is_admin(누구):
+        out["오늘남음"] = demo_left(누구["id"])
+    return out
 
 
 def _split_data_url(값: str, 기본형: str | None) -> tuple[str, str | None]:
@@ -1883,19 +2089,21 @@ class PeriodIn(SeasonIn):
     시간대포함: bool = Field(False, description="계절 안에 아침·낮·저녁·밤을 함께 (계절 축일 때만)")
 
 
-def _periods(body: "SeasonIn", 축: str, token: str | None, 시간대포함: bool = False) -> dict:
+def _periods(body: "SeasonIn", 축: str, token: str | None, 시간대포함: bool = False, ip: str = "?") -> dict:
     """'이 루틴 자세히 알아보기' — 구간(계절 | 시간대)마다 어떻게 이어갈지.
 
-    **값을 받지 않는다.** AI 추천을 받을 때 이미 치렀다. 이건 그 루틴을
-    더 알아보는 선택 사항이라, 누를지는 사용자가 정하고 돈은 다시 들지 않는다.
-    로그인은 있어야 한다 — 남의 이름으로 AI 를 부를 수는 없다.
+    '자세히 보기'(DETAIL_PRICE, DETAIL_DAYS 일) 안에서 쓴다 — 원가가 루틴 짓기에 맞먹는 호출이라 공짜로 둘 수 없었다.
+    시연 기간에는 하루 횟수로 무료다. 로그인은 있어야 한다 — 남의 이름으로 AI 를 부를 수는 없다.
 
     루틴을 바꾸지 않는다. 이미 고른 루틴 하나를 구간에 맞게 어떻게 할지만
     쓴다. 네 구간이 다 나오지 않으면 버린다.
     """
     if not air.available():
         raise HTTPException(503, air.why_unavailable() or "지금 쓸 수 없어요.")
-    _require_user(token)
+    누구 = _require_user(token)
+    됨, 안내, 값 = ai_allow(누구, ip, "구간")
+    if not 됨:
+        raise HTTPException(402 if billing_mode() == "real" else 429, 안내)
 
     참고 = {"약점": body.약점, "고른종목": body.고른종목,
           "조심할부위": body.조심할부위, "건강상태": _short_list(body.건강상태)}
@@ -1910,11 +2118,14 @@ def _periods(body: "SeasonIn", 축: str, token: str | None, 시간대포함: boo
     바쁜 = {k: v for k, v in (body.바쁜시간 or {}).items() if k in spare.WEEKDAYS}
     if 바쁜:
         일정 = {"요일별": spare.plan(바쁜, sports_ids=body.고른종목, weak=body.약점, limit=3)}
-    구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정,
-                       구간들=구간들, 시간대포함=(시간대포함 and 축 == "계절"))
+    with _ai_turn(누구["id"]):
+        구간 = air.periods(body.루틴, 참고, body.age_gbn, _life_kinds(body.상태), 축=축, 일정=일정,
+                           구간들=구간들, 시간대포함=(시간대포함 and 축 == "계절"))
     if not 구간:
+        billing.note_ai_use(누구["id"], ip, "구간·버림", 0, air.take_usage())
         이유 = air.why_last_fail("periods")
         raise HTTPException(503, f"지금은 {축}별 계획을 못 받았어요{' — ' + 이유 if 이유 else ''}. 잠시 뒤 다시 시도해주세요.")
+    ai_settle(누구, ip, "구간", 값, f"{축}별 계획")
     out = {"축": 축, 축: 구간, "루틴명": body.루틴.get("루틴명")}
     if 시작:
         out["시작"] = 시작
@@ -1922,17 +2133,17 @@ def _periods(body: "SeasonIn", 축: str, token: str | None, 시간대포함: boo
 
 
 @app.post("/recommend/periods")
-def post_recommend_periods(body: PeriodIn,
+def post_recommend_periods(body: PeriodIn, request: Request,
                            quadriga_session: str | None = Cookie(None)) -> dict:
     """구간을 골라 본다 — 계절별 또는 시간대별."""
-    return _periods(body, body.축, quadriga_session, body.시간대포함)
+    return _periods(body, body.축, quadriga_session, body.시간대포함, ip=client_ip(request))
 
 
 @app.post("/recommend/seasons")
-def post_recommend_seasons(body: SeasonIn,
+def post_recommend_seasons(body: SeasonIn, request: Request,
                            quadriga_session: str | None = Cookie(None)) -> dict:
     """계절 축. /recommend/periods 의 예전 주소다."""
-    return _periods(body, "계절", quadriga_session)
+    return _periods(body, "계절", quadriga_session, ip=client_ip(request))
 
 
 # ---------- 11. 당일 기록 종목 ----------

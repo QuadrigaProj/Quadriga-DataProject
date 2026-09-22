@@ -17,14 +17,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.main import app  # noqa: E402
 from backend import ai_recommend as air  # noqa: E402
 from backend import auth, billing, community  # noqa: E402
+from backend import main as m  # noqa: E402
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def _db(monkeypatch):
-    """AI 추천은 이용권을 서버 원장에서 깎는다 — DB 가 있어야 한다."""
+    """AI 추천은 이용권을 서버 원장에서 깎는다 — DB 가 있어야 한다.
+
+    실결제 모드로 고정한다 — 카카오페이 키가 없는 테스트 환경은 시연 모드(하루 무료 횟수)라서, 이용권 흐름을
+    보려면 명시해야 한다. 시연 모드는 tests/test_ai_limits.py 가 본다.
+    """
     import tempfile
+    monkeypatch.setenv("AI_BILLING_MODE", "real")
     if auth.is_postgres():
         from pg_reset import reset_postgres
         reset_postgres()                        # 전부 비우고 번호도 1 부터 — 아래 _paid 가 "첫 사용자는 1번" 이라고 적는다
@@ -42,6 +48,25 @@ def _paid(credit: int = 1000) -> TestClient:
     if credit:
         billing.charge(1, credit, credit, f"seed-{credit}")
     return c
+
+
+def _ai(c: TestClient, **params) -> dict:
+    """AI 추천 — 값이 드는 일이라 POST 로만 된다 (GET 은 AI 를 부르지 않는다)."""
+    return c.post("/recommend/routines", json={"ai": True, **params}).json()
+
+
+def _free() -> TestClient:
+    """시연 모드의 로그인 사용자 — 값 대신 하루 무료 횟수로 쓴다 (구간 계획 · 사진처럼 값 흐름과 상관없는 테스트에)."""
+    import os
+    os.environ["AI_BILLING_MODE"] = "demo"           # 픽스처의 monkeypatch 가 끝나면 되돌린다
+    return _paid(0)
+
+
+def _detailed(credit: int = 1000) -> TestClient:
+    """이용권을 가진 사용자가 '자세히 보기' 까지 산 상태 — 구간 계획 · 시간표 사진은 그 안에서 된다."""
+    a = _paid(credit)
+    assert a.post("/ai/detail").status_code == 200
+    return a
 
 사용자 = {"연령대": "성인", "실제 나이": 40, "체력나이": 44,
        "항목별 체력나이": {"유연성": 52, "근력": 41, "심폐지구력": 45, "근지구력": 40},
@@ -199,7 +224,7 @@ def test_AI에게_고른_운동_단계가_다루는_요인을_준다(monkeypatch
         return 진짜(사용자, *a, **kw)
 
     monkeypatch.setattr(air, "compose", 엿보기)
-    d = _paid(1000).get("/recommend/routines", params={"age_gbn": "성인", "purpose": "유연성 강화", "limit": 3}).json()
+    d = _ai(_paid(1000), age_gbn="성인", purpose="유연성 강화", limit=3)
     assert 받은["고른 운동 단계"] == "유연성 강화"
     assert 받은["고른 운동 단계가 다루는 요인"] == rt.load()["config"]["purpose_factors"]["유연성 강화"]
     assert d["출처"] == "ai" and d["추천"][0]["목적"] == "유연성 강화"              # 응답은 '다이어트' 였지만 고른 단계로
@@ -296,22 +321,29 @@ def test_엔드포인트가_출처를_알려준다(monkeypatch):
 def test_엔드포인트가_AI를_쓴다(monkeypatch):
     _fake_sdk(monkeypatch, _지은응답())
     a = _paid(1000)
-    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
+    d = _ai(a, age_gbn="성인", limit=3)
     assert d["출처"] == "ai"
     assert len(d["추천"]) == 1 and d["추천"][0]["구성"] == "ai"   # 후보 목록이 아니라 지은 루틴 하나
     assert d["추천"][0]["이유"] == ["유연성이 뒤처져요"]
-    assert d["잔액"] == 900                     # 서버가 100원 깎았다
-    # ai=0 이면 부르지 않고 깎지도 않는다
-    d2 = a.get("/recommend/routines",
-               params={"age_gbn": "성인", "limit": 3, "ai": 0}).json()
-    assert d2["출처"] == "점수" and d2["잔액"] == 900
+    assert d["잔액"] == 1000 - m.AI_PRICE       # 서버가 값을 깎았다
+    # ai=false 면 부르지 않고 깎지도 않는다
+    d2 = _ai(a, age_gbn="성인", limit=3, ai=False)
+    assert d2["출처"] == "점수" and d2["잔액"] == 1000 - m.AI_PRICE
+
+
+def test_GET은_AI를_부르지_않는다(monkeypatch):
+    """값이 드는 일을 주소 하나로 시킬 수 있으면 남이 만든 링크를 여는 것만으로 이용권이 빠진다 (로그인 CSRF)."""
+    _fake_sdk(monkeypatch, _지은응답())
+    a = _paid(1000)
+    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3, "ai": 1}).json()
+    assert d["출처"] == "점수" and d["잔액"] == 1000 and len(d["추천"]) == 3
 
 
 def test_이용권이_없으면_AI를_부르지_않는다(monkeypatch):
     """부르고 나서 못 받으면 우리만 돈을 쓴다."""
     _fake_sdk(monkeypatch, '{"순서":[2,1,0],"이유":{"2":["이게 먼저예요"]}}')
     a = _paid(0)
-    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
+    d = _ai(a, age_gbn="성인", limit=3)
     assert d["출처"] == "점수" and d["잔액"] == 0
     assert "이용권이 모자라요" in d["안내"]
     assert len(d["추천"]) == 3                  # 화면은 비지 않는다
@@ -319,8 +351,7 @@ def test_이용권이_없으면_AI를_부르지_않는다(monkeypatch):
 
 def test_로그인하지_않으면_AI를_부르지_않는다(monkeypatch):
     _fake_sdk(monkeypatch, '{"순서":[2,1,0],"이유":{"2":["이게 먼저예요"]}}')
-    d = TestClient(app).get("/recommend/routines",
-                            params={"age_gbn": "성인", "limit": 3}).json()
+    d = _ai(TestClient(app), age_gbn="성인", limit=3)
     assert d["출처"] == "점수" and d["잔액"] == 0
     assert "로그인" in d["안내"]
 
@@ -329,10 +360,12 @@ def test_폴백이면_한_푼도_안_깎는다(monkeypatch):
     """AI 를 불렀지만 응답을 버렸다면 사용자에게 받지 않는다."""
     _fake_sdk(monkeypatch, "이건 JSON 이 아니다")
     a = _paid(1000)
-    d = a.get("/recommend/routines", params={"age_gbn": "성인", "limit": 3}).json()
+    d = _ai(a, age_gbn="성인", limit=3)
     assert d["출처"] == "점수"
     assert d["잔액"] == 1000
     assert a.get("/credit").json()["잔액"] == 1000
+    # 원가는 나갔다 — '버림' 으로 남아 얼마나 자주 그러는지 볼 수 있다
+    assert billing.ai_cost_summary(1)["루틴·버림"]["호출"] == 1
 
 
 def test_모델은_opus5다():
@@ -352,10 +385,12 @@ def test_추천_방식이_둘이다():
     assert "function setRecoMode(mode)" in html
 
 
-def test_한_번에_백원이다():
+def test_한_번에_오백원이다():
+    """2026-09-22 값표 — 한 번 받으면 몇 달 이어 쓰는 것이라 1,000원 미만에서 동전 값으로. 화면 사본은 서버와 같아야 한다."""
     html = _html()
-    assert "const AI_PRICE = 100;" in html
-    assert "1회 100원" in html
+    assert m.AI_PRICE == 500 and m.ADJUST_PRICE == 300 and m.DETAIL_PRICE == 500 and m.HEALTH_PHOTO_PRICE == 300
+    assert "const AI_PRICE = 500;" in html
+    assert "const ADJUST_PRICE = 300;" in html and "const DETAIL_PRICE = 500;" in html and "const HEALTH_PHOTO_PRICE = 300;" in html
 
 
 def test_미리_충전해_둘_수_있다():
@@ -365,7 +400,7 @@ def test_미리_충전해_둘_수_있다():
     assert 'id="creditAmt"' in html and 'id="creditTimes"' in html
     assert "선결제하기" in html                      # K3 에서 문구가 바뀌었다
     assert "function renderCredit()" in html
-    assert "{ 이용권: 1000, 결제: 700,  할인: 30 }," in html
+    assert "{ 이용권: 1100,  결제: 1000,  보너스: 10 }," in html
     assert "credit: 0," in html and "creditLog: []," in html
 
 
@@ -414,11 +449,11 @@ def test_AI가_실제로_지었을_때만_값을_받는다():
     # 지어졌고, 짓는 동안 요청이 끊기지 않았을 때만 깎는다 (끊겼으면 화면에는 이미 실패가 나갔다)
     조건 = 'if 지음 and 지음.get("루틴") and 아직_받을_수_있다(시작, method, "/recommend/routines"):'
     assert 조건 in src
-    깎는줄 = [l for l in src.splitlines() if "billing.spend" in l]
+    깎는줄 = [l for l in src.splitlines() if "ai_settle(" in l]
     assert len(깎는줄) == 1, 깎는줄
-    assert src.index(조건) < src.index("billing.spend")
-    # 잔액이 모자라면 부르지도 않는다
-    assert src.index('out["잔액"] < AI_PRICE') < src.index("air.compose")
+    assert src.index(조건) < src.index("ai_settle(")
+    # 되는지(이용권 · 시연 횟수)를 먼저 보고 부른다 — 부르고 나서 못 받으면 우리만 값을 치른다
+    assert src.index("ai_allow(누구, ip, 종류)") < src.index("air.compose")
 
 
 def test_잔액이_모자라면_무료로_돌아간다():
@@ -439,7 +474,7 @@ def test_키가_없으면_AI방식은_들어가되_받기_버튼만_잠긴다():
     assert "ai.disabled" not in body
     assert "관리자가 키를 등록하면 켜져요" in body      # 부제로는 알려 준다
     intro = html.split("function aiIntroHtml()")[1].split("\n}")[0]
-    assert "${확인중 || 못씀 || 모자람 ? 'disabled' : ''}" in intro
+    assert "${확인중 || 못씀 || 모자람 || 다씀 ? 'disabled' : ''}" in intro
 
 
 def test_확인되기_전에는_눌러도_조용히_무시하지_않는다():
@@ -532,7 +567,7 @@ def test_POST로_보내면_일정까지_함께_본다(monkeypatch):
                json={"age_gbn": "성인", "limit": 3,
                      "바쁜시간": {"월": [{"시작": "09:00", "끝": "12:00"}]}},
                ).json()
-    assert d["출처"] == "ai" and d["잔액"] == 900
+    assert d["출처"] == "ai" and d["잔액"] == 1000 - m.AI_PRICE
     assert d["추천"][0]["구성"] == "ai"
     assert d["짬시간"]["월"], "일정을 줬으면 비는 칸이 나와야 한다"
     골라둔 = d.get("짬시간계획", {}).get("월") or []
@@ -625,41 +660,47 @@ def test_하루의_모습을_프롬프트에_적어_보낸다(monkeypatch):
     assert "루틴을 바꾸지 마세요" in 본["시스템"]
 
 
-def test_계절_엔드포인트는_값을_받지_않는다(monkeypatch):
-    """AI 추천을 받을 때 이미 치렀다. 더 알아보는 건 선택 사항이고 돈이 다시 들지 않는다."""
+def test_계절_엔드포인트는_자세히_보기_안에서_값_없이_된다(monkeypatch):
+    """구간 계획은 '자세히 보기'(DETAIL_PRICE · DETAIL_DAYS 일)를 산 사람이 쓴다 — 그 안에서는 호출마다 값이 들지 않는다."""
     _fake_sdk(monkeypatch, _네계절())
     a = _paid(1000)
+    r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴, "상태": "학생"})
+    assert r.status_code == 402 and "자세히 보기" in r.json()["detail"]      # 아직 안 샀다
+    d = a.post("/ai/detail").json()
+    assert d["잔액"] == 1000 - m.DETAIL_PRICE and d["자세히"]["까지"] > 0
     d = a.post("/recommend/seasons",
                json={"age_gbn": "성인", "루틴": 루틴, "상태": "학생"}).json()
     assert [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"]
     assert d["루틴명"] == "전신 HIIT"
-    assert "잔액" not in d                                # 잔액을 건드리지 않는다
-    assert a.get("/credit").json()["잔액"] == 1000        # 한 푼도 안 빠졌다
+    assert a.get("/credit").json()["잔액"] == 1000 - m.DETAIL_PRICE        # 호출마다 더 빠지지 않는다
+    # 상태 확인에 자세히 보기가 실린다
+    assert a.get("/recommend/ai-status").json()["자세히"]["까지"] > 0
 
 
 def test_못_받았으면_한_푼도_안_깎는다(monkeypatch):
     """안 쓴 것에 돈을 받지 않는다."""
     _fake_sdk(monkeypatch, "이건 JSON 이 아니다")
     a = _paid(1000)
+    a.post("/ai/detail")
     r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
     assert r.status_code == 503
-    assert a.get("/credit").json()["잔액"] == 1000
+    assert a.get("/credit").json()["잔액"] == 1000 - m.DETAIL_PRICE
 
 
 def test_이용권이_없어도_알아볼_수_있다(monkeypatch):
     """무료라서 이용권이 0 이어도 된다."""
     _fake_sdk(monkeypatch, _네계절())
-    a = _paid(0)
+    a = _free()
     r = a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴})
     assert r.status_code == 200
     assert len(r.json()["계절"]) == 4
 
 
-def test_계절_경로에는_차감이_없다():
+def test_계절_경로는_호출마다_깎지_않는다():
+    """값은 '자세히 보기' 를 살 때 한 번 — 구간 계획 경로 자체에는 차감이 없다."""
     import inspect
-    from backend import main as m
-    src = inspect.getsource(m.post_recommend_seasons)
-    assert "billing.spend" not in src and "AI_PRICE" not in src
+    src = inspect.getsource(m._periods)
+    assert "billing.spend" not in src and "AI_PRICE" not in src and 'ai_allow(누구, ip, "구간")' in src
 
 
 def test_로그인하지_않으면_부르지_않는다(monkeypatch):
@@ -726,15 +767,15 @@ def test_안_되는_형식은_부르지도_않는다(monkeypatch):
 
 def test_사진_엔드포인트가_값을_받는다(monkeypatch):
     _fake_sdk(monkeypatch, '{"바쁜시간":{"월":[{"시작":"09:00","끝":"12:00"}]}}')
-    a = _paid(1000)
+    a = _detailed(1000)
     d = a.post("/schedule/photo", json={"사진": 사진}).json()
     assert d["바쁜시간"] == {"월": [{"시작": "09:00", "끝": "12:00"}]}
-    assert d["잔액"] == 900
+    assert d["잔액"] == 1000 - m.DETAIL_PRICE                      # 시간표 사진은 자세히 보기 안에서 — 호출마다 더 빠지지 않는다
 
 
 def test_시간표가_아니면_왜_비었는지_알려준다(monkeypatch):
     _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
-    a = _paid(1000)
+    a = _detailed(1000)
     d = a.post("/schedule/photo", json={"사진": 사진}).json()
     assert d["바쁜시간"] == {}
     assert "직접 적어주세요" in d["안내"]
@@ -742,27 +783,28 @@ def test_시간표가_아니면_왜_비었는지_알려준다(monkeypatch):
 
 def test_못_읽었으면_한_푼도_안_깎는다(monkeypatch):
     _fake_sdk(monkeypatch, "이건 JSON 이 아니다")
-    a = _paid(1000)
+    a = _detailed(1000)
     assert a.post("/schedule/photo", json={"사진": 사진}).status_code == 503
-    assert a.get("/credit").json()["잔액"] == 1000
+    assert a.get("/credit").json()["잔액"] == 1000 - m.DETAIL_PRICE
 
 
 def test_큰_사진과_안_되는_형식은_부르기_전에_막는다(monkeypatch):
     """부르고 나서 실패하면 우리만 값을 치른다."""
     _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
-    a = _paid(1000)
+    a = _detailed(1000)
     큰것 = "data:image/png;base64," + "A" * 6_000_000
     assert a.post("/schedule/photo", json={"사진": 큰것}).status_code == 413
     assert a.post("/schedule/photo",
                   json={"사진": "data:image/heic;base64,AAAA"}).status_code == 415
-    assert a.get("/credit").json()["잔액"] == 1000
+    assert a.get("/credit").json()["잔액"] == 1000 - m.DETAIL_PRICE
 
 
-def test_사진도_로그인과_이용권이_있어야_한다(monkeypatch):
+def test_사진도_로그인과_자세히_보기가_있어야_한다(monkeypatch):
     _fake_sdk(monkeypatch, '{"바쁜시간":{}}')
     assert TestClient(app).post("/schedule/photo",
                                 json={"사진": 사진}).status_code in (401, 403)
-    assert _paid(0).post("/schedule/photo", json={"사진": 사진}).status_code == 402
+    r = _paid(1000).post("/schedule/photo", json={"사진": 사진})
+    assert r.status_code == 402 and "자세히 보기" in r.json()["detail"]
 
 
 # ---------- 하루의 모습은 여럿 ----------
@@ -792,7 +834,7 @@ def test_여러_모습이_프롬프트에_다_실린다(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", mod)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
-    a = _paid(1000)
+    a = _detailed(1000)
     a.post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴,
                                        "상태": ["대학생", "알바생"]})
     assert "대학생" in 본["글"] and "알바생" in 본["글"]
@@ -808,7 +850,7 @@ def test_상태_확인은_값이_들지_않고_루틴을_매기지_않는다(mon
     assert d["ai가능"] is False
     assert "ANTHROPIC_API_KEY" in d["이유"]
     assert d["잔액"] == 1000 and d["로그인"] is True
-    assert d["값"] == 100
+    assert d["값"] == m.AI_PRICE and d["값표"]["건강사진"] == m.HEALTH_PHOTO_PRICE and d["시연"] is False
     assert "추천" not in d                      # 루틴 점수를 매기지 않는다
     assert a.get("/credit").json()["잔액"] == 1000   # 한 푼도 안 빠진다
 
@@ -930,7 +972,7 @@ def test_periods_엔드포인트_시간대(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", mod)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
 
-    a = _paid(0)                                   # 이용권이 없어도 된다
+    a = _free()                                    # 시연 모드 — 이용권이 없어도 된다
     d = a.post("/recommend/periods", json={
         "age_gbn": "성인", "루틴": 루틴, "축": "시간대", "상태": ["직장인"],
         "바쁜시간": {"월": [{"시작": "09:00", "끝": "18:00"}]}}).json()
@@ -948,7 +990,7 @@ def test_periods_축은_둘뿐이다():
 
 def test_seasons_주소는_계절_축_그대로(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
-    d = _paid(0).post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴}).json()
+    d = _free().post("/recommend/seasons", json={"age_gbn": "성인", "루틴": 루틴}).json()
     assert d["축"] == "계절" and [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"]
 
 
@@ -990,7 +1032,7 @@ def test_건강_상태가_짓는_프롬프트에_실린다(monkeypatch):
 
 def test_건강_상태가_구간별_프롬프트에도_실린다(monkeypatch):
     본 = _잡는_sdk(monkeypatch, _네계절())
-    _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
+    _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
                                               "건강상태": ["허리 통증"]})
     assert "허리 통증" in 본["글"]
     assert "건강 상태가 있으면 그에 맞춥니다" in 본["시스템"]
@@ -1032,23 +1074,27 @@ def test_사진_프롬프트는_개인_정보를_옮기지_말라고_한다():
     assert "진단을 내리지 않습니다" in air.HEALTH_PHOTO_SYSTEM
 
 
-def test_건강_사진_엔드포인트는_값을_받지_않는다(monkeypatch):
+def test_건강_사진_엔드포인트는_읽고_나서_값을_받는다(monkeypatch):
     _fake_sdk(monkeypatch, '{"건강상태":["당뇨"],"메모":"식후에 가볍게"}')
-    a = _paid(0)                                     # 이용권이 없어도 된다
+    a = _paid(1000)
     d = a.post("/health/photo", json={"사진": 사진}).json()
     assert d["건강상태"] == ["당뇨"] and d["메모"] == "식후에 가볍게"
-    assert "잔액" not in d and a.get("/credit").json()["잔액"] == 0
+    assert d["잔액"] == 1000 - m.HEALTH_PHOTO_PRICE and a.get("/credit").json()["잔액"] == 1000 - m.HEALTH_PHOTO_PRICE
+    # 이용권이 모자라면 부르지 않는다 — 글로 직접 적는 건 무료다
+    빈손 = TestClient(app)
+    빈손.post("/auth/signup", json={"email": "b@x.com", "password": "pw12345678"})
+    assert 빈손.post("/health/photo", json={"사진": 사진}).status_code == 402
 
 
 def test_건강_사진이_아니면_왜_비었는지_알려준다(monkeypatch):
     _fake_sdk(monkeypatch, '{"건강상태":[],"메모":""}')
-    d = _paid(0).post("/health/photo", json={"사진": 사진}).json()
+    d = _free().post("/health/photo", json={"사진": 사진}).json()
     assert d["건강상태"] == [] and "직접 골라주세요" in d["안내"]
 
 
 def test_건강_사진도_크기와_형식과_로그인을_본다(monkeypatch):
     _fake_sdk(monkeypatch, '{"건강상태":[]}')
-    a = _paid(0)
+    a = _free()
     assert a.post("/health/photo", json={"사진": "data:image/png;base64," + "A" * 6_000_000}).status_code == 413
     assert a.post("/health/photo", json={"사진": "data:image/heic;base64,AAAA"}).status_code == 415
     assert TestClient(app).post("/health/photo", json={"사진": 사진}).status_code in (401, 403)
@@ -1059,7 +1105,7 @@ def test_건강_사진은_저장하지_않는다():
     import inspect
     from backend import main as m
     src = inspect.getsource(m.post_health_photo)
-    assert "con.execute" not in src and "billing." not in src and "saveProfile" not in src
+    assert "con.execute" not in src and "saveProfile" not in src and "save_" not in src
 
 
 # ---------- 시작일 — 그날의 계절·날씨에 맞춘다, 계절은 거기서 출발한다 ----------
@@ -1090,7 +1136,7 @@ def test_시작일이_없으면_시작_없이_짓는다(monkeypatch):
 def test_계절_계획은_시작_계절부터_한_바퀴(monkeypatch):
     """봄에 받았다고 봄부터가 아니다. 가을에 시작하면 가을·겨울·봄·여름."""
     본 = _잡는_sdk(monkeypatch, _네계절_순서(["가을", "겨울", "봄", "여름"]))
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
                                                   "시작일": "2027-10-05"}).json()
     assert [x["계절"] for x in d["계절"]] == ["가을", "겨울", "봄", "여름"]
     assert d["시작"]["계절"] == "가을"
@@ -1100,20 +1146,20 @@ def test_계절_계획은_시작_계절부터_한_바퀴(monkeypatch):
 
 def test_봄부터_돌려줘도_시작_계절_순서로_다시_세운다(monkeypatch):
     _fake_sdk(monkeypatch, _네계절_순서(["봄", "여름", "가을", "겨울"]))
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절",
                                                   "시작일": "2027-07-01"}).json()
     assert [x["계절"] for x in d["계절"]] == ["여름", "가을", "겨울", "봄"]
 
 
 def test_시작일이_없으면_계절은_봄부터(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
     assert [x["계절"] for x in d["계절"]] == ["봄", "여름", "가을", "겨울"] and "시작" not in d
 
 
 def test_시간대는_시작일과_상관없이_아침부터(monkeypatch):
     _fake_sdk(monkeypatch, _네시간대())
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "시간대",
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "시간대",
                                                   "시작일": "2027-10-05"}).json()
     assert [x["시간대"] for x in d["시간대"]] == ["아침", "낮", "저녁", "밤"]
 
@@ -1139,7 +1185,7 @@ def _계절안시간대(빠뜨림: str | None = None, 엉뚱=False) -> str:
 
 def test_둘_다_고르면_계절_안에_시간대가_들어온다(monkeypatch):
     본 = _잡는_sdk(monkeypatch, _계절안시간대())
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
     가을 = next(x for x in d["계절"] if x["계절"] == "가을")
     assert [t["시간대"] for t in 가을["시간대"]] == ["아침", "낮", "저녁", "밤"]
     assert 가을["시간대"][0]["한줄"] == "가을 아침엔 이렇게"
@@ -1149,27 +1195,27 @@ def test_둘_다_고르면_계절_안에_시간대가_들어온다(monkeypatch):
 
 def test_시간대가_빠져도_그_계절을_버리지_않는다(monkeypatch):
     _fake_sdk(monkeypatch, _계절안시간대(빠뜨림="밤"))
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
     assert len(d["계절"]) == 4
     assert [t["시간대"] for t in d["계절"][0]["시간대"]] == ["아침", "낮", "저녁"]
 
 
 def test_없는_시간대와_겹친_시간대는_거른다(monkeypatch):
     _fake_sdk(monkeypatch, _계절안시간대(엉뚱=True))
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절", "시간대포함": True}).json()
     assert d["계절"][0]["시간대"] == [{"시간대": "아침", "한줄": "아침"}]
 
 
 def test_시간대포함은_계절_축에서만(monkeypatch):
     본 = _잡는_sdk(monkeypatch, _네시간대())
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "시간대", "시간대포함": True}).json()
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "시간대", "시간대포함": True}).json()
     assert "시간대" not in d["시간대"][0] or isinstance(d["시간대"][0]["시간대"], str)
     assert "계절마다 안에 시간대를 넣습니다" not in 본["시스템"]
 
 
 def test_시간대포함_없이_받으면_계절만(monkeypatch):
     _fake_sdk(monkeypatch, _네계절())
-    d = _paid(0).post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
+    d = _free().post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"}).json()
     assert "시간대" not in d["계절"][0]
 
 
@@ -1198,7 +1244,7 @@ def test_더_어렵게는_이전_루틴과_방향을_AI에_적어_보낸다(monk
                     "steps": [{"동작": "제자리 걷기", "단계": "준비운동", "수행량": "3분"},
                               {"동작": "스쿼트", "단계": "본운동", "수행량": "10회 2세트"},
                               {"동작": "x" * 100, "단계": "본운동", "수행량": 3}]}}).json()
-    assert d["출처"] == "ai" and d["잔액"] == 900
+    assert d["출처"] == "ai" and d["잔액"] == 1000 - m.ADJUST_PRICE
     assert d["추천"][0]["조정"] == "더 어렵게"                     # 화면이 '이전 루틴보다 더 어렵게' 라고 적는다
     글 = 본["글"]
     assert "조정: 이전 루틴보다 더 어렵게" in 글
@@ -1384,7 +1430,7 @@ def test_구간_계획은_넉넉한_제한_시간으로_부르고_실패한_까�
     _fake_sdk(monkeypatch, boom=_Late("late"))
     assert air.periods(루틴, {}, "성인", None, 축="계절") is None
     assert air.why_last_fail("periods") == "AI 응답이 제한 시간 안에 안 왔어요" and air.why_last_fail("compose") is None
-    a = _paid(0)
+    a = _free()
     r = a.post("/recommend/periods", json={"age_gbn": "성인", "루틴": 루틴, "축": "계절"})
     assert r.status_code == 503 and "제한 시간 안에 안 왔어요" in r.json()["detail"]
     # 읽지 못한 응답도 까닭이 남는다

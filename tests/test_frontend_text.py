@@ -1199,20 +1199,21 @@ def test_선결제_할인표가_서버_표와_같다():
     """화면 사본이 서버와 어긋나면 표시 금액과 청구 금액이 달라진다."""
     html = _index()
     표 = html.split("const PAY_PACKS = [")[1].split("];")[0]
-    for 이용권, 결제, 할인 in [(100, 100, 0), (1000, 700, 30), (2000, 1300, 35),
-                            (3000, 1800, 40), (5000, 2500, 50)]:
-        assert f"이용권: {이용권}," in 표, 이용권
-        assert f"결제: {결제}," in 표, 결제
-        assert f"할인: {할인}" in 표, 할인
+    from backend import main as m
+    for p_ in m.PAY_PACKS:
+        assert f"이용권: {p_['이용권']}," in 표, p_
+        assert f"결제: {p_['결제']}," in 표, p_
+        assert f"보너스: {m.pack_view(p_)['보너스']}" in 표, p_
     # 서버가 준 값을 먼저 쓴다
     본문 = html.split("function payPacks()")[1].split("\n}")[0]
     assert "payInfo?.packs" in 본문
 
 
-def test_할인율과_원래_금액을_보여준다():
+def test_보너스율과_내는_돈을_보여준다():
+    """선결제 팩은 '할인' 이 아니라 '보너스'(이용권을 더 얹어 준다)로 말한다 — 한 번 쓸 때마다 원가가 나가서 할인은 25% 를 넘길 수 없다."""
     html = _index()
     본문 = html.split("function payAmountHtml()")[1].split("\n}")[0]
-    assert "% 할인" in 본문
+    assert "% 보너스" in 본문
     assert 'class="was"' in 본문                 # 취소선 원가
     assert "won(p.결제)" in 본문                  # 실제로 내는 돈이 크게
     assert "won(p.이용권)" in 본문                # 앱에서 쓰는 금액
@@ -2637,14 +2638,14 @@ def test_다시_받기는_반드시_한_번_묻는다():
     """값이 빠지는 일이다."""
     html = _index()
     본문 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
-    assert "값을치를까(물음)" in 본문
-    assert "다시 받으시겠습니까? ${AI_PRICE}원이 결제됩니다." in 본문
+    assert "값을치를까(물음, 방향 ? '조정' : '루틴', '루틴')" in 본문
+    assert "다시 받으시겠습니까? ${won(aiPrice('루틴'))}이 결제됩니다." in 본문
     # 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다
     assert "AI 추천은 유료입니다. 이용하시겠습니까?" in 본문
     assert "fetchRecommend(true)" in 본문
     # 잔액을 보고 막는 일은 값을치를까() 가 한 자리에서 한다
     # (test_유료_확인은_한_자리에서_한다 가 확인한다)
-    assert 본문.index("값을치를까(물음)") < 본문.index("fetchRecommend(true)")
+    assert 본문.index("값을치를까(물음") < 본문.index("fetchRecommend(true)")
 
 
 def test_받은_AI_추천은_남는다():
@@ -2678,8 +2679,8 @@ def test_받은_적_없으면_받기_버튼만_보여준다():
     html = _index()
     본문 = html.split("function aiIntroHtml()")[1].split("\n}")[0]
     assert "askAiRecommend()" in 본문
-    assert "원이 결제돼요" in 본문
-    assert "모자람 ? 'disabled' : ''" in 본문 or "${모자람 ? 'disabled' : ''}" in 본문
+    assert "이 결제돼요" in 본문 and "시연 기간이라 무료예요" in 본문
+    assert "모자람 || 다씀 ? 'disabled' : ''" in 본문
 
 
 def test_받은_추천은_창을_옮겨도_그대로다():
@@ -2935,9 +2936,9 @@ def test_저장은_고른_것과_적은_것을_함께_담는다():
 def test_사진_읽기는_묻고_나서_부른다():
     html = _index()
     본문 = html.split("async function onSchedulePhoto(ev)")[1].split("\n}")[0]
-    assert "값을치를까(" in 본문
-    assert "원이 결제됩니다" in 본문
-    assert 본문.index("값을치를까(") < 본문.index("API.schedulePhoto")
+    assert "await 자세히보기_준비('사진')" in 본문        # 자세히 보기 안에서 — 없으면 사겠냐고 묻는다
+    assert "이 결제됩니다" in html.split("async function 자세히보기_준비(")[1].split("\n}")[0]   # 값은 자세히 보기를 살 때 묻는다
+    assert 본문.index("자세히보기_준비(") < 본문.index("API.schedulePhoto")
 
 
 def test_읽은_것을_곧바로_저장하지_않는다():
@@ -3074,14 +3075,19 @@ def test_게이지는_점만_옮기는_길을_따로_둔다():
 
 def test_유료_확인은_한_자리에서_한다():
     """값이 빠지는 곳은 같은 순서로 물어야 한다 — 한 곳만 빠지면 그 버튼만 묻지 않고 돈이 빠진다.
-    (자세히 알아보기는 무료라 여기 없다.)"""
+    시연 기간(하루 횟수)과 관리자(무제한)도 같은 자리에서 가른다."""
     html = _index()
-    본문 = html.split("function 값을치를까(물음)")[1].split("\n}")[0]
+    본문 = html.split("function 값을치를까(물음, 종류 = '루틴', 묶음 = '루틴')")[1].split("\n}")[0]
     assert "recoAiReady" in 본문                       # 쓸 수 있는지
-    assert "(state.credit || 0) < AI_PRICE" in 본문    # 이용권이 남았는지
+    assert "(state.credit || 0) < aiPrice(종류)" in 본문   # 이용권이 남았는지 (종류마다 값이 다르다)
+    assert "aiDemo()" in 본문 and "aiLeft(묶음)" in 본문  # 시연이면 오늘 남은 횟수
     assert "return confirm(물음);" in 본문             # 정말 할 것인지
-    # 부르는 곳은 셋. 각자 confirm 을 따로 부르지 않는다.
-    assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2 (AI 추천 · 시간표 사진)
+    # 부르는 곳은 둘(AI 추천 · 약봉지 사진). 각자 confirm 을 따로 부르지 않는다.
+    assert html.count("값을치를까(") == 3              # 정의 1 + 부르는 곳 2
+    # 계절 · 시간대 계획과 시간표 사진은 '자세히 보기' 안에서 — 없으면 사겠냐고 묻고 산다
+    준비 = html.split("async function 자세히보기_준비(묶음 = '구간')")[1].split("\n}")[0]
+    assert "hasDetail()" in 준비 and "API.aiDetail()" in 준비 and "confirm(" in 준비
+    assert html.count("자세히보기_준비(") == 3           # 정의 1 + 부르는 곳 2 (자세히 알아보기 · 시간표 사진)
 
 
 def test_AI_가_짓는_동안_예상_소요시간을_보여_준다():
@@ -3221,7 +3227,7 @@ def test_AI_화면이_왜_못_쓰는지_말해_준다():
     assert "다시 확인" in 본문 and "refreshAiStatus()" in 본문
     assert "무료 추천 보기" in 본문
     # 값이 빠지는 버튼은 쓸 수 있을 때만 눌린다
-    assert "${확인중 || 못씀 || 모자람 ? 'disabled' : ''}" in 본문
+    assert "${확인중 || 못씀 || 모자람 || 다씀 ? 'disabled' : ''}" in 본문
 
 
 # ---------- AI 가 지은 루틴 ----------
@@ -3439,7 +3445,8 @@ def test_사진은_채워_줄_뿐_저장은_사용자가_한다():
     assert "API.healthPhoto" in 본문
     assert "renderHealth()" in 본문
     assert "saveProfile()" not in 본문 and "saveHealth()" not in 본문
-    assert "값을치를까(" not in 본문                     # 무료다
+    assert "값을치를까(" in 본문 and "'건강사진', '사진'" in 본문   # 유료다 (글로 직접 적는 건 무료)
+    assert "shrinkPhoto(f)" in 본문                       # 보내기 전에 줄인다 — 원가 절반 · 위치 정보 제거
     assert "if (!HEALTH.항목.includes(x)" in 본문         # 이미 고른 것을 지우지 않는다
 
 
@@ -3467,7 +3474,7 @@ def test_값을_치르기로_하면_언제부터_할지_묻는다():
     html = _index()
     본문 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
     assert "askStartDate(async () => {" in 본문
-    assert 본문.index("값을치를까(물음)") < 본문.index("askStartDate(")   # 값을 묻고 나서 날짜를 묻는다
+    assert 본문.index("값을치를까(물음") < 본문.index("askStartDate(")   # 값을 묻고 나서 날짜를 묻는다
     창 = html.split("function askStartDate(then)")[1].split("\n}")[0]
     assert "바로 시작해요" in 창 and "내일(" in 창
     assert 'type="date" id="startDateInput"' in 창 and "이 날부터" in 창
@@ -3768,8 +3775,8 @@ def test_더_쉽게_더_어렵게는_지금_루틴을_바탕으로_다시_짓는
     """'다시 받기' 대신 방향을 고른다. 시작일은 다시 묻지 않고, 바탕 루틴(이름·강도·줄)과 방향을 서버에 보낸다."""
     html = _index()
     묻기 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
-    assert "지금 루틴을 바탕으로 ${방향} 다시 지어요. ${AI_PRICE}원이 결제됩니다." in 묻기
-    assert 묻기.index("값을치를까(물음)") < 묻기.index("recoAdjust = 방향")          # 값을 치르기로 한 뒤에만
+    assert "지금 루틴을 바탕으로 ${방향} 다시 지어요. ${won(aiPrice('조정'))}이 결제됩니다." in 묻기
+    assert 묻기.index("값을치를까(물음") < 묻기.index("recoAdjust = 방향")          # 값을 치르기로 한 뒤에만
     assert "askStartDate" in 묻기 and 묻기.index("recoAdjust = 방향") < 묻기.index("askStartDate")   # 방향이 있으면 시작일은 그대로
     받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
     assert "const 조정 = ai ? recoAdjust : null; recoAdjust = null;" in 받기      # 한 번 쓰고 비운다

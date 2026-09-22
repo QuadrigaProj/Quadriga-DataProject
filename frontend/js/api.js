@@ -75,6 +75,8 @@ const API = (() => {
     // 이용권 결제 (J2). 카드번호 같은 건 오가지 않는다 — 금액과 주문번호뿐이다.
     // 잔액은 서버 원장이 기준이다. 브라우저 숫자로 올리거나 깎지 않는다.
     credit: () => call('/credit'),
+    // 관리자 · 실결제로 바꾸는 날 한 번 — 시연 결제로 얻은 이용권 · 구독을 모두 지운다
+    resetDemoCredits: () => post('/admin/reset-demo-credits', { 확인: '시연 이용권을 모두 지웁니다' }),
     payRefund: (order) => post('/pay/refund/' + encodeURIComponent(order), {}),
     payMethods: () => call('/pay/methods'),
     payReady: (b) => post('/pay/kakao/ready', b),

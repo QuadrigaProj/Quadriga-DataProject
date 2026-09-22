@@ -58,14 +58,16 @@ SCRYPT = dict(n=2**14, r=8, p=1, dklen=32)
 MIN_PASSWORD = 8
 
 # 로그인 시도 제한 — 비밀번호를 계속 틀리면 잠시 잠근다 (login_guard 표).
-# 이메일 하나에 LOGIN_MAX_FAILURES 번 틀리면 LOGIN_LOCK_SEC 동안 그 이메일로는 로그인을 받지 않는다.
+# 같은 곳(IP)에서 같은 이메일을 LOGIN_MAX_FAILURES 번 틀리면 LOGIN_LOCK_SEC 동안 잠근다 — 이메일만으로 잠그면
+# 남이 내 이메일을 다른 곳에서 5번 틀려 나를 잠글 수 있다(예현, 2026-09-23 "같은 기기에서 5번, 다른 기기는 상관없음").
+# 서버는 기기를 못 보고 IP 만 보니 '같은 곳' 이 기기의 대신이다.
 # 가입된 이메일인지와 상관없이 센다 — 있는 이메일만 잠그면 잠기는지로 가입 여부를 알아낼 수 있다.
-# 한 곳(IP)에서 여러 이메일로 두드리는 것도 따로 센다 — 계정 잠금을 피하려고 이메일을 바꿔 가며 시도하는 경우.
+# 한 곳(IP)에서 여러 이메일로 두드리는 것도 따로 센다 — 잠금을 피하려고 이메일을 바꿔 가며 시도하는 경우.
 LOGIN_MAX_FAILURES = 5
 LOGIN_LOCK_SEC = 15 * 60
 LOGIN_WINDOW_SEC = 15 * 60          # 틀린 횟수를 세는 기간. 이 안에 안 틀리면 다시 0 부터
 IP_MAX_FAILURES = 30
-SIGNUP_MAX_PER_IP = 20              # 같은 곳에서 LOGIN_WINDOW_SEC 안에 만들 수 있는 계정 수
+SIGNUP_MAX_PER_IP = 60              # 같은 곳에서 LOGIN_WINDOW_SEC 안에 만들 수 있는 계정 수 — 강의실 시연에서 여럿이 한꺼번에 가입한다
 
 # 소셜 로그인의 state — 시작할 때 만들어 DB 와 브라우저 쿠키 양쪽에 두고, 콜백에서 둘 다 대조한다.
 OAUTH_COOKIE = "quadriga_oauth"

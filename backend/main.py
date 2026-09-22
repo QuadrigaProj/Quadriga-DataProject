@@ -1023,7 +1023,9 @@ def auth_signup(body: SignupIn, response: Response, request: Request) -> dict:
 def auth_login(body: LoginIn, response: Response, request: Request) -> dict:
     auth.init_db()
     email = body.email.strip().lower()
-    이메일키, 주소키 = f"email:{email}", f"ip:{client_ip(request)}"
+    ip = client_ip(request)
+    # 잠금은 '같은 곳에서 같은 이메일' 기준 — 남이 다른 곳에서 내 이메일을 틀려도 나는 잠기지 않는다.
+    이메일키, 주소키 = f"email:{email}@{ip}", f"ip:{ip}"
     # 비밀번호를 5번 틀리면 15분 잠근다 — 잠긴 동안은 비밀번호를 대조하지도 않는다 (scrypt 는 한 번에 16MB · 수십 ms 다).
     # 가입 여부와 상관없이 잠근다: 있는 이메일만 잠그면 잠기는지로 가입 여부를 알아낼 수 있다.
     남은초 = max(auth.guard_locked(이메일키), auth.guard_locked(주소키))
@@ -1338,7 +1340,8 @@ SUB_LIMITS = {"루틴": 5, "구간": 5, "사진": 5}
 # 시연 기간 — 실결제가 안 되는 동안(카카오페이 키가 없거나 테스트 가맹점) 값 대신 **하루 무료 횟수**로 제한한다.
 # 테스트 결제로는 누구나 이용권을 공짜로 채울 수 있어서, 값으로 막는 건 막는 게 아니다.
 DEMO_LIMITS = {"루틴": 3, "구간": 3, "사진": 2}   # 조정은 루틴에, 시간표·약봉지 사진은 '사진' 에 함께 센다
-DEMO_IP_LIMIT = 15                                # 한 곳(IP)에서 하루 AI 호출 합계 — 계정을 늘려 우회하는 것을 막는다
+DEMO_IP_LIMIT = 60                                # 한 곳(IP)에서 하루 AI 호출 합계 — 계정을 늘려 우회하는 것을 막되, 같은 와이파이의
+                                                  # 여러 사람(심사·시연)이 막히지 않게 (2026-09-23 15→60)
 DEMO_KINDS = {"루틴": ("루틴", "조정"), "구간": ("구간",), "사진": ("시간표사진", "건강사진")}
 
 
@@ -1775,6 +1778,29 @@ def post_ai_detail(quadriga_session: str | None = Cookie(None)) -> dict:
     잔액 = billing.spend(누구["id"], DETAIL_PRICE, "자세히 보기 (구간 계획 · 시간표 사진)")
     상세 = billing.add_addon(누구["id"], "상세", DETAIL_DAYS, memo=f"{DETAIL_PRICE}원")
     return {"자세히": {"까지": 상세["까지"]}, "잔액": 잔액}
+
+
+class DemoResetIn(BaseModel):
+    확인: str = Field(..., description="'시연 이용권을 모두 지웁니다' 를 그대로 적어야 한다")
+
+
+@app.post("/admin/reset-demo-credits")
+def post_reset_demo_credits(body: DemoResetIn, quadriga_session: str | None = Cookie(None)) -> dict:
+    """실결제로 바꾸는 날 관리자가 한 번 부른다 — 시연 결제로 얻은 이용권 · 구독 · 자세히 보기를 모두 지운다 (약관 6조의2).
+
+    Render 무료 요금제에는 셸이 없어 관리자 화면(프로필)의 버튼으로 부른다. 실결제 모드가 아니면 거절한다 —
+    시연 중에 눌러 버리면 시연 결제로 채운 이용권이 사라진다.
+    """
+    누구 = _require_user(quadriga_session)
+    if not is_admin(누구):
+        raise HTTPException(403, "관리자만 할 수 있어요.")
+    if body.확인 != "시연 이용권을 모두 지웁니다":
+        raise HTTPException(400, "확인 문구가 다릅니다.")
+    if billing_mode() != "real":
+        raise HTTPException(409, "아직 시연 모드예요. Render 의 KAKAOPAY_CID 를 실제 가맹점 코드로 바꾼 뒤에 누르세요.")
+    결과 = billing.reset_demo_credits()
+    print(f"[admin] 시연 이용권 정리 by {누구.get('email') or 누구.get('provider_uid')}: {결과}", flush=True)
+    return 결과
 
 
 @app.get("/ai/usage")

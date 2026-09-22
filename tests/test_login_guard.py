@@ -57,6 +57,18 @@ def test_다섯_번_틀리면_맞는_비밀번호로도_잠긴다():
     assert "quadriga_session" not in r.headers.get("set-cookie", "")
 
 
+def test_다른_곳에서_틀린_것은_나를_잠그지_않는다():
+    """잠금은 '같은 곳(IP)에서 같은 이메일' 기준 — 남이 다른 곳에서 내 이메일을 5번 틀려도 나는 그대로 로그인한다
+    (예현, 2026-09-23 "같은 기기에서 5번, 다른 기기는 상관없음" — 서버는 기기를 못 보니 IP 가 기기의 대신)."""
+    나 = _fresh("10.0.0.20")
+    나.post("/auth/signup", json={"email": "me@ex.com", "password": "abcd1234"})
+    남 = _fresh("10.0.0.21")
+    for _ in range(5):
+        남.post("/auth/login", json={"email": "me@ex.com", "password": "wrong123a"})
+    assert 남.post("/auth/login", json={"email": "me@ex.com", "password": "abcd1234"}).status_code == 429   # 그 곳은 잠겼다
+    assert 나.post("/auth/login", json={"email": "me@ex.com", "password": "abcd1234"}).status_code == 200   # 나는 그대로
+
+
 def test_없는_이메일도_똑같이_잠긴다():
     """있는 이메일만 잠그면 '잠기는지' 로 가입 여부를 알아낼 수 있다."""
     a, b = _fresh("10.0.0.2"), _fresh("10.0.0.3")

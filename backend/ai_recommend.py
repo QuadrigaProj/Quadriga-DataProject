@@ -28,7 +28,9 @@ MODEL = "claude-opus-5"
 # 루틴 짓기 · 구간 계획은 Opus 그대로: '이 사람의 숫자' 를 읽어 쓰는 부분이 Sonnet 은 뭉뚱그려졌다.
 PHOTO_MODEL = "claude-sonnet-5"
 TIMEOUT_SEC = 20.0
-COMPOSE_TIMEOUT_SEC = 120.0    # 루틴 하나를 짓는 데 — 재료 표가 길고 하루를 시간대 넷으로 나눠 12줄까지 쓴다. 60초로도 늦을 때가 있었다
+COMPOSE_TIMEOUT_SEC = 600.0    # 루틴 하나를 짓는 데 — 요청과 떼어 백그라운드에서 끝까지 돌리므로(main._ai_job_run) 사실상 제한을 두지
+                               # 않는다(예현 2026-09-23). 600초는 SDK 기본값이자 연결이 끊긴 채 매달리는 것을 막는 상한일 뿐이다.
+                               # 걸리는 시간은 화면에 '보통 이만큼' 으로 알린다(billing.job_typical_sec).
 PERIOD_TIMEOUT_SEC = 60.0      # 구간(계절·시간대) 계획 — 네 덩이, 계절 안에 시간대까지면 열여섯 줄. 20초로는 늘 늦었다
 SDK_RETRIES = 1                # 제한 시간에 걸리거나 저쪽이 바쁘다고 하면 SDK 가 한 번 더 부른다 (싸고 짧은 호출만)
 COMPOSE_RETRIES = 0            # 루틴 짓기는 다시 부르지 않는다 — 제한 시간에 걸린 첫 호출도 저쪽에선 끝까지 돌아 값이 매겨지는데,
@@ -39,13 +41,13 @@ _usage_local = threading.local()   # 이 스레드의 마지막 호출이 쓴 �
 
 
 def longest_wait_sec() -> float:
-    """AI 호출 하나가 가장 오래 끌 수 있는 시간(초) — 제한 시간 × (처음 + 재시도) 가운데 가장 긴 것.
+    """요청 안에서 기다리는 AI 호출이 가장 오래 끌 수 있는 시간(초) — 제한 시간 × (처음 + 재시도) 가운데 가장 긴 것.
 
     서버의 요청 제한(main.AI_REQUEST_TIMEOUT_SEC)은 이보다 길어야 한다. 짧으면 화면에는 "너무 오래 걸려 멈췄어요" 가
     나가는데 여기서는 끝까지 지어서 값을 받는다 — 늦을 때는 AI 쪽이 먼저 포기해야 값을 안 받고 무료 추천으로 넘어간다.
+    루틴 짓기(compose)는 요청과 떼어 백그라운드에서 돌리므로 여기 들지 않는다.
     """
     return max(TIMEOUT_SEC * 2 * (SDK_RETRIES + 1),
-               COMPOSE_TIMEOUT_SEC * (COMPOSE_RETRIES + 1),
                PERIOD_TIMEOUT_SEC * 1.5 * (SDK_RETRIES + 1))
 
 

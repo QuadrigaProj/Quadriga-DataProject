@@ -147,10 +147,12 @@ REQUEST_TIMEOUT_SEC = float(os.getenv("REQUEST_TIMEOUT_SEC", "25"))
 
 # AI 를 부르는 경로만 제한을 따로 길게 둔다.
 #
-# AI 는 루틴 하나를 짓는 데 30~60초가 걸리고, 그 안에 못 끝내면 스스로 포기해 무료 추천으로 넘어간다
-# (ai_recommend 의 제한 시간). 그런데 위의 25초가 그보다 짧아서, 화면에는 "너무 오래 걸려 멈췄어요" 가 나가고
-# 서버의 스레드는 끝까지 지은 다음 이용권을 깎았다 — 값은 치렀는데 루틴은 못 받는다(2026-09-20 재현).
-# 그래서 이 경로들의 제한은 AI 가 스스로 포기하는 시간보다 길게 둔다: 늦을 때는 AI 쪽이 먼저 끝나야 한다.
+# 사진 읽기 · 구간 계획은 요청 안에서 AI 를 기다린다(20~90초). 그 안에 못 끝내면 AI 쪽이 스스로 포기해 폴백으로 넘어간다
+# (ai_recommend 의 제한 시간). 위의 25초가 그보다 짧으면 화면에는 "너무 오래 걸려 멈췄어요" 가 나가고 서버의 스레드는
+# 끝까지 지은 다음 이용권을 깎는다 — 값은 치렀는데 결과는 못 받는다(2026-09-20 재현). 그래서 이 경로들의 제한은
+# AI 가 스스로 포기하는 시간보다 길게 둔다: 늦을 때는 AI 쪽이 먼저 끝나야 한다.
+# 루틴 짓기(POST /recommend/routines)는 다르다 — 요청은 작업만 걸어 두고 JOB_WAIT_SEC 만 기다린 뒤 돌아오고,
+# 짓는 일은 백그라운드 스레드가 끝까지 한다(_ai_job_run). 화면은 작업 번호로 결과를 가져간다.
 # 무료 추천(GET)은 그대로 25초다 — 이 제한이 생긴 까닭(추천의 무한 루프)이 그쪽이다.
 AI_ROUTES = {("POST", "/recommend/routines"), ("POST", "/recommend/periods"), ("POST", "/recommend/seasons"),
              ("POST", "/health/photo"), ("POST", "/schedule/photo")}
@@ -1709,8 +1711,14 @@ def ai_settle(누구: dict, ip: str, kind: str, 값: int, memo: str) -> int:
     return 잔액
 
 
+JOB_WAIT_SEC = float(os.getenv("AI_JOB_WAIT_SEC", "20"))   # 루틴 작업을 걸고 요청 안에서 이만큼만 기다려 본다 —
+                                                             # 그 안에 끝나면(가짜 SDK · 빠른 응답) 예전처럼 결과를 바로 준다
+
+
 class _ai_turn:
-    """with _ai_turn(user_id): — 같은 사람이 이미 AI 를 부르는 중이면 429."""
+    """with _ai_turn(user_id): — 같은 사람이 이미 AI 를 부르는 중이면 429.
+
+    루틴 작업은 요청이 잡고(__enter__) 백그라운드 스레드가 끝날 때 놓는다(release) — 짓는 동안 한 번 더 누르면 429."""
 
     def __init__(self, user_id: int | None):
         self.user_id = user_id
@@ -1725,10 +1733,13 @@ class _ai_turn:
         return self
 
     def __exit__(self, *exc):
+        self.release()
+        return False
+
+    def release(self):
         if self.user_id is not None:
             with _ai_inflight_lock:
                 _ai_inflight.discard(self.user_id)
-        return False
 
 
 def ai_status_for(누구: dict | None) -> dict:
@@ -1751,7 +1762,10 @@ def ai_status_for(누구: dict | None) -> dict:
             "구독": {"까지": 구독["ends_at"], "하루": SUB_LIMITS} if 구독 else None,
             "구독값": SUB_PRICE, "구독일수": SUB_DAYS,
             "잔액": billing.balance(누구["id"]) if 누구 else 0,
-            "로그인": bool(누구)}
+            "로그인": bool(누구),
+            # 짓는 중이거나 아직 안 가져간 루틴 작업 — 새로고침해도 화면이 이어서 기다리거나 가져간다
+            "작업": billing.job_pending(누구["id"]) if 누구 else None,
+            "예상초": billing.job_typical_sec("루틴")}
 
 
 @app.get("/recommend/ai-status")
@@ -1973,7 +1987,6 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
         if not 됨:
             out["안내"] = "AI 추천은 로그인 후 이용할 수 있어요." if not 누구 else 안내
         else:
-          with _ai_turn(누구["id"]):
             # 무료 추천은 점수 순이라 맞춤이 아니다. AI 는 이 사람의 데이터를
             # 전부 읽고 루틴 하나를 직접 짓는다 — 검증된 재료(공식 동작·고른
             # 종목·기록 종목) 안에서만. 응답의 코드·id 는 서버가 대조한다.
@@ -2002,23 +2015,96 @@ def _recommend(*, age_gbn: str, weak: list[str], style_purpose: str | None,
             }
             if adjust:
                 사용자["조정"] = {"방향": adjust, "이전 루틴": previous or {}}
-            지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
-            # 실제로 지어졌을 때만 받는다. 폴백이면 한 푼도 안 쓴다 — 다만 원가는 나갔으니 '버림' 으로 기록한다.
-            # 짓는 동안 요청이 끊겼으면(화면에는 이미 실패가 나갔다) 지은 것을 버리고 값도 받지 않는다.
-            if 지음 and 지음.get("루틴") and 아직_받을_수_있다(시작, method, "/recommend/routines"):
-                if (profile or {}).get("시작"):
-                    지음["루틴"]["시작"] = profile["시작"]
-                out["추천"] = [지음["루틴"]]
-                out["출처"] = "ai"
-                if 지음.get("짬시간"):
-                    out["짬시간계획"] = 지음["짬시간"]
-                out["잔액"] = ai_settle(누구, ip, 종류, 값,
-                                      "AI 루틴 추천" if 종류 == "루틴" else f"AI 루틴 조정 ({adjust})")
-            else:
-                billing.note_ai_use(누구["id"], ip, f"{종류}·버림", 0, air.take_usage())
+            # 여기서부터는 요청과 떼어 놓는다 — 사용자가 '받겠다' 고 한 뒤에는 화면을 옮기거나 새로고침해도,
+            # 요청이 끊겨도 끝까지 짓고 값을 받고 결과를 작업 표에 둔다(예현 2026-09-23). 요청은 잠깐만 기다려 본다.
+            return _ai_job_begin(누구, ip, 종류, 값, 사용자, age_gbn, picked, 일정, out, adjust, profile)
     if 누구 and not is_admin(누구) and (subscribed(누구) or billing_mode() == "demo"):
         out["오늘남음"] = demo_left(누구["id"], SUB_LIMITS if subscribed(누구) else None)
     return out
+
+
+def _with_today_left(out: dict, 누구: dict) -> dict:
+    if not is_admin(누구) and (subscribed(누구) or billing_mode() == "demo"):
+        out["오늘남음"] = demo_left(누구["id"], SUB_LIMITS if subscribed(누구) else None)
+    return out
+
+
+def _ai_job_begin(누구: dict, ip: str, 종류: str, 값: int, 사용자: dict, age_gbn: str, picked: list,
+                  일정: dict | None, out: dict, adjust: str | None, profile: dict | None) -> dict:
+    """루틴 작업을 걸고 JOB_WAIT_SEC 만 기다려 본다. 그 안에 끝나면 결과를 바로, 아니면 작업 번호를 준다."""
+    turn = _ai_turn(누구["id"])
+    turn.__enter__()                                                 # 이미 짓는 중이면 여기서 429
+    try:
+        job_id = billing.job_start(누구["id"], 종류)
+        done = threading.Event()
+        th = threading.Thread(target=_ai_job_run, name=f"ai-job-{job_id}", daemon=True,
+                              args=(job_id, turn, done, 누구, ip, 종류, 값, 사용자, age_gbn, picked, 일정, dict(out), adjust, profile))
+        th.start()
+    except Exception:
+        turn.release()
+        raise
+    done.wait(JOB_WAIT_SEC)
+    job = billing.job_get(job_id, 누구["id"], mark_seen=True)
+    if job and job["status"] == "done" and job["result"] is not None:
+        return job["result"]
+    if job and job["status"] == "failed":
+        out["안내"] = job.get("error") or "AI 가 이번엔 못 지어서 무료 추천을 보여 드려요. 값은 받지 않았어요."
+        return _with_today_left(out, 누구)
+    시작 = int(job["created_at"]) if job else int(time.time())
+    예상 = billing.job_typical_sec(종류)
+    out["작업"] = {"id": job_id, "종류": 종류, "상태": "running", "시작": 시작, "예상초": 예상}
+    out["안내"] = (f"AI 가 짓는 중이에요 — 보통 {int(round(예상))}초쯤 걸려요. 다른 화면을 봐도 되고, "
+                 "끝나면 추천 화면에서 보여 드려요.")
+    return _with_today_left(out, 누구)
+
+
+def _ai_job_run(job_id: int, turn: "_ai_turn", done: threading.Event, 누구: dict, ip: str, 종류: str, 값: int,
+                사용자: dict, age_gbn: str, picked: list, 일정: dict | None, out: dict,
+                adjust: str | None, profile: dict | None) -> None:
+    """백그라운드 스레드 — 끝까지 짓고, 실제로 지어졌을 때만 값을 받고, 결과(화면에 줄 응답 전체)를 작업 표에 둔다.
+
+    폴백이면 한 푼도 안 쓴다 — 다만 원가는 나갔으니 '버림' 으로 기록한다. 토큰 기록(take_usage)은 스레드 단위라
+    compose 와 같은 스레드에서 읽어야 한다 — 그래서 값 받기도 여기서 한다.
+    """
+    result, error = None, None
+    try:
+        지음 = air.compose(사용자, age_gbn, 종목ids=picked, 일정=일정)
+        if 지음 and 지음.get("루틴"):
+            if (profile or {}).get("시작"):
+                지음["루틴"]["시작"] = profile["시작"]
+            out["추천"] = [지음["루틴"]]
+            out["출처"] = "ai"
+            if 지음.get("짬시간"):
+                out["짬시간계획"] = 지음["짬시간"]
+            out["잔액"] = ai_settle(누구, ip, 종류, 값,
+                                  "AI 루틴 추천" if 종류 == "루틴" else f"AI 루틴 조정 ({adjust})")
+        else:
+            billing.note_ai_use(누구["id"], ip, f"{종류}·버림", 0, air.take_usage())
+            out["안내"] = "AI 가 이번엔 못 지어서 무료 추천을 보여 드려요. 값은 받지 않았어요."
+        result = _with_today_left(out, 누구)
+    except Exception as e:                                           # 무엇이 잘못돼도 작업은 끝난 것으로 남긴다
+        error = f"AI 추천을 만들다 문제가 생겼어요 ({type(e).__name__}). 값은 받지 않았어요."
+        print(f"[ai-job] {job_id} failed: {type(e).__name__}: {e}", flush=True)
+    finally:
+        try:
+            billing.job_finish(job_id, result, error)
+        except Exception as e:
+            print(f"[ai-job] {job_id} 기록 실패: {e}", flush=True)
+        turn.release()
+        done.set()
+
+
+@app.get("/recommend/ai-job/{job_id}")
+def get_ai_job(job_id: int, quadriga_session: str | None = Cookie(None)) -> dict:
+    """내 루틴 작업 하나 — 짓는 중이면 지난 시간과 예상, 끝났으면 결과(추천 응답 전체). 가져가면 '봤다' 로 표시한다."""
+    user = _require_user(quadriga_session)
+    job = billing.job_get(job_id, user["id"], mark_seen=True)
+    if not job:
+        raise HTTPException(404, "그런 작업이 없어요.")
+    return {"id": job_id, "종류": job["kind"], "상태": job["status"], "시작": int(job["created_at"]),
+            "지난초": job["지난초"], "예상초": billing.job_typical_sec(job["kind"]),
+            "결과": job["result"] if job["status"] == "done" else None,
+            "오류": job.get("error") if job["status"] == "failed" else None}
 
 
 def _previous_routine(루틴) -> dict:

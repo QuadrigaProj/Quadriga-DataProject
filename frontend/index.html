@@ -8989,6 +8989,7 @@ async function refreshAiStatus(){
       if (recoAiReady) autoFuseSeasonTime();
       recoAiWhy = r.이유 || null;
       if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+      if (r.작업) aiJobResume(r.작업);         // 짓는 중이거나 아직 안 가져간 루틴 — 새로고침해도 이어받는다
     } catch (e) {
       // 못 물어봤다고 잠가 두지 않는다. 눌러 보고 안 되면 그때 알려 준다.
       recoAiReady = false;
@@ -9036,6 +9037,10 @@ async function renderRecommend(){
   if (recoMode === 'ai') {
     // 쓸 수 있는지 아직 모르면 여기서 물어본다 (값이 들지 않는다).
     if (recoAiReady === null) refreshAiStatus();
+    if (aiJob) {                   // 짓는 중 — 다른 화면에 갔다 와도 기다리는 자리 그대로
+      showAiWait('AI 가 짓는 중이에요…', aiJob.예상초, aiJob.시작 * 1000);
+      return;
+    }
     if (recoAiReady === true && state.aiReco?.추천?.length) {
       showAiReco();                 // 받아 둔 것을 그대로 — 다시 부르지 않는다
       return;
@@ -9161,11 +9166,12 @@ async function askAiRecommend(방향){
   // 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다. 값이 빠지고 나서
   // 알게 되면 늦다.
   const 다시 = !!state.aiReco?.추천?.length;
+  const 시간 = `보통 ${aiWaitEstimate()}초쯤 걸리고, 그동안 다른 화면을 봐도 돼요.`;
   const 물음 = 방향
-    ? `지금 루틴을 바탕으로 ${방향} 다시 지어요. ${won(aiPrice('조정'))}이 결제됩니다.`
+    ? `지금 루틴을 바탕으로 ${방향} 다시 지어요. ${won(aiPrice('조정'))}이 결제됩니다.\n${시간}`
     : 다시
-    ? `AI 추천을 다시 받으시겠습니까? ${won(aiPrice('루틴'))}이 결제됩니다.`
-    : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${won(aiPrice('루틴'))}이 결제됩니다.`;
+    ? `AI 추천을 다시 받으시겠습니까? ${won(aiPrice('루틴'))}이 결제됩니다.\n${시간}`
+    : `AI 추천은 유료입니다. 이용하시겠습니까?\n한 번에 ${won(aiPrice('루틴'))}이 결제됩니다. ${시간}`;
   if (!값을치를까(물음, 방향 ? '조정' : '루틴', '루틴')) return;
   if (방향) {                                                      // 시작일은 그대로 — 같은 루틴을 방향만 바꿔 다시 짓는다
     recoAdjust = 방향;
@@ -9189,23 +9195,27 @@ async function askAiRecommend(방향){
    아직 기록이 없으면 AI_WAIT_DEFAULT — 서버가 루틴 하나를 짓는 데 주는 시간이 60초이고 보통 그 절반 남짓 걸린다.
    AI 가 실제로 지어 준 때만 기록한다: 실패 · 폴백은 금방 끝나서 다음 예상을 터무니없이 줄인다. */
 const AI_WAIT_KEY = 'quadriga.aiWait';
-const AI_WAIT_DEFAULT = 35;      // 초
-const AI_WAIT_MAX = 60;          // 서버의 제한 (backend/ai_recommend.py COMPOSE_TIMEOUT_SEC)
+const AI_WAIT_DEFAULT = 60;      // 초 — 서버 기록(aiInfo.예상초)도 이 기기 기록도 없을 때
 let aiWaitTimer = null;
 
 function aiWaitLog(){
   try { return (JSON.parse(localStorage.getItem(AI_WAIT_KEY) || '[]') || []).filter(n => Number.isFinite(n) && n > 0); }
   catch (e) { return []; }
 }
-function aiWaitEstimate(){
+/* 예상은 서버가 최근에 실제로 걸린 시간의 가운데값(aiInfo.예상초 · 작업의 예상초)을 먼저, 없으면 이 기기 기록, 그것도 없으면 기본값 */
+function aiWaitEstimate(서버예상){
+  if (Number.isFinite(서버예상) && 서버예상 > 0) return Math.round(서버예상);
+  if (Number.isFinite(aiInfo?.예상초) && aiInfo.예상초 > 0) return Math.round(aiInfo.예상초);
   const a = aiWaitLog().sort((x, y) => x - y);
   return a.length ? a[Math.floor(a.length / 2)] : AI_WAIT_DEFAULT;
 }
-function showAiWait(text){
-  const est = aiWaitEstimate(), t0 = Date.now();
+/* 제한 시간은 없다 — 서버가 백그라운드에서 끝까지 짓는다. 지난 시간과 '보통 이만큼' 만 보여 주고, 다른 화면을 봐도 된다고 말한다.
+   t0 는 서버가 작업을 시작한 때(새로고침해서 이어받을 때는 처음 시작 시각) */
+function showAiWait(text, 서버예상, t0 = Date.now()){
+  const est = aiWaitEstimate(서버예상);
   $('recoBody').innerHTML = `<div class="rec-empty ai-wait" role="status">
       <div class="ai-wait-title">${text}</div>
-      <div class="ai-wait-est">예상 소요시간 약 ${est}초</div>
+      <div class="ai-wait-est">보통 ${est}초쯤 걸려요 · 다른 화면을 봐도 돼요 — 끝나면 알려 드려요</div>
       <div class="ai-wait-bar" aria-hidden="true"><i id="aiWaitFill"></i></div>
       <div class="ai-wait-now" id="aiWaitNow">0초 지났어요</div>
     </div>`;
@@ -9215,13 +9225,63 @@ function showAiWait(text){
     if (!now || !fill) { clearInterval(aiWaitTimer); return; }       // 결과가 그려지면 이 자리가 사라진다
     const sec = Math.floor((Date.now() - t0) / 1000);
     fill.style.width = Math.min(100, sec / est * 100) + '%';
-    now.textContent = sec <= est ? `${sec}초 지났어요` : `${sec}초 지났어요 · 조금 더 걸리고 있어요 (길어도 ${AI_WAIT_MAX}초쯤)`;
+    now.textContent = sec <= est ? `${sec}초 지났어요`
+      : `${sec}초 지났어요 · 보통보다 오래 걸리고 있지만 끝까지 짓고 있어요 (몇 분이 걸려도 결과는 남아요)`;
   }, 500);
   return 지었나 => {
     clearInterval(aiWaitTimer);
     if (!지었나) return;
     try { localStorage.setItem(AI_WAIT_KEY, JSON.stringify([...aiWaitLog(), Math.round((Date.now() - t0) / 1000)].slice(-5))); } catch (e) {}
   };
+}
+
+/* ---- 백그라운드 작업 ----
+   '받겠다' 고 하면 서버가 작업을 걸고 스레드가 끝까지 짓는다(요청은 잠깐만 기다려 본다). 화면은 3초마다 물어 끝나면 받은
+   응답을 그대로 적용한다 — 사용자가 다른 화면에 가 있으면 알림만 띄우고, 새로고침했으면 ai-status 의 '작업' 으로 이어받는다.
+   (예현 2026-09-23: 시간 제한을 없애고 걸리는 시간만 알리고, 결정했으면 백그라운드에서도 진행) */
+let aiJob = null;                // 지금 기다리는 작업 {id, 종류, 상태, 시작, 예상초}
+let aiJobPoll = null;
+
+async function aiJobWait(작업){
+  if (aiJob && aiJob.id === 작업.id && aiJobPoll) return aiJobPoll;  // 이미 기다리는 중
+  aiJob = 작업;
+  aiJobPoll = (async () => {
+    let 마지막 = null;
+    for (;;) {
+      await new Promise(r => setTimeout(r, 3000));
+      try { 마지막 = await API.aiJob(작업.id); }
+      catch (e) { if (e?.status === 404) break; continue; }          // 잠깐 못 물어봤으면 다음에 다시
+      if (마지막.상태 !== 'running') break;
+    }
+    aiJob = null; aiJobPoll = null;
+    return 마지막;
+  })();
+  return aiJobPoll;
+}
+
+/* 작업이 끝난 뒤 — 결과를 적용하고, 추천 화면이 아니면 알린다 */
+function aiJobDone(j){
+  if (!j) return false;
+  if (j.상태 === 'done' && j.결과) {
+    받은추천적용(j.결과, true);
+    if (!$('s12')?.classList.contains('active')) showToast('AI 추천이 도착했어요 — 추천 화면에서 볼 수 있어요');
+    return recoBy === 'ai';
+  }
+  if (j.상태 === 'failed') showToast(j.오류 || 'AI 추천을 만들지 못했어요. 값은 받지 않았어요.');
+  recoMode = 'free'; paintRecoMode();
+  if ($('s12')?.classList.contains('active')) renderRecommend();
+  return false;
+}
+
+/* 새로고침 · 다시 로그인 뒤 — 서버가 알려 준 내 작업을 이어받는다 (짓는 중이면 기다리고, 끝났는데 안 가져갔으면 가져온다) */
+async function aiJobResume(작업){
+  if (!작업 || (aiJob && aiJob.id === 작업.id)) return;
+  if (작업.상태 === 'running') {
+    if ($('s12')?.classList.contains('active') && recoMode === 'ai') showAiWait('AI 가 짓는 중이에요…', aiInfo?.예상초, 작업.시작 * 1000);
+    aiJobDone(await aiJobWait(작업));
+    return;
+  }
+  try { aiJobDone(await API.aiJob(작업.id)); } catch (e) {}
 }
 
 /* ---- 시작일 ----
@@ -9342,34 +9402,48 @@ async function fetchRecommend(ai){
           limit: 12,
           ai: ai ? 1 : 0,
         });
-    recoList = r.추천 || [];
-    전체받음 = false;
-    recoSpare = r.짬시간계획 || null;
-    recoSeason = null;          // 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
-    recoCare = r.조심할부위 || [];
-    recoBy = r.출처 || '점수';
-    recoAiReady = !!r.ai가능;
-    recoAiWhy = r.ai이유 || null;
-    // 시연·구독·값표는 ai-status 가 안다 — 무료 추천만 받은 손님도 AI 버튼 문구가 맞게(시연인데 '1회 500원' 으로 보이던 것)
-    ensureAiInfo();
-    // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
-    // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
-    // 바꿔 공짜로 쓸 수 있다.
-    if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
-    오늘남음갱신(r);
-    if (ai && recoBy !== 'ai' && r.안내) showToast(r.안내);
-    if (ai && recoBy !== 'ai') recoMode = 'free';
-    paintRecoMode();
-    recoAt = 0;
-    recoBack = [];
-    if (recoBy === 'ai') 이전AI추천쌓기();      // 지금까지 보던 AI 루틴은 '이전 루틴' 으로 — 추천저장 이 덮어쓰기 전에
-    // 받은 것을 남긴다. 다음에 들어올 때 다시 부르지 않는다 —
-    // AI 는 그때마다 값이 빠지고, 무료도 보던 것이 바뀌어 버린다.
-    추천저장();
+    // 서버가 작업만 걸고 돌아왔으면(AI 가 아직 짓는 중) 결과가 올 때까지 기다린다 — 그동안 다른 화면을 봐도 된다
+    if (ai && r.작업 && r.작업.상태 === 'running') {
+      if (r.안내) showToast(r.안내);
+      오늘남음갱신(r);
+      if ($('s12')?.classList.contains('active')) showAiWait('AI 가 짓는 중이에요…', r.작업.예상초, r.작업.시작 * 1000);
+      aiJobDone(await aiJobWait(r.작업));
+      return;
+    }
+    받은추천적용(r, ai);
   } catch (e) {
     box.innerHTML = '<div class="rec-empty">추천을 불러오지 못했어요.<br/>잠시 뒤 다시 시도해주세요.</div>';
     return;
   }
+}
+
+/* 추천 응답(요청의 답이든 작업의 결과든)을 화면 상태로 — 여기 한 군데서만 */
+function 받은추천적용(r, ai){
+  const 약점 = weakFactors();
+  recoList = r.추천 || [];
+  전체받음 = false;
+  recoSpare = r.짬시간계획 || null;
+  recoSeason = null;          // 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
+  recoCare = r.조심할부위 || [];
+  recoBy = r.출처 || '점수';
+  recoAiReady = !!r.ai가능;
+  recoAiWhy = r.ai이유 || null;
+  // 시연·구독·값표는 ai-status 가 안다 — 무료 추천만 받은 손님도 AI 버튼 문구가 맞게(시연인데 '1회 500원' 으로 보이던 것)
+  ensureAiInfo();
+  // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
+  // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
+  // 바꿔 공짜로 쓸 수 있다.
+  if (typeof r?.['잔액'] === 'number') { state.credit = r['잔액']; renderCredit(); renderAcctCredit(); }
+  오늘남음갱신(r);
+  if (ai && recoBy !== 'ai' && r.안내) showToast(r.안내);
+  if (ai && recoBy !== 'ai') recoMode = 'free';
+  paintRecoMode();
+  recoAt = 0;
+  recoBack = [];
+  if (recoBy === 'ai') 이전AI추천쌓기();      // 지금까지 보던 AI 루틴은 '이전 루틴' 으로 — 추천저장 이 덮어쓰기 전에
+  // 받은 것을 남긴다. 다음에 들어올 때 다시 부르지 않는다 —
+  // AI 는 그때마다 값이 빠지고, 무료도 보던 것이 바뀌어 버린다.
+  추천저장();
   $('recoSub').textContent = 약점.length
     ? `뒤처지는 ${약점.join(' · ')}을(를) 먼저 봤어요.`
     : '점검 결과와 고른 것들을 보고 추천합니다.';

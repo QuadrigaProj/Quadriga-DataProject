@@ -467,14 +467,17 @@ def test_AI가_실제로_지었을_때만_값을_받는다():
     import inspect
     from backend import main as m
     src = inspect.getsource(m._recommend)   # GET·POST 가 함께 쓰는 본체
-    # 지어졌고, 짓는 동안 요청이 끊기지 않았을 때만 깎는다 (끊겼으면 화면에는 이미 실패가 나갔다)
-    조건 = 'if 지음 and 지음.get("루틴") and 아직_받을_수_있다(시작, method, "/recommend/routines"):'
-    assert 조건 in src
-    깎는줄 = [l for l in src.splitlines() if "ai_settle(" in l]
+    # 되는지(이용권 · 시연 횟수)를 먼저 보고 작업을 건다 — 부르고 나서 못 받으면 우리만 값을 치른다
+    assert src.index("ai_allow(누구, ip, 종류)") < src.index("_ai_job_begin(")
+    assert "ai_settle(" not in src                                   # 값 받기는 짓는 스레드(_ai_job_run)에서만
+    일 = inspect.getsource(m._ai_job_run)
+    # 지어졌을 때만 깎는다 — 요청이 끊겨도 스레드는 끝까지 짓고 값을 받아 결과를 남긴다 (2026-09-23 백그라운드 작업)
+    조건 = 'if 지음 and 지음.get("루틴"):'
+    assert 조건 in 일
+    깎는줄 = [l for l in 일.splitlines() if "ai_settle(" in l]
     assert len(깎는줄) == 1, 깎는줄
-    assert src.index(조건) < src.index("ai_settle(")
-    # 되는지(이용권 · 시연 횟수)를 먼저 보고 부른다 — 부르고 나서 못 받으면 우리만 값을 치른다
-    assert src.index("ai_allow(누구, ip, 종류)") < src.index("air.compose")
+    assert 일.index("air.compose") < 일.index(조건) < 일.index("ai_settle(")
+    assert 'billing.note_ai_use(누구["id"], ip, f"{종류}·버림", 0, air.take_usage())' in 일   # 폴백은 '버림' 으로만 기록
 
 
 def test_잔액이_모자라면_무료로_돌아간다():

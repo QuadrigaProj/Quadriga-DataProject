@@ -32,6 +32,13 @@ def _index() -> str:
     return r.text.replace("\r\n", "\n")
 
 
+def _fetch_reco(html: str) -> str:
+    """fetchRecommend 본문 + 받은추천적용 본문 — 요청을 보내는 곳과 응답을 화면에 적용하는 곳(백그라운드 작업 뒤 갈라졌다)."""
+    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    적용 = html.split("function 받은추천적용(r, ai)")[1].split("\n}")[0]
+    return 받기 + "\n" + 적용
+
+
 # ---------- A6 로그인 문구 ----------
 
 def test_로그인_제목과_설명():
@@ -2651,7 +2658,7 @@ def test_다시_받기는_반드시_한_번_묻는다():
 def test_받은_AI_추천은_남는다():
     """창을 옮겼다 와도 그대로 있어야 한다."""
     html = _index()
-    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    본문 = _fetch_reco(html)
     assert "추천저장();" in 본문
     저장 = html.split("function 추천저장()")[1].split("\n}")[0]
     assert "state.aiReco = 담을것" in 저장 and "state.freeReco = 담을것" in 저장
@@ -2785,7 +2792,7 @@ def test_루틴_추천에서_일정을_넣을_수_있다():
 def test_AI_추천은_늘_POST로_이_사람의_데이터를_보낸다():
     """항목별 체력나이·최근 기록·일정은 쿼리 문자열에 실을 수 없다. 무료는 GET 그대로."""
     html = _index()
-    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    본문 = _fetch_reco(html)
     assert "const r = ai" in 본문
     assert "API.recommendWithSchedule({" in 본문
     assert "바쁜시간: 바쁜 || {}," in 본문
@@ -2864,7 +2871,7 @@ def test_계절_계획도_추천과_함께_남는다():
     assert "계절계획: recoSeason," in html
     assert "recoSeason = 저장본.계절계획 || null;" in html
     # 새로 받은 추천에 예전 루틴의 계획을 붙이지 않는다
-    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    본문 = _fetch_reco(html)
     assert "recoSeason = null;" in 본문
 
 
@@ -2872,7 +2879,7 @@ def test_차감은_서버가_준_잔액을_받아_적는다():
     """값이 빠지는 곳(AI 추천 · 시간표 사진)은 서버가 준 잔액을 받아 적을 뿐,
     화면이 스스로 깎지 않는다. 자세히 알아보기는 무료라 잔액을 만지지 않는다."""
     html = _index()
-    for 함수 in ("async function fetchRecommend(ai)", "async function onSchedulePhoto(ev)"):
+    for 함수 in ("function 받은추천적용(r, ai)", "async function onSchedulePhoto(ev)"):
         본문 = html.split(함수)[1].split("\n}")[0]
         assert "state.credit = r['잔액']" in 본문, 함수
         assert "state.credit -=" not in 본문, 함수
@@ -2895,7 +2902,7 @@ def test_일정_넣는_자리는_AI_소개_카드_안에_있다():
 
 def test_무료_추천은_일정을_보내지_않는다():
     html = _index()
-    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    본문 = _fetch_reco(html)
     assert "const 바쁜 = ai ? (state.schedule?.바쁜시간 || null) : null;" in 본문
 
 
@@ -3090,22 +3097,48 @@ def test_유료_확인은_한_자리에서_한다():
     assert html.count("자세히보기_준비(") == 3           # 정의 1 + 부르는 곳 2 (자세히 알아보기 · 시간표 사진)
 
 
-def test_AI_가_짓는_동안_예상_소요시간을_보여_준다():
-    """값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). 예상 소요시간 · 흐른 시간 · 막대를 같이 보여 준다.
-    예상은 이 기기에서 최근에 실제로 걸린 시간의 가운데값이고, AI 가 실제로 지어 준 때만 기록한다(폴백은 금방 끝나 예상을 망친다)."""
+def test_AI_가_짓는_동안_걸리는_시간을_말하고_제한은_두지_않는다():
+    """값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). '보통 이만큼' · 흐른 시간 · 막대를 같이 보여 준다.
+    제한 시간은 없다 — 서버가 백그라운드에서 끝까지 짓는다(예현 2026-09-23). 예상은 서버가 최근에 실제로 걸린 시간의 가운데값을
+    먼저 쓰고, 없으면 이 기기 기록. AI 가 실제로 지어 준 때만 기록한다(폴백은 금방 끝나 예상을 망친다)."""
     html = _index()
     물음 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
     assert "const 끝 = showAiWait(`AI 가 ${방향} 다시 짓는 중이에요…`);" in 물음 and "const 끝 = showAiWait('AI 가 짓는 중이에요…');" in 물음
     assert 물음.count("끝(recoBy === 'ai');") == 2                       # 실제로 AI 가 지었을 때만 걸린 시간을 기록한다
     assert 물음.index("showAiWait(") < 물음.index("await fetchRecommend(true);")
-    기다림 = html.split("function showAiWait(text)")[1].split("\n}")[0]
-    assert "예상 소요시간 약 ${est}초" in 기다림 and "`${sec}초 지났어요`" in 기다림
-    assert "조금 더 걸리고 있어요 (길어도 ${AI_WAIT_MAX}초쯤)" in 기다림    # 예상을 넘겨도 멈춘 게 아니라고 알린다
+    assert "const 시간 = `보통 ${aiWaitEstimate()}초쯤 걸리고, 그동안 다른 화면을 봐도 돼요.`;" in 물음   # 묻는 창에서 미리 말한다
+    기다림 = html.split("function showAiWait(text, 서버예상, t0 = Date.now())")[1].split("\n}")[0]
+    assert "보통 ${est}초쯤 걸려요 · 다른 화면을 봐도 돼요 — 끝나면 알려 드려요" in 기다림 and "`${sec}초 지났어요`" in 기다림
+    assert "보통보다 오래 걸리고 있지만 끝까지 짓고 있어요" in 기다림       # 예상을 넘겨도 멈춘 게 아니고, 제한도 없다
+    assert "AI_WAIT_MAX" not in html and "길어도" not in 기다림
     assert "if (!지었나) return;" in 기다림 and ".slice(-5)" in 기다림
     assert "if (!now || !fill) { clearInterval(aiWaitTimer); return; }" in 기다림   # 결과가 그려지면 스스로 멈춘다
-    assert "const AI_WAIT_DEFAULT = 35;" in html and "const AI_WAIT_MAX = 60;" in html
-    예상 = html.split("function aiWaitEstimate()")[1].split("\n}")[0]
-    assert "a[Math.floor(a.length / 2)]" in 예상 and "AI_WAIT_DEFAULT" in 예상   # 가운데값 — 한 번 오래 걸린 것에 끌려가지 않는다
+    예상 = html.split("function aiWaitEstimate(서버예상)")[1].split("\n}")[0]
+    assert "if (Number.isFinite(서버예상) && 서버예상 > 0) return Math.round(서버예상);" in 예상
+    assert "aiInfo?.예상초" in 예상 and "a[Math.floor(a.length / 2)]" in 예상 and "AI_WAIT_DEFAULT" in 예상
+
+
+def test_AI_루틴은_백그라운드_작업으로_받고_새로고침해도_이어받는다():
+    """서버가 작업만 걸고 돌아오면 3초마다 물어 끝나면 그대로 적용한다. 다른 화면에 있으면 알리고, 추천 화면에 다시 들어오면
+    기다리는 자리를 보여 주고, 새로고침하면 ai-status 의 '작업' 으로 이어받는다 (예현 2026-09-23)."""
+    html = _index()
+    api = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
+    assert "aiJob: (id) => call(`/recommend/ai-job/${id}`)," in api
+    assert "e.status = res.status;" in api                                  # 404 면 그만 묻는다
+    받기 = _fetch_reco(html)
+    assert "if (ai && r.작업 && r.작업.상태 === 'running') {" in 받기 and "aiJobDone(await aiJobWait(r.작업));" in 받기
+    assert "받은추천적용(r, ai);" in 받기
+    assert "function 받은추천적용(r, ai){" in html                            # 요청의 답도 작업의 결과도 같은 길
+    기다림 = html.split("async function aiJobWait(작업)")[1].split("\n}")[0]
+    assert "setTimeout(r, 3000)" in 기다림 and "await API.aiJob(작업.id)" in 기다림 and "if (e?.status === 404) break;" in 기다림
+    끝 = html.split("function aiJobDone(j)")[1].split("\n}")[0]
+    assert "받은추천적용(j.결과, true);" in 끝 and "AI 추천이 도착했어요 — 추천 화면에서 볼 수 있어요" in 끝
+    assert "if (j.상태 === 'failed') showToast(j.오류 ||" in 끝
+    이어 = html.split("async function aiJobResume(작업)")[1].split("\n}")[0]
+    assert "if (작업.상태 === 'running') {" in 이어 and "aiJobDone(await aiJobWait(작업));" in 이어
+    assert "if (r.작업) aiJobResume(r.작업);" in html.split("async function refreshAiStatus()")[1][:1500]
+    그리기 = html.split("async function renderRecommend()")[1].split("\n}")[0]
+    assert "if (aiJob) {" in 그리기 and "showAiWait('AI 가 짓는 중이에요…', aiJob.예상초, aiJob.시작 * 1000);" in 그리기
 
 
 def test_다이어트를_고르면_관리_부위도_고른다():
@@ -3124,7 +3157,7 @@ def test_다이어트를_고르면_관리_부위도_고른다():
     assert "state.dietAreas = DIET_AREAS.filter(x => have.has(x));" in 고름 and "saveProfile();" in 고름
     assert "state.aiRoutine = null;" in 고름                                                        # 부위를 바꿨으면 지어 둔 AI 루틴의 전제가 달라진다
     assert "function dietAreas(){ return state.purpose === 'diet' ? (state.dietAreas || []) : []; }" in html
-    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    받기 = _fetch_reco(html)
     assert "areas: dietAreas()," in 받기 and "areas: dietAreas().join(',')," in 받기
     assert "purpose: state.purpose, dietAreas: state.dietAreas, method: state.method," in html      # 스냅샷
     assert "state.dietAreas = Array.isArray(saved?.dietAreas) ? saved.dietAreas.filter(a => DIET_AREAS.includes(a)) : [];" in html
@@ -3269,7 +3302,7 @@ def test_지은_루틴도_이전_루틴으로_돌아간다():
     for 이름 in ("function backAiReco()", "function forwardAiReco()"):
         몸 = html.split(이름)[1].split("\n}")[0]
         assert "추천되살리기(state.aiReco, 'ai');" in 몸 and "saveProfile();" in 몸, 이름   # 짬시간·계절 계획까지 그 루틴의 것으로
-    받기 = html.split("async function fetchRecommend(")[1].split("\n}")[0]
+    받기 = _fetch_reco(html)
     assert 받기.index("if (recoBy === 'ai') 이전AI추천쌓기();") < 받기.index("추천저장();")   # 덮어쓰기 전에 쌓는다
     쌓기 = html.split("function 이전AI추천쌓기()")[1].split("\n}")[0]
     assert "[...(state.aiRecoPast || []), ...(state.aiRecoNext || []), state.aiReco]" in 쌓기   # 방금 보던 것이 맨 위
@@ -3366,7 +3399,7 @@ def test_지은_루틴에서는_옮기지_않는다():
 
 def test_새_추천을_받으면_전체_얹음_표시가_풀린다():
     html = _index()
-    본문 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    본문 = _fetch_reco(html)
     assert "전체받음 = false;" in 본문
 
 
@@ -3495,7 +3528,7 @@ def test_시작일은_계정에_남는다():
 
 def test_시작일과_위치를_AI_에_보낸다():
     html = _index()
-    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    받기 = _fetch_reco(html)
     assert "시작일: state.routineStart || tomorrowIso()," in 받기
     assert "...(await myLocation() || {})," in 받기
     구간 = html.split("async function fetchPeriods(축,")[1].split("\n}")[0]
@@ -3778,7 +3811,7 @@ def test_더_쉽게_더_어렵게는_지금_루틴을_바탕으로_다시_짓는
     assert "지금 루틴을 바탕으로 ${방향} 다시 지어요. ${won(aiPrice('조정'))}이 결제됩니다." in 묻기
     assert 묻기.index("값을치를까(물음") < 묻기.index("recoAdjust = 방향")          # 값을 치르기로 한 뒤에만
     assert "askStartDate" in 묻기 and 묻기.index("recoAdjust = 방향") < 묻기.index("askStartDate")   # 방향이 있으면 시작일은 그대로
-    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    받기 = _fetch_reco(html)
     assert "const 조정 = ai ? recoAdjust : null; recoAdjust = null;" in 받기      # 한 번 쓰고 비운다
     assert "조정: 조정 || null," in 받기 and "이전루틴: 조정 ? 이전AI루틴() : null," in 받기
     바탕 = html.split("function 이전AI루틴()")[1].split("\n}")[0]
@@ -3789,7 +3822,7 @@ def test_더_쉽게_더_어렵게는_지금_루틴을_바탕으로_다시_짓는
 def test_플레이어는_권장_용량대로_쓴_수행량과_노력을_보여준다():
     """AI 가 "10회 × 3세트"·"30분" 으로 써도 플레이어가 "2세트" 만 보여 주면 용량을 올린 뜻이 없다."""
     html = _index()
-    받기 = html.split("async function fetchRecommend(ai)")[1].split("\n}")[0]
+    받기 = _fetch_reco(html)
     assert 받기.count("purpose: PURPOSE_TO_KO[state.purpose] || null,") == 2          # AI(POST)·무료(GET) 둘 다 고른 운동 단계를 보낸다
     적용 = html.split("function applyAiRoutine(){")[1].split("\n}")[0]
     assert "수행량: s.수행량 || ''," in 적용

@@ -6,6 +6,7 @@
 """
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -164,10 +165,106 @@ def test_같은_사람이_동시에_둘을_부르지_못한다():
         pass
 
 
-def test_루틴_짓기는_다시_부르지_않고_제한도_넉넉하다():
-    """제한 시간에 걸린 첫 호출도 저쪽에선 끝까지 돌아 값이 매겨진다 — 한 번 더 부르면 두 번 내고 하나도 못 준다."""
-    assert air.COMPOSE_RETRIES == 0 and air.COMPOSE_TIMEOUT_SEC >= 120
-    assert m.AI_REQUEST_TIMEOUT_SEC > air.longest_wait_sec() >= air.COMPOSE_TIMEOUT_SEC
+def test_루틴_짓기는_다시_부르지_않고_제한도_사실상_없다():
+    """제한 시간에 걸린 첫 호출도 저쪽에선 끝까지 돌아 값이 매겨진다 — 한 번 더 부르면 두 번 내고 하나도 못 준다.
+    루틴 짓기는 요청과 떼어 백그라운드에서 돌리므로 제한은 SDK 기본(600초)뿐이고, 요청 제한에는 들지 않는다."""
+    assert air.COMPOSE_RETRIES == 0 and air.COMPOSE_TIMEOUT_SEC >= 600
+    assert m.AI_REQUEST_TIMEOUT_SEC > air.longest_wait_sec() >= air.PERIOD_TIMEOUT_SEC
+    assert air.COMPOSE_TIMEOUT_SEC > air.longest_wait_sec()          # 요청 제한과 무관하다
+
+
+# ---------- 백그라운드 루틴 작업 ----------
+
+def _slow_sdk(monkeypatch, 응답, 초: float):
+    """가짜 SDK 가 응답 전에 초 만큼 잔다 — 요청이 기다리는 시간(JOB_WAIT_SEC)보다 길게."""
+    import time as _t
+    _fake_sdk(monkeypatch, 응답)
+    mod = sys.modules["anthropic"]
+    원래 = mod.Anthropic
+
+    class 느린:
+        def __init__(self, **kw):
+            self._c = 원래(**kw)
+            self.messages = self
+
+        def create(self, **kw):
+            _t.sleep(초)
+            return self._c.messages.create(**kw)
+
+    mod.Anthropic = 느린
+
+
+def _wait_job(a: TestClient, job_id: int, 초: float = 10.0) -> dict:
+    import time as _t
+    끝 = _t.monotonic() + 초
+    while _t.monotonic() < 끝:
+        j = a.get(f"/recommend/ai-job/{job_id}").json()
+        if j["상태"] != "running":
+            return j
+        _t.sleep(0.1)
+    raise AssertionError("작업이 끝나지 않는다")
+
+
+def test_루틴_작업은_요청이_돌아온_뒤에도_끝까지_짓고_결과를_남긴다(monkeypatch):
+    """요청은 JOB_WAIT_SEC 만 기다리고 작업 번호를 준다. 스레드가 끝까지 짓고 값을 받고, 화면은 작업 번호로 가져간다."""
+    monkeypatch.setattr(m, "JOB_WAIT_SEC", 0.2)
+    _slow_sdk(monkeypatch, _지은응답(), 1.0)
+    a = _user()
+    d = _ai(a)
+    assert d["출처"] == "점수" and d["작업"]["상태"] == "running" and d["작업"]["종류"] == "루틴"
+    assert "짓는 중" in d["안내"] and d["작업"]["예상초"] > 0
+    job_id = d["작업"]["id"]
+    s = a.get("/recommend/ai-status").json()
+    assert s["작업"]["id"] == job_id and s["작업"]["상태"] == "running"           # 새로고침해도 이어서 기다린다
+    # 짓는 동안 한 번 더 누르면 429
+    r = a.post("/recommend/routines", json={"age_gbn": "성인", "weak": [], "sports": [], "ai": True, "limit": 3})
+    assert r.status_code == 429
+    j = _wait_job(a, job_id)
+    assert j["상태"] == "done" and j["결과"]["출처"] == "ai" and len(j["결과"]["추천"]) == 1
+    assert j["결과"]["오늘남음"]["루틴"] == 2                                   # 값(시연 횟수)은 스레드가 받았다
+    assert j["지난초"] >= 1.0 and j["예상초"] > 0
+    assert a.get("/recommend/ai-status").json()["작업"] is None               # 가져갔으니 더는 알리지 않는다
+    assert billing.job_typical_sec("루틴") >= 1.0                               # 다음 사람에게 '보통 이만큼'
+
+
+def test_루틴_작업이_빨리_끝나면_예전처럼_결과를_바로_준다(monkeypatch):
+    _fake_sdk(monkeypatch, _지은응답())
+    a = _user()
+    d = _ai(a)
+    assert d["출처"] == "ai" and "작업" not in d
+    assert a.get("/recommend/ai-status").json()["작업"] is None
+
+
+def test_루틴_작업이_실패하면_값을_받지_않고_다시_받을_수_있다(monkeypatch):
+    monkeypatch.setattr(m, "JOB_WAIT_SEC", 0.2)
+    _slow_sdk(monkeypatch, "이건 JSON 이 아니다", 0.5)
+    a = _user()
+    d = _ai(a)
+    job_id = d["작업"]["id"]
+    j = _wait_job(a, job_id)
+    assert j["상태"] == "done" and j["결과"]["출처"] == "점수" and "못 지어" in j["결과"]["안내"]
+    assert j["결과"]["오늘남음"]["루틴"] == 3                                   # 폴백은 횟수를 깎지 않는다
+    with m._ai_turn(auth.user_for_token(a.cookies.get(auth.SESSION_COOKIE))["id"]):   # 잠금도 풀렸다
+        pass
+
+
+def test_남의_작업은_못_본다(monkeypatch):
+    monkeypatch.setattr(m, "JOB_WAIT_SEC", 0.2)
+    _slow_sdk(monkeypatch, _지은응답(), 0.5)
+    a = _user()
+    job_id = _ai(a)["작업"]["id"]
+    b = _user("b@x.com", "10.1.1.2")
+    assert b.get(f"/recommend/ai-job/{job_id}").status_code == 404
+    _wait_job(a, job_id)
+
+
+def test_서버가_도중에_죽은_작업은_실패로_본다():
+    a = _user()
+    uid = auth.user_for_token(a.cookies.get(auth.SESSION_COOKIE))["id"]
+    job_id = billing.job_start(uid, "루틴", now=time.time() - billing.JOB_STALE_SEC - 5)
+    j = a.get(f"/recommend/ai-job/{job_id}").json()
+    assert j["상태"] == "failed" and "다시 받아" in j["오류"]
+    assert a.get("/recommend/ai-status").json()["작업"] is None
 
 
 def test_값표와_선결제_팩():

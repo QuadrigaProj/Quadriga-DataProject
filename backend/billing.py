@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import time
 
 try:
@@ -80,6 +81,20 @@ CREATE TABLE IF NOT EXISTS ai_addons (
   memo       TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_ai_addons_user ON ai_addons(user_id, ends_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_jobs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,            -- 루틴 | 조정
+  status      TEXT NOT NULL,            -- running | done | failed
+  result      TEXT,                     -- 끝났을 때 화면에 줄 응답 전체(JSON)
+  error       TEXT,
+  seen        INTEGER NOT NULL DEFAULT 0,   -- 화면이 결과를 가져갔는가 (새로고침해도 한 번은 보여 주려고)
+  created_at  INTEGER NOT NULL,
+  finished_at INTEGER,
+  taken_sec   REAL                      -- 실제로 걸린 시간 — 다음 사람에게 '보통 이만큼' 이라고 말해 주려고
+);
+CREATE INDEX IF NOT EXISTS idx_ai_jobs_user ON ai_jobs(user_id, id DESC);
 """
 SCHEMA_PG = (SCHEMA_SQLITE
              .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY"))
@@ -279,6 +294,93 @@ def ai_uses_today_ip(ip: str, now: float | None = None) -> int:
     with auth.db() as con:
         r = con.execute("SELECT COUNT(*) AS n FROM ai_usage WHERE ip=? AND day=?", (ip, kst_today(now))).fetchone()
     return int(r["n"] or 0)
+
+
+# ---------------------------------------------------------------------------
+# AI 작업 — 루틴 짓기는 요청과 떼어 백그라운드에서 끝까지 돌리고, 결과를 여기 둔다.
+# 사용자가 '받겠다' 고 한 뒤에는 화면을 옮기거나 새로고침해도 결과가 남는다 (예현 2026-09-23).
+# ---------------------------------------------------------------------------
+
+JOB_STALE_SEC = 15 * 60          # 이보다 오래 running 이면 서버가 도중에 죽은 것 — failed 로 본다
+JOB_KEEP_SEC = 24 * 3600         # 하루 지난 작업은 화면에 알리지 않는다
+JOB_DEFAULT_SEC = 60.0           # 걸린 기록이 아직 없을 때의 예상(초)
+
+
+def job_start(user_id: int, kind: str, now: float | None = None) -> int:
+    with auth.db() as con:
+        return con.insert_id("INSERT INTO ai_jobs (user_id, kind, status, created_at) VALUES (?,?,?,?)",
+                             (user_id, kind, "running", int(now if now is not None else time.time())))
+
+
+def job_finish(job_id: int, result: dict | None, error: str | None = None, now: float | None = None) -> None:
+    """끝났다 — result 가 있으면 done, 없으면 failed. taken_sec 은 시작부터의 시간."""
+    끝 = now if now is not None else time.time()
+    with auth.db() as con:
+        r = con.execute("SELECT created_at FROM ai_jobs WHERE id=?", (job_id,)).fetchone()
+        걸림 = max(0.0, 끝 - int(r["created_at"])) if r else None
+        con.execute("UPDATE ai_jobs SET status=?, result=?, error=?, finished_at=?, taken_sec=? WHERE id=?",
+                    ("done" if result is not None else "failed",
+                     json.dumps(result, ensure_ascii=False) if result is not None else None,
+                     (error or "")[:300] if error else None, int(끝), 걸림, job_id))
+
+
+def _job_row(r, now: float) -> dict:
+    d = dict(r)
+    d["result"] = json.loads(d["result"]) if d.get("result") else None
+    if d["status"] == "running" and now - int(d["created_at"]) > JOB_STALE_SEC:
+        d["status"] = "failed"                     # 서버가 도중에 다시 떴다 — 값은 받지 않았으니 다시 받으면 된다
+        d["error"] = "서버가 도중에 다시 시작돼 짓던 것이 사라졌어요. 다시 받아 주세요 (값은 받지 않았어요)."
+    d["지난초"] = round(now - int(d["created_at"]), 1)
+    return d
+
+
+def job_get(job_id: int, user_id: int, mark_seen: bool = False, now: float | None = None) -> dict | None:
+    """내 작업 하나. mark_seen 이면 끝난 결과를 화면이 가져갔다고 표시한다."""
+    now = now if now is not None else time.time()
+    with auth.db() as con:
+        r = con.execute("SELECT * FROM ai_jobs WHERE id=? AND user_id=?", (job_id, user_id)).fetchone()
+        if not r:
+            return None
+        d = _job_row(r, now)
+        if d["status"] == "failed" and r["status"] == "running":
+            con.execute("UPDATE ai_jobs SET status='failed', error=?, finished_at=? WHERE id=?", (d["error"], int(now), job_id))
+        if mark_seen and d["status"] != "running" and not r["seen"]:
+            con.execute("UPDATE ai_jobs SET seen=1 WHERE id=?", (job_id,))
+    return d
+
+
+def job_pending(user_id: int, now: float | None = None) -> dict | None:
+    """화면이 알아야 할 내 최근 작업 — 아직 짓는 중이거나, 끝났는데 아직 안 가져간 것(하루 안). 없으면 None."""
+    now = now if now is not None else time.time()
+    with auth.db() as con:
+        r = con.execute("SELECT * FROM ai_jobs WHERE user_id=? AND created_at>=? ORDER BY id DESC LIMIT 1",
+                        (user_id, int(now - JOB_KEEP_SEC))).fetchone()
+    if not r:
+        return None
+    d = _job_row(r, now)
+    if d["status"] == "running" or (d["status"] == "done" and not r["seen"]):
+        return {"id": d["id"], "종류": d["kind"], "상태": d["status"], "시작": int(d["created_at"]), "지난초": d["지난초"]}
+    return None
+
+
+def job_running(user_id: int, now: float | None = None) -> bool:
+    p = job_pending(user_id, now)
+    return bool(p and p["상태"] == "running")
+
+
+def job_typical_sec(kind: str | None = None, default: float = JOB_DEFAULT_SEC) -> float:
+    """최근에 실제로 걸린 시간(끝난 작업 열 개)의 가운데값 — 화면의 '보통 이만큼 걸려요'. 기록이 없으면 default."""
+    with auth.db() as con:
+        if kind:
+            rows = con.execute("SELECT taken_sec FROM ai_jobs WHERE status='done' AND kind=? AND taken_sec IS NOT NULL"
+                               " ORDER BY id DESC LIMIT 10", (kind,)).fetchall()
+        else:
+            rows = con.execute("SELECT taken_sec FROM ai_jobs WHERE status='done' AND taken_sec IS NOT NULL"
+                               " ORDER BY id DESC LIMIT 10").fetchall()
+    값들 = sorted(float(r["taken_sec"]) for r in rows if r["taken_sec"] is not None and float(r["taken_sec"]) > 0)
+    if not 값들:
+        return float(default)
+    return round(값들[len(값들) // 2], 1)
 
 
 def ai_uses_since(user_id: int, kind: str, since: int) -> int:

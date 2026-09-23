@@ -95,11 +95,11 @@ def test_API_응답에는_붙이지_않는다():
 def test_AI_경로의_제한은_AI_가_스스로_포기하는_시간보다_길다():
     """늦을 때는 AI 쪽이 먼저 포기해야 한다 — 그러면 값을 안 받고 무료 추천으로 넘어간다."""
     from backend import ai_recommend as air
-    # 루틴 짓기는 재시도가 없다(두 번 내는 일을 막으려고) — 제한 시간 × (처음 + 재시도) 가운데 가장 긴 것
+    # 요청 안에서 기다리는 호출(사진 · 구간 계획)의 제한 시간 × (처음 + 재시도) 가운데 가장 긴 것.
+    # 루틴 짓기(compose)는 백그라운드 작업이라 여기 들지 않는다 — 요청은 JOB_WAIT_SEC 만 기다리고 돌아온다
     assert air.longest_wait_sec() == max(air.TIMEOUT_SEC * 2 * (air.SDK_RETRIES + 1),
-                                         air.COMPOSE_TIMEOUT_SEC * (air.COMPOSE_RETRIES + 1),
                                          air.PERIOD_TIMEOUT_SEC * 1.5 * (air.SDK_RETRIES + 1))
-    assert m.AI_REQUEST_TIMEOUT_SEC > air.longest_wait_sec()
+    assert m.AI_REQUEST_TIMEOUT_SEC > air.longest_wait_sec() > m.JOB_WAIT_SEC
     for 경로 in ("/recommend/routines", "/recommend/periods", "/recommend/seasons", "/health/photo", "/schedule/photo"):
         assert m.request_limit_sec("POST", 경로) == m.AI_REQUEST_TIMEOUT_SEC, 경로
     # 무료 추천(GET)과 나머지는 그대로 짧다 — 이 제한이 생긴 까닭(추천의 무한 루프)이 그쪽이다
@@ -155,21 +155,32 @@ def test_AI_추천은_평소_제한보다_오래_걸려도_끊기지_않는다(�
     assert billing.balance(uid) == 1000 - m.AI_PRICE
 
 
-def test_끊긴_뒤에_지어진_루틴은_값을_받지_않는다(이용권_있는_사람, monkeypatch):
-    """끊는 쪽은 답만 먼저 보낼 뿐 스레드를 멈추지 못한다. 그 스레드가 뒤늦게 값을 받으면 안 된다."""
+def test_오래_걸리는_루틴은_끊기지_않고_작업으로_이어져_값을_받는다(이용권_있는_사람, monkeypatch):
+    """루틴 짓기는 요청과 떼어 놓았다(2026-09-23). 요청은 JOB_WAIT_SEC 만 기다리고 작업 번호를 주며 값은 아직 받지 않는다.
+    스레드가 끝까지 지으면 그때 값을 받고, 화면은 작업 번호로 결과를 가져간다 — '값은 냈는데 루틴은 못 받는' 일이 없다."""
     from backend import billing
     c, uid = 이용권_있는_사람
 
     def 느린_짓기(*a, **k):
-        time.sleep(2.6)
+        time.sleep(1.2)
         return 가짜_루틴
 
     monkeypatch.setattr(m.air, "compose", 느린_짓기)
+    monkeypatch.setattr(m, "JOB_WAIT_SEC", 0.2)
     monkeypatch.setattr(m, "REQUEST_TIMEOUT_SEC", 2.0)
     monkeypatch.setattr(m, "AI_REQUEST_TIMEOUT_SEC", 2.0)
     r = c.post("/recommend/routines", json={"age_gbn": "성인", "ai": True})
-    assert r.status_code == 503 and "너무 오래 걸려" in r.json()["detail"]
-    assert billing.balance(uid) == 1000                     # 화면은 실패를 받았다 — 한 푼도 받지 않는다
+    assert r.status_code == 200 and r.json()["작업"]["상태"] == "running"
+    assert billing.balance(uid) == 1000                     # 아직 안 지었다 — 한 푼도 받지 않는다
+    job_id = r.json()["작업"]["id"]
+    끝 = time.monotonic() + 10
+    while time.monotonic() < 끝:
+        j = c.get(f"/recommend/ai-job/{job_id}").json()
+        if j["상태"] != "running":
+            break
+        time.sleep(0.1)
+    assert j["상태"] == "done" and j["결과"]["출처"] == "ai"
+    assert billing.balance(uid) == 1000 - m.AI_PRICE        # 지어졌으니 그때 받는다
 
 
 def test_끊긴_뒤에_읽힌_시간표_사진도_횟수를_세지_않는다(이용권_있는_사람, monkeypatch):

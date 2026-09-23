@@ -20,7 +20,7 @@ const API = (() => {
   async function call(path, opts) {
     const res = await fetch(path, { credentials: 'same-origin', ...(opts || {}) });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.detail || `${res.status} 오류`);
+    if (!res.ok) { const e = new Error(body.detail || `${res.status} 오류`); e.status = res.status; throw e; }   // 상태 번호도 — 404 면 그만 묻는다
     return body;
   }
 
@@ -64,6 +64,8 @@ const API = (() => {
     recommendRoutines: (q) => call('/recommend/routines?' + qs(q)),
     // 일정까지 함께 보낼 때. 요일별 시간표는 쿼리 문자열에 실을 수 없다
     recommendWithSchedule: (b) => post('/recommend/routines', b),
+    // 루틴 작업 — 서버가 백그라운드에서 짓는다. 짓는 중이면 지난 시간·예상, 끝났으면 결과(추천 응답 전체)
+    aiJob: (id) => call(`/recommend/ai-job/${id}`),
     // '이 루틴으로 자세히 도전하기' — 계절마다 어떻게 이어갈지 (유료)
     recommendSeasons: (b) => post('/recommend/seasons', b),
     // 구간을 골라 본다 — 계절별 | 시간대별. '자세히 보기' 안에서(시연 기간에는 하루 횟수)

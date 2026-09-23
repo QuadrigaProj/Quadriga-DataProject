@@ -3,6 +3,7 @@
 예전에는 모든 항목을 '내 기록이 몇 살의 중앙값인가' 로 읽었다. 성인 유연성은 중앙값이 나이에 따라 거의 평평해서
 (여성 해마다 0.006cm, 오르내림이 다섯 번 뒤집힌다) 34세 여성이 12cm → 16cm 로 좋아졌는데 42세 → 47.7세로 늙게 나왔다.
 """
+import numpy as np
 import pytest
 
 from backend import fitness_age as fa
@@ -27,6 +28,32 @@ def d():
 
 
 @needs_data
+@pytest.mark.parametrize("gbn,sex,item", [("성인", "F", "상대악력"), ("성인", "M", "상대악력"), ("성인", "F", "제자리멀리뛰기"),
+                                           ("성인", "F", "체지방률"), ("성인", "M", "체지방률"), ("성장기", "F", "제자리멀리뛰기"),
+                                           ("성장기", "F", "앉아윗몸앞으로굽히기"), ("어르신", "M", "의자앉았다일어서기")])
+def test_곡선으로_읽는_항목은_좋아질수록_늙지_않는다(d, gbn, sex, item):
+    """분포표 중앙값이 한 구간 튀는 곳(성인 여 상대악력 25~29세 등)에서 더 좋은 기록이 더 늙게 읽히던 것 — 곡선을 편다.
+    성장기는 나이 들수록 기록이 좋아지니 '앞선다(나이가 큼)' 쪽이 좋은 쪽이다."""
+    sub = d[(d["연령군"] == gbn) & (d["성별"] == sex) & (d["항목"] == item)]
+    lo, hi = float(sub["p5"].min()), float(sub["p95"].max())
+    values = np.linspace(lo, hi, 60)
+    ages = [fa.convert_age(d, gbn, sex, item, float(v)) for v in values]
+    assert all(a is not None for a in ages)
+    better_is_higher = fa.HIGHER_IS_BETTER.get(item, True)
+    diffs = np.diff(ages)
+    if gbn == fa.GROWTH:
+        # 좋은 쪽으로 갈수록 나이(발달 수준)가 커지거나 같다
+        assert (diffs >= -1e-9).all() if better_is_higher else (diffs <= 1e-9).all(), (item, ages)
+    else:
+        assert (diffs <= 1e-9).all() if better_is_higher else (diffs >= -1e-9).all(), (item, ages)
+
+
+def test_곡선_펴기는_추세_방향으로_튀는_구간만_누른다():
+    assert fa._monotone(np.array([47.7, 48.3, 46.9, 46.4])).tolist() == [47.7, 47.7, 46.9, 46.4]   # 내려가는 추세 — 누적 최솟값
+    assert fa._monotone(np.array([133.0, 140.0, 140.0, 140.5, 150.0, 149.0])).tolist() == [133.0, 140.0, 140.0, 140.5, 150.0, 150.0]
+    assert fa._monotone(np.array([5.0, 5.0])).tolist() == [5.0, 5.0]                              # 추세가 없으면 그대로
+
+
 def test_성인_유연성만_나이_신호가_없다(d):
     """순위로 매길 항목은 손으로 고르지 않는다 — 분포표에서 잰 신호로 가른다."""
     for sex in ("F", "M"):

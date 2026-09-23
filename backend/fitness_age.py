@@ -210,13 +210,26 @@ def _peer_row(d: pd.DataFrame, age_gbn: str, sex: str, age: float, item: str):
     return row, str(row["연령구간"]), False
 
 
+def _monotone(meds: np.ndarray) -> np.ndarray:
+    """p50 곡선을 나이 방향으로 단조롭게 편다 — 전체 추세(끝 − 처음)의 방향으로 누적 최댓값 · 최솟값.
+
+    분포표의 중앙값은 한 구간이 이웃보다 0.4~1.0 튀는 곳이 있다(성인 여 상대악력 19~24세 47.7 → 25~29세 48.3, 남 상대악력,
+    여 제자리멀리뛰기 30~34 → 35~39, 체지방률 …). 그대로 보간하면 그 틈에서 **더 좋은 기록이 더 늙게** 읽힌다 —
+    48.0 은 24세인데 48.5 는 27세. 튀는 구간을 이웃 수준으로 눌러 두면 좋아질수록 언제나 어려지거나 같다(2026-09-23 점검).
+    """
+    if len(meds) < 2 or meds[-1] == meds[0]:
+        return meds
+    acc = np.maximum.accumulate if meds[-1] > meds[0] else np.minimum.accumulate
+    return acc(meds.astype(float))
+
+
 def convert_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float) -> float | None:
-    """측정값 → 환산 나이. 해당 성별·연령군의 p50 곡선에 선형보간한다."""
+    """측정값 → 환산 나이. 해당 성별·연령군의 p50 곡선에 선형보간한다 (곡선은 _monotone 으로 편 뒤)."""
     sub = d[(d["연령군"] == age_gbn) & (d["성별"] == sex) & (d["항목"] == item)]
     sub = sub.sort_values("age_mid")
     if len(sub) < MIN_BANDS:
         return None
-    ages, meds = sub["age_mid"].to_numpy(), sub["p50"].to_numpy()
+    ages, meds = sub["age_mid"].to_numpy(), _monotone(sub["p50"].to_numpy())
     # 값이 클수록 좋으면 나이가 들수록 p50이 감소 → 보간을 위해 뒤집는다
     higher_better = HIGHER_IS_BETTER.get(item, True)
     # 끝이 열린 구간("80+")의 중앙값보다 못한 기록은 끝값에 묶지 않고 마지막 두 구간의 기울기로 이어 간다.
@@ -228,8 +241,14 @@ def convert_age(d: pd.DataFrame, age_gbn: str, sex: str, item: str, value: float
             slope = (ages[-1] - ages[-2]) / (meds[-1] - meds[-2])
             return float(min(OLDEST_AGE, ages[-1] + (value - meds[-1]) * slope))
     x, y = (meds[::-1], ages[::-1]) if higher_better else (meds, ages)
-    order = np.argsort(x)
-    return float(np.interp(value, x[order], y[order]))
+    order = np.argsort(x, kind="stable")
+    x, y = x[order], y[order]
+    # 편 곡선의 평평한 곳(같은 중앙값이 이어지는 구간)은 한 점으로 — 그 값은 그 구간들의 가운데 나이로 읽는다
+    if len(np.unique(x)) < len(x):
+        ux = np.unique(x)
+        y = np.array([float(np.mean(y[x == v])) for v in ux])
+        x = ux
+    return float(np.interp(value, x, y))
 
 
 # 한 항목이 체력나이를 기준점에서 이만큼(세)보다 더 끌어당기지 못한다.

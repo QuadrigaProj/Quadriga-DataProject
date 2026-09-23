@@ -8571,7 +8571,11 @@ function todaySeason(){
 }
 
 /* 그 시간대에 이 루틴을 어떻게 할지 — AI 가 계절 안에 써 준 말이 먼저, 없으면 시간대별 말 */
+/* AI 루틴을 돌 때만 — 무료 루틴에는 시간대 · 계절 말이 없다(그 기능은 AI 추천에서만 제공한다. 예현 2026-09-24) */
+function aiRoutineOn(){ return state.routineMeta?.구성 === 'ai'; }
+
 function daypartGuide(이름){
+  if (!aiRoutineOn()) return null;
   const 계획 = state.aiReco?.계절계획;
   if (!계획) return null;
   const 계절 = (계획.계절 || []).find(c => c.계절 === todaySeason());
@@ -8650,6 +8654,7 @@ function renderPlayerDaypart(){
    생기더라도 정확한 운동 명칭으로, 순서에 따라"). 고른 종목은 시간 되는 때에 하니 맨 아래 따로.
    루틴을 아직 못 받았으면 예전처럼 이름만. 짬시간을 쓰는 사람이면 바쁜 시간과 비는 칸도 같은 줄로 함께. */
 function openTodayPreview(){
+  if (!aiRoutineOn()) { showToast('시간대별 일정은 AI 추천 루틴에서 제공해요'); return; }   // 무료 루틴은 하루 한 벌 — 시간대로 나누지 않는다
   const 오늘 = isoDate(new Date()), 요일 = todayDow(), 지금 = daypartOf();
   const 이름 = state.routineMeta?.루틴명 || state.aiRoutine?.루틴명 || '오늘의 루틴';
   const 목록 = 할것 => 할것.length ? `<ol class="today-steps">${할것.map(s =>
@@ -8802,6 +8807,7 @@ async function loadSparePlan(){
 function renderSpareCard(){
   const card = $('spareCard');
   if (!card) return;
+  if (!aiRoutineOn()) { card.hidden = true; return; }   // 짬시간 · 일정은 AI 추천의 기능 — 무료 루틴 홈에는 띄우지 않는다 (예현 2026-09-24)
   // 일정을 안 적었으면 비워 두지 않는다 — 무엇을 하면 되는지 말해 준다.
   if (!state.schedule?.바쁜시간) {
     card.hidden = false;

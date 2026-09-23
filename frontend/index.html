@@ -6080,7 +6080,7 @@ async function searchCenters(){
     const 월 = ym => /^\d{6}$/.test(String(ym || '')) ? `${String(ym).slice(0, 4)}년 ${Number(String(ym).slice(4))}월 ` : '';
     const list = (r.items || []).map(c =>
       `<div class="center-item"><b>${esc(c.fcltyNm || c.name || '체력인증센터')}</b><br/>
-        ${esc(c.addr || '')}${c.거리km != null ? ' · 직선거리 ' + esc(String(c.거리km)) + 'km' : ''}<br/>
+        ${esc(c.addr || '주소 미제공 — 공단 자료에 주소가 비어 있어요')}${c.거리km != null ? ' · 직선거리 ' + esc(String(c.거리km)) + 'km' : ''}<br/>
         ${c.측정건수 ? `${월(c.기준월)}측정 ${Number(c.측정건수).toLocaleString()}건 · ` : ''}${c.telno ? esc(c.telno) + ' · ' : ''}<a href="${esc(c.예약 || 'https://nfa.kspo.or.kr/reserve/main.kspo')}" target="_blank" rel="noreferrer">공식 예약하기 →</a></div>`
     ).join('');
     box.innerHTML = (r.매칭방식 === '거리' ? note + list : list + note) + 출처;

@@ -2739,6 +2739,7 @@ def test_일정을_안_적었으면_비워_두지_않고_무엇을_하면_되는
     본문 = html.split("async function loadSparePlan()")[1].split("\n}")[0]
     assert "if (!state.schedule?.바쁜시간) { sparePlan = null; renderSpareCard(); return; }" in 본문
     카드 = html.split("function renderSpareCard()")[1].split("\n}")[0]
+    assert "if (!aiRoutineOn()) { card.hidden = true; return; }" in 카드    # 짬시간은 AI 추천의 기능 — 무료 루틴 홈에는 없다
     assert "일정을 주시면 AI가 짬시간에 맞게 루틴을 짜줘요" in 카드
     assert 'onclick="openSchedule()">일정 넣기</button>' in 카드
     assert "if (!칸) { card.hidden = true; return; }" in 카드         # 적었는데 비는 칸이 없으면 조용히
@@ -3672,6 +3673,7 @@ def test_하루를_네_시간대로_가른다():
 def test_그_시간대에_어떻게_할지는_계절_안의_말이_먼저():
     html = _index()
     본문 = html.split("function daypartGuide(이름)")[1].split("\n}")[0]
+    assert "if (!aiRoutineOn()) return null;" in 본문                 # 무료 루틴에는 시간대 · 계절 말이 없다
     assert "c.계절 === todaySeason()" in 본문
     assert "(계절?.시간대 || []).find(t => t.시간대 === 이름)" in 본문
     assert "(계획.시간대 || []).find(t => t.시간대 === 이름)" in 본문      # 없으면 시간대별 말
@@ -3721,6 +3723,7 @@ def test_오늘의_스케줄_미리보기():
     html = _index()
     assert 'onclick="openTodayPreview()">오늘의 스케줄 미리보기</button>' in html
     본문 = html.split("function openTodayPreview()")[1].split("\n}")[0]
+    assert "if (!aiRoutineOn()) { showToast('시간대별 일정은 AI 추천 루틴에서 제공해요'); return; }" in 본문   # 무료 루틴은 하루 한 벌
     assert "openSheet('오늘의 스케줄 미리보기'" in 본문
     assert "DAYPARTS.map(d =>" in 본문
     assert "state.schedule?.바쁜시간?.[요일]" in 본문 and "종류: 'busy'" in 본문

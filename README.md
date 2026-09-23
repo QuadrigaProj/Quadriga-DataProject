@@ -556,7 +556,9 @@ API 응답 모양이 바뀌면 화면이 조용히 깨집니다. `backend/` 를 
 
 1. [render.com](https://render.com) 에 GitHub 계정으로 로그인
 2. **New → Blueprint** → 이 저장소 선택 → **Apply**
-3. 웹 서비스와 Postgres 가 함께 생성되고 `DATABASE_URL` 이 자동 연결됩니다
+3. 웹 서비스가 생성됩니다. DB 는 [Neon](https://neon.tech) 무료 Postgres 를 만들어(지역은 웹 서비스와 같은 곳)
+   연결 문자열을 **Environment** 의 `DATABASE_URL` 에 넣습니다 (`?sslmode=require` 포함 — 코드 변경 없음).
+   표는 서버가 처음 뜰 때 스스로 만듭니다
 4. 배포가 끝나면 **Environment** 에서 `PUBLIC_BASE_URL` 을 실제 주소로 채웁니다
    (예: `https://quadriga-fitness-age.onrender.com`)
 5. 소셜 로그인을 쓰려면 각 `CLIENT_ID`/`CLIENT_SECRET` 도 여기에 넣습니다
@@ -568,7 +570,7 @@ API 응답 모양이 바뀌면 화면이 조용히 깨집니다. `backend/` 를 
 | 환경 | DB | 데이터 |
 |---|---|---|
 | 로컬 | SQLite (`data/app.db`) | 그 컴퓨터에만 |
-| 배포 | Postgres (`DATABASE_URL`) | 서버가 다시 떠도 남음, 기기 간 공유 (무료 DB 는 30일 만료 — 아래) |
+| 배포 | Postgres (`DATABASE_URL`, Neon 무료) | 서버가 다시 떠도 남음, 기기 간 공유. 만료 없음 — 5분 쉬면 DB 가 잠들어 첫 쿼리에 1초쯤 |
 
 코드는 하나입니다. `DATABASE_URL` 이 있으면 Postgres, 없으면 SQLite 로 붙습니다.
 테스트도 양쪽에서 모두 통과하는지 확인합니다.
@@ -584,7 +586,7 @@ DATABASE_URL=postgresql://... pytest -q      # Postgres
 |---|---|---|
 | 서버가 잠든다 | 15분 동안 접속이 없으면 꺼지고, 다음 첫 접속은 30초~1분이 걸립니다 | `.github/workflows/keep-warm.yml` 이 5분마다 `/health` 를 불러 깨워 둡니다. 깃허브 예약 실행은 가끔 밀리니, 심사 기간에는 UptimeRobot 같은 감시 서비스를 함께 쓰면 더 확실합니다 |
 | 무료 인스턴스 시간 | 워크스페이스마다 한 달 750시간. 다 쓰면 무료 웹 서비스가 다음 달까지 멈춥니다 | 서비스 하나를 계속 켜 두면 744시간이라 들어맞습니다. 같은 워크스페이스에 무료 웹 서비스를 더 만들지 마세요 |
-| **무료 Postgres 는 만든 지 30일 뒤 만료** | 만료 뒤 14일 안에 유료로 올리지 않으면 **데이터째 삭제**됩니다 | Render 대시보드에서 DB 의 만든 날을 확인하세요. 심사 기간에 걸리면 그 전에 유료로 올리거나 새 DB 로 옮겨야 합니다 |
+| ~~무료 Postgres 는 만든 지 30일 뒤 만료~~ | Render 무료 DB 는 만료 뒤 14일 안에 유료로 올리지 않으면 데이터째 삭제됩니다 | 그래서 2026-09-24 부터 DB 는 **Neon 무료 Postgres**(만료 없음)를 씁니다. Neon 은 5분 쉬면 잠들었다가 첫 쿼리에 1초쯤 걸려 깨어나고, 서버의 연결 보관함(`backend/auth.py`)이 끊긴 연결을 알아서 새로 엽니다 |
 
 출처: [Render 문서 — Deploy for Free](https://render.com/docs/free)
 

@@ -1445,3 +1445,79 @@ def test_모임_비밀번호는_다섯_번_틀리면_잠긴다():
     assert r.status_code == 429
     auth.guard_clear(f"room:{rid}:2")
     assert b.post(f"/community/rooms/{rid}/join", json={"password": "1234"}).status_code == 200
+
+
+# ---------- 신고 · 관리자 삭제 (2차 점검 8번, 예현 2026-09-23 "8번 구현해줘") ----------
+
+def test_신고는_보이는_글에만_한_번씩(monkeypatch):
+    from backend import billing
+    billing.init_db()
+    a, b, c = _login(None, "ra1@x.com", "가"), _login(None, "rb1@x.com", "나"), _login(None, "rc1@x.com", "다")
+    pid = a.post("/community/posts", json={"body": "이상한 글"}).json()["id"]
+    r = b.post("/community/report", json={"target_type": "post", "target_id": pid, "reason": "광고"})
+    assert r.status_code == 200 and r.json()["신고수"] == 1
+    assert b.post("/community/report", json={"target_type": "post", "target_id": pid}).json()["신고수"] == 1   # 두 번 눌러도 하나
+    assert c.post("/community/report", json={"target_type": "post", "target_id": pid}).json()["신고수"] == 2
+    assert a.post("/community/report", json={"target_type": "post", "target_id": pid}).status_code == 400   # 내 글은 못 한다
+    assert b.post("/community/report", json={"target_type": "post", "target_id": 99999}).status_code == 404
+    # 고른 친구 글은 못 보는 사람이 신고할 수 없다 — 있다는 사실도 정보다
+    hb = b.get("/community/me/handle").json()["아이디"]
+    _친구(a, b)
+    비밀 = a.post("/community/posts", json={"body": "b 만", "audience": "chosen", "to": [hb]}).json()["id"]
+    assert c.post("/community/report", json={"target_type": "post", "target_id": 비밀}).status_code == 404
+    assert b.post("/community/report", json={"target_type": "post", "target_id": 비밀}).status_code == 200
+    # 관리자가 아니면 신고 목록 · 삭제 · 넘기기를 못 한다
+    assert b.get("/community/admin/reports").status_code == 403
+    assert b.delete(f"/community/admin/post/{pid}").status_code == 403
+    assert b.post(f"/community/admin/post/{pid}/dismiss").status_code == 403
+    assert a.get("/community/meta").json()["관리자"] is False
+
+
+def test_관리자는_신고를_보고_아무_글이나_지운다(monkeypatch):
+    from backend import billing
+    billing.init_db()
+    monkeypatch.setenv("ADMIN_USERS", "password:boss@x.com")
+    a, b = _login(None, "ra2@x.com", "가"), _login(None, "rb2@x.com", "나")
+    boss = _login(None, "boss@x.com", "관리자")
+    pid = a.post("/community/posts", json={"body": "광고 광고", "media": [_사진(500)]}).json()["id"]
+    cid = a.get(f"/community/posts/{pid}").json()["id"] and a.post(f"/community/posts/{pid}/comments", json={"body": "욕설"}).json()["댓글"][0]["id"]
+    rid = _방(a); _초대해서_들이기(a, b, rid)
+    mid = a.post(f"/community/rooms/{rid}/messages", json={"body": "스팸"}).json()["messages"][-1]["id"]
+    for t, i in (("post", pid), ("comment", cid), ("message", mid)):
+        if t == "message":
+            b.post(f"/community/rooms/{rid}/join")
+        assert b.post("/community/report", json={"target_type": t, "target_id": i, "reason": "싫어요"}).status_code == 200
+    meta = boss.get("/community/meta").json()
+    assert meta["관리자"] is True and meta["신고"] == 3
+    목록 = boss.get("/community/admin/reports").json()["신고"]
+    assert {(x["종류"], x["id"]) for x in 목록} == {("post", pid), ("comment", cid), ("message", mid)}
+    글 = next(x for x in 목록 if x["종류"] == "post")
+    assert 글["내용"] == "광고 광고" and 글["미디어"] == 1 and 글["작성자"] == "가" and 글["신고수"] == 1 and 글["사유"] == "싫어요"
+    # 관리자가 아니어도 자기 글은 그대로 지울 수 있고, 남의 글은 403 (예전 그대로)
+    assert b.delete(f"/community/posts/{pid}").status_code == 403
+    # 관리자 삭제 — 댓글 · 메시지 · 글. 지우면 그 신고는 닫힌다
+    assert boss.delete(f"/community/admin/comment/{cid}").status_code == 200
+    assert boss.delete(f"/community/admin/message/{mid}").status_code == 200
+    r = boss.delete(f"/community/admin/post/{pid}").json()
+    assert r["ok"] is True and r["신고"] == []
+    assert a.get(f"/community/posts/{pid}").status_code == 404
+    assert boss.get("/community/meta").json()["신고"] == 0
+    assert boss.delete("/community/admin/post/99999").status_code == 404
+    assert boss.delete("/community/admin/room/1").status_code == 400
+
+
+def test_관리자는_신고를_넘길_수도_있다(monkeypatch):
+    from backend import billing
+    billing.init_db()
+    monkeypatch.setenv("ADMIN_USERS", "password:boss2@x.com")
+    a, b, boss = _login(None, "ra3@x.com", "가"), _login(None, "rb3@x.com", "나"), _login(None, "boss2@x.com", "관리자")
+    pid = a.post("/community/posts", json={"body": "멀쩡한 글"}).json()["id"]
+    b.post("/community/report", json={"target_type": "post", "target_id": pid})
+    r = boss.post(f"/community/admin/post/{pid}/dismiss").json()
+    assert r["닫음"] == 1 and r["신고"] == []
+    assert a.get(f"/community/posts/{pid}").status_code == 200                                   # 글은 그대로
+    # 글쓴이가 스스로 지운 글의 신고는 목록에서 사라진다
+    pid2 = a.post("/community/posts", json={"body": "곧 지울 글"}).json()["id"]
+    b.post("/community/report", json={"target_type": "post", "target_id": pid2})
+    a.delete(f"/community/posts/{pid2}")
+    assert boss.get("/community/admin/reports").json()["신고"] == []

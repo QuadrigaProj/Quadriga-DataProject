@@ -1746,6 +1746,7 @@ def ai_status_for(누구: dict | None) -> dict:
         오늘남음 = None
     return {"값": AI_PRICE, "값표": PRICES, "시연": 시연, "관리자": is_admin(누구),
             "오늘남음": 오늘남음,
+            "시연하루": DEMO_LIMITS if 시연 else None,       # 손님(비로그인)에게 '로그인하면 하루 몇 회' 를 보여 주려고
             "자세히": {"까지": 상세["ends_at"]} if 상세 else None,
             "구독": {"까지": 구독["ends_at"], "하루": SUB_LIMITS} if 구독 else None,
             "구독값": SUB_PRICE, "구독일수": SUB_DAYS,

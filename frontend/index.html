@@ -8877,7 +8877,7 @@ function renderSchedule(){
     <div class="share-field">
       <label>바쁜 시간을 적어주세요 (적은 요일만 씁니다)</label>
       <button type="button" class="sch-photo" onclick="$('schPhotoFile').click()">
-        시간표 사진에서 읽어오기 · ${aiSub() ? '구독에 포함' : aiDemo() || aiInfo?.관리자 ? '시연 무료' : hasDetail() ? '자세히 보기에 포함' : `자세히 보기 ${won(DETAIL_PRICE)}`}</button>
+        시간표 사진에서 읽어오기 · ${aiSub() ? '구독에 포함' : aiDemo() || aiInfo?.관리자 ? '지금은 무료' : hasDetail() ? '자세히 보기에 포함' : `자세히 보기 ${won(DETAIL_PRICE)}`}</button>
       <input type="file" id="schPhotoFile" accept="image/*" hidden
              onchange="onSchedulePhoto(event)" />
       ${WEEKDAYS.map(d => `
@@ -8999,6 +8999,17 @@ async function refreshAiStatus(){
     return recoAiReady;
   })();
   return aiStatusInFlight;
+}
+
+/* 무료 추천을 받은 뒤 — AI 버튼 아래 글(시연 무료 · 구독 · 값)만 맞춘다. 추천 목록은 다시 그리지 않는다
+   (refreshAiStatus 는 추천 화면을 다시 그려서, 첫 방문인데 '먼저 받은 추천이에요' 로 바뀜다). */
+async function ensureAiInfo(){
+  if (aiInfo || aiStatusInFlight) return;
+  try {
+    const r = await API.aiStatus();
+    aiInfo = r; recoAiReady = !!r.ai가능; recoAiWhy = r.이유 || null;
+  } catch (e) { /* 못 물어봤으면 지금 글 그대로 */ }
+  paintRecoMode();
 }
 let recoAiWhy = null;     // 못 쓰면 그 까닭 (서버가 준 한 줄)
 
@@ -9339,6 +9350,8 @@ async function fetchRecommend(ai){
     recoBy = r.출처 || '점수';
     recoAiReady = !!r.ai가능;
     recoAiWhy = r.ai이유 || null;
+    // 시연·구독·값표는 ai-status 가 안다 — 무료 추천만 받은 손님도 AI 버튼 문구가 맞게(시연인데 '1회 500원' 으로 보이던 것)
+    ensureAiInfo();
     // 실제로 AI 가 다듬은 경우에만 값을 치른다. 폴백이면 받지 않는다.
     // 차감은 서버가 한다(응답의 '잔액'). 화면에서 빼면 브라우저에서 숫자만
     // 바꿔 공짜로 쓸 수 있다.
@@ -9562,7 +9575,7 @@ function renderDetailMenu(){
             '바쁜 시간을 적어 두면 비는 시간에 할 것을 홈에 띄우고, 다음 AI 추천부터 함께 짜 드려요',
             일정있음 ? '일정 있음' : '')}
     </div>
-    <div class="sch-hint">${aiCounted() || aiInfo?.관리자 ? `${aiSub() ? '구독에 들어 있어요' : '시연 기간이라 무료예요'}${aiLeft('구간') != null ? ` · 오늘 ${aiLeft('구간')}번 남음` : ''}`
+    <div class="sch-hint">${aiCounted() || aiInfo?.관리자 ? `${aiSub() ? '구독에 들어 있어요' : `정식 값 자세히 보기 ${won(DETAIL_PRICE)} · 결제 전이라 지금은 무료예요`}${aiLeft('구간') != null ? ` · 오늘 ${aiLeft('구간')}번 남음` : ''}`
       : hasDetail() ? '자세히 보기 이용 중 — 더 내지 않아요'
       : `계절·시간대 계획과 시간표 사진은 '자세히 보기'(${won(DETAIL_PRICE)}, ${DETAIL_DAYS}일)에 들어 있어요`}</div>
     <div class="prof-actions">
@@ -9780,7 +9793,7 @@ function aiPrice(종류){ return aiInfo?.값표?.[종류] ?? { 루틴: AI_PRICE,
 function aiDemo(){ return !!aiInfo?.시연 && !aiInfo?.관리자 && !aiSub(); }
 /* 값 대신 하루 횟수로 쓰는 사람 — 시연 기간이거나 구독 중. 문구만 다르다 */
 function aiCounted(){ return aiDemo() || aiSub(); }
-function aiCountedWhy(){ return aiSub() ? '구독 중이라 값이 들지 않아요' : '시연 기간이라 무료예요'; }
+function aiCountedWhy(종류 = '루틴'){ return aiSub() ? '구독 중이라 값이 들지 않아요' : `정식 값 ${won(aiPrice(종류))} · 결제 전이라 지금은 무료예요`; }
 function aiLeft(묶음){ return aiInfo?.오늘남음?.[묶음]; }
 function hasDetail(){ return !!aiInfo?.자세히 && (aiInfo.자세히.까지 || 0) * 1000 > Date.now(); }
 
@@ -9793,8 +9806,8 @@ function 값을치를까(물음, 종류 = '루틴', 묶음 = '루틴'){
   if (aiInfo?.관리자) return confirm(물음.split('\n')[0]);
   if (aiCounted()) {
     const 남음 = aiLeft(묶음);
-    if (남음 === 0) { showToast(`${aiCountedWhy()}. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요`); return false; }
-    return confirm(`${물음.split('\n')[0]}\n${aiCountedWhy()}${남음 != null ? ` (오늘 ${남음}번 남음)` : ''}.`);
+    if (남음 === 0) { showToast(`${aiCountedWhy(종류)}. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요`); return false; }
+    return confirm(`${물음.split('\n')[0]}\n${aiCountedWhy(종류)}${남음 != null ? ` (오늘 ${남음}번 남음)` : ''}.`);
   }
   if ((state.credit || 0) < aiPrice(종류)) {
     showToast(`이용권이 모자라요 (${won(aiPrice(종류))} 필요). 프로필에서 선결제해주세요`);
@@ -9810,7 +9823,7 @@ async function 자세히보기_준비(묶음 = '구간'){
   if (aiInfo?.관리자) return true;
   if (aiCounted()) {
     const 남음 = aiLeft(묶음);
-    if (남음 === 0) { showToast(`${aiCountedWhy()}. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요`); return false; }
+    if (남음 === 0) { showToast(`${aiCountedWhy('자세히')}. 오늘 쓸 수 있는 횟수를 다 썼어요 — 내일 다시 쓸 수 있어요`); return false; }
     return true;
   }
   if (hasDetail()) return true;
@@ -10188,7 +10201,8 @@ function paintRecoMode(){
       ? '관리자가 키를 등록하면 켜져요'
       : aiInfo?.관리자 ? '관리자 · 값도 횟수도 없어요'
       : aiSub() ? `구독 중 · 오늘 ${aiLeft('루틴') ?? '-'}회 남음`
-      : aiDemo() ? `시연 기간 무료 · 오늘 ${aiLeft('루틴') ?? '-'}회 남음`
+      : aiDemo() && !aiInfo?.로그인 ? `1회 ${won(AI_PRICE)} · 결제 전이라 지금은 무료(로그인 뒤 하루 ${aiInfo?.시연하루?.루틴 ?? 3}회)`
+      : aiDemo() ? `1회 ${won(AI_PRICE)} · 결제 전이라 지금은 무료 · 오늘 ${aiLeft('루틴') ?? '-'}회 남음`
       : (횟수 ? `1회 ${won(AI_PRICE)} · ${횟수}회 남음`
               : `1회 ${won(AI_PRICE)} · 선결제하면 이용권을 더 얹어 드려요`);
 }

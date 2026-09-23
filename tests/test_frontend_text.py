@@ -3958,3 +3958,17 @@ def test_남의_글에는_신고_관리자에게는_삭제_버튼이_있다():
     api = (Path(__file__).resolve().parents[1] / "frontend" / "js" / "api.js").read_text(encoding="utf-8")
     for 경로 in ("post('/community/report'", "call('/community/admin/reports')", "`/community/admin/${type}/${id}`"):
         assert 경로 in api, 경로
+
+
+def test_손님의_AI_추천_버튼은_오늘_남음_대신_로그인하면_하루_몇_회를_적는다():
+    """비로그인은 오늘남음이 없어 '오늘 -회 남음' 으로 보이던 것 — 심사위원이 손님으로 보는 첫 화면이다."""
+    html = _index()
+    칠 = html.split("function paintRecoMode()")[1].split("\n}")[0]
+    # 값은 정식 결제 때와 같게 보이고, 결제 전이라 지금은 하루 횟수로 무료라고만 덧붙인다 (예현 2026-09-23)
+    assert "aiDemo() && !aiInfo?.로그인 ? `1회 ${won(AI_PRICE)} · 결제 전이라 지금은 무료(로그인 뒤 하루 ${aiInfo?.시연하루?.루틴 ?? 3}회)`" in 칠
+    assert 칠.index("!aiInfo?.로그인") < 칠.index("결제 전이라 지금은 무료 · 오늘 ${aiLeft")   # 손님 분기가 먼저
+    # 무료 추천만 받은 손님도 ai-status 를 한 번은 물어야 시연 문구가 나온다 (안 물으면 aiInfo 가 없어 '1회 500원' 으로 보였다)
+    받기 = html.split("recoBy = r.출처 || '점수';")[1][:400]
+    assert "ensureAiInfo();" in 받기
+    보충 = html.split("async function ensureAiInfo(){")[1].split("\n}")[0]
+    assert "if (aiInfo || aiStatusInFlight) return;" in 보충 and "paintRecoMode();" in 보충 and "renderRecommend" not in 보충   # 목록은 안 건드린다

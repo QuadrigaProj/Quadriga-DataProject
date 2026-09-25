@@ -10087,6 +10087,7 @@ function payAmountHtml(){
   const 목록 = payPacks().map(p => {
     const 한번 = p.이용권 === AI_PRICE;
     const 보너스 = p.보너스 ?? (p.할인 ? Math.round((p.이용권 / p.결제 - 1) * 100) : 0);
+    // 오른쪽: 취소선은 앱에서 쓰는 금액(1,100원어치), 굵은 글씨는 내는 돈(1,000원). 내는 돈과 같은 숫자를 그어 두면 뜻이 없다 (예현 2026-09-25)
     return `
     <button type="button" class="${p.이용권 === payPick ? 'on' : ''}" onclick="pickPay(${p.이용권})">
       <span class="left">
@@ -10095,7 +10096,7 @@ function payAmountHtml(){
         <span class="sub">${한번 ? '선결제 없이 이번 한 번만' : `앱에서 ${won(p.이용권)}으로 써요`}</span>
       </span>
       <span class="right">
-        ${보너스 ? `<span class="was">${won(p.결제)} 내고</span>` : ''}
+        ${보너스 ? `<span class="was">${won(p.이용권)}어치</span>` : ''}
         <b>${won(p.결제)}</b>
       </span>
     </button>`;

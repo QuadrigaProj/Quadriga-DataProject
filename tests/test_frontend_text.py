@@ -4041,3 +4041,21 @@ def test_손님의_AI_추천_버튼은_오늘_남음_대신_로그인하면_하�
     assert "ensureAiInfo();" in 받기
     보충 = html.split("async function ensureAiInfo(){")[1].split("\n}")[0]
     assert "if (aiInfo || aiStatusInFlight) return;" in 보충 and "paintRecoMode();" in 보충 and "renderRecommend" not in 보충   # 목록은 안 건드린다
+
+
+# ---------- 제출서류 점검 (2026-09-25) — 화면이 실제 동작과 보고서를 따라가게 ----------
+
+def test_AI_소개_카드는_시간대별로_새로_짓는다고_말한다():
+    """AI 는 시간대별 루틴을 새로 짓는데(#243) 받기 전 소개 카드는 '새 루틴을 만들지 않아요 · 후보 안에서만' 이라고
+    예전 동작을 적고 있었다 — 보고서('시간대마다 루틴을 새로 지음')와 앱이 반대로 읽혔다."""
+    카드 = _index().split("function aiIntroHtml(){")[1].split("\n}")[0]
+    assert "새 루틴을 만들지 않아요" not in 카드 and "순서와 설명을 다듬어요" not in 카드
+    assert "시간대별 루틴을 새로 지어요" in 카드 and "아침 · 낮 · 저녁 · 밤" in 카드
+    assert "국민체력100 공식 동작과 고른 종목뿐" in 카드          # 재료 밖의 운동은 지어내지 않는다 (ai_recommend._clean_routine)
+
+
+def test_센터_찾기에_좌표_출처를_적는다():
+    """센터 좌표는 주소를 OpenStreetMap(Nominatim)으로 지오코딩한 스냅숏이다 — ODbL 이라 출처를 적는다."""
+    html = _index()
+    출처 = html.split("const 출처 = r.출처 && r.출처 !== 'sample'")[1][:400]
+    assert "좌표 © OpenStreetMap 기여자" in 출처

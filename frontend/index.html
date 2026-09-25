@@ -6083,7 +6083,8 @@ async function searchCenters(){
     // 매칭방식 '주소' = 입력한 구가 센터 주소에 그대로 있음 / '거리' = 주소 일치가 없어 가까운 순 (안내를 먼저 보여준다)
     // 목록은 공단 오픈API(국민체력100 체력인증센터 측정건수 정보)에서 받은 것 — 밖에서 온 글이라 모두 esc() 로 적는다
     const 출처 = r.출처 && r.출처 !== 'sample'
-      ? `<div class="center-item" style="color:var(--muted);font-size:12px">출처: ${esc(r.데이터 || '국민체력100 체력인증센터 측정건수 정보')}</div>` : '';
+      ? `<div class="center-item" style="color:var(--muted);font-size:12px">출처: ${esc(r.데이터 || '국민체력100 체력인증센터 측정건수 정보')}
+          · 좌표 © OpenStreetMap 기여자</div>` : '';   // 센터 좌표는 주소를 OSM(Nominatim)으로 지오코딩한 스냅숏 — ODbL 출처 표기
     const note = `<div class="center-item" style="color:var(--muted)">${esc(r.안내 || '')}</div>`;
     const 월 = ym => /^\d{6}$/.test(String(ym || '')) ? `${String(ym).slice(0, 4)}년 ${Number(String(ym).slice(4))}월 ` : '';
     const list = (r.items || []).map(c =>
@@ -9180,8 +9181,9 @@ function aiIntroHtml(){
     : `한 번 받을 때 ${won(AI_PRICE)}이 결제돼요. 받고 나면 다시 받기 전까지 그대로 남아요 — 몇 달을 이어 써요.`;
   return `<div class="rec-card">
     <div class="rec-purpose">AI 추천</div>
-    <div class="rec-title">AI 가 후보를 다시 읽고 순서와 설명을 다듬어요</div>
-    <div class="rec-meta">새 루틴을 만들지 않아요. 무료 추천이 고른 후보 안에서만 고릅니다.
+    <div class="rec-title">AI 가 내 기록을 읽고 시간대별 루틴을 새로 지어요</div>
+    <div class="rec-meta">체력나이 · 항목별 결과 · 최근 운동 기록 · 날씨 · 건강 상태 · 운동 예산을 읽고,
+      아침 · 낮 · 저녁 · 밤에 할 운동을 따로 짜요. 재료는 국민체력100 공식 동작과 고른 종목뿐이라 없는 운동을 지어내지 않아요.
       일정을 적어 두면 비는 시간에 무엇을 할지도 함께 골라요.</div>
     <div class="rec-by">${안내}</div>
     <button type="button" class="spare-set" id="schOpen" onclick="openSchedule()">${

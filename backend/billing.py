@@ -278,6 +278,24 @@ def note_ai_use(user_id: int | None, ip: str | None, kind: str, paid: int,
             " VALUES (?,?,?,?,?,?,?,?,?,?)",
             (user_id, ip, kind, kst_today(now), int(paid), u.get("input"), u.get("output"), u.get("cache"),
              u.get("model"), int(now if now is not None else time.time())))
+        _forget_old_ips(con, now)
+
+
+def _forget_old_ips(con, now: float | None = None) -> None:
+    """지난 날의 접속 주소(IP)를 지운다 — IP 는 그날의 하루 한도(main.DEMO_IP_LIMIT)를 세는 데만 쓴다(개인정보처리방침 3)."""
+    con.execute("UPDATE ai_usage SET ip=NULL WHERE ip IS NOT NULL AND day<?", (kst_today(now),))
+
+
+def forget_ai_usage(user_id: int, now: float | None = None) -> int:
+    """계정을 지울 때 — AI 이용 기록에서 회원번호를 지워 누구의 것인지 알 수 없게 한다. 지운 줄 수를 돌려준다.
+
+    ai_usage 는 원가 통계(ai_cost_summary)로 남기려고 users 에 CASCADE 로 묶지 않았다. 그래서 계정을 지워도
+    회원번호와 IP 가 그대로 남았다(2026-09-25 점검). 종류 · 토큰 수 · 시각만 남기고, 오늘 줄의 IP 는 그날 한도를
+    계속 세도록 두었다가 다음 날 _forget_old_ips 가 지운다 — 계정을 지웠다 다시 만들어 그날 한도를 넘지 못하게.
+    """
+    with auth.db() as con:
+        _forget_old_ips(con, now)
+        return con.execute("UPDATE ai_usage SET user_id=NULL WHERE user_id=?", (user_id,)).rowcount
 
 
 def ai_uses_today(user_id: int, kinds: tuple[str, ...], now: float | None = None) -> int:

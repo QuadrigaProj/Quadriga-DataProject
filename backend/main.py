@@ -1127,6 +1127,7 @@ async def auth_delete_me(response: Response,
     user = _require_user(quadriga_session)
     billing.init_db()
     환불 = await _refund_unused_before_delete(user["id"])
+    billing.forget_ai_usage(user["id"])      # AI 이용 기록은 CASCADE 가 아니라 원가 통계로 남는다 — 누구의 것인지만 지운다
     auth.delete_account(user["id"])
     response.delete_cookie(auth.SESSION_COOKIE)
     return {"ok": True, "환불건수": len(환불)}

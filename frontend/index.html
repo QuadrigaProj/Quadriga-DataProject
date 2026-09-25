@@ -1184,6 +1184,8 @@
   .style-dot.selected.s3, .style-dot.selected.s4{ background:var(--pine); }
   .style-scale-ends{ display:flex; justify-content:space-between; margin-top:12px; font-size:13.5px; font-weight:700; }
   .style-scale-ends span:first-child{ color:var(--clay); } .style-scale-ends span:last-child{ color:var(--pine-deep); }
+  .style-multi-hint{ font-size:12.5px; color:var(--muted); margin:0 0 6px 2px; }
+  .style-next{ width:100%; margin-top:10px; }
   .style-scale-now{ text-align:center; min-height:1.5em; margin-top:14px; font-size:14px; color:var(--muted); }
   .style-axes{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
   .style-axis-head{ display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); }
@@ -7980,11 +7982,40 @@ function renderStyleQuestion(){
       <div class="style-scale-now">${picked != null ? q.선택지[picked] : '얼마나 그런지 골라 주세요'}</div></div>`;
     return;
   }
+  // 선택형 문항은 여러 개 골라도 된다 (예현 2026-09-25) — 카드를 눌러 켜고 끄고, '다음' 으로 넘어간다.
+  // 예전 결과(번호 하나)를 다시 열어도 그대로 켜져 보인다.
+  if (q.복수) {
+    const 켜짐 = new Set(Array.isArray(picked) ? picked : (picked != null ? [picked] : []));
+    const 마지막 = styleIdx === qs.length - 1;
+    $('styleChoices').innerHTML = `<div class="style-multi-hint">여러 개 골라도 돼요</div>` + q.선택지.map((c, i) => `
+      <button type="button" class="purpose-card${켜짐.has(i) ? ' selected' : ''}" role="checkbox" aria-checked="${켜짐.has(i)}" onclick="styleToggle(${i})">
+        <div><div class="purpose-title">${c}</div></div>
+        <div class="check-mark"></div>
+      </button>`).join('') + `
+      <button type="button" class="rec-btn go style-next" id="styleNextBtn" onclick="styleNext()" ${켜짐.size ? '' : 'disabled'}>${마지막 ? '결과 보기' : '다음'}</button>`;
+    return;
+  }
   $('styleChoices').innerHTML = q.선택지.map((c, i) => `
     <button type="button" class="purpose-card${picked === i ? ' selected' : ''}" onclick="styleAnswer(${i})">
       <div><div class="purpose-title">${c}</div></div>
       <div class="check-mark"></div>
     </button>`).join('');
+}
+
+/* 여러 개 고르는 문항 — 카드 하나를 켜거나 끈다. 하나도 없으면 '다음' 이 잠긴다 */
+function styleToggle(i){
+  const now = styleAnswers[styleIdx];
+  const 켜짐 = new Set(Array.isArray(now) ? now : (now != null ? [now] : []));
+  if (켜짐.has(i)) 켜짐.delete(i); else 켜짐.add(i);
+  styleAnswers[styleIdx] = [...켜짐].sort((a, b) => a - b);
+  renderStyleQuestion();
+}
+
+async function styleNext(){
+  const now = styleAnswers[styleIdx];
+  if (!(Array.isArray(now) ? now.length : now != null)) return;
+  if (styleIdx < (styleQs || []).length - 1) { styleIdx++; renderStyleQuestion(); return; }
+  await submitStyleTest();
 }
 
 function styleBack(){

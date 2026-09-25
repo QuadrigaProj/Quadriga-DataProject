@@ -68,7 +68,8 @@ def questions() -> list[dict]:
     """화면이 그대로 그릴 문항 — 점수는 빼고 글만 준다. 척도 문항은 "모양": "척도" 가 붙는다(동그라미 다섯 개로 그린다)."""
     out = []
     for q in load()["문항"]:
-        item = {"id": q["id"], "질문": q["질문"], "선택지": [c["글"] for c in q["선택지"]]}
+        item = {"id": q["id"], "질문": q["질문"], "선택지": [c["글"] for c in q["선택지"]],
+                "복수": not single_only(q)}                  # 여러 개 골라도 되는 문항인지 — 화면이 이걸로 그린다
         if q.get("모양"):
             item["모양"] = q["모양"]
         out.append(item)
@@ -108,8 +109,25 @@ def axis_stats() -> dict[str, tuple[float, float]]:
     return {a: (mean[a] / mx[a], (var[a] ** 0.5) / mx[a]) for a in mx if mx[a]}
 
 
-def validate(answers) -> list[int]:
-    """답 목록을 검사한다. 개수·범위·타입이 어긋나면 ValueError(→ API 400)."""
+def single_only(q: dict) -> bool:
+    """하나만 고르는 문항 — 얼마나 그런지 단계로 답하는 척도 문항과 예산 문항. 나머지 선택형은 여러 개 골라도 된다."""
+    return bool(q.get("예산")) or q.get("모양") == "척도"
+
+
+def _one(a, i: int, n: int) -> int:
+    if isinstance(a, bool) or not isinstance(a, int):
+        raise ValueError(f"{i + 1}번 답이 선택지 번호가 아니에요")
+    if not 0 <= a < n:
+        raise ValueError(f"{i + 1}번 답 {a} 은(는) 선택지 범위(0~{n - 1}) 밖이에요")
+    return a
+
+
+def validate(answers) -> list:
+    """답 목록을 검사한다. 개수·범위·타입이 어긋나면 ValueError(→ API 400).
+
+    선택형 문항은 번호 하나(int) 또는 번호 여러 개(list)로 답한다 — 여러 개 골라도 된다(예현 2026-09-25).
+    척도 · 예산 문항은 하나만. 돌려주는 답은 하나면 int, 여럿이면 오름차순 list 로 정리한 것.
+    """
     qs = load()["문항"]
     if not isinstance(answers, list):
         raise ValueError("answers 는 선택지 번호 목록이어야 해요")
@@ -119,22 +137,33 @@ def validate(answers) -> list[int]:
         raise ValueError(f"문항은 {len(qs)}개인데 답이 {len(answers)}개예요")
     out = []
     for i, (a, q) in enumerate(zip(answers, qs)):
-        if isinstance(a, bool) or not isinstance(a, int):
-            raise ValueError(f"{i + 1}번 답이 선택지 번호가 아니에요")
         n = len(q["선택지"])
-        if not 0 <= a < n:
-            raise ValueError(f"{i + 1}번 답 {a} 은(는) 선택지 범위(0~{n - 1}) 밖이에요")
-        out.append(a)
+        if isinstance(a, list):
+            if not a:
+                raise ValueError(f"{i + 1}번 답이 비어 있어요 — 하나는 골라 주세요")
+            picks = sorted({_one(x, i, n) for x in a})
+            if len(picks) > 1 and single_only(q):
+                raise ValueError(f"{i + 1}번 문항은 하나만 고를 수 있어요")
+            out.append(picks[0] if len(picks) == 1 else picks)
+        else:
+            out.append(_one(a, i, n))
     return out
 
 
-def axis_scores(answers: list[int]) -> dict[str, float]:
-    """검사를 통과한 답 → 축별 0~1 점수."""
+def picks_of(a) -> list[int]:
+    """답 하나(int 또는 list) → 고른 번호 목록."""
+    return list(a) if isinstance(a, list) else [a]
+
+
+def axis_scores(answers: list) -> dict[str, float]:
+    """검사를 통과한 답 → 축별 0~1 점수. 여러 개 고른 문항은 고른 선택지 점수의 평균 — 문항마다 무게는 1 로 같다."""
     mx = axis_max()
     raw = {a: 0.0 for a in mx}
     for a, q in zip(answers, load()["문항"]):
-        for axis, v in q["선택지"][a].get("점수", {}).items():
-            raw[axis] += float(v)
+        picks = picks_of(a)
+        for k in picks:
+            for axis, v in q["선택지"][k].get("점수", {}).items():
+                raw[axis] += float(v) / len(picks)
     return {a: round(raw[a] / mx[a], 3) if mx[a] else 0.0 for a in mx}
 
 
@@ -191,11 +220,11 @@ def score(answers) -> dict:
 BUDGET_NAMES = ("거의 없음", "3만 원 안쪽", "10만 원 안쪽", "부담 없음")
 
 
-def budget_of(answers: list[int]) -> dict | None:
+def budget_of(answers: list) -> dict | None:
     """예산 문항의 답 → {"단계": 0~3, "이름"}. 예산 문항이 없거나 답이 짧으면(예전 결과) None."""
     for i, q in enumerate(load()["문항"]):
         if q.get("예산") and i < len(answers):
-            단계 = int(q["선택지"][answers[i]].get("예산", 0))
+            단계 = int(q["선택지"][picks_of(answers[i])[0]].get("예산", 0))
             return {"단계": 단계, "이름": BUDGET_NAMES[단계]}
     return None
 

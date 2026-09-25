@@ -173,6 +173,38 @@ def test_잘못된_답은_400(bad):
     assert r.json()["detail"]
 
 
+def test_선택형_문항은_여러_개_골라도_된다():
+    """여러 개 고르면 고른 선택지 점수의 평균 — 문항마다 무게는 1 로 같다. 답은 하나면 번호, 여럿이면 오름차순 목록으로 돌아온다."""
+    qs = st.load()["문항"]
+    n = len(qs)
+    하나 = [0] * n
+    r1 = c.post("/style-test/result", json={"answers": 하나}).json()
+    둘 = [[0, 1]] + [0] * (n - 1)
+    r2 = c.post("/style-test/result", json={"answers": 둘}).json()
+    assert r2["답변"][0] == [0, 1] and r2["답변"][1:] == 하나[1:]
+    mx = st.axis_max()
+    for axis in mx:
+        p0 = float(qs[0]["선택지"][0].get("점수", {}).get(axis, 0)); p1 = float(qs[0]["선택지"][1].get("점수", {}).get(axis, 0))
+        assert abs((r2["점수"][axis] - r1["점수"][axis]) * mx[axis] - ((p0 + p1) / 2 - p0)) < 0.001 * mx[axis] + 1e-9, axis   # 점수는 소수 셋째 자리까지
+    # 같은 번호를 두 번 적거나 하나만 목록으로 적어도 정리된다
+    assert c.post("/style-test/result", json={"answers": [[1, 1, 0]] + [0] * (n - 1)}).json()["답변"][0] == [0, 1]
+    assert c.post("/style-test/result", json={"answers": [[2]] + [0] * (n - 1)}).json()["답변"][0] == 2
+    # 화면에 알려 준다 — 선택형은 복수, 예산은 하나만
+    문항 = c.get("/style-test").json()["문항"]
+    assert 문항[0]["복수"] is True and 문항[-1]["복수"] is False and 문항[-1]["id"] == "q21"
+
+
+@pytest.mark.parametrize("bad", [
+    [[]] + [0] * 20,                 # 비어 있음
+    [[0, 9]] + [0] * 20,             # 범위 밖
+    [[0, "a"]] + [0] * 20,           # 문자열
+    [0] * 20 + [[0, 1]],             # 예산 문항은 하나만
+])
+def test_복수_답이_잘못되면_400(bad):
+    r = c.post("/style-test/result", json={"answers": bad})
+    assert r.status_code == 400 and r.json()["detail"]
+
+
 def test_네_글자_성향_코드():
     """유형 이름과 함께 MBTI 처럼 읽는 네 글자가 나온다 (예현 요청). 어느 축을 어느 기준으로 자르는지는
     style_test.json 의 "코드" 에 있고 서버는 자르기만 한다."""

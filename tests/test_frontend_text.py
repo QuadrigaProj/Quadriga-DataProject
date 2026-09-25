@@ -3098,6 +3098,19 @@ def test_유료_확인은_한_자리에서_한다():
     assert html.count("자세히보기_준비(") == 3           # 정의 1 + 부르는 곳 2 (자세히 알아보기 · 시간표 사진)
 
 
+def test_스타일_테스트_선택형_문항은_여러_개_고르고_다음으로_넘어간다():
+    """선택형 문항은 카드를 눌러 켜고 끄고(체크박스) '다음' 으로 넘어간다 — 하나도 없으면 잠긴다. 척도 · 예산은 예전처럼 하나 고르면 바로 넘어간다."""
+    html = _index()
+    그리기 = html.split("function renderStyleQuestion()")[1].split("\n}")[0]
+    assert "if (q.복수) {" in 그리기 and 'role="checkbox"' in 그리기 and "onclick=\"styleToggle(${i})\"" in 그리기
+    assert "여러 개 골라도 돼요" in 그리기 and "${켜짐.size ? '' : 'disabled'}" in 그리기 and "${마지막 ? '결과 보기' : '다음'}" in 그리기
+    켜기 = html.split("function styleToggle(i)")[1].split("\n}")[0]
+    assert "styleAnswers[styleIdx] = [...켜짐].sort((a, b) => a - b);" in 켜기
+    다음 = html.split("async function styleNext()")[1].split("\n}")[0]
+    assert "await submitStyleTest();" in 다음
+    assert ".style-multi-hint{" in html and ".style-next{" in html
+
+
 def test_AI_추천_전에_관심_종목을_먼저_고르라고_권한다():
     """AI 는 고른 종목을 루틴에 넣어 준다 — 아직 안 골랐으면 값을 치르기 전에 확인 문구로 권한다 (예현 2026-09-25).
     '고르러 가기' 면 운동 고르기 화면(s8)으로, 취소면 그대로 받는다. 조정(방향)은 묻지 않고, 한 번 거절하면 또 묻지 않는다."""

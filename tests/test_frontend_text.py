@@ -1221,8 +1221,9 @@ def test_보너스율과_내는_돈을_보여준다():
     html = _index()
     본문 = html.split("function payAmountHtml()")[1].split("\n}")[0]
     assert "% 보너스" in 본문
-    assert 'class="was"' in 본문                 # 취소선 원가
-    assert "won(p.결제)" in 본문                  # 실제로 내는 돈이 크게
+    assert '<span class="was">${won(p.이용권)}어치</span>' in 본문   # 취소선은 앱에서 쓰는 금액(1,100원어치) — 내는 돈(1,000원)을 긋지 않는다 (예현 2026-09-25)
+    assert "<b>${won(p.결제)}</b>" in 본문              # 실제로 내는 돈이 크게
+    assert "${won(p.결제)} 내고" not in 본문
     assert "won(p.이용권)" in 본문                # 앱에서 쓰는 금액
     css = html.split(".pay-pick .was{")[1].split("}")[0]
     assert "line-through" in css

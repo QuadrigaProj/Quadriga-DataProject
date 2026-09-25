@@ -4925,7 +4925,7 @@ function shareRecordFor(날, 수준){
 
   const 나이 = 켬.has('age') ? dayFinalAge(날) : null;
   const 기준 = measureAtOrBefore(날);
-  const 항목 = Object.fromEntries(AXES_SHOWN
+  const 항목 = Object.fromEntries([...AXES_SHOWN, ...AXES_BODY]
     .filter(k => 켬.has('axis:' + k) && 기준?.항목별?.[k] != null)
     .map(k => [k, 기준.항목별[k]]));
 
@@ -4942,8 +4942,11 @@ function shareRecordFor(날, 수준){
            항목별: Object.keys(항목).length ? 항목 : null, 오늘운동: 운동 };
 }
 
-/* 공유에 담는 체력 지표. 체성분은 몸 상태라 여기 없다 (서버와 같은 목록). */
-const AXES_SHOWN = ['유연성', '근력', '근지구력', '심폐지구력'];
+/* 공유에 담는 체력 지표 — 건강체력(유연성 · 근력 · 근지구력 · 심폐지구력)과 운동체력(순발력 · 민첩성 · 평형성 · 협응력).
+   잰 것만 목록에 나온다. 예전에는 건강체력 넷만 적혀 있어 운동체력은 공유할 수 없었다 (예현 2026-09-25).
+   체성분(BMI 로 매긴 것)은 몸 상태라 따로 둔다 — '운동 기록과 몸 상태까지' 와 직접 고르기에서만 켜진다. */
+const AXES_SHOWN = ['유연성', '근력', '근지구력', '심폐지구력', '순발력', '민첩성', '평형성', '협응력'];
+const AXES_BODY = ['체성분'];
 
 /* 그날 담을 수 있는 것들 — 없는 항목은 아예 만들지 않는다.
    고를 수 없는 것을 늘어놓으면 켰는데 안 올라간 것처럼 보인다. */
@@ -4953,6 +4956,9 @@ function shareItemsFor(날){
   const 기준 = measureAtOrBefore(날);
   AXES_SHOWN.forEach(k => {
     if (기준?.항목별?.[k] != null) out.push({ key: 'axis:' + k, 이름: k });
+  });
+  AXES_BODY.forEach(k => {
+    if (기준?.항목별?.[k] != null) out.push({ key: 'axis:' + k, 이름: k, 몸상태: true });   // 체성분은 몸 상태 — 기본 수준엔 안 담긴다
   });
   movesOn(날).forEach(x => out.push({ key: 'move:' + x.이름, 이름: x.이름 }));
   const 요약 = logAt(날)?.요약 || {};
@@ -4966,7 +4972,7 @@ function shareItemsFor(날){
 function pickedByLevel(날, level){
   const 켬 = new Set();
   shareItemsFor(날).forEach(it => {
-    const 지표 = it.key === 'age' || it.key.startsWith('axis:');
+    const 지표 = it.key === 'age' || (it.key.startsWith('axis:') && !it.몸상태);
     const 몸 = !!it.몸상태;
     const 운동 = it.key.startsWith('move:');
     if (level === 'full') 켬.add(it.key);

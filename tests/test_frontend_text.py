@@ -2476,6 +2476,13 @@ def test_직접_고르면_하나하나_켠다():
     항목 = html.split("function shareItemsFor(날)")[1].split("\n}")[0]
     assert "dayFinalAge(날)" in 항목           # 체력나이
     assert "AXES_SHOWN.forEach" in 항목        # 지표 하나하나
+    # 건강체력 넷 + 운동체력 넷을 담을 수 있고, 체성분은 몸 상태로만 (예현 2026-09-25: "건강체력이랑 운동체력 공유는 왜 안돼?")
+    assert "const AXES_SHOWN = ['유연성', '근력', '근지구력', '심폐지구력', '순발력', '민첩성', '평형성', '협응력'];" in html
+    assert "const AXES_BODY = ['체성분'];" in html and "AXES_BODY.forEach" in 항목 and "몸상태: true" in 항목
+    수준 = html.split("function pickedByLevel(날, level)")[1].split("\n}")[0]
+    assert "(it.key.startsWith('axis:') && !it.몸상태)" in 수준             # 체성분은 '체력 지표' 수준에 안 들어간다
+    담기 = html.split("function shareRecordFor(날, 수준)")[1].split("\n}")[0]
+    assert "[...AXES_SHOWN, ...AXES_BODY]" in 담기
     assert "movesOn(날).forEach" in 항목       # 운동 하나하나
     assert "LOG_SUMMARY" in 항목               # 그날 몸 상태 하나하나
 

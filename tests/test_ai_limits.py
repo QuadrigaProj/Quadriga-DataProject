@@ -326,3 +326,29 @@ def test_손님에게도_시연_하루_횟수를_알려준다():
     s = TestClient(app).get("/recommend/ai-status").json()
     assert s["로그인"] is False and s["시연"] is True and s["오늘남음"] is None
     assert s["시연하루"] == {"루틴": 3, "구간": 3, "사진": 2}
+
+
+def test_지난_날의_IP_는_다음_기록_때_지워지고_오늘_IP_는_하루_한도에_쓰인다():
+    """개인정보처리방침 3 — 접속 주소(IP)는 그날의 하루 한도를 세는 데만 쓰고 다음 날 지운다. 원가 통계(종류 · 토큰)는 남는다."""
+    어제 = time.time() - 86400
+    billing.note_ai_use(7, "10.0.0.1", "루틴", 0, now=어제)
+    assert billing.ai_uses_today_ip("10.0.0.1", now=어제) == 1      # 그날에는 한도에 센다
+    billing.note_ai_use(8, "10.0.0.2", "루틴", 0)                    # 오늘 기록이 하나 들어오면
+    assert billing.ai_uses_today_ip("10.0.0.1", now=어제) == 0      # 어제 줄의 IP 는 지워졌다
+    assert billing.ai_uses_today_ip("10.0.0.2") == 1                 # 오늘 IP 는 한도를 세려고 남는다
+    assert billing.ai_cost_summary(days=3)["루틴"]["호출"] == 2       # 원가 통계는 그대로
+
+
+def test_계정을_지우면_AI_이용_기록에서_회원번호가_지워진다(monkeypatch):
+    """ai_usage 는 원가 통계로 남아 CASCADE 가 아니다 — 계정을 지워도 회원번호 · IP 가 남아 있었다(2026-09-25 점검).
+    지운 사람의 줄은 누구의 것인지 모르게 하고(오늘 IP 는 그날 한도를 위해 다음 날까지), 다른 사람의 줄은 건드리지 않는다."""
+    _fake_sdk(monkeypatch, _지은응답())
+    a, b = _user("gone@x.com", ip="10.9.9.9"), _user("stay@x.com", ip="10.8.8.8")
+    assert _ai(a)["출처"] == "ai" and _ai(b)["출처"] == "ai"
+    uid_b = auth.user_for_token(b.cookies.get("quadriga_session"))["id"]
+    assert a.delete("/auth/me").json()["ok"] is True
+    with auth.db() as con:
+        줄 = {r["ip"]: r["user_id"] for r in con.execute("SELECT ip, user_id FROM ai_usage").fetchall()}
+    assert 줄["10.9.9.9"] is None                                     # 지운 사람의 기록은 누구 것인지 모르게
+    assert 줄["10.8.8.8"] == uid_b                                    # 다른 사람은 그대로
+    assert billing.ai_uses_today_ip("10.9.9.9") == 1                 # 오늘 IP 는 남아 그날 한도를 계속 센다

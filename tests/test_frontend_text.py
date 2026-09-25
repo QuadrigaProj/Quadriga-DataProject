@@ -3098,6 +3098,18 @@ def test_유료_확인은_한_자리에서_한다():
     assert html.count("자세히보기_준비(") == 3           # 정의 1 + 부르는 곳 2 (자세히 알아보기 · 시간표 사진)
 
 
+def test_AI_추천_전에_관심_종목을_먼저_고르라고_권한다():
+    """AI 는 고른 종목을 루틴에 넣어 준다 — 아직 안 골랐으면 값을 치르기 전에 확인 문구로 권한다 (예현 2026-09-25).
+    '고르러 가기' 면 운동 고르기 화면(s8)으로, 취소면 그대로 받는다. 조정(방향)은 묻지 않고, 한 번 거절하면 또 묻지 않는다."""
+    html = _index()
+    물음 = html.split("async function askAiRecommend(방향)")[1].split("\n}")[0]
+    assert "if (!방향 && !(state.sports || []).length && !sportAskDeclined) {" in 물음
+    assert "AI 추천 전에 운동(관심 종목)을 골라 주시면 관심 스포츠도 루틴에 적절히 넣어 드려요." in 물음
+    assert "goTo('s8');" in 물음 and "sportAskDeclined = true;" in 물음
+    assert 물음.index("state.sports || []") < 물음.index("값을치를까(")          # 값을 묻기 전에
+    assert "let sportAskDeclined = false;" in html
+
+
 def test_AI_가_짓는_동안_걸리는_시간을_말하고_제한은_두지_않는다():
     """값을 치르고 기다리는데 얼마나 걸릴지 모르면 멈춘 줄 안다 (예현 요청). '보통 이만큼' · 흐른 시간 · 막대를 같이 보여 준다.
     제한 시간은 없다 — 서버가 백그라운드에서 끝까지 짓는다(예현 2026-09-23). 예상은 서버가 최근에 실제로 걸린 시간의 가운데값을

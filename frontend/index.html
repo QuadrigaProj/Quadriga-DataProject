@@ -9168,7 +9168,18 @@ function aiIntroHtml(){
 /* 다시 받기 — 값이 빠지는 일이라 반드시 한 번 묻는다.
    받아 둔 AI 루틴이 있으면 '그냥 다시' 가 아니라 방향(더 쉽게 / 더 어렵게)을 골라 그 루틴을 바탕으로 다시 짓는다. */
 let recoAdjust = null;         // fetchRecommend 에 넘길 방향 — 한 번 쓰고 비운다
+let sportAskDeclined = false;   // 이번에 "그냥 받을게요" 했으면 같은 자리에서 또 묻지 않는다
+
 async function askAiRecommend(방향){
+  // AI 는 고른 종목(관심 스포츠)을 루틴에 넣어 준다 — 아직 안 골랐으면 값을 치르기 전에 먼저 권한다 (예현 2026-09-25).
+  // 조정(더 쉽게 · 어렵게)은 이미 받은 루틴을 다듬는 것이라 묻지 않는다.
+  if (!방향 && !(state.sports || []).length && !sportAskDeclined) {
+    if (confirm('AI 추천 전에 운동(관심 종목)을 골라 주시면 관심 스포츠도 루틴에 적절히 넣어 드려요.\n지금 고르러 갈까요? (취소를 누르면 고르지 않고 바로 받아요)')) {
+      goTo('s8');                                                  // 운동 고르기 — 고르고 돌아와서 다시 누르면 된다
+      return;
+    }
+    sportAskDeclined = true;
+  }
   // 처음 쓰는 사람에게는 '유료' 라는 사실부터 알린다. 값이 빠지고 나서
   // 알게 되면 늦다.
   const 다시 = !!state.aiReco?.추천?.length;

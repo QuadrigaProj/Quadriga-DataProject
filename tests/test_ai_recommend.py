@@ -1495,3 +1495,63 @@ def test_운동_예산이_짓는_프롬프트에_실린다(monkeypatch):
     본2 = _잡는_sdk(monkeypatch, _지은응답())
     a.post("/recommend/routines", json={"age_gbn": "성인", "limit": 3})
     assert '"운동 예산": null' in 본2["글"]
+
+
+# ---------- 분당 한도(429) · 붐빔(529)만 다시 부른다 (2026-09-26 점검) ----------
+
+class RateLimitError(Exception):
+    """SDK 의 RateLimitError 흉내 — status_code 와 응답 머리(retry-after)만 본다."""
+
+    def __init__(self, status=429, retry_after=None):
+        super().__init__("rate limited")
+        self.status_code = status
+        self.response = type("응답", (), {"headers": {"retry-after": retry_after} if retry_after else {}})()
+
+
+def _차례대로_sdk(monkeypatch, 차례들):
+    """부를 때마다 차례들에서 하나씩 — 예외면 던지고, 글이면 그 글로 답한다. 부른 횟수와 기다린 초를 돌려준다."""
+    기록 = {"부름": 0, "기다림": []}
+
+    class _Messages:
+        def create(self, **kw):
+            x = 차례들[min(기록["부름"], len(차례들) - 1)]
+            기록["부름"] += 1
+            if isinstance(x, Exception):
+                raise x
+            return _Msg(x, "end_turn")
+
+    class _Client:
+        def __init__(self, **kw): self.messages = _Messages()
+
+    mod = type(sys)("anthropic")
+    mod.Anthropic = _Client
+    monkeypatch.setitem(sys.modules, "anthropic", mod)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(air, "_sleep", lambda s: 기록["기다림"].append(s))     # 실제로 기다리지 않는다
+    return 기록
+
+
+def test_분당_한도나_붐빔이면_기다렸다_다시_짓는다(monkeypatch):
+    """여럿이 한꺼번에 AI 를 누르면 계정 등급의 분당 한도에 걸릴 수 있다 — 429 · 529 는 저쪽이 받지 않은 요청이라
+    다시 불러도 값이 두 번 매겨지지 않는다. 백그라운드 작업이라 사용자는 조금 더 기다릴 뿐 실패를 보지 않는다."""
+    기록 = _차례대로_sdk(monkeypatch, [RateLimitError(429, retry_after="7"), RateLimitError(529), _지은응답()])
+    r = air.compose(사용자, "성인", 종목ids=["running"])
+    assert r and r["루틴"]["구성"] == "ai"
+    assert 기록["부름"] == 3 and 기록["기다림"] == [7.0, air.COMPOSE_RATE_WAIT_SEC[1]]   # retry-after 를 따른다
+
+
+def test_한도가_계속되면_정해진_만큼만_해_보고_폴백한다(monkeypatch):
+    기록 = _차례대로_sdk(monkeypatch, [RateLimitError(429, retry_after="999")])
+    assert air.compose(사용자, "성인") is None
+    assert 기록["부름"] == air.COMPOSE_RATE_RETRIES + 1
+    assert max(기록["기다림"]) == 60.0                          # retry-after 가 길어도 60초까지만
+
+
+def test_한도_말고_다른_오류는_다시_부르지_않는다(monkeypatch):
+    """제한 시간에 걸린 호출은 저쪽에서 끝까지 돌아 값이 매겨진다 — 다시 부르면 두 번 낸다(COMPOSE_RETRIES = 0 의 까닭)."""
+    class APITimeoutError(Exception):
+        pass
+    기록 = _차례대로_sdk(monkeypatch, [APITimeoutError("늦음"), _지은응답()])
+    assert air.compose(사용자, "성인") is None and 기록["부름"] == 1
+    기록 = _차례대로_sdk(monkeypatch, [RateLimitError(500), _지은응답()])       # 500 도 다시 부르지 않는다
+    assert air.compose(사용자, "성인") is None and 기록["부름"] == 1

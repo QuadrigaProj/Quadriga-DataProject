@@ -35,6 +35,13 @@ PERIOD_TIMEOUT_SEC = 60.0      # 구간(계절·시간대) 계획 — 네 덩이
 SDK_RETRIES = 1                # 제한 시간에 걸리거나 저쪽이 바쁘다고 하면 SDK 가 한 번 더 부른다 (싸고 짧은 호출만)
 COMPOSE_RETRIES = 0            # 루틴 짓기는 다시 부르지 않는다 — 제한 시간에 걸린 첫 호출도 저쪽에선 끝까지 돌아 값이 매겨지는데,
                                # 한 번 더 부르면 그 값을 두 번 내고 사용자에겐 하나도 못 준다 (가장 비싼 호출이다)
+# 다만 분당 한도(429) · 붐빔(529)은 저쪽이 요청을 받지 않은 경우라 다시 불러도 값이 두 번 매겨지지 않는다.
+# 여럿이 한꺼번에 AI 를 누르면 계정 등급의 분당 한도에 걸릴 수 있어(2026-09-26 점검) 이 둘만 기다렸다 몇 번 더 해 본다.
+# 백그라운드 작업이라(main._ai_job_run) 사용자는 조금 더 기다릴 뿐 실패를 보지 않는다.
+COMPOSE_RATE_RETRIES = 3
+COMPOSE_RATE_WAIT_SEC = (10.0, 20.0, 40.0)   # retry-after 가 오면 그 값(60초 상한)을 따른다
+_RATE_STATUS = (429, 529)
+_sleep = time.sleep                          # 테스트가 기다리지 않게 바꿔 끼운다
 LAST_FAIL: dict = {}           # 마지막 실패 {어디, 이유, 때} — 화면이 "못 받았어요" 만 띄우면 손쓸 방법이 없다
 MAX_TOKENS = 8000
 _usage_local = threading.local()   # 이 스레드의 마지막 호출이 쓴 토큰 — 부른 쪽이 take_usage() 로 가져가 기록한다
@@ -712,6 +719,28 @@ def _compose_prompt(사용자: dict, 재료: str, 일정: dict | None) -> str:
     return 본문 + "\n\n재료\n" + 재료
 
 
+def _rate_wait(e, 차례: int) -> float:
+    """다시 부르기 전에 기다릴 초 — 응답의 retry-after 가 있으면 그만큼(60초 상한), 없으면 정해 둔 간격."""
+    try:
+        v = float((getattr(getattr(e, "response", None), "headers", None) or {}).get("retry-after"))
+        if v > 0:
+            return min(v, 60.0)
+    except (TypeError, ValueError):
+        pass
+    return COMPOSE_RATE_WAIT_SEC[min(차례, len(COMPOSE_RATE_WAIT_SEC) - 1)]
+
+
+def _create_rate_retry(client, **kw):
+    """messages.create — 분당 한도(429) · 붐빔(529)일 때만 기다렸다 다시 부른다. 다른 오류(제한 시간 등)는 그대로 올린다."""
+    for 차례 in range(COMPOSE_RATE_RETRIES + 1):
+        try:
+            return client.messages.create(**kw)
+        except Exception as e:
+            if getattr(e, "status_code", None) not in _RATE_STATUS or 차례 >= COMPOSE_RATE_RETRIES:
+                raise
+            _sleep(_rate_wait(e, 차례))
+
+
 def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None = None) -> dict | None:
     """사용자 데이터 전체로 루틴 하나를 짓는다. 못 하면 None.
 
@@ -729,7 +758,8 @@ def compose(사용자: dict, 연령대: str, 종목ids=None, 일정: dict | None
         import anthropic
 
         client = anthropic.Anthropic(timeout=COMPOSE_TIMEOUT_SEC, max_retries=COMPOSE_RETRIES)
-        message = client.messages.create(
+        message = _create_rate_retry(
+            client,
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=COMPOSE_SYSTEM,

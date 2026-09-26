@@ -162,6 +162,7 @@ AI_ROUTES = {("POST", "/recommend/routines"), ("POST", "/recommend/periods"), ("
 AI_REQUEST_TIMEOUT_SEC = float(os.getenv("AI_REQUEST_TIMEOUT_SEC", "0")) or air.longest_wait_sec() + 15
 
 
+
 def request_limit_sec(method: str, path: str) -> float:
     """이 요청을 몇 초에서 끊는가. 0 이하면 끊지 않는다."""
     if REQUEST_TIMEOUT_SEC <= 0:
@@ -179,6 +180,70 @@ def 아직_받을_수_있다(시작: float, method: str, path: str) -> bool:
     """
     제한 = request_limit_sec(method, path)
     return 제한 <= 0 or time.monotonic() - 시작 < 제한 - 1.0
+
+
+# 요청 몸통 크기 상한. 항목마다 길이 제한(Field max_length)은 있지만 그건 몸통을 다 읽고 푼 **뒤에** 본다 —
+# 수백 MB 요청 하나면 무료 서버(메모리 512MB)가 읽다가 죽는다 (2026-09-26 점검).
+# 가장 큰 정상 요청은 구독자의 커뮤니티 글(동영상 6개 × 4.2MB ≈ 25MB)이라 그 위로 잡는다.
+MAX_BODY_BYTES = 30_000_000
+
+
+class _몸통넘침(HTTPException):
+    """읽는 도중에 넘쳤을 때. HTTPException 이어야 FastAPI 가 '본문 해석 오류(400)' 로 바꾸지 않고 413 으로 내보낸다."""
+
+    def __init__(self):
+        super().__init__(413, "요청이 너무 커요. 사진·동영상을 줄여서 다시 올려 주세요.")
+
+
+class 요청크기상한:
+    """몸통이 MAX_BODY_BYTES 를 넘으면 더 읽지 않고 413. Content-Length 가 있으면 읽기 전에,
+    없으면(chunked) 읽으면서 센다. 순수 ASGI 라 몸통을 미리 모아 두지 않는다."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        상한 = MAX_BODY_BYTES
+        길이 = dict(scope.get("headers") or []).get(b"content-length", b"")
+        if 길이.isdigit() and int(길이) > 상한:
+            return await self._413(send)
+        읽음, 시작함 = 0, False
+
+        async def 받기():
+            nonlocal 읽음
+            m = await receive()
+            if m["type"] == "http.request":
+                읽음 += len(m.get("body", b""))
+                if 읽음 > 상한:
+                    raise _몸통넘침()
+            return m
+
+        async def 보내기(m):
+            nonlocal 시작함
+            if m["type"] == "http.response.start":
+                시작함 = True
+            await send(m)
+
+        try:
+            await self.app(scope, 받기, 보내기)
+        except _몸통넘침:
+            if not 시작함:
+                await self._413(send)
+
+    @staticmethod
+    async def _413(send):
+        body = '{"detail":"요청이 너무 커요. 사진·동영상을 줄여서 다시 올려 주세요."}'.encode()
+        await send({"type": "http.response.start", "status": 413,
+                    "headers": [(b"content-type", b"application/json; charset=utf-8"),
+                                (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+
+# 가장 안쪽에 둔다(다른 미들웨어보다 먼저 등록) — 바깥의 @app.middleware 들은 몸통을 받는 자리를 anyio 작업 묶음으로 감싸서,
+# 읽는 도중 넘친 신호(413)가 예외 묶음에 싸여 FastAPI 에서 '본문 해석 오류(400)' 로 바뀐다.
+app.add_middleware(요청크기상한)
 
 
 @app.middleware("http")
@@ -221,6 +286,7 @@ async def 화면은_늘_다시_확인(request: Request, call_next):
 # 배포(Cloudflare)는 알아서 압축하지만 로컬 개발 서버는 아니다.
 # index.html 이 380KB 라 켜고 끄고가 눈에 띄게 다르다.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 
 
 @app.middleware("http")

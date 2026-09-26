@@ -455,6 +455,44 @@ def test_기록은_기기_간에_이어진다():
     assert 기록[0]["체력나이"] == 42.0
 
 
+def test_스냅숏은_화면이_읽는_최근_20줄만_남는다():
+    """저장할 때마다 전체 스냅숏이 한 줄씩 쌓이는데 지우는 곳이 없었다 — 화면은 최근 20줄만 읽는다(복원은 첫 줄).
+    Neon 무료 DB 는 0.5GB 를 넘으면 쓰기가 막힌다 (2026-09-26 점검). 다른 사람의 줄은 건드리지 않는다."""
+    from backend import auth
+    a, b = _fresh(), _fresh()
+    a.post("/auth/signup", json={"email": "keep-a@ex.com", "password": "abcd1234"})
+    b.post("/auth/signup", json={"email": "keep-b@ex.com", "password": "abcd1234"})
+    b.post("/me/measurements", json={"체력나이": 30})
+    for i in range(25):                                  # 같은 초에 여러 번 저장해도
+        a.post("/me/measurements", json={"체력나이": 40 + i})
+    기록 = a.get("/me/measurements").json()["기록"]
+    assert len(기록) == 20 and 기록[0]["체력나이"] == 64       # 가장 나중 것이 첫 줄 (같은 초면 id 가 큰 것)
+    ua = auth.user_for_token(a.cookies.get("quadriga_session"))["id"]
+    ub = auth.user_for_token(b.cookies.get("quadriga_session"))["id"]
+    with auth.db() as con:                               # 이 모듈은 DB 하나를 같이 쓴다 — 두 사람 줄만 센다
+        줄 = lambda u: con.execute("SELECT COUNT(*) AS n FROM measurements WHERE user_id=?", (u,)).fetchone()["n"]
+        assert 줄(ua) == 20 and 줄(ub) == 1
+    assert b.get("/me/measurements").json()["기록"][0]["체력나이"] == 30
+
+
+def test_서버가_뜰_때_예전에_쌓인_스냅숏을_정리한다():
+    """이 규칙 전에 쌓인 줄 — 서버가 뜰 때 한 번 사람마다 최근 20줄만 남긴다."""
+    import json
+
+    from backend import auth
+    c = _fresh()
+    c.post("/auth/signup", json={"email": "old@ex.com", "password": "abcd1234"})
+    uid = auth.user_for_token(c.cookies.get("quadriga_session"))["id"]
+    with auth.db() as con:                               # 규칙 전처럼 지우지 않고 넣는다
+        for i in range(30):
+            con.execute("INSERT INTO measurements (user_id, measured_at, payload) VALUES (?,?,?)",
+                        (uid, 1_000 + i, json.dumps({"체력나이": i})))
+    assert auth.prune_measurements() == 10               # 다른 테스트의 사람들은 20줄 이하라 그대로다
+    기록 = c.get("/me/measurements").json()["기록"]
+    assert len(기록) == 20 and 기록[0]["체력나이"] == 29
+    assert auth.prune_measurements() == 0                # 두 번째는 지울 것이 없다
+
+
 def test_세션쿠키는_httponly():
     c = _fresh()
     r = c.post("/auth/signup", json={"email": "cookie@ex.com", "password": "abcd1234"})

@@ -1413,6 +1413,20 @@ def test_하루_사진_용량에도_상한이_있다(monkeypatch):
     assert r.status_code == 429 and "용량" in r.json()["detail"]
     assert a.post("/community/posts", json={"body": "글만은 된다"}).status_code == 200
 
+
+def test_DB_전체의_사진_용량에도_상한이_있다(monkeypatch):
+    """하루 상한은 한 사람 몫이라 여럿이 올리면 끝이 없다 — Neon 무료 DB 는 0.5GB 를 넘으면 쓰기가 막혀 로그인까지 안 된다.
+    전체 합이 상한을 넘으면 사진만 거절하고 글은 계속 받는다 (2026-09-26 점검)."""
+    from backend import billing
+    billing.init_db()
+    monkeypatch.setattr(community, "MEDIA_TOTAL_BYTES", 4000)   # 한 장이 1,500자 남짓 — 두 장까지
+    a, b = _login(None, "tot-a@x.com", "가"), _login(None, "tot-b@x.com", "나")
+    assert a.post("/community/posts", json={"media": [_사진(1500)]}).status_code == 200
+    assert b.post("/community/posts", json={"media": [_사진(1500)]}).status_code == 200
+    r = a.post("/community/posts", json={"media": [_사진(1500)]})      # 한 사람 하루 상한(20MB)과는 상관없이
+    assert r.status_code == 507 and "저장 공간" in r.json()["detail"]
+    assert b.post("/community/posts", json={"body": "글은 계속 된다"}).status_code == 200
+
 def test_못_보는_글에는_댓글도_반응도_못_단다():
     """'고른 친구' 에게만 보이는 글은 글 번호를 알아도 남이 댓글 · 이모지를 못 단다 — 없는 글과 똑같이 404 (2차 점검 A-4)."""
     from backend import billing

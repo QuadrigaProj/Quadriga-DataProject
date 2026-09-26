@@ -433,6 +433,19 @@ def posts_today(user_id: int, now: float | None = None) -> int:
     return int(r["n"] or 0)
 
 
+# 커뮤니티 사진 · 동영상을 DB 에 둘 수 있는 전체 합(base64 길이). 하루 상한(하루바이트)은 한 사람 몫이라 여럿이 올리면
+# 끝이 없다. Neon 무료 DB 는 0.5GB 를 넘으면 쓰기가 막혀 로그인까지 안 된다 — 절반에서 멈추고, 사진 없는 글은 계속 받는다
+# (2026-09-26 점검). 사진을 객체 저장소로 옮기면 이 값은 필요 없다.
+MEDIA_TOTAL_BYTES = 250_000_000
+
+
+def media_bytes_total() -> int:
+    """DB 에 들어 있는 사진 · 동영상 전체의 합(base64 길이)."""
+    with auth.db() as con:
+        r = con.execute("SELECT COALESCE(SUM(LENGTH(media)), 0) AS n FROM community_posts").fetchone()
+    return int(r["n"] or 0)
+
+
 def media_bytes_today(user_id: int, now: float | None = None) -> int:
     """오늘 올린 사진·동영상의 합(base64 길이) — media 칸 그대로의 길이라 JSON 껍데기만큼 조금 크다."""
     with auth.db() as con:
@@ -516,6 +529,8 @@ def create_post(user_id: int, *, body: str = "", media=None, kind: str = "post",
                                  + (f" 구독하면 하루 {LIMITS['구독']['글하루']}개까지 올릴 수 있어요." if 제한["글하루"] < LIMITS["구독"]["글하루"] else ""))
     if media_json != "[]" and media_bytes_today(user_id) + len(media_json) > 제한["하루바이트"]:
         raise HTTPException(429, f"오늘 올릴 수 있는 사진·동영상 용량({제한['하루바이트'] // 1_400_000}MB)을 다 썼어요. 내일 다시 올릴 수 있어요.")
+    if media_json != "[]" and media_bytes_total() + len(media_json) > MEDIA_TOTAL_BYTES:
+        raise HTTPException(507, "지금은 사진·동영상을 더 올릴 수 없어요(저장 공간이 찼어요). 사진 없이 글만 올려 주세요.")
     # 공유하는 기록에는 항목별 지표와 그날 운동까지 담긴다. 그래도 한 줄에
     # 들어갈 크기다 — 그보다 크면 화면에 쓰라고 보낸 것이 아니다.
     if record is not None and len(json.dumps(record, ensure_ascii=False)) > 4000:

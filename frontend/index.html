@@ -4823,9 +4823,22 @@ let shareAudience = 'friends';      // 기본은 친구까지만 — 넓히는 �
 let shareChosen = [];               // 고른 친구 아이디
 let shareFriends = [];              // 내 친구 목록 (고르는 자리에 쓴다)
 
+/* 공유할 수 있는 날 — 운동을 기록한 날과 체력을 잰 날.
+
+   예전에는 운동한 날만 고를 수 있었다. 그날의 체력 지표는 그날까지 잰 것 중 마지막 측정이라,
+   마지막 운동 뒤에 프로필에서 더 잰 근력 · 심폐 · 운동체력(순발력 · 민첩성 …)은 올릴 날이 없었고,
+   운동 기록이 하나도 없으면 잰 결과조차 올릴 수 없었다 (예현 2026-09-26 "건강체력이랑 운동체력 안 올라가는데"). */
+function shareDates(){
+  const 날 = new Set(workoutDates());
+  (Array.isArray(state.measureLog) ? state.measureLog : []).forEach(m => {
+    if (m && m.date && m.항목별 && Object.keys(m.항목별).length) 날.add(m.date);
+  });
+  return [...날].sort();
+}
+
 async function shareMyRecord(){
-  const 있는날 = workoutDates();
-  const 날 = 있는날.length ? 있는날[있는날.length - 1] : todayIso();
+  const 있는날 = shareDates();
+  const 날 = 있는날.length ? 있는날[있는날.length - 1] : todayIso();   // 가장 최근 날 — 방금 잰 것까지 담긴다
   openSheet('기록 공유', '<div class="prof-note">불러오는 중이에요…</div>');
   try {
     const [f, c] = await Promise.all([API.commFriends(), API.commChosen()]);
@@ -4834,7 +4847,7 @@ async function shareMyRecord(){
   } catch (e) { shareFriends = []; shareChosen = []; }
   if (!shareChosen.length) shareAudience = shareAudience === 'chosen' ? 'friends' : shareAudience;
 
-  // 고를 수 있는 날은 기록이 있는 날뿐이다. 아무 날이나 고르게 두면
+  // 고를 수 있는 날은 운동했거나 잰 날뿐이다. 아무 날이나 고르게 두면
   // 빈 날을 골라 놓고 '올릴 기록이 없다' 는 말을 듣게 된다.
   const 고를수있음 = 있는날.length > 0;
   $('sheetBody').innerHTML = `
@@ -4842,8 +4855,8 @@ async function shareMyRecord(){
       ${고를수있음 ? `<select id="shareDate" onchange="onShareDate()">${
         [...있는날].reverse().map(d =>
           `<option value="${d}" ${d === 날 ? 'selected' : ''}>${shareDateLabel(d)}</option>`).join('')
-      }</select>` : `<div class="share-none">아직 기록한 운동이 없어요.
-        운동을 기록하면 그날을 골라서 공유할 수 있어요.</div>`}</div>
+      }</select>` : `<div class="share-none">아직 잰 체력이나 기록한 운동이 없어요.
+        체력을 재거나 운동을 기록하면 그날을 골라서 공유할 수 있어요.</div>`}</div>
     <div class="share-field"><label for="shareLevel">얼마나 보일까요?</label>
       <select id="shareLevel" onchange="pickShareLevel()">${
         Object.entries(POST_LEVEL_LABEL).map(([k, v]) =>
@@ -4869,7 +4882,9 @@ async function shareMyRecord(){
 function shareDateLabel(날){
   const 나이 = dayFinalAge(날);
   const 수 = movesOn(날).length;
+  const 잰날 = (state.measureLog || []).some(m => m && m.date === 날);   // 그날 잰 지표가 담긴다
   const 꼬리 = [나이 != null ? `체력나이 ${Math.round(나이 * 10) / 10}세` : null,
+              잰날 ? '측정' : null,
               수 ? `운동 ${수}가지` : null].filter(Boolean).join(' · ');
   return 꼬리 ? `${fmtDate(날)} · ${꼬리}` : fmtDate(날);
 }

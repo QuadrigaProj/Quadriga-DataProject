@@ -2365,15 +2365,29 @@ def test_기록_공유는_날짜와_공개_범위를_고른다():
 
 def test_기록이_있는_날만_고를_수_있다():
     """아무 날이나 고르게 두면 빈 날을 골라 놓고 '올릴 기록이 없다' 는
-    말을 듣게 된다."""
+    말을 듣게 된다. 기록이 있는 날 = 운동한 날 + 체력을 잰 날."""
     html = _index()
     본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
-    assert "const 있는날 = workoutDates();" in 본문        # 기록이 있는 날만
+    assert "const 있는날 = shareDates();" in 본문          # 운동했거나 잰 날만
     assert "<select id=\"shareDate\"" in 본문             # 날짜 입력칸이 아니다
     assert 'type="date"' not in 본문
     assert "[...있는날].reverse().map" in 본문             # 최근 날부터
-    assert "아직 기록한 운동이 없어요" in 본문             # 하나도 없으면 그렇다고 말한다
+    assert "아직 잰 체력이나 기록한 운동이 없어요" in 본문   # 하나도 없으면 그렇다고 말한다
     assert "${고를수있음 ? '' : 'disabled'}" in 본문        # 올릴 것이 없으면 못 누른다
+
+
+def test_마지막_운동_뒤에_잰_지표도_공유할_수_있다():
+    """예현 2026-09-26 "커뮤니티 아직도 건강체력이랑 운동체력 안 올라가는데" — 운동한 날만 고를 수 있어서, 마지막 운동 뒤에
+    프로필에서 더 잰 근력 · 심폐 · 운동체력은 그날 기준 측정(그 전 것)에 없어 빠졌고, 잰 날은 고를 수조차 없었다."""
+    html = _index()
+    날들 = html.split("function shareDates(){")[1].split("\n}")[0]
+    assert "new Set(workoutDates())" in 날들                              # 운동한 날
+    assert "state.measureLog" in 날들 and "Object.keys(m.항목별).length" in 날들   # 지표를 잰 날 (빈 줄은 빼고)
+    assert "].sort()" in 날들
+    본문 = html.split("async function shareMyRecord()")[1].split("\n}")[0]
+    assert "있는날[있는날.length - 1]" in 본문                            # 기본은 가장 최근 날 — 방금 잰 것까지
+    이름표 = html.split("function shareDateLabel(날)")[1].split("\n}")[0]
+    assert "잰날 ? '측정' : null" in 이름표                               # 고를 때 잰 날인지 보인다
 
 
 def test_고를_때_어떤_날인지_함께_보여준다():

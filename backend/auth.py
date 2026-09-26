@@ -461,17 +461,36 @@ def drop_session(token: str | None) -> None:
 # 측정 기록 (기기 간 이어보기)
 # ---------------------------------------------------------------------------
 
+# 스냅숏은 저장할 때마다 한 줄씩 쌓인다. 화면은 최근 MEASUREMENTS_KEEP 줄만 읽는다 — 복원은 첫 줄, 변화추이는
+# frontend 의 SERVER_ROWS_LIMIT(20) 줄. 그보다 오래된 줄은 아무도 읽지 않는데 지우는 곳이 없었다.
+# Neon 무료 DB 는 0.5GB 를 넘으면 쓰기가 막혀 로그인까지 안 된다 (2026-09-26 점검) — 저장할 때 오래된 줄을 지운다.
+MEASUREMENTS_KEEP = 20
+
+
 def save_measurement(user_id: int, payload: dict) -> None:
     with db() as con:
         con.execute("INSERT INTO measurements (user_id, measured_at, payload) VALUES (?,?,?)",
                     (user_id, int(time.time()), json.dumps(payload, ensure_ascii=False)))
+        con.execute("DELETE FROM measurements WHERE user_id=? AND id NOT IN"
+                    " (SELECT id FROM measurements WHERE user_id=? ORDER BY measured_at DESC, id DESC LIMIT ?)",
+                    (user_id, user_id, MEASUREMENTS_KEEP))
 
 
-def list_measurements(user_id: int, limit: int = 20) -> list[dict]:
+def prune_measurements(keep: int = MEASUREMENTS_KEEP) -> int:
+    """모든 사람의 스냅숏을 최근 keep 줄만 남긴다 — 서버가 뜰 때 한 번(이 규칙 전에 쌓인 줄 정리). 지운 줄 수."""
+    with db() as con:
+        return con.execute(
+            "DELETE FROM measurements WHERE id NOT IN (SELECT id FROM ("
+            " SELECT id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY measured_at DESC, id DESC) AS rn"
+            " FROM measurements) t WHERE rn <= ?)", (keep,)).rowcount
+
+
+def list_measurements(user_id: int, limit: int = MEASUREMENTS_KEEP) -> list[dict]:
+    """최근 것부터. 같은 초에 두 번 저장했으면 나중 줄(id 가 큰 것)이 먼저 — 복원이 첫 줄을 쓴다."""
     with db() as con:
         rows = con.execute(
             "SELECT measured_at, payload FROM measurements WHERE user_id=?"
-            " ORDER BY measured_at DESC LIMIT ?", (user_id, limit)).fetchall()
+            " ORDER BY measured_at DESC, id DESC LIMIT ?", (user_id, limit)).fetchall()
     return [{"측정시각": r["measured_at"], **json.loads(r["payload"])} for r in rows]
 
 

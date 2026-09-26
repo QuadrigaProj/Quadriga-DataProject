@@ -119,6 +119,9 @@ async def lifespan(_: FastAPI):
         auth.init_db()
         community.init_db()
         billing.init_db()
+        지움 = auth.prune_measurements()           # 저장마다 쌓이던 옛 스냅숏 정리 — 무료 DB 0.5GB 를 넘으면 쓰기가 막힌다
+        if 지움:
+            print(f"[info] 옛 스냅숏 {지움}줄 정리", flush=True)
     except Exception as e:                       # DB 가 아직 안 붙어도 서버는 뜬다
         print(f"[warn] DB 초기화 실패: {type(e).__name__}")
     url = keep_awake_url()
